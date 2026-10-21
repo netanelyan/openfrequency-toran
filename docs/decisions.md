@@ -78,3 +78,59 @@ Each entry gives what was decided, the alternatives, and why. Newest at the bott
 - Demo replies are service messages, which Meta does not charge for.
 - Twilio's $0.005 a message comes to about $4 a month at phase 1 volume, and its sandbox works today.
 - The provider is one file behind an interface.
+
+## 2026-10-21: StoreCensus as the first discovery source
+
+**Alternatives:** Brave Search only.
+
+**Why:**
+
+- It lists about 5,800 Shopify stores based in Israel, and its robots.txt allows reading it.
+- Brave needs a key that is not set yet.
+- The directory ranks the biggest stores first, and Toran's buyers are smaller, so discovery reads its deeper pages
+  (20 and on) first.
+
+## 2026-10-21: chains are pushed down hard
+
+**The rule:** -25 for a branch locator, the local site of an international brand, or 2,000+ products; the
+catalogue factor also falls from 1,000 products.
+
+**Why:** the first run qualified three national fashion and footwear chains. A chain does not buy a demo from a
+solo developer.
+
+## 2026-10-21: what WhatsApp Business does not allow is rejected at discovery
+
+**The rule:** stores selling adult products, tobacco and vapes, weapons or drugs are rejected; alcohol is a -10
+penalty.
+
+**Why:** Meta's commerce policy, which WhatsApp Business follows, bars these categories, so Toran could never run
+on those stores' numbers. The first run found one.
+
+## 2026-10-21: the guard's allowlist leaves out the tools' own bookkeeping
+
+**The rule:** "2 matching products", "[id 12]" and "3 options" do not put 2, 12 or 3 on the allowlist.
+
+**Why:** the tests caught "only 2 left" and "arrives in 2 days" passing because of them.
+
+## 2026-10-21: Hebrew search uses a light stem
+
+**The rule:** each query word is also tried without a final ה/ת and without a plural ים/ות, so קערה finds קערת
+and ספלים finds ספל. A word and all its forms count once.
+
+**Why:** the router test caught a store whose only bowl is "קערת עץ זית", unfindable by "קערה".
+
+## 2026-10-21: the pitch page header is the store's initial, not its logo
+
+**The rule:** the store's initial sits in a circle in its own colour, beside the Toran mark. A logo, when it
+loads, goes in the letter.
+
+**Why:**
+
+- The brand brief asks for the initial.
+- Store logos were the commonest broken image in testing (relative paths, CDNs that refuse hotlinking).
+
+## 2026-10-21: the owner's own phone never moves a lead
+
+**The rule:** TORAN_OWNER_WHATSAPP can open any store's demo, and the store's status stays where it was.
+
+**Why:** you will test every page before sending it, and that must not read as the store starting a demo.

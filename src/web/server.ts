@@ -11,6 +11,7 @@ import type { PageCtx } from './ui.ts';
 import { loginPage, notFoundPage } from './pages/basic.ts';
 import { dashboardRoutes, headerCounts, storesCss } from './routes.ts';
 import { publicRoutes } from './public.ts';
+import { demoArt } from './demoArt.ts';
 
 // The website: the owner's dashboard, the public pitch pages, and the WhatsApp webhook,
 // in one process. It listens on 127.0.0.1 (or the container's interface behind Caddy).
@@ -129,6 +130,8 @@ export function createHandler(app: App, { port, limiter = createLimiter(), failD
         if (p === '/static/manifest.webmanifest') return send(req, res, 200, JSON.stringify(MANIFEST), 'application/manifest+json; charset=utf-8', { 'cache-control': 'public, max-age=86400' });
         if (p === '/favicon.ico') return send(req, res, 200, readFileSync(path.join(BRAND_DIR, 'svg/toran.svg')), 'image/svg+xml', { 'cache-control': 'public, max-age=86400' });
         if (p === '/healthz') return send(req, res, 200, 'ok', 'text/plain; charset=utf-8');
+        const art = /^\/static\/demo\/([\w-]{1,60})\.svg$/.exec(p);
+        if (art) return send(req, res, 200, demoArt(art[1]), 'image/svg+xml', { 'cache-control': 'public, max-age=86400' });
         if (p === '/robots.txt') return send(req, res, 200, 'User-agent: *\nDisallow: /\n', 'text/plain; charset=utf-8');
       }
 

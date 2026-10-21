@@ -1,0 +1,15 @@
+# Copy to deploy/Caddyfile and put your two names in. One host for the owner's dashboard, one for the pitch pages and
+# the WhatsApp webhook (the app tells them apart by PUBLIC_HOST and PUBLIC_BASE_URL in private/.env).
+
+toran.example.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy app:4710
+}
+
+demo.example.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy app:4710
+}
