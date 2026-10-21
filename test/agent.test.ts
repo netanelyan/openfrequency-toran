@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { discover } from '../src/leads/discover.ts';
 import { ingestStore } from '../src/ingest/pack.ts';
 import { conversationFor, DEMO_FOOTER, runTurn } from '../src/agent/loop.ts';
-import { loadProducts, rank, runTool, TOOLS } from '../src/agent/tools.ts';
+import { isFee, loadProducts, rank, runTool, TOOLS } from '../src/agent/tools.ts';
 import { SHARED_PROMPT, storeBlock } from '../src/agent/prompt.ts';
 import type { Script } from '../src/agent/llm/scripted.ts';
 import type { TurnReq } from '../src/agent/llm/types.ts';
@@ -28,6 +28,11 @@ test('the shared prompt holds no store, and the tool list has no field for a pri
     const props = Object.keys((t.input_schema as any).properties || {});
     assert.ok(!props.some((p) => /price$|discount|amount|refund|promise/.test(p)) || (t.name === 'search_products' && props.includes('max_price')), `${t.name}: ${props}`);
   }
+});
+
+test('a fee sold as a line item is told apart from merchandise (the pitch page never shows one as its sample)', () => {
+  for (const t of ['משלוח החלפה', 'משלוח חוזר', '6 שנות אחריות מורחבת למזרן', 'Gift wrap']) assert.equal(isFee(t), true, t);
+  for (const t of ['ספל חול 350 מ"ל', 'קערת זית גדולה', 'Sandy mug']) assert.equal(isFee(t), false, t);
 });
 
 test('product search finds Hebrew words under their prefixes, and shows the rows\' prices and stock', async () => {

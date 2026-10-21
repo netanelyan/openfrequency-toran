@@ -74,7 +74,10 @@ export type ToolOutcome = { ok: boolean; content: string; handoff?: { reason: st
 
 type P = { id: number; title: string; url: string; handle: string; image: string | null; price_min: number | null; price_max: number | null; compare_at_max: number | null; available: boolean; variants: any[]; body_text: string; search_text: string; product_type: string | null; override: any };
 
-export const money = (n: number | null | undefined, currency = 'ILS') => (n == null ? 'מחיר לא ידוע' : currency === 'ILS' ? `${fmtNum(n)} ₪` : `${fmtNum(n)} ${currency}`);
+/** A fee sold as a line item (exchange shipping, gift wrap, a warranty extension): in the catalogue, not merchandise. */
+export const isFee = (title: string) => /משלוח|שילוח|אריזת מתנה|עטיפת מתנה|אחריות|ביטוח|פיקדון|shipping|delivery|gift ?wrap|warranty|insurance|deposit/i.test(title);
+
+export const money =(n: number | null | undefined, currency = 'ILS') => (n == null ? 'מחיר לא ידוע' : currency === 'ILS' ? `${fmtNum(n)} ₪` : `${fmtNum(n)} ${currency}`);
 const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 
 /** A product with the owner's corrections applied over what was scraped. */

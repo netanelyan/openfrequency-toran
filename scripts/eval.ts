@@ -26,7 +26,7 @@ import { canonicalDomain } from '../src/core/urls.ts';
 import { israelDate } from '../src/core/clock.ts';
 import { conversationFor, DEMO_FOOTER, runTurn, type TurnOutput } from '../src/agent/loop.ts';
 import { numbersIn } from '../src/agent/guard.ts';
-import { loadProducts } from '../src/agent/tools.ts';
+import { isFee, loadProducts } from '../src/agent/tools.ts';
 
 const args = process.argv.slice(2);
 const opt = (n: string, d: string) => (args.includes(`--${n}`) ? args[args.indexOf(`--${n}`) + 1] : d);
@@ -52,10 +52,8 @@ function pick<T>(arr: T[], n: number, seed: number): T[] {
 }
 
 async function questionsFor(storeId: number): Promise<Q[]> {
-  // Real merchandise only: a fee sold as a line item (exchange shipping, gift wrap, a warranty extension) is a policy
-  // question in a product's clothes, and asked as "is it in stock?" it measures the question, not the agent.
-  const FEE = /משלוח|שילוח|אריזת מתנה|עטיפת מתנה|אחריות|ביטוח|shipping|delivery|gift ?wrap|warranty|insurance|tip|deposit|פיקדון/i;
-  const ps = (await loadProducts(app.db, storeId)).filter((p) => p.price_min != null && short(p.title).length >= 3 && !FEE.test(p.title));
+  // Real merchandise only: a fee sold as a line item is a policy question in a product's clothes (isFee).
+  const ps = (await loadProducts(app.db, storeId)).filter((p) => p.price_min != null && short(p.title).length >= 3 && !isFee(p.title));
   const uniq = [...new Map(ps.map((p) => [short(p.title), p])).values()];
   const inStock = uniq.filter((p) => p.available);
   const chosen = pick(inStock.length >= 8 ? inStock : uniq, 10, storeId);

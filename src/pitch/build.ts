@@ -3,7 +3,7 @@ import type { App } from '../app.ts';
 import { J } from '../db/index.ts';
 import { event } from '../db/log.ts';
 import { conversationFor, runTurn } from '../agent/loop.ts';
-import { loadProducts, money } from '../agent/tools.ts';
+import { isFee, loadProducts, money } from '../agent/tools.ts';
 import { makeSlug } from '../leads/store.ts';
 
 // Building a store's pitch: its demo code, its slug, and the sample chat the page
@@ -25,7 +25,7 @@ export type SampleChat = { role: 'customer' | 'agent'; text: string }[];
 function candidates(products: Awaited<ReturnType<typeof loadProducts>>) {
   const short = (t: string) => t.replace(/[-–|(].*$/, '').trim();
   return products
-    .filter((p) => p.available && p.price_min != null && p.image && short(p.title).length >= 4 && short(p.title).length <= 40 && !/gift ?card|כרטיס מתנה|שובר/i.test(p.title))
+    .filter((p) => p.available && p.price_min != null && p.image && short(p.title).length >= 4 && short(p.title).length <= 40 && !/gift ?card|כרטיס מתנה|שובר/i.test(p.title) && !isFee(p.title))
     .sort((a, b) => Number(b.variants.length > 1) - Number(a.variants.length > 1) || a.title.length - b.title.length);
 }
 
