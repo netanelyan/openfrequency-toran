@@ -70,6 +70,14 @@ test('a product\'s option count is a fact; a stock quantity never is; a cut take
   assert.equal(r.text, 'את המחיר המדויק אני בודק מול החנות ומעדכן כאן. הגדול במלאי.');
 });
 
+test('a number with a non-money unit is a quantity: "1 month" does not cut a correct price; days stay checked', () => {
+  const t = buildAllow({ toolTexts: ['- [id 3] Gut & Hair: 249 ₪ עד 389 ₪ (במבצע, במקום 498 ₪), במלאי, 2 options.\n  - חודש: 249 ₪\n  - חודשיים: 389 ₪'], customerTexts: [] });
+  assert.equal(guardReply('The 1 month pack is 249 ₪, and the 2 month pack is 389 ₪ (on sale, instead of 498 ₪).', t).redactions.length, 0);
+  assert.equal(guardReply('מארז של 3 יחידות ב-249 ₪.', t).redactions.length, 0);
+  assert.equal(guardReply('The 1 month pack is 199 ₪.', t).redactions[0]?.rule, 'price', 'the price itself is still checked');
+  assert.equal(guardReply('המשלוח יגיע תוך 4 ימים.', t).redactions[0]?.rule, 'delivery', 'days are a delivery time, not a quantity');
+});
+
 test('English replies get English replacement lines; the customer\'s own numbers are allowed; no dashes reach the customer', () => {
   const en = guardReply('The mug is 95 shekels.', allow());
   assert.match(en.text, /^I'm checking the exact price/);

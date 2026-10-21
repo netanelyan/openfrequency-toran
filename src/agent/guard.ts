@@ -98,7 +98,12 @@ export function splitSentences(text: string): string[] {
   return out;
 }
 
-const unknownNumbers = (sentence: string, allow: Allow) => numbersIn(sentence).filter((n) => !allow.numbers.has(n));
+// A number attached to a unit that is not money is a quantity, not a price: "1 month", "a 2-pack", "350 ml", "size 40".
+// The eval caught "the 1 month pack is 249 ₪" cut whole, because the tool had said "חודש" and the model wrote "1 month".
+// Days and hours are not here: a delivery time stays checked.
+const QUANTITY = /\d+(?:[.,]\d+)?\s*-?\s*(?:months?|weeks?|packs?|pairs?|pcs|pieces|units|items|ml|cm|mm|kg|g|gr|l|liters?|inch(?:es)?|חודש(?:ים)?|חודשי|שבוע(?:ות)?|זוג(?:ות)?|יחידות|פריטים|מארז|ס"מ|ס״מ|מ"מ|מ"ל|מ״ל|ליטר|גרם|ק"ג|ק״ג|אינץ'?)(?![\p{L}])|(?:size|מידה)\s*\d+/giu;
+
+const unknownNumbers = (sentence: string, allow: Allow) => numbersIn(sentence.replace(QUANTITY, ' ')).filter((n) => !allow.numbers.has(n));
 
 /** The rule a sentence breaks, or null. */
 export function violation(sentence: string, allow: Allow): string | null {
