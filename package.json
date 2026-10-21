@@ -1,0 +1,46 @@
+{
+  "name": "openfrequency-toran",
+  "version": "0.1.0",
+  "description": "Toran (תורן): a Hebrew-first agent that answers, sells and follows up on an Israeli online store's WhatsApp. Phase 1: the demo machine.",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 \"test/*.test.ts\" && node scripts/check-public.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "check:public": "node scripts/check-public.ts",
+    "prepare": "node scripts/hooks.ts",
+    "init-private": "node scripts/init-private.ts",
+    "migrate": "node scripts/migrate.ts",
+    "leads": "node scripts/leads.ts",
+    "ingest": "node scripts/ingest.ts",
+    "chat": "node scripts/chat.ts",
+    "eval": "node scripts/eval.ts",
+    "pitch": "node scripts/pitch.ts",
+    "wa:sim": "node scripts/wa-sim.ts",
+    "web": "node scripts/web.ts",
+    "start": "node scripts/web.ts --worker",
+    "worker": "node scripts/worker.ts",
+    "user:add": "node scripts/user-add.ts",
+    "demo": "node scripts/demo.ts",
+    "screenshots": "node scripts/screenshots.ts",
+    "costs": "node scripts/costs.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.0.0",
+    "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite-pgvector": "^0.0.12",
+    "@huggingface/transformers": "^4.0.0",
+    "cheerio": "^1.2.0",
+    "postgres": "^3.4.9",
+    "tldts": "^7.4.19"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "playwright-core": "^1.64.1",
+    "typescript": "^7.0.2"
+  }
+}

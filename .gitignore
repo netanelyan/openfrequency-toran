@@ -1,0 +1,36 @@
+# The private folder: real stores, leads, conversations, phone numbers, the database, keys.
+# Never tracked. `npm run check:public` fails if anything under it ever is.
+/private/
+
+# The throwaway home `npm run demo` builds for the fictional demo store.
+/.demo/
+
+# Keys, wherever they are.
+.env
+.env.*
+!.env.example
+
+# Databases and state.
+/data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+pgdata/
+
+# Rendered and downloaded media. docs/screenshots/ (the fictional store only) is the one exception.
+/out/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+*.mp4
+!docs/screenshots/*.png
+!docs/screenshots/*.jpg
+!src/web/static/*.png
+
+node_modules/
+npm-debug.log*
+.DS_Store
+Thumbs.db

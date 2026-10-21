@@ -1,0 +1,7 @@
+#!/bin/sh
+# Refuse a commit that would publish anything private (see scripts/check-public.ts).
+node scripts/check-public.ts || {
+  echo ""
+  echo "pre-commit: check:public failed. Nothing was committed."
+  exit 1
+}
