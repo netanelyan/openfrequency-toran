@@ -1,0 +1,712 @@
+{
+ "products": [
+  {
+   "id": 9000000000001,
+   "title": "ספל חול 350 מ\"ל",
+   "handle": "sandy-mug",
+   "body_html": "<p>ספל בגוון חול עם ידית רחבה. 350 מ\"ל. מתאים למדיח ולמיקרוגל.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "ספלים",
+   "tags": [
+    "ספל",
+    "מדיח",
+    "מיקרוגל"
+   ],
+   "variants": [
+    {
+     "id": 4000000000001,
+     "title": "חול / 350 מ\"ל",
+     "option1": "חול",
+     "option2": "350 מ\"ל",
+     "option3": null,
+     "sku": "sandy-mug-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "89.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    },
+    {
+     "id": 4000000000002,
+     "title": "אפור / 350 מ\"ל",
+     "option1": "אפור",
+     "option2": "350 מ\"ל",
+     "option3": null,
+     "sku": "sandy-mug-2",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "89.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 2
+    },
+    {
+     "id": 4000000000003,
+     "title": "תכלת / 350 מ\"ל",
+     "option1": "תכלת",
+     "option2": "350 מ\"ל",
+     "option3": null,
+     "sku": "sandy-mug-3",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": false,
+     "price": "89.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 3
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/sandy-mug.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000002,
+   "title": "ספל אספרסו מט",
+   "handle": "espresso-matte",
+   "body_html": "<p>ספל אספרסו קטן, 90 מ\"ל, זיגוג מט. עדיף לשטוף ביד.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "ספלים",
+   "tags": [
+    "ספל",
+    "אספרסו"
+   ],
+   "variants": [
+    {
+     "id": 4000000000004,
+     "title": "שחור מט",
+     "option1": "שחור מט",
+     "option2": null,
+     "option3": null,
+     "sku": "espresso-matte-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "59.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    },
+    {
+     "id": 4000000000005,
+     "title": "לבן מט",
+     "option1": "לבן מט",
+     "option2": null,
+     "option3": null,
+     "sku": "espresso-matte-2",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "59.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 2
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/espresso-matte.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000003,
+   "title": "קערת זית גדולה",
+   "handle": "olive-bowl",
+   "body_html": "<p>קערת הגשה בירוק זית, קוטר 28 ס\"מ.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "קערות",
+   "tags": [
+    "קערה",
+    "הגשה"
+   ],
+   "variants": [
+    {
+     "id": 4000000000006,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "option2": null,
+     "option3": null,
+     "sku": "olive-bowl-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "165.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/olive-bowl.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000004,
+   "title": "קערת דגנים",
+   "handle": "cereal-bowl",
+   "body_html": "<p>קערה עמוקה לבוקר, 600 מ\"ל.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "קערות",
+   "tags": [
+    "קערה"
+   ],
+   "variants": [
+    {
+     "id": 4000000000007,
+     "title": "חול",
+     "option1": "חול",
+     "option2": null,
+     "option3": null,
+     "sku": "cereal-bowl-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "72.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    },
+    {
+     "id": 4000000000008,
+     "title": "זית",
+     "option1": "זית",
+     "option2": null,
+     "option3": null,
+     "sku": "cereal-bowl-2",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "72.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 2
+    },
+    {
+     "id": 4000000000009,
+     "title": "חלודה",
+     "option1": "חלודה",
+     "option2": null,
+     "option3": null,
+     "sku": "cereal-bowl-3",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": false,
+     "price": "72.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 3
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/cereal-bowl.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000005,
+   "title": "צלחת הגשה אובלית",
+   "handle": "oval-platter",
+   "body_html": "<p>צלחת הגשה אובלית, 35 ס\"מ. במבצע סוף עונה.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "צלחות",
+   "tags": [
+    "צלחת",
+    "הגשה"
+   ],
+   "variants": [
+    {
+     "id": 4000000000010,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "option2": null,
+     "option3": null,
+     "sku": "oval-platter-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "149.00",
+     "compare_at_price": "189.00",
+     "grams": 0,
+     "position": 1
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/oval-platter.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000006,
+   "title": "סט 4 צלחות ערב",
+   "handle": "dinner-plates-4",
+   "body_html": "<p>ארבע צלחות ערב, קוטר 27 ס\"מ.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "צלחות",
+   "tags": [
+    "סט",
+    "צלחות"
+   ],
+   "variants": [
+    {
+     "id": 4000000000011,
+     "title": "חול",
+     "option1": "חול",
+     "option2": null,
+     "option3": null,
+     "sku": "dinner-plates-4-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "320.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    },
+    {
+     "id": 4000000000012,
+     "title": "אפור",
+     "option1": "אפור",
+     "option2": null,
+     "option3": null,
+     "sku": "dinner-plates-4-2",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": false,
+     "price": "320.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 2
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/dinner-plates-4.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000007,
+   "title": "אגרטל גבוה",
+   "handle": "tall-vase",
+   "body_html": "<p>אגרטל גבוה, 32 ס\"מ. אזל, נכנס שוב בשריפה הבאה.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "אגרטלים",
+   "tags": [
+    "אגרטל",
+    "עיצוב"
+   ],
+   "variants": [
+    {
+     "id": 4000000000013,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "option2": null,
+     "option3": null,
+     "sku": "tall-vase-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": false,
+     "price": "210.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/tall-vase.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000008,
+   "title": "אגרטל כדור קטן",
+   "handle": "ball-vase",
+   "body_html": "<p>אגרטל קטן לפרח אחד, 12 ס\"מ.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "אגרטלים",
+   "tags": [
+    "אגרטל"
+   ],
+   "variants": [
+    {
+     "id": 4000000000014,
+     "title": "לבן",
+     "option1": "לבן",
+     "option2": null,
+     "option3": null,
+     "sku": "ball-vase-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "95.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    },
+    {
+     "id": 4000000000015,
+     "title": "חלודה",
+     "option1": "חלודה",
+     "option2": null,
+     "option3": null,
+     "sku": "ball-vase-2",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "95.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 2
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/ball-vase.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000009,
+   "title": "קנקן מים",
+   "handle": "water-jug",
+   "body_html": "<p>קנקן מים, 1.2 ליטר.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "קנקנים",
+   "tags": [
+    "קנקן"
+   ],
+   "variants": [
+    {
+     "id": 4000000000016,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "option2": null,
+     "option3": null,
+     "sku": "water-jug-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "185.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/water-jug.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000010,
+   "title": "מחזיק נרות זוגי",
+   "handle": "candle-holders",
+   "body_html": "<p>זוג פמוטים לנרות שבת, בגוון חול.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "עיצוב הבית",
+   "tags": [
+    "נרות",
+    "שבת"
+   ],
+   "variants": [
+    {
+     "id": 4000000000017,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "option2": null,
+     "option3": null,
+     "sku": "candle-holders-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "119.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/candle-holders.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000011,
+   "title": "מגש לתכשיטים",
+   "handle": "jewelry-dish",
+   "body_html": "<p>מגש קטן לטבעות ולעגילים.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "עיצוב הבית",
+   "tags": [
+    "מגש",
+    "מתנה"
+   ],
+   "variants": [
+    {
+     "id": 4000000000018,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "option2": null,
+     "option3": null,
+     "sku": "jewelry-dish-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "45.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/jewelry-dish.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000012,
+   "title": "עציץ תלוי",
+   "handle": "hanging-planter",
+   "body_html": "<p>עציץ תלוי עם חבל כותנה. עם חור ניקוז.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "עציצים",
+   "tags": [
+    "עציץ",
+    "צמחים"
+   ],
+   "variants": [
+    {
+     "id": 4000000000019,
+     "title": "S",
+     "option1": "S",
+     "option2": null,
+     "option3": null,
+     "sku": "hanging-planter-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "79.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    },
+    {
+     "id": 4000000000020,
+     "title": "M",
+     "option1": "M",
+     "option2": null,
+     "option3": null,
+     "sku": "hanging-planter-2",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "99.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 2
+    },
+    {
+     "id": 4000000000021,
+     "title": "L",
+     "option1": "L",
+     "option2": null,
+     "option3": null,
+     "sku": "hanging-planter-3",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": false,
+     "price": "129.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 3
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/hanging-planter.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000013,
+   "title": "כרטיס מתנה",
+   "handle": "gift-card",
+   "body_html": "<p>כרטיס מתנה לכל הכלים באתר.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "כרטיס מתנה",
+   "tags": [
+    "מתנה"
+   ],
+   "variants": [
+    {
+     "id": 4000000000022,
+     "title": "100 ₪",
+     "option1": "100 ₪",
+     "option2": null,
+     "option3": null,
+     "sku": "gift-card-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "100.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    },
+    {
+     "id": 4000000000023,
+     "title": "200 ₪",
+     "option1": "200 ₪",
+     "option2": null,
+     "option3": null,
+     "sku": "gift-card-2",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "200.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 2
+    },
+    {
+     "id": 4000000000024,
+     "title": "300 ₪",
+     "option1": "300 ₪",
+     "option2": null,
+     "option3": null,
+     "sku": "gift-card-3",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "300.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 3
+    },
+    {
+     "id": 4000000000025,
+     "title": "500 ₪",
+     "option1": "500 ₪",
+     "option2": null,
+     "option3": null,
+     "sku": "gift-card-4",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "500.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 4
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/gift-card.jpg"
+    }
+   ],
+   "options": []
+  },
+  {
+   "id": 9000000000014,
+   "title": "סדנת קדרות ליחיד",
+   "handle": "pottery-workshop",
+   "body_html": "<p>סדנה של שלוש שעות בסטודיו בקיבוץ. התאריכים מתואמים בוואטסאפ.</p>",
+   "published_at": "2026-10-01T10:00:00+03:00",
+   "created_at": "2025-03-01T10:00:00+02:00",
+   "updated_at": "2026-10-18T09:00:00+03:00",
+   "vendor": "כלי חרס של נורית",
+   "product_type": "סדנאות",
+   "tags": [
+    "סדנה"
+   ],
+   "variants": [
+    {
+     "id": 4000000000026,
+     "title": "Default Title",
+     "option1": "Default Title",
+     "option2": null,
+     "option3": null,
+     "sku": "pottery-workshop-1",
+     "requires_shipping": true,
+     "taxable": true,
+     "available": true,
+     "price": "380.00",
+     "compare_at_price": null,
+     "grams": 0,
+     "position": 1
+    }
+   ],
+   "images": [
+    {
+     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/pottery-workshop.jpg"
+    }
+   ],
+   "options": []
+  }
+ ]
+}

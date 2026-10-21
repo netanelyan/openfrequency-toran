@@ -64,6 +64,22 @@ export function searchTerms(text: string): string[] {
   return [...out];
 }
 
+/**
+ * The query's words, each with its prefix-stripped forms as one group: a match on any
+ * form counts the word once ("הסטודיו" and "סטודיו" are one word, not two).
+ */
+export function termGroups(text: string): string[][] {
+  const groups: string[][] = [];
+  for (const w of normalize(text).split(' ').filter((x) => x.length >= 2)) {
+    if (STOP.has(w)) continue;
+    const g = new Set([w]);
+    if (/^[א-ת]/.test(w) && w.length >= 4 && /^[הובלמשכ]/.test(w)) g.add(w.slice(1));
+    if (/^[א-ת]/.test(w) && w.length >= 5 && /^(וה|שה|בה|לה|מה|וב|ול|וש)/.test(w)) g.add(w.slice(2));
+    if (!groups.some((x) => x[0] === w)) groups.push([...g]);
+  }
+  return groups;
+}
+
 // Words that carry no product meaning in a customer's question.
 const STOP = new Set(
   normalize(

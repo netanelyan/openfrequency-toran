@@ -100,7 +100,9 @@ for (const f of ['known-stores.txt', 'public-denylist.txt']) {
 }
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const L = '[\\p{L}\\p{N}_]';
-const matchers = real.map((term) => ({ term, re: new RegExp(`(?<!${L})${esc(term)}(?!${L})`, 'iu') }));
+// A domain matches in any case; a store's name only as the store writes it, so a store named "Shop" does not
+// forbid the word "shop" in code.
+const matchers = real.map((term) => ({ term, re: new RegExp(`(?<!${L})${esc(term)}(?!${L})`, term.includes('.') ? 'iu' : 'u') }));
 
 for (const f of files) {
   const base = path.posix.basename(f);

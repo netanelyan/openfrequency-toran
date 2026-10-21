@@ -33,7 +33,7 @@ export class FetchError extends Error {
 export const USER_AGENT = `ToranBot/0.1 (+https://github.com/netanelyan/openfrequency-toran/blob/main/docs/bot.md)`;
 const HOST_GAP_MS = 1200;
 const ROBOTS_TTL_MS = 24 * 3_600_000;
-const DEFAULT_MAX = 4 * 1024 * 1024;
+const DEFAULT_MAX = 8 * 1024 * 1024;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -106,7 +106,7 @@ export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { g
     return run;
   }
 
-  async function raw(url: string, { accept = 'text/html,application/json;q=0.9,*/*;q=0.5', maxBytes = DEFAULT_MAX, timeoutMs = 15_000 } = {}): Promise<FetchResult> {
+  async function raw(url: string, { accept = 'text/html,application/json;q=0.9,*/*;q=0.5', maxBytes = DEFAULT_MAX, timeoutMs = 20_000 } = {}): Promise<FetchResult> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let res: Response;
@@ -174,7 +174,15 @@ export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { g
       const rules = await rulesFor(u.origin, u.host);
       if (!robotsAllows(rules, u.pathname + u.search)) throw new FetchError(`robots.txt disallows ${u.pathname}`, 'robots', url);
     }
-    const r = await perHost(u.host, () => raw(url, opts));
+    // One retry for a network failure or a timeout: a connection that timed out once usually connects the second time.
+    let r: FetchResult;
+    try {
+      r = await perHost(u.host, () => raw(url, opts));
+    } catch (e: any) {
+      if (!(e instanceof FetchError) || !['network', 'timeout'].includes(e.code)) throw e;
+      await sleep(2000);
+      r = await perHost(u.host, () => raw(url, opts));
+    }
     if (r.status >= 400) throw new FetchError(`HTTP ${r.status}`, 'http', url, r.status);
     return r;
   };

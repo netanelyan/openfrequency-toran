@@ -1,0 +1,14 @@
+{
+ "id": 1,
+ "name": "כלי חרס של נורית",
+ "city": "",
+ "province": "",
+ "country": "IL",
+ "currency": "ILS",
+ "domain": "kli-cheres.example",
+ "url": "https://kli-cheres.example",
+ "myshopify_domain": "kli-cheres-example.myshopify.com",
+ "description": "קרמיקה בעבודת יד",
+ "published_products_count": 14,
+ "money_format": "{{amount}} ₪"
+}
