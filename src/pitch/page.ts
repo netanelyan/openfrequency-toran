@@ -37,13 +37,20 @@ export async function pitchData(app: App, slug: string): Promise<PitchData | nul
   const product = pitch?.product_id ? await app.db.one<any>('SELECT title, image, url, price_min::float FROM products WHERE id = $1', [pitch.product_id]) : null;
   const counts = await app.db.one<any>('SELECT COUNT(*)::int AS products, COUNT(*) FILTER (WHERE available)::int AS available FROM products WHERE store_id = $1 AND gone_at IS NULL', [store.id]);
   const pol = await app.db.query<{ kind: string; text: string; override_text: string | null }>("SELECT kind, text, override_text FROM policies WHERE store_id = $1 AND kind IN ('shipping', 'returns')", [store.id]);
+  // The one line of a policy worth quoting to its owner: the sentence that says something a customer asks (a cost,
+  // a time, a window), not the page's title, a company registration line or a bare "1.".
+  const KEY: Record<string, RegExp> = { shipping: /₪|ש"ח|ימי עסקים|ימים|חינם|עלות המשלוח|דמי משלוח|משלוח עד|איסוף/, returns: /ימים|יום|החזר|החלפ|זיכוי|ביטול/ };
   const firstSentence = (kind: string) => {
     const p = pol.find((x) => x.kind === kind);
     if (!p) return null;
-    const text = (p.override_text || p.text).split('\n').map((l) => l.trim()).filter((l) => l.length > 20 && /[א-ת]/.test(l))[0];
-    if (!text) return null;
-    const s = text.split(/(?<=[.!?])\s/)[0];
-    return s.length > 150 ? `${s.slice(0, 147)}...` : s;
+    const sentences = (p.override_text || p.text)
+      .split(/\n|(?<=[.!?])\s+/)
+      .map((l) => l.replace(/^[\s\d.)•*-]+/, '').trim())
+      .filter((l) => l.length >= 30 && l.length <= 220 && /[א-ת]/.test(l) && !/:$/.test(l) && !/בע"מ|בע״מ|ח\.פ|ע\.מ|מדיניות (משלוחים|החזרות)\s*[-–|]|תקנון|כל הזכויות|חוק|תקנות|התשמ|התשע/.test(l));
+    // A short concrete sentence (a number in it, under 140 characters) beats a long one; then any concrete one.
+    const s = sentences.find((l) => KEY[kind].test(l) && /\d/.test(l) && l.length <= 140) || sentences.find((l) => KEY[kind].test(l) && /\d/.test(l)) || sentences.find((l) => KEY[kind].test(l));
+    if (!s) return null;
+    return s.length > 160 ? `${s.slice(0, 157)}...` : s;
   };
   const missing = [!pol.some((p) => p.kind === 'shipping') && 'משלוחים', !pol.some((p) => p.kind === 'returns') && 'החזרות'].filter(Boolean) as string[];
   return { store, chat: pitch?.sample_chat || [], product, counts, shipping: firstSentence('shipping'), returns: firstSentence('returns'), missing };
@@ -125,7 +132,7 @@ ${iconLinks()}
     <div class="phone">
       <div class="ph-top">${initial}<div><b>${esc(name)}</b><small>עוזר דיגיטלי · עונה מיד</small></div></div>
       <div class="ph-chat">
-        ${d.product?.image ? `<div class="msg in card"><img src="${esc(d.product.image)}" alt="" loading="lazy" referrerpolicy="no-referrer"><span>${esc(productName || '')}${d.product.price_min != null ? ` · ${esc(money(d.product.price_min, currency))}` : ''}</span></div>` : ''}
+        ${d.product?.image ? `<div class="msg in card"><img src="${esc(d.product.image)}" alt="" referrerpolicy="no-referrer"><span>${esc(productName || '')}${d.product.price_min != null ? ` · ${esc(money(d.product.price_min, currency))}` : ''}</span></div>` : ''}
         ${d.chat.map(bubble).join('')}
       </div>
     </div>
