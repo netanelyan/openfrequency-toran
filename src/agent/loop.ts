@@ -115,8 +115,16 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const tokens = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
   const model = agentModel(app.env);
 
+  // The monthly cap on paid API spend (TORAN_MONTHLY_CAP_USD): past it, no model call is made; the customer gets the
+  // honest "checking" line and the owner a handoff. The subscription (claude-cli) costs nothing per call and is not capped.
+  const cap = Number(app.env.TORAN_MONTHLY_CAP_USD) || 0;
+  const capped = cap > 0 && app.llm.backend === 'api' && Number((await db.one<{ usd: number }>("SELECT COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE at >= date_trunc('month', now())"))?.usd) >= cap;
+  if (capped) {
+    handoff = { reason: 'other', summary: `the monthly spend cap ($${cap}) is reached: ${cleanLine(input.text, 120)}` };
+    app.log(`[agent] monthly cap $${cap} reached; store ${store.id} handed off without a model call`);
+  }
   try {
-    for (; rounds < MAX_ROUNDS; ) {
+    for (; rounds < MAX_ROUNDS && !capped; ) {
       rounds++;
       const res = await app.llm.turn({ system, messages, tools: TOOLS, model, maxTokens: 1500, effort: 'low', tag: `turn store ${store.id}` });
       usd += res.usd;
