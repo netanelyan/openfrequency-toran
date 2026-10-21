@@ -60,7 +60,7 @@ const fail = (file: string, why: string) => problems.push(`${file}: ${why}`);
 const lineOf = (text: string, index: number) => text.slice(0, index).split('\n').length;
 
 const MEDIA = /\.(jpe?g|png|webp|gif|mp4|mov|webm|heic)$/i;
-const MEDIA_OK = [/^docs\/screenshots\//, /^src\/web\/static\//];
+const MEDIA_OK = [/^docs\/screenshots\//, /^src\/web\/static\//, /^assets\/brand\/png\//];
 const KEY_NAMES = ['ANTHROPIC_API_KEY', 'ANTHROPIC_WORKSPACE_ID', 'BRAVE_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'SESSION_SECRET', 'TORAN_ADMIN_PASSWORD', 'DATABASE_URL'];
 const KEY_SHAPES: [RegExp, string][] = [
   [/sk-ant-[A-Za-z0-9_-]{20,}/, 'an Anthropic key'],

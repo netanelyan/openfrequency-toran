@@ -29,6 +29,7 @@ pgdata/
 !docs/screenshots/*.png
 !docs/screenshots/*.jpg
 !src/web/static/*.png
+!assets/brand/png/*.png
 
 node_modules/
 npm-debug.log*
