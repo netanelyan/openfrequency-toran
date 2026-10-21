@@ -1,0 +1,134 @@
+/* The pitch page: a short letter beside a phone. One store's colour runs through it (the sample chat's bubbles, the
+   initial, the quotes' rule, the numerals), tinted into the paper; Toran green is the WhatsApp button and the mark,
+   nothing else. The family's tokens come from brand.css; the store's from /s/<slug>/theme.css. Phone first. */
+
+:root {
+  color-scheme: light;
+  --paper: hsl(var(--store-hue, 30) 28% 97%);
+  --paper-2: hsl(var(--store-hue, 30) 22% 93%);
+  --ink: #1d1d1f;
+  --ink-2: #48484d;
+  --ink-3: #6e6e73;
+  --line: rgba(0, 0, 0, 0.09);
+  --card: #ffffff;
+  --chat-bg: hsl(var(--store-hue, 30) 20% 94%);
+  --bubble-in: #ffffff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 24px 60px -24px rgba(0, 0, 0, 0.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: hsl(var(--store-hue, 30) 10% 8%);
+    --paper-2: hsl(var(--store-hue, 30) 9% 12%);
+    --ink: #f5f5f7;
+    --ink-2: #d2d2d7;
+    --ink-3: #a1a1a6;
+    --line: rgba(255, 255, 255, 0.1);
+    --card: #1c1c1e;
+    --chat-bg: hsl(var(--store-hue, 30) 8% 13%);
+    --bubble-in: #2c2c2e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 17px/1.6 var(--text);
+  direction: rtl;
+  text-align: right;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+@media (min-width: 980px) { body { padding-bottom: 32px; } }
+.ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+bdi { unicode-bidi: isolate; }
+.num { font-variant-numeric: tabular-nums; }
+.small { font-size: 14px; color: var(--ink-3); line-height: 1.5; }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand-toran) 55%, transparent); outline-offset: 3px; border-radius: 10px; }
+
+/* ---------------------------------------------------------------- the bar: the store, and Toran beside it */
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 1120px; margin: 0 auto; padding: 16px 20px; }
+.who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.who .sname { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.letter .logo { display: block; height: 44px; width: auto; max-width: 180px; object-fit: contain; margin: 0 0 18px; }
+.initial { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--store-bubble); color: var(--store-ink); font: 700 16px/1 var(--display); }
+.by { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-3); flex: none; }
+.by span { font-weight: 600; }
+
+/* ---------------------------------------------------------------- the page */
+.page { max-width: 1120px; margin: 0 auto; padding: 8px 20px 0; display: grid; gap: 44px; }
+@media (min-width: 980px) {
+  .page { grid-template-columns: minmax(0, 1fr) 380px; column-gap: 72px; row-gap: 56px; padding-top: 32px; }
+  .page > section { grid-column: 1; }
+  .page > .phone-wrap { grid-column: 2; grid-row: 1 / span 5; align-self: start; position: sticky; top: 24px; }
+}
+section { max-width: 640px; }
+h1 { font: 700 29px/1.18 var(--display); letter-spacing: -0.01em; margin: 6px 0 16px; text-wrap: balance; }
+@media (min-width: 980px) { h1 { font-size: 42px; line-height: 1.1; } }
+h2 { font: 700 21px/1.25 var(--display); margin: 0 0 14px; }
+@media (min-width: 980px) { h2 { font-size: 24px; } }
+p { margin: 0 0 14px; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 600; color: var(--ink-3); }
+.eyebrow::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--store); }
+.lede { font-size: 18px; color: var(--ink-2); max-width: 58ch; }
+
+/* the button: Toran green, the one green on the page */
+.cta { margin-top: 22px; display: grid; gap: 10px; justify-items: start; }
+.wa { display: inline-flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 26px; border-radius: var(--r-pill); background: var(--brand-whatsapp); color: #fff; font: 600 17px/1 var(--text); text-decoration: none; box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--brand-whatsapp) 70%, transparent); transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.wa:hover { transform: translateY(-1px); box-shadow: 0 14px 28px -12px color-mix(in srgb, var(--brand-whatsapp) 80%, transparent); }
+.wa:active { transform: none; }
+.wa.off { background: var(--paper-2); color: var(--ink-3); box-shadow: none; }
+.wai { width: 22px; height: 22px; flex: none; }
+.code { white-space: nowrap; font-weight: 600; color: var(--ink-2); letter-spacing: 0.04em; direction: ltr; }
+
+/* ---------------------------------------------------------------- the phone, with the sample chat in the store's colour */
+.phone-wrap { justify-self: center; width: min(100%, 380px); }
+.phone { border-radius: 34px; overflow: hidden; background: var(--chat-bg); box-shadow: var(--shadow), 0 0 0 8px var(--card), 0 0 0 9px var(--line); }
+.ph-top { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+.ph-top b { display: block; font-size: 15px; }
+.ph-top small { display: block; font-size: 12px; color: var(--ink-3); }
+.ph-chat { display: grid; gap: 8px; padding: 18px 12px 22px; min-height: 300px; align-content: start; }
+.msg { max-width: 84%; padding: 9px 13px; border-radius: 18px; font-size: 15px; line-height: 1.45; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.06); }
+.msg p { margin: 0; overflow-wrap: anywhere; unicode-bidi: plaintext; text-align: start; }
+.msg.in { justify-self: end; background: var(--bubble-in); border-start-end-radius: 6px; }
+.msg.out { justify-self: start; background: var(--store-bubble); color: var(--store-ink); border-start-start-radius: 6px; }
+.msg .lnk { text-decoration: underline; text-underline-offset: 2px; opacity: 0.9; word-break: break-all; }
+.msg.card { display: grid; gap: 6px; padding: 6px; max-width: 64%; }
+.msg.card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 13px; background: var(--paper-2); }
+.msg.card span { padding: 0 6px 4px; font-size: 13px; color: var(--ink-2); }
+.caption { margin: 18px 6px 0; font-size: 14px; color: var(--ink-3); text-align: center; }
+
+/* ---------------------------------------------------------------- what it knows: the store's own lines, quoted */
+.facts ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.facts li { padding: 16px 18px; border-radius: 16px; background: var(--card); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
+.facts li b { font-size: 19px; }
+.facts q { display: block; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 3px solid var(--store); color: var(--ink-2); quotes: none; font-size: 16px; }
+
+/* ---------------------------------------------------------------- a normal day: numbered, the numerals in the store's colour */
+.day ol { list-style: none; margin: 0; padding: 0; counter-reset: d; display: grid; gap: 18px; }
+.day li { counter-increment: d; position: relative; padding-inline-start: 46px; color: var(--ink-2); }
+.day li::before { content: counter(d); position: absolute; inset-inline-start: 0; top: -2px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 700 15px/1 var(--display); color: var(--store); background: color-mix(in srgb, var(--store) 12%, var(--paper)); }
+.day li b { color: var(--ink); font-weight: 600; }
+
+.limits { padding: 18px 20px; border-radius: 16px; border: 1px dashed color-mix(in srgb, var(--ink-3) 45%, transparent); }
+.limits h2 { font-size: 18px; margin-bottom: 8px; }
+.limits p { color: var(--ink-2); font-size: 16px; margin: 0; }
+
+.sign p { font-size: 18px; }
+.sign-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn-quiet { display: inline-flex; align-items: center; min-height: 46px; padding: 0 20px; border-radius: var(--r-pill); background: var(--card); color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; box-shadow: inset 0 0 0 1px var(--line); }
+.btn-quiet:hover { background: var(--paper-2); }
+
+.foot { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 56px 20px 20px; font-size: 13px; color: var(--ink-3); }
+
+/* the dock: the button stays in reach on a phone once the first one scrolls away (pitch.js shows it) */
+.dock { position: fixed; inset-inline: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); display: flex; justify-content: center; opacity: 0; transform: translateY(16px); pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; }
+.dock.show { opacity: 1; transform: none; pointer-events: auto; }
+.dock .wa { width: min(100%, 420px); justify-content: center; }
+@media (min-width: 980px) { .dock { display: none; } }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }

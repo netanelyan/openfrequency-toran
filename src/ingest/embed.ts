@@ -18,6 +18,7 @@ export const DIMS = 384;
 const MODEL = 'Xenova/multilingual-e5-small';
 
 let extractor: Promise<any> | null = null;
+let warned = false;
 
 export const embeddingsOn = (env: Record<string, string | undefined> = process.env) => String(env.TORAN_EMBED || '').toLowerCase() !== 'off';
 
@@ -33,7 +34,11 @@ export async function embed(texts: string[], kind: 'passage' | 'query', env: Rec
   let ex;
   try {
     ex = await extractor;
-  } catch {
+  } catch (e: any) {
+    // Without the model (no network for its first download, a broken cache), policies fall back to matching words.
+    // Said once, so a missing model is never silent.
+    if (!warned) console.warn(`[embed] the embedding model did not load (${e?.message || e}); get_policy will match words only`);
+    warned = true;
     extractor = null;
     return null;
   }

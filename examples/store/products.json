@@ -64,7 +64,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/sandy-mug.jpg"
+     "src": "/static/demo/sandy-mug.svg"
     }
    ],
    "options": []
@@ -117,7 +117,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/espresso-matte.jpg"
+     "src": "/static/demo/espresso-matte.svg"
     }
    ],
    "options": []
@@ -155,7 +155,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/olive-bowl.jpg"
+     "src": "/static/demo/olive-bowl.svg"
     }
    ],
    "options": []
@@ -222,7 +222,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/cereal-bowl.jpg"
+     "src": "/static/demo/cereal-bowl.svg"
     }
    ],
    "options": []
@@ -260,7 +260,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/oval-platter.jpg"
+     "src": "/static/demo/oval-platter.svg"
     }
    ],
    "options": []
@@ -313,7 +313,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/dinner-plates-4.jpg"
+     "src": "/static/demo/dinner-plates-4.svg"
     }
    ],
    "options": []
@@ -351,7 +351,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/tall-vase.jpg"
+     "src": "/static/demo/tall-vase.svg"
     }
    ],
    "options": []
@@ -403,7 +403,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/ball-vase.jpg"
+     "src": "/static/demo/ball-vase.svg"
     }
    ],
    "options": []
@@ -440,7 +440,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/water-jug.jpg"
+     "src": "/static/demo/water-jug.svg"
     }
    ],
    "options": []
@@ -478,7 +478,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/candle-holders.jpg"
+     "src": "/static/demo/candle-holders.svg"
     }
    ],
    "options": []
@@ -516,7 +516,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/jewelry-dish.jpg"
+     "src": "/static/demo/jewelry-dish.svg"
     }
    ],
    "options": []
@@ -584,7 +584,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/hanging-planter.jpg"
+     "src": "/static/demo/hanging-planter.svg"
     }
    ],
    "options": []
@@ -666,7 +666,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/gift-card.jpg"
+     "src": "/static/demo/gift-card.svg"
     }
    ],
    "options": []
@@ -703,7 +703,7 @@
    ],
    "images": [
     {
-     "src": "https://cdn.shopify.com/s/files/1/0000/0001/products/pottery-workshop.jpg"
+     "src": "/static/demo/pottery-workshop.svg"
     }
    ],
    "options": []

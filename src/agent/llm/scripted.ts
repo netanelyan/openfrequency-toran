@@ -15,9 +15,14 @@ export const defaultScript: Script = (req) => {
   const blocks = blocksOf(lastUser(req.messages));
   const results = blocks.filter((b) => b.type === 'tool_result') as { content: string }[];
   if (results.length) {
-    const lines = String(results[0].content).split('\n').filter((l) => l.trim() && !l.startsWith('#') && !/^(rules|כללים)/i.test(l));
-    const first = lines.find((l) => /₪|\d/.test(l)) || lines[0] || '';
-    return [{ type: 'text', text: first ? `מצאתי את זה אצלנו: ${first.replace(/^[-•]\s*/, '')}` : 'אין לי תשובה בטוחה לזה, אז העברתי את השאלה לבעל החנות.' }];
+    const text = String(results[0].content);
+    // A product line: "- [id 12] title: 89 ₪, במלאי, 3 options. https://..."
+    const product = /^- \[id \d+\] (.+?): (.+?), (במלאי|אזל מהמלאי)/m.exec(text);
+    if (product) return [{ type: 'text', text: `${product[3] === 'במלאי' ? 'כן, יש במלאי.' : 'כרגע זה אזל מהמלאי.'} ${product[1]} עולה ${product[2]}. רוצים שאשלח קישור?` }];
+    // A policy passage: its first sentence with substance.
+    const passage = text.split('\n').find((l) => l.trim().length > 20 && /[א-ת]/.test(l) && !/^(From the store|Rule:|No products|What this store)/.test(l));
+    if (passage && !/has not written/.test(text)) return [{ type: 'text', text: passage.trim() }];
+    return [{ type: 'text', text: 'אין לי תשובה בטוחה לזה, אז אני בודק מול החנות ומעדכן כאן.' }];
   }
   const text = (blocks.find((b) => b.type === 'text') as { text?: string } | undefined)?.text || '';
   const q = text.replace(/^SERVER CONTEXT[\s\S]*?\n\n/, '').trim();

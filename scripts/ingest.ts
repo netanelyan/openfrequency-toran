@@ -28,7 +28,20 @@ async function storeId(key: string): Promise<number | null> {
 
 try {
   const cmd = args[0];
-  if (cmd === 'verify' || cmd === 'export') {
+  if (cmd === 'embed') {
+    // Policy chunks stored without a vector (the model was not there yet): embedded now, from the stored text, offline.
+    const { embed } = await import('../src/ingest/embed.ts');
+    const { V } = await import('../src/db/index.ts');
+    const rows = await app.db.query<{ id: number; text: string }>('SELECT id, text FROM chunks WHERE embedding IS NULL ORDER BY id');
+    for (let i = 0; i < rows.length; i += 32) {
+      const part = rows.slice(i, i + 32);
+      const vecs = await embed(part.map((r) => r.text), 'passage', app.env);
+      if (!vecs) throw new Error('the embedding model did not load');
+      for (const [j, r] of part.entries()) await app.db.query('UPDATE chunks SET embedding = $2::vector WHERE id = $1', [r.id, V(vecs[j])]);
+      process.stdout.write(`\r  ${Math.min(i + 32, rows.length)}/${rows.length}`);
+    }
+    say(`\n${rows.length} chunks embedded`);
+  } else if (cmd === 'verify' || cmd === 'export') {
     const id = await storeId(args[1]);
     if (!id) throw new Error('no such store');
     if (cmd === 'export') say(await exportPack(app.db, id));

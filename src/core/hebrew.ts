@@ -75,6 +75,13 @@ export function termGroups(text: string): string[][] {
     const g = new Set([w]);
     if (/^[א-ת]/.test(w) && w.length >= 4 && /^[הובלמשכ]/.test(w)) g.add(w.slice(1));
     if (/^[א-ת]/.test(w) && w.length >= 5 && /^(וה|שה|בה|לה|מה|וב|ול|וש)/.test(w)) g.add(w.slice(2));
+    // A light stem for the endings that change most: a singular's ה or construct ת (קערה, קערת), and the plural's
+    // ים/ות (ספלים, קערות). Each form found counts as the word.
+    for (const f of [...g]) {
+      if (!/^[א-ת]+$/.test(f)) continue;
+      if (f.length >= 5 && /(ימ|ות)$/.test(f)) g.add(f.slice(0, -2));
+      else if (f.length >= 4 && /[הת]$/.test(f)) g.add(f.slice(0, -1));
+    }
     if (!groups.some((x) => x[0] === w)) groups.push([...g]);
   }
   return groups;
