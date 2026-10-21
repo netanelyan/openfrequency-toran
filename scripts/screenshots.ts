@@ -35,7 +35,6 @@ const shots: { name: string; path: string; full?: boolean }[] = [
   { name: 'lead', path: '/lead/1' },
   { name: 'review', path: '/review' },
   { name: 'edit', path: '/lead/1/review' },
-  { name: 'chat', path: '/chat/1' },
   { name: 'followups', path: '/followups' },
   { name: 'settings', path: '/settings' },
   { name: 'login', path: '/login' },
@@ -53,7 +52,10 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
     await page.goto(`${base}/lead/1`);
     const href = await page.getAttribute('a[href*="/s/"]', 'href');
     const pitch = href ? new URL(href, base).pathname : null;
-    const list = pitch ? [...shots, { name: 'pitch', path: pitch, full: true }] : shots;
+    // The first WhatsApp demo conversation, from the chats list.
+    await page.goto(`${base}/chats`);
+    const chatHref = await page.getAttribute('.list a[href^="/chat/"]', 'href').catch(() => null);
+    const list = [...shots, ...(chatHref ? [{ name: 'chat', path: chatHref }] : []), ...(pitch ? [{ name: 'pitch', path: pitch, full: true }] : [])];
     for (const s of list) {
       if (only && !only.includes(s.name)) continue;
       if (s.name === 'login') await ctx.clearCookies();

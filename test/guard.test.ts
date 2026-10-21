@@ -62,6 +62,14 @@ test('a cut sentence ending in a colon takes its list; the same category is repl
   assert.match(r.text, /רוצים לשמוע על משלוחים\?$/);
 });
 
+test('a product\'s option count is a fact; a stock quantity never is; a cut takes its colon introduction with it', () => {
+  const opts = buildAllow({ toolTexts: ['- [id 7] בסיס מיטה: 3599 ₪ עד 6099 ₪, במלאי, 3 options. https://s.example/p'], customerTexts: [] });
+  assert.equal(guardReply('בסיס המיטה עולה 3599 ₪ עד 6099 ₪, לפי הגרסה (יש 3 אפשרויות).', opts).redactions.length, 0);
+  assert.equal(guardReply('נשארו רק 3 במלאי.', opts).redactions[0]?.rule, 'stock');
+  const r = guardReply('יש שתי אפשרויות: הקטן עולה 999 ₪. הגדול במלאי.', opts);
+  assert.equal(r.text, 'את המחיר המדויק אני בודק מול החנות ומעדכן כאן. הגדול במלאי.');
+});
+
 test('English replies get English replacement lines; the customer\'s own numbers are allowed; no dashes reach the customer', () => {
   const en = guardReply('The mug is 95 shekels.', allow());
   assert.match(en.text, /^I'm checking the exact price/);

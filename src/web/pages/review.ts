@@ -65,7 +65,7 @@ async function reviewQueue(app: App, r: DashReq) {
 </article>`);
   }
   const ids = rows.map((s) => s.id);
-  const body = `<div class="head"><h1>לבדיקה</h1><p class="sub">${rows.length ? `${rows.length} דפים מחכים לך. כל דף שמאשרים עובר לשליחה.` : 'אין דפים שמחכים.'}</p>${rows.length > 1 ? `<div class="end">${postButton(r.ctx, '/review/approve-all', `לאשר את כל ${rows.length}`, { cls: 'btn primary sm', confirm: `לאשר ${rows.length} דפים?`, fields: { ids: ids.join(',') } })}</div>` : ''}</div>
+  const body = `<div class="head"><h1>לבדיקה</h1><p class="sub">${rows.length === 1 ? 'דף אחד מחכה לך. דף שמאשרים עובר לשליחה.' : rows.length ? `${rows.length} דפים מחכים לך. כל דף שמאשרים עובר לשליחה.` : 'אין דפים שמחכים.'}</p>${rows.length > 1 ? `<div class="end">${postButton(r.ctx, '/review/approve-all', `לאשר את כל ${rows.length}`, { cls: 'btn primary sm', confirm: `לאשר ${rows.length} דפים?`, fields: { ids: ids.join(',') } })}</div>` : ''}</div>
 ${rows.length ? `<div class="cards">${cards.join('')}</div>` : `<div class="empty">${icon('review')}<b>הכול נבדק</b>חנות חדשה נכנסת לכאן כשהדף שלה מוכן. <a href="/leads">ללידים</a></div>`}`;
   return layout({ ...r.ctx, title: 'לבדיקה', active: 'review' }, body);
 }

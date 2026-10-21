@@ -57,11 +57,14 @@ export function numbersIn(text: string): string[] {
   return out;
 }
 
-/** The tools' own bookkeeping (result counts, ids, option counts) is not a fact a customer may be told: its numbers are not allowed. */
+/**
+ * The tools' own bookkeeping (how many results came back, ids) is not a fact a customer may be told: its numbers
+ * are not allowed. A product's number of options is a fact ("in 3 sizes"), and stays.
+ */
 const stripMeta = (t: string) =>
   t
     .replace(/\[(?:id|variant) \d+\]/g, ' ')
-    .replace(/\b\d+ matching products?\b|\(the \d+ closest\)|\b\d+ options\b|\b\d+ answered questions\b/g, ' ');
+    .replace(/\b\d+ matching products?\b|\(the \d+ closest\)|\b\d+ answered questions\b/g, ' ');
 
 export function buildAllow({ toolTexts, customerTexts }: { toolTexts: string[]; customerTexts: string[] }): Allow {
   const numbers = new Set<string>();
@@ -109,7 +112,8 @@ export function violation(sentence: string, allow: Allow): string | null {
   }
   if (bad.length && PERCENT.test(s)) return 'promise';
   if (bad.length && (CURRENCY.test(s) || MONEY_WORD.test(s))) return 'price';
-  if (LEFT_N.test(s) && (bad.length || !allow.stockKnown)) return 'stock';
+  // No tool ever gives a quantity in stock, only in or out: "only 3 left" is invented, whatever number it uses.
+  if (LEFT_N.test(s)) return 'stock';
   if (STOCK.test(s) && !allow.stockKnown) return 'stock';
   if (DELIVERY.test(s) && TIME.test(s)) {
     if (bad.length) return 'delivery';
@@ -162,11 +166,14 @@ export function guardReply(text: string, allow: Allow): GuardResult {
     redactions.push({ rule, sentence: trimmed });
     if (HANDOFF_REASON[rule]) handoffReason ??= HANDOFF_REASON[rule];
     if (trimmed.endsWith(':')) dropContinuation = true;
+    // An introduction ending in a colon ("there are two options:") introduced what was just cut: it goes too.
+    if (out.length && out[out.length - 1].trim().endsWith(':')) redactions.push({ rule: 'continuation', sentence: out.pop()!.trim() });
     if (done.has(rule)) continue;
     done.add(rule);
-    if (lines[rule]) out.push(`${lines[rule]}${sentence.endsWith('\n') ? '\n' : ' '}`);
+    const lead = /^\s*/.exec(sentence)?.[0] || '';
+    if (lines[rule]) out.push(`${lead}${lines[rule]}${sentence.endsWith('\n') ? '\n' : ' '}`);
   }
-  let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim());
+  let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
   if (!result) result = english ? "I'm checking this with the store and will update you here." : 'אני בודק את זה מול החנות ומעדכן כאן.';
   return { text: result, redactions, needsHandoff: Boolean(handoffReason), handoffReason };
 }
