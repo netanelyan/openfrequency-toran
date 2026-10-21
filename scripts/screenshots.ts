@@ -62,7 +62,7 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
       await page.goto(`${base}${s.path}`, { waitUntil: 'load' });
       await page.waitForTimeout(300);
       const file = path.join(out, `${s.name}-${device}-${scheme}.png`);
-      await page.screenshot({ path: file, fullPage: s.full ?? device === 'desk' });
+      await page.screenshot({ path: file, fullPage: s.full ?? false });
       console.log(file);
     }
     await ctx.close();

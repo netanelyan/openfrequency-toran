@@ -46,14 +46,14 @@ async function leadsPage(app: App, r: DashReq) {
   const tab = (s: string, label: string, n: number) => `<a href="/leads?${new URLSearchParams({ ...(s ? { status: s } : {}), ...(all ? { all: '1' } : {}) })}"${status === s ? ' aria-current="true"' : ''}>${label} <span class="n">${n}</span></a>`;
   const body = `<div class="head"><h1>לידים</h1><p class="sub">${all ? 'כל החנויות שנמצאו, גם אלה שלא עברו את הסף.' : 'החנויות שעברו את הסף, מהציון הגבוה לנמוך.'} <a href="/leads?${new URLSearchParams({ ...(status ? { status } : {}), ...(all ? {} : { all: '1' }) })}">${all ? 'רק המתאימים' : 'להציג את כולם'}</a></p></div>
 ${addForm(r)}
-<nav class="tabs" aria-label="סטטוס">${tab('', 'הכול', total)}${STATUS_ORDER.map((s) => tab(s, STATUS_HE[s][0], counts[s] || 0)).join('')}</nav>
+<nav class="tabs mt16" aria-label="סטטוס">${tab('', 'הכול', total)}${STATUS_ORDER.map((s) => tab(s, STATUS_HE[s][0], counts[s] || 0)).join('')}</nav>
 <form class="inline-form mt12" method="get" action="/leads">${status ? `<input type="hidden" name="status" value="${esc(status)}">` : ''}${all ? '<input type="hidden" name="all" value="1">' : ''}<input type="search" name="q" value="${esc(q)}" placeholder="חיפוש לפי שם או דומיין"><button class="btn" type="submit">${icon('search')}חיפוש</button></form>
 <section class="panel mt16">${rows.length ? rows.map((x) => leadRow(x)).join('') : `<div class="empty">${icon('leads')}<b>אין כאן לידים</b>אפשר להוסיף חנות לפי כתובת, או להריץ חיפוש בהגדרות.</div>`}</section>`;
   return layout({ ...r.ctx, title: 'לידים', active: 'leads' }, body);
 }
 
 export function addForm(r: DashReq) {
-  return `<form class="panel inline-form" method="post" action="/leads/add">${csrfField(r.ctx)}<input type="url" name="url" placeholder="כתובת של חנות, למשל https://example.co.il" required inputmode="url" dir="ltr"><button class="btn primary" type="submit">${icon('plus')}להוסיף ולבנות דף</button></form>`;
+  return `<form class="panel inline-form" method="post" action="/leads/add">${csrfField(r.ctx)}<input type="url" name="url" placeholder="https://store.co.il" aria-label="כתובת של חנות" required inputmode="url" dir="ltr"><button class="btn primary" type="submit">${icon('plus')}להוסיף ולבנות דף</button></form>`;
 }
 
 async function leadPage(app: App, r: DashReq, id: number) {
@@ -70,7 +70,7 @@ async function leadPage(app: App, r: DashReq, id: number) {
   const target = contactTarget(s);
   const ready = s.page_built_at && s.approved_at;
 
-  const parts = (s.score_breakdown || []).map((f: any) => `<li class="${f.points < 0 ? 'neg' : ''}"><span>${esc(FACTOR_HE[f.factor] || f.factor)}</span>${f.max ? vbar(f.points, f.max) : '<span></span>'}<b>${f.points}${f.max ? `/${f.max}` : ''}</b><span class="ev">${esc(f.evidence)}</span></li>`).join('');
+  const parts = (s.score_breakdown || []).map((f: any) => `<li class="${f.points < 0 ? 'neg' : ''}"><span>${esc(FACTOR_HE[f.factor] || f.factor)}</span>${f.max ? vbar(f.points, f.max) : '<span></span>'}<b>${f.points}${f.max ? `/${f.max}` : ''}</b><span class="ev" dir="auto">${esc(f.evidence)}</span></li>`).join('');
 
   const sendBox = () => {
     if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${s.platform === 'shopify' ? 'אפשר לבנות אותו מכאן.' : `הפלטפורמה ${esc(PLATFORM_HE[s.platform] || s.platform)} עוד לא נקלטת בשלב הזה.`}</p>`;
