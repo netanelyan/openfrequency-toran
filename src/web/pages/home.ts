@@ -58,6 +58,9 @@ ${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><s
   return layout({ ...r.ctx, title: 'שיחות', active: 'chats' }, body);
 }
 
+/** WhatsApp's own markup, as the phone shows it: _italic_ and *bold* (applied to already escaped text). */
+const waMarkup = (html: string) => html.replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1<i>$2</i>').replace(/(^|\s)\*([^*\n]+)\*(?=\s|$)/g, '$1<b>$2</b>');
+
 const maskPhone = (p: string | null) => (p ? `+${p.slice(0, 5)}•••${p.slice(-3)}` : '');
 
 const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', continuation: 'המשך של משפט שנחתך' };
@@ -74,7 +77,7 @@ async function chat(app: App, r: DashReq, id: number) {
       ...(m.guard || []).filter((g: any) => g.rule !== 'continuation').map((g: any) => `<span class="warn">${icon('alert')} השומר חתך (${esc(RULE_HE[g.rule] || g.rule)}): "${esc(g.sentence)}"</span>`),
       ...(m.handoff ? [`<span class="bad">${icon('hand')} הועבר אליך (${esc(m.handoff.reason)}): ${esc(m.handoff.summary)}</span>`] : []),
     ] : [];
-    return `<div class="b ${cls}">${esc(m.text)}<span class="at">${esc(stamp(m.at))}</span></div>${notes.length ? `<div class="note">${notes.join('')}</div>` : ''}`;
+    return `<div class="b ${cls}">${waMarkup(esc(m.text))}<span class="at">${esc(stamp(m.at))}</span></div>${notes.length ? `<div class="note">${notes.join('')}</div>` : ''}`;
   });
   const body = `<a class="back" href="/chats">${icon('chev')}שיחות</a>
 <div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub"><bdi class="ltr">${esc(maskPhone(c.peer) || c.channel)}</bdi> · התחילה ${esc(stamp(c.started_at))} · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}</p><div class="end"><a class="btn sm" href="/lead/${c.sid}">לליד</a></div></div>

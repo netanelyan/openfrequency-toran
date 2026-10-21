@@ -111,7 +111,7 @@ ${iconLinks()}
 
 <main class="page" data-slug="${esc(d.store.slug)}">
   <section class="letter" data-depth="25">
-    ${logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}" referrerpolicy="no-referrer" data-hide-on-error>` : ""}
+    ${logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}" referrerpolicy="no-referrer" loading="lazy" data-hide-on-error>` : ""}
     <p class="eyebrow">הכנתי את זה בשביל <bdi>${esc(name)}</bdi></p>
     <h1>בניתי עוזר לוואטסאפ של ${esc(name)}, והוא כבר מכיר את ${n > 1 ? `${n} המוצרים` : 'המוצרים'} שלכם.</h1>
     <p class="lede">הוא עונה ללקוחות על מוצרים, מחירים, מלאי ומשלוחים, רק לפי מה שכתוב אצלכם באתר. כשהוא לא יודע משהו, הוא אומר שהוא בודק ומעביר אליכם. אפשר לנסות אותו עכשיו מהטלפון, מהצד של הלקוח.</p>

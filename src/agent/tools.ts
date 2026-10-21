@@ -201,7 +201,11 @@ async function getPolicy(c: ToolContext, input: any): Promise<ToolOutcome> {
   for (const o of overrides) if (chunks.some((ch) => ch.kind === o.kind) || matched(o.title) > 0) parts.push(`From the store's ${o.kind} policy (${o.title}):\n${o.override_text}`);
   for (const ch of chunks) if (!overrides.some((o) => o.kind === ch.kind)) parts.push(`From the store's ${ch.kind} page (${ch.title}, ${ch.url}):\n${ch.text}`);
   if (!parts.length) return { ok: true, content: `The store has not written anything about "${topic}".\nRule: you do not know the answer. Do not guess what is usual. Tell the customer you are checking with the store and call handoff with reason "unknown".` };
-  return { ok: true, content: `${parts.join('\n\n')}\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know.`, facts: parts };
+  return {
+    ok: true,
+    content: `${parts.join('\n\n')}\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the customer asked about installation and they are about shipping), say the store has not written about it, tell the customer you are checking with the store, and call handoff with reason "unknown" in this same answer.`,
+    facts: parts,
+  };
 }
 
 async function cartLink(c: ToolContext, input: any): Promise<ToolOutcome> {

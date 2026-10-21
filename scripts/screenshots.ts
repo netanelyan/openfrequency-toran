@@ -37,7 +37,6 @@ const shots: { name: string; path: string; full?: boolean }[] = [
   { name: 'edit', path: '/lead/1/review' },
   { name: 'followups', path: '/followups' },
   { name: 'settings', path: '/settings' },
-  { name: 'login', path: '/login' },
 ];
 
 for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk', { width: 1440, height: 900 }]] as const) {
@@ -55,12 +54,13 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
     // The first WhatsApp demo conversation, from the chats list.
     await page.goto(`${base}/chats`);
     const chatHref = await page.getAttribute('.list a[href^="/chat/"]', 'href').catch(() => null);
-    const list: { name: string; path: string; full?: boolean }[] = [...shots, ...(chatHref ? [{ name: 'chat', path: chatHref }] : []), ...(pitch ? [{ name: 'pitch', path: pitch, full: true }] : [])];
+    const list: { name: string; path: string; full?: boolean }[] = [...shots, ...(chatHref ? [{ name: 'chat', path: chatHref }] : []), ...(pitch ? [{ name: 'pitch', path: pitch, full: true }] : []), { name: 'login', path: '/login' }];
     for (const s of list) {
       if (only && !only.includes(s.name)) continue;
       if (s.name === 'login') await ctx.clearCookies();
-      await page.goto(`${base}${s.path}`, { waitUntil: 'load' });
-      await page.waitForTimeout(300);
+      await page.goto(`${base}${s.path}`, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('load', { timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(600);
       const file = path.join(out, `${s.name}-${device}-${scheme}.png`);
       await page.screenshot({ path: file, fullPage: s.full ?? false });
       console.log(file);
