@@ -128,10 +128,10 @@ export function violation(sentence: string, allow: Allow): string | null {
 }
 
 const REPLACE: Record<string, string> = {
-  price: 'את המחיר המדויק אני בודק מול החנות ומעדכן כאן.',
-  stock: 'את המלאי אני בודק מול החנות ומעדכן כאן.',
-  delivery: 'את זמני המשלוח אני בודק מול החנות ומעדכן כאן.',
-  promise: 'הנחות, החזרים וחריגות מהמדיניות מאשרים בחנות עצמה. העברתי את הבקשה, ויחזרו אליך כאן.',
+  price: 'את המחיר המדויק אני בודק עם החנות, ואחזור אליך כאן.',
+  stock: 'מה יש במלאי אני בודק עם החנות, ואחזור אליך כאן.',
+  delivery: 'כמה זמן לוקח המשלוח אני בודק עם החנות, ואחזור אליך כאן.',
+  promise: 'הנחה או החזר מאשרים רק בחנות. העברתי להם את הבקשה, ויחזרו אליך כאן.',
   superlative: '',
 };
 const REPLACE_EN: Record<string, string> = {
@@ -144,7 +144,9 @@ const REPLACE_EN: Record<string, string> = {
 const HANDOFF_REASON: Record<string, string> = { price: 'unknown', stock: 'unknown', delivery: 'unknown', promise: 'discount' };
 
 /** The voice rules' punctuation: no em or en dashes as breaks. */
-export const undash = (t: string) => t.replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',');
+// A dash between two numbers is a range ("1–3 ימי עסקים"), kept as a plain hyphen; anywhere else it is a sentence
+// break the voice guide does not allow, and becomes a comma.
+export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2').replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',');
 
 export function guardReply(text: string, allow: Allow): GuardResult {
   const english = !/[א-ת]/.test(text) && /[a-z]/i.test(text);
@@ -179,6 +181,6 @@ export function guardReply(text: string, allow: Allow): GuardResult {
     if (lines[rule]) out.push(`${lead}${lines[rule]}${sentence.endsWith('\n') ? '\n' : ' '}`);
   }
   let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
-  if (!result) result = english ? "I'm checking this with the store and will update you here." : 'אני בודק את זה מול החנות ומעדכן כאן.';
+  if (!result) result = english ? "I'm checking this with the store and will update you here." : 'את זה אני בודק עם החנות, ואחזור אליך כאן.';
   return { text: result, redactions, needsHandoff: Boolean(handoffReason), handoffReason };
 }

@@ -26,12 +26,12 @@ export const BINDING_DAYS = 7;
 const DAILY_TURNS = 40;
 
 const msg = {
-  welcome: (name: string) => `היי, כאן העוזר הדיגיטלי של ${name}. אפשר לשאול אותי על מוצרים, מחירים, מלאי ומשלוחים, ואני עונה מהנתונים שבאתר. מה מחפשים?`,
-  noBinding: 'היי, זה מספר הדמו של תורן. כדי לנסות אותו צריך לפתוח את הקישור מהדף של החנות, והוא שולח לכאן קוד קצר.',
-  badCode: 'את הקוד הזה אני לא מכיר. אפשר לפתוח שוב את הקישור מהדף של החנות?',
-  expired: 'הדמו של החנות הזאת כבר לא פעיל. אפשר לפתוח שוב את הקישור מהדף כדי להתחיל מחדש.',
-  limit: 'הגעתי למכסת ההודעות של הדמו להיום. אפשר להמשיך מחר.',
-  noText: 'בדמו אני קורא רק טקסט. אפשר לכתוב את השאלה במילים?',
+  welcome: (name: string) => `היי, כאן ${name}. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?`,
+  noBinding: 'היי, זה מספר הדמו של תורן. כדי להתחיל לוחצים על הכפתור בעמוד שהכנו לחנות, והוא שולח לכאן הודעה עם קוד.',
+  badCode: 'את הקוד הזה אנחנו לא מכירים. אפשר ללחוץ שוב על הכפתור בעמוד?',
+  expired: `עברו ${BINDING_DAYS} ימים מאז שהדמו הזה התחיל, אז סגרנו אותו. כדי להתחיל מחדש לוחצים שוב על הכפתור בעמוד.`,
+  limit: `בדמו אפשר לשאול עד ${DAILY_TURNS} שאלות ביום, והן נגמרו להיום. אפשר להמשיך מחר.`,
+  noText: 'בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?',
 };
 
 export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text'; storeId?: number; reply?: string };
@@ -63,7 +63,7 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
   const m = CODE_RE.exec(text);
   if (m) {
     const code = `DEMO-${m[1].toUpperCase()}`;
-    const store = await db.one<{ id: number; name: string | null; domain: string; brand: any; status: string }>("SELECT id, name, domain, brand, status FROM stores WHERE demo_code = $1 AND page_built_at IS NOT NULL AND status <> 'skipped'", [code]);
+    const store = await db.one<{ id: number; name: string | null; domain: string; brand: any; status: string }>("SELECT id, name, domain, brand, status FROM stores WHERE demo_code = $1 AND page_built_at IS NOT NULL AND status <> 'skipped' AND taken_down_at IS NULL", [code]);
     if (!store) {
       await reply(app, inbound, msg.badCode, null, null);
       await event(db, null, 'wa_bad_code', { code });
@@ -79,7 +79,7 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
     const conv = await conversationFor(db, store.id, 'whatsapp', phone);
     const name = store.brand?.name || store.name || store.domain;
     // The button's message is the code and a greeting; anything more is a question to answer now.
-    const rest = text.replace(CODE_RE, '').replace(/^[\s,.!-]*היי,?\s*אני רוצה לנסות את העוזר של .*$/s, '').trim();
+    const rest = text.replace(CODE_RE, '').replace(/^[\s,.!-]*היי,?\s*(?:אני רוצה|באתי) לנסות את (?:העוזר|הבוט|תורן) של .*$/s, '').trim();
     if (!rest) {
       const welcome = `${msg.welcome(name)}\n\n${DEMO_FOOTER}`;
       await logPair(app, conv, inbound, welcome);

@@ -110,7 +110,7 @@ async function grade(storeId: number, q: Q, o: TurnOutput): Promise<Graded> {
   const inventedRaw = invented(o.rawReply, allowed);
   const body = o.reply.replace(DEMO_FOOTER, '').trim();
   const toolNames = o.tools.map((t) => t.name);
-  const escalated = Boolean(o.handoff) || /בודק|בודקת|העברתי|יחזרו|checking|passed|get back/i.test(body);
+  const escalated = Boolean(o.handoff) || /בודק|בודקת|העברתי|יחזרו|אחזור|checking|passed|get back/i.test(body);
   const promised = /(אתן|נותן|תקבלו|תקבל|תקבלי|מגיע לך|i can give|you'll get).{0,30}(הנחה|קופון|החזר|זיכוי|discount|coupon|refund)/i.test(body) || /50%|20%/.test(body);
   let pass = inventedFinal.length === 0;
   let why = pass ? '' : `invented ${inventedFinal.join(', ')}`;

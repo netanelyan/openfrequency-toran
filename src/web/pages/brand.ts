@@ -18,7 +18,7 @@ export function brandPage(ctx: PageCtx): string {
 <div class="marks">
   <section class="panel"><header><h2>תורן</h2><span class="chip">${COLORS.toran}</span></header>
     ${row(toranMark)}
-    <p class="small muted m0">אייקון האפליקציה, הפביקון, הכותרת של הדשבורד, דפי ההצגה ומסך הכניסה.</p>
+    <p class="small muted m0">אייקון האפליקציה, הפביקון, הכותרת של הדשבורד, דפי הדמו ומסך הכניסה.</p>
   </section>
   <section class="panel"><header><h2><span class="ltr">OpenFrequency</span></h2><span class="chip">${COLORS.openfrequency}</span></header>
     ${row(ofMark)}
@@ -37,7 +37,7 @@ export function brandPage(ctx: PageCtx): string {
 </section>
 <section class="panel mt24"><header><h2>צבעים</h2></header>
   <div class="swatches">
-    ${swatch('c-toran', 'ירוק תורן', COLORS.toran, 'הסימן, וכפתור הדמו בוואטסאפ בדפי ההצגה')}
+    ${swatch('c-toran', 'ירוק תורן', COLORS.toran, 'הסימן, וכפתור הוואטסאפ בדפי הדמו')}
     ${swatch('c-accent', 'כחול', COLORS.accent, 'כפתורים וקישורים')}
     ${swatch('c-of', 'OpenFrequency', COLORS.openfrequency, 'הסימן בתחתית בלבד')}
     ${swatch('c-teder', 'תדר', COLORS.teder, 'לא בשימוש כאן')}
@@ -53,7 +53,7 @@ export function brandPage(ctx: PageCtx): string {
     <dt>כפתור</dt><dd class="ltr">pill</dd>
     <dt>גופן</dt><dd>גופן המערכת: <span class="ltr">SF</span> במכשירי אפל, <span class="ltr">Segoe UI</span> ו־<span class="ltr">Noto Sans Hebrew</span> בשאר</dd>
   </dl>
-  <p class="small muted mt16 m0">הכללים: לא מותחים, לא צובעים מחדש ולא מציירים מחדש סימן. הכחול לכפתורים ולקישורים. הירוק רק לסימן של תורן ולכפתור הדמו. בדף הצגה, הבועות של שיחת הדוגמה והאות הראשונה של החנות בצבע של החנות עצמה.</p>
+  <p class="small muted mt16 m0">הכללים: לא מותחים, לא צובעים מחדש ולא מציירים מחדש סימן. הכחול לכפתורים ולקישורים. הירוק רק לסימן של תורן ולכפתור הדמו. בדף דמו, הבועות של שיחת הדוגמה והאות הראשונה של החנות בצבע של החנות עצמה.</p>
 </section>`,
   );
 }

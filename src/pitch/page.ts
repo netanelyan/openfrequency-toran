@@ -1,180 +1,185 @@
 import type { App } from '../app.ts';
 import { iconLinks, ofMark, toranMark } from '../brand.ts';
-import { inkOn, readableShade, storeColor, normHex, hsl } from '../ingest/brand.ts';
+import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
 import { esc } from '../web/ui.ts';
 import { money } from '../agent/tools.ts';
+import { getOffer, ofWhatsapp, priceSentence, type Offer } from '../offer.ts';
+import { pitchUrl } from '../outreach.ts';
 import { shortTitle, type SampleChat } from './build.ts';
+import { isPublic, pitchGaps, type Gap } from './ready.ts';
 
-// The pitch page: /s/<slug>, one per store, the page the shop owner opens from my
-// message. Hebrew, right to left, phone first, never indexed.
+// The pitch page: /s/<slug>, one per store, the page a shop owner opens from our
+// message. Hebrew, right to left, one column, phone first, light only, never indexed.
 //
-// It reads as a short letter from Netanel to the owner, in the hebrew-voice guide's
-// rules: first person, the thing said first, the store's own facts instead of claims
-// (its product count, its shipping and returns lines quoted), what does not work yet
-// said plainly, no slogans, no triads, no colons in headings, no grid of identical
-// cards. The owner is addressed in the plural ("לכם"), which names the business and
-// fits any owner.
+// The speaker is OpenFrequency, the company, in the first person plural ("בנינו",
+// "תכתבו לנו"), in the hebrew-voice guide's rules: the thing said first, the store's own
+// facts instead of claims, no slogans, no triads, no colons in headings. The agent in
+// the sample chat speaks as the store. The owner is addressed in the plural ("לכם").
 //
-// Colour: the store's own colour on the sample chat's bubbles and its initial; Toran
-// green on the WhatsApp demo button and the Toran mark only; the system's blue nowhere
-// on this page except links. The per-store colours come from /s/<slug>/theme.css (the
-// CSP allows no inline style).
+// The look is the Teder family's: silver wallpaper, frosted glass panels, pill buttons.
+// Colour: the store's own colour on its initial and its chat bubbles only, darkened
+// until white text on it passes 4.5:1; Toran green on the WhatsApp buttons and the Toran
+// mark; OpenFrequency's mark small, in the top line and the footer. The per-store colour
+// comes from /s/<slug>/theme.css (the CSP allows no inline style).
+//
+// Nothing on the page is a guess. A field that is missing holds the page back
+// (pitch/ready.ts); the owner's own view shows the page anyway, with a visible
+// [placeholder] where the gap is and a note on top saying why nobody else can see it.
 
 export type PitchData = {
-  store: { id: number; name: string; domain: string; url: string; slug: string; demo_code: string; brand: any; brand_override: any; config: any };
+  store: { id: number; name: string | null; domain: string; url: string; slug: string; demo_code: string; brand: any; brand_override: any; config: any; approved_at: any; taken_down_at: any; status: string };
+  name: string | null;
+  color: string | null;
   chat: SampleChat;
   product: { title: string; image: string | null; url: string; price_min: number | null } | null;
   counts: { products: number; available: number };
-  shipping: string | null;
-  returns: string | null;
-  missing: string[];
+  pages: { shipping: boolean; returns: boolean };
+  offer: Offer;
+  gaps: Gap[];
+  public: boolean;
 };
 
 export async function pitchData(app: App, slug: string): Promise<PitchData | null> {
-  const store = await app.db.one<any>('SELECT id, name, domain, url, slug, demo_code, brand, brand_override, config FROM stores WHERE slug = $1 AND page_built_at IS NOT NULL', [slug]);
+  const store = await app.db.one<any>('SELECT id, name, domain, url, slug, demo_code, brand, brand_override, config, approved_at, taken_down_at, status FROM stores WHERE slug = $1 AND page_built_at IS NOT NULL', [slug]);
   if (!store) return null;
+  const brand = { ...(store.brand || {}), ...(store.brand_override || {}) };
   const pitch = await app.db.one<any>('SELECT product_id, sample_chat FROM pitches WHERE store_id = $1', [store.id]);
   const product = pitch?.product_id ? await app.db.one<any>('SELECT title, image, url, price_min::float FROM products WHERE id = $1', [pitch.product_id]) : null;
   const counts = await app.db.one<any>('SELECT COUNT(*)::int AS products, COUNT(*) FILTER (WHERE available)::int AS available FROM products WHERE store_id = $1 AND gone_at IS NULL', [store.id]);
-  const pol = await app.db.query<{ kind: string; text: string; override_text: string | null }>("SELECT kind, text, override_text FROM policies WHERE store_id = $1 AND kind IN ('shipping', 'returns')", [store.id]);
-  // The one line of a policy worth quoting to its owner: the sentence that says something a customer asks (a cost,
-  // a time, a window), not the page's title, a company registration line or a bare "1.".
-  const KEY: Record<string, RegExp> = { shipping: /₪|ש"ח|ימי עסקים|ימים|חינם|עלות המשלוח|דמי משלוח|משלוח עד|איסוף/, returns: /ימים|יום|החזר|החלפ|זיכוי|ביטול/ };
-  const firstSentence = (kind: string) => {
-    const p = pol.find((x) => x.kind === kind);
-    if (!p) return null;
-    const sentences = (p.override_text || p.text)
-      .split(/\n|(?<=[.!?])\s+/)
-      .map((l) => l.replace(/^[\s\d.)•*-]+/, '').trim())
-      .filter((l) => l.length >= 30 && l.length <= 220 && /[א-ת]/.test(l) && !/:$/.test(l) && !/בע"מ|בע״מ|ח\.פ|ע\.מ|מדיניות (משלוחים|החזרות)\s*[-–|]|תקנון|כל הזכויות|חוק|תקנות|התשמ|התשע/.test(l));
-    // A short concrete sentence (a number in it, under 140 characters) beats a long one; then any concrete one.
-    const s = sentences.find((l) => KEY[kind].test(l) && /\d/.test(l) && l.length <= 140) || sentences.find((l) => KEY[kind].test(l) && /\d/.test(l)) || sentences.find((l) => KEY[kind].test(l));
-    if (!s) return null;
-    return s.length > 160 ? `${s.slice(0, 157)}...` : s;
+  const kinds = new Set((await app.db.query<{ kind: string }>("SELECT DISTINCT kind FROM policies WHERE store_id = $1 AND kind IN ('shipping', 'returns')", [store.id])).map((p) => p.kind));
+  const gaps = await pitchGaps(app, store);
+  return {
+    store,
+    name: displayName(store.brand_override?.name, store.brand?.name, store.name),
+    color: brandColor(brand),
+    chat: (pitch?.sample_chat || []).length >= 4 ? pitch.sample_chat : [],
+    product,
+    counts,
+    pages: { shipping: kinds.has('shipping'), returns: kinds.has('returns') },
+    offer: await getOffer(app.db),
+    gaps,
+    public: isPublic(store, gaps),
   };
-  const missing = [!pol.some((p) => p.kind === 'shipping') && 'משלוחים', !pol.some((p) => p.kind === 'returns') && 'החזרות'].filter(Boolean) as string[];
-  return { store, chat: pitch?.sample_chat || [], product, counts, shipping: firstSentence('shipping'), returns: firstSentence('returns'), missing };
 }
 
-/** The store's colours for its page, as CSS custom properties. */
+/** The store's colour for its page, darkened until white text on it passes 4.5:1. Graphite only in the owner's preview of a page held for its colour. */
 export function themeCss(d: PitchData): string {
-  const brand = { ...(d.store.brand || {}), ...(d.store.brand_override || {}) };
-  const main = storeColor(brand);
-  const bubble = readableShade(main);
-  const second = (brand.colors || []).map(normHex).find((c: string | null) => c && c !== main) || main;
-  const { h } = hsl(main);
-  return `:root{--store:${main};--store-bubble:${bubble};--store-ink:${inkOn(bubble)};--store-2:${second};--store-hue:${Math.round(h)}}`;
+  const c = readableShade(d.color || '#4a4a52');
+  return `:root{--store:${c};--store-ink:${inkOn(c)}}`;
 }
 
-const initialOf = (name: string) => (String(name).trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase();
+const initialOf = (name: string | null) => (String(name || '').trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase();
+
+/** The prefix of outreach.le: "ל" before a Hebrew name, "ל־" before any other. */
+const le = (name: string) => (/^[א-ת]/.test(name) ? 'ל' : 'ל־');
+
+const digits = (s: unknown) => String(s || '').replace(/\D/g, '');
 
 export function waLink(env: Record<string, string | undefined>, code: string, name: string): string | null {
-  const num = String(env.DEMO_WA_NUMBER || '').replace(/\D/g, '');
+  const num = digits(env.DEMO_WA_NUMBER);
   if (!num) return null;
-  return `https://wa.me/${num}?text=${encodeURIComponent(`${code} היי, אני רוצה לנסות את העוזר של ${name}`)}`;
+  return `https://wa.me/${num}?text=${encodeURIComponent(`${code} היי, באתי לנסות את תורן של ${name}`)}`;
 }
 
 function bubble(m: { role: string; text: string }) {
-  return `<div class="msg ${m.role === 'agent' ? 'out' : 'in'}"><p>${esc(m.text).replace(/(https?:\/\/[^\s<]+)/g, '<span class="lnk">$1</span>').replace(/\n/g, '<br>')}</p></div>`;
+  const text = esc(m.text).replace(/(https?:\/\/[^\s<]+)/g, '<span class="lnk" dir="ltr">$1</span>').replace(/\n/g, '<br>');
+  return `<div class="msg ${m.role === 'agent' ? 's' : 'c'}"><p>${text}</p></div>`;
 }
 
-export function pitchPage(d: PitchData, { env, preview = false }: { env: Record<string, string | undefined>; preview?: boolean }): string {
-  const brand = { ...(d.store.brand || {}), ...(d.store.brand_override || {}) };
-  const name = String(brand.name || d.store.name || d.store.domain);
-  const logo = typeof brand.logo === 'string' && /^https:\/\//.test(brand.logo) ? brand.logo : null;
-  const link = waLink(env, d.store.demo_code, name);
-  const owner = { name: env.TORAN_OWNER_NAME || 'נתנאל', wa: String(env.TORAN_OWNER_WHATSAPP || '').replace(/\D/g, ''), email: env.TORAN_OWNER_EMAIL || '' };
-  const currency = d.store.config?.currency || 'ILS';
-  const n = d.counts.products;
-  const productName = d.product ? shortTitle(d.product.title) : null;
-  const initial = `<span class="initial" aria-hidden="true">${esc(initialOf(name))}</span>`;
+const waIcon = () => `<svg class="wa-i" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.2 2.2 2.2 0 0 0 .1-1.3c0-.1-.2-.2-.4-.3Z"/></svg>`;
 
-  const knows = [
-    `<li><b class="num">${n}</b> מוצרים, <span class="num">${d.counts.available}</span> מהם במלאי היום. את המחירים והמלאי הוא קורא מהאתר, ואני מרענן אותם פעם ביום.</li>`,
-    d.shipping ? `<li>על משלוחים הוא עונה לפי הדף שלכם, שכתוב בו: <q>${esc(d.shipping)}</q></li>` : '',
-    d.returns ? `<li>על החזרות והחלפות, לפי מה שכתבתם: <q>${esc(d.returns)}</q></li>` : '',
-    d.missing.length ? `<li>לא מצאתי אצלכם דף על ${d.missing.join(' ועל ')}, אז על זה הוא לא ממציא תשובה. הוא כותב ללקוח שהוא בודק, ומעביר אליכם.</li>` : '',
-  ].filter(Boolean);
+export function pitchPage(d: PitchData, { env, owner = false, preview = false }: { env: Record<string, string | undefined>; owner?: boolean; preview?: boolean }): string {
+  const ph = (label: string) => `<mark class="ph" dir="rtl">${esc(label)}</mark>`;
+  const nameText = d.name || d.store.domain;
+  const name = d.name ? `<bdi>${esc(d.name)}</bdi>` : ph('[שם החנות]');
+  const leName = d.name ? `${le(d.name)}${name}` : `ל${name}`;
+  const demo = waLink(env, d.store.demo_code, nameText);
+  const of = ofWhatsapp(env);
+  const url = pitchUrl(env, d.store.slug);
+  const ofLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`היי, לגבי העמוד שהכנתם ${le(nameText)}${nameText}`)}` : null;
+  const downLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`היי, אפשר להוריד את העמוד שהכנתם ${le(nameText)}${nameText}? ${url}`)}` : null;
+  const n = d.counts.products;
+  const initial = (cls = 'initial') => `<span class="${cls}" aria-hidden="true">${esc(initialOf(d.name))}</span>`;
+  const currency = d.store.config?.currency || 'ILS';
+  const productName = d.product ? shortTitle(d.product.title) : null;
+
+  // What we read, said with what was really found: "על 14 המוצרים ועל עמודי המשלוחים וההחזרות".
+  const prods = n === 1 ? 'המוצר' : `${n.toLocaleString('he-IL')} המוצרים`;
+  const pages = d.pages.shipping && d.pages.returns ? 'עמודי המשלוחים וההחזרות' : d.pages.shipping ? 'עמוד המשלוחים' : d.pages.returns ? 'עמוד ההחזרות' : null;
+  const read = pages ? `עברנו על האתר שלכם, על ${prods} ועל ${pages}. תורן כבר מכיר אותם.` : `עברנו על האתר שלכם ועל ${prods} שבו. תורן כבר מכיר ${n === 1 ? 'אותו' : 'אותם'}.`;
+
+  const greenBtn = (label: string, cls = '') => (demo ? `<a class="wa ${cls}" href="${esc(demo)}" data-demo rel="noopener">${waIcon()}<span>${label}</span></a>` : `<span class="wa off ${cls}">${waIcon()}<span>${owner ? ph('[מספר הדמו]') : label}</span></span>`);
+  const held = owner && !d.public ? `<aside class="held" role="note"><b>${d.store.taken_down_at ? 'העמוד הזה הוסר. רואים אותו רק מהדשבורד.' : 'את העמוד הזה רואים רק מהדשבורד, עוד לא לכולם.'}</b>${d.gaps.length ? `<ul>${d.gaps.map((g) => `<li>${esc(g.he)}</li>`).join('')}</ul>` : !d.store.approved_at && !d.store.taken_down_at ? '<p>הוא נפתח לכולם אחרי שמאשרים אותו בבדיקה.</p>' : ''}</aside>` : '';
 
   return `<!doctype html>
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#f4f4f6">
 <meta name="robots" content="noindex, nofollow, noarchive">
-<title>העוזר של ${esc(name)} בוואטסאפ · תורן</title>
-<meta name="description" content="דמו של עוזר וואטסאפ שעונה ללקוחות של ${esc(name)}, מהמחירים והמדיניות שבאתר.">
+<title>בנינו ${esc(le(nameText))}${esc(nameText)} תורן לוואטסאפ</title>
+<meta name="description" content="${esc(read)}">
+<link rel="preload" href="/static/fonts/heebo-hebrew.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/brand.css">
 <link rel="stylesheet" href="/static/pitch.css">
 <link rel="stylesheet" href="/s/${esc(d.store.slug)}/theme.css">
 ${iconLinks()}
 </head>
 <body${preview ? ' class="preview"' : ''}>
-<header class="bar">
-  <div class="who">${initial}<span class="sname">${esc(name)}</span></div>
-  <div class="by">${toranMark(26, { label: 'תורן' })}<span>תורן</span></div>
-</header>
+<div class="wrap" data-slug="${esc(d.store.slug)}">
+  <header class="top">
+    <span class="for">עמוד שהכנו בשביל ${name}</span>
+    <span class="by">${ofMark(16, { label: null })}<span dir="ltr">OpenFrequency</span></span>
+  </header>
+  ${held}
 
-<main class="page" data-slug="${esc(d.store.slug)}">
-  <section class="letter" data-depth="25">
-    ${logo ? `<img class="logo" src="${esc(logo)}" alt="${esc(name)}" referrerpolicy="no-referrer" loading="lazy" data-hide-on-error>` : ""}
-    <p class="eyebrow">הכנתי את זה בשביל <bdi>${esc(name)}</bdi></p>
-    <h1>בניתי עוזר לוואטסאפ של ${esc(name)}, והוא כבר מכיר את ${n > 1 ? `${n} המוצרים` : 'המוצרים'} שלכם.</h1>
-    <p class="lede">הוא עונה ללקוחות על מוצרים, מחירים, מלאי ומשלוחים, רק לפי מה שכתוב אצלכם באתר. כשהוא לא יודע משהו, הוא אומר שהוא בודק ומעביר אליכם. אפשר לנסות אותו עכשיו מהטלפון, מהצד של הלקוח.</p>
-    <div class="cta">
-      ${link ? `<a class="wa" href="${esc(link)}" data-demo rel="noopener">${waIcon()}<span>לנסות את הדמו בוואטסאפ</span></a>` : `<span class="wa off">${waIcon()}<span>מספר הדמו עוד לא מוגדר</span></span>`}
-      <p class="small">נפתחת שיחה עם הודעה מוכנה שמתחילה בקוד <bdi class="code">${esc(d.store.demo_code)}</bdi>. שולחים אותה, ומשם כל שאלה נענית כאילו נשלחה ל־${esc(name)}.</p>
+  <section class="hero">
+    <div class="marks">${initial()}${toranMark(64, { label: 'תורן' })}</div>
+    <h1>בנינו ${leName} תורן לוואטסאפ</h1>
+    <p class="lede">${esc(read)} אפשר לכתוב לו עכשיו כמו לקוח ולראות מה הוא עונה.</p>
+    ${greenBtn('לכתוב לו בוואטסאפ', 'big')}
+    <p class="quiet">הוא רץ על מספר שלנו, אז אף לקוח שלכם לא רואה אותו. ההודעה שנפתחת מתחילה בקוד <bdi class="code">${esc(d.store.demo_code)}</bdi>, וככה הוא יודע שזו החנות שלכם.</p>
+  </section>
+
+  <section class="glass chat" data-depth="25" aria-label="שיחת דוגמה">
+    <header class="ch-head">${initial('initial sm')}<div><b>${name}</b><small>שיחה על מוצר אמיתי מהאתר שלכם</small></div></header>
+    ${d.product ? `<div class="prod">${d.product.image ? `<img src="${esc(d.product.image)}" alt="" width="52" height="52" referrerpolicy="no-referrer" data-hide-on-error>` : ''}<div><b>${esc(productName || '')}</b>${d.product.price_min != null ? `<small>${esc(money(d.product.price_min, currency))}</small>` : ''}</div></div>` : ''}
+    <div class="msgs">${d.chat.length ? d.chat.map(bubble).join('') : owner ? `<p class="empty">${ph('[שיחת הדוגמה עוד לא נבנתה]')}</p>` : ''}</div>
+  </section>
+  <p class="caption">את השאלות כתבנו אנחנו. התשובות הן מה שתורן ענה באמת, ולא שינינו בהן מילה.</p>
+
+  <section class="if" data-depth="50">
+    <h2>אם תחברו אותו למספר של החנות</h2>
+    <ul>
+      <li>לקוחות יקבלו תשובות כאלה גם כשאתם באמצע יום עמוס, או כבר ישנים.</li>
+      <li>שאלה שהוא לא יודע לענות עליה מגיעה אליכם בוואטסאפ. עונים לו פעם אחת, ובפעם הבאה הוא כבר יודע.</li>
+      <li>מי שהסכים לקבל מכם הודעות יקבל תזכורת כשהוא משאיר מוצרים בעגלה, ואחרי שהוא מזמין, לינק למעקב אחרי המשלוח.</li>
+    </ul>
+  </section>
+
+  <section class="glass note" data-depth="75">
+    <p>את תורן בונים אצלנו ב־OpenFrequency. אם בא לכם להפעיל אותו על המספר האמיתי, ${priceSentence(d.offer, owner ? ph : (s) => esc(s), esc)} בשבועיים הראשונים אנחנו קוראים איתכם את השיחות ומתקנים מה שצריך.</p>
+    <p>ואם זה לא בשבילכם, תכתבו לנו ונוריד את העמוד.</p>
+    <div class="btns">
+      ${greenBtn('לכתוב לתורן')}
+      ${ofLink ? `<a class="grey" href="${esc(ofLink)}" rel="noopener">לכתוב לנו</a>` : `<span class="grey off">${owner ? ph('[המספר של OpenFrequency]') : 'לכתוב לנו'}</span>`}
     </div>
   </section>
 
-  <section class="phone-wrap" data-depth="50" aria-label="שיחת דוגמה">
-    <div class="phone">
-      <div class="ph-top">${initial}<div><b>${esc(name)}</b><small>עוזר דיגיטלי · עונה מיד</small></div></div>
-      <div class="ph-chat">
-        ${d.product?.image ? `<div class="msg in card"><img src="${esc(d.product.image)}" alt="" referrerpolicy="no-referrer"><span>${esc(productName || '')}${d.product.price_min != null ? ` · ${esc(money(d.product.price_min, currency))}` : ''}</span></div>` : ''}
-        ${d.chat.map(bubble).join('')}
-      </div>
-    </div>
-    <p class="caption">את השאלה כתבתי אני. את התשובה כתב העוזר מהנתונים באתר שלכם${productName ? `, על ${esc(productName)}` : ''}, ולא נגעתי בה.</p>
-  </section>
-
-  <section class="facts" data-depth="75">
-    <h2>מה הוא כבר יודע על ${esc(name)}</h2>
-    <ul>${knows.join('')}</ul>
-  </section>
-
-  <section class="day">
-    <h2>ככה זה נראה ביום רגיל</h2>
-    <ol>
-      <li><b>שאלה על מוצר בעשר בלילה.</b> הוא בודק במלאי ועונה עם המחיר שבאתר, תוך כמה שניות. את השיחה אתם רואים למחרת, אם בכלל צריך.</li>
-      <li><b>מישהו מבקש הנחה או החזר.</b> הוא לא מבטיח כלום, גם כשלוחצים עליו. הוא כותב שהעביר את הבקשה, ואתם מקבלים שורה אחת שמסכמת מה הלקוח רוצה.</li>
-      <li><b>מי שמוכן לקנות</b> מקבל קישור למוצר. בגרסה המלאה זה קישור לעגלה שכבר מחכה לו.</li>
-      <li><b>שאלה שאין לה קשר לחנות,</b> כמו מזג האוויר, מקבלת תשובה קצרה שהוא כאן בשביל החנות. ככה המספר נשאר בתוך הכללים של וואטסאפ לעסקים.</li>
-    </ol>
-  </section>
-
-  <section class="limits" data-depth="100">
-    <h2>מה עוד לא עובד</h2>
-    <p>הדמו לא מחובר להזמנות שלכם, אז על "איפה ההזמנה שלי" הוא עונה שבגרסה המלאה זה ייבדק אוטומטית, ומעביר אליכם. הוא גם עונה כרגע ממספר הדמו שלי ולא מהמספר של ${esc(name)}. את המספר שלכם מחברים רק אם מחליטים להמשיך.</p>
-  </section>
-
-  <section class="sign">
-    <p>אני ${esc(owner.name)}. בניתי את תורן לבד, ואני גם זה שעונה כאן. אם בא לכם לנסות אותו על המספר שלכם, כותבים לי${owner.wa || owner.email ? '' : ' [פרטי קשר]'}.</p>
-    <div class="sign-row">
-      ${owner.wa ? `<a class="btn-quiet" href="https://wa.me/${esc(owner.wa)}" rel="noopener">לכתוב לי בוואטסאפ</a>` : ''}
-      ${owner.email ? `<a class="btn-quiet" href="mailto:${esc(owner.email)}">במייל</a>` : ''}
-    </div>
-  </section>
-</main>
-
-<footer class="foot">${ofMark(18, { label: null })}<span>תורן נבנה על ידי <span class="ltr">OpenFrequency</span></span></footer>
-${link ? `<div class="dock">${link ? `<a class="wa" href="${esc(link)}" data-demo rel="noopener">${waIcon()}<span>לנסות בוואטסאפ</span></a>` : ''}</div>` : ''}
+  <footer class="foot" data-depth="100">
+    <span class="by">${ofMark(16, { label: null })}<span><span dir="ltr">OpenFrequency</span>, ${esc(d.offer.city)}</span></span>
+    ${downLink ? `<a href="${esc(downLink)}" data-takedown rel="noopener">להוריד את העמוד הזה</a>` : owner ? ph('[חסר המספר של OpenFrequency, אז אין לינק להורדת העמוד]') : ''}
+  </footer>
+</div>
+${demo ? `<div class="dock">${greenBtn('לכתוב לו בוואטסאפ')}</div>` : ''}
 <script src="/static/pitch.js" defer></script>
 </body>
 </html>`;
 }
 
-function waIcon() {
-  return '<svg class="wai" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.2a9.7 9.7 0 0 0-8.3 14.8L2.4 21.8l4.9-1.3A9.7 9.7 0 1 0 12 2.2zm0 17.7c-1.5 0-3-.4-4.2-1.2l-.3-.2-2.9.8.8-2.8-.2-.3a8 8 0 1 1 6.8 3.7zm4.4-6c-.2-.1-1.4-.7-1.7-.8-.2-.1-.4-.1-.5.1l-.8 1c-.1.2-.3.2-.5.1a6.6 6.6 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.7.3 2.8 2.8 0 0 0-.9 2.1c0 1.3.9 2.5 1 2.6.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1l-.4-.3z"/></svg>';
+/** The page for a slug that is not (or no longer) there. */
+export function goneHtml(removed: boolean): string {
+  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="robots" content="noindex, nofollow"><title>${removed ? 'העמוד הוסר' : 'העמוד לא נמצא'}</title><link rel="stylesheet" href="/static/brand.css"><link rel="stylesheet" href="/static/pitch.css"></head><body><div class="wrap"><section class="hero gone"><h1>${removed ? 'העמוד הזה הוסר' : 'העמוד הזה לא כאן'}</h1><p class="lede">${removed ? 'הורדנו אותו כמו שביקשתם, והקישור כבר לא עובד.' : 'אולי הקישור ישן. אם קיבלתם אותו מאיתנו, אפשר לענות להודעה ונשלח קישור חדש.'}</p></section></div></body></html>`;
 }

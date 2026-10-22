@@ -1,4 +1,4 @@
-// npm run screenshots [-- --base http://127.0.0.1:4711]
+// npm run screenshots [-- --base http://localhost:4711]
 //
 // Screenshots of the fictional store only (start `npm run demo` first): the brand page,
 // the dashboard's pages and the pitch page, on a phone (390 wide) and a desk (1440), in
@@ -7,10 +7,10 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../src/core/paths.ts';
-import { DEMO_USER } from '../src/demoSeed.ts';
 
 const args = process.argv.slice(2);
-const base = args.includes('--base') ? args[args.indexOf('--base') + 1] : 'http://127.0.0.1:4711';
+// localhost, not 127.0.0.1: the demo's sign-in cookie belongs to that name (scripts/demo-accounts.ts).
+const base = args.includes('--base') ? args[args.indexOf('--base') + 1] : 'http://localhost:4711';
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1].split(',') : null;
 const out = path.join(ROOT, 'docs', 'screenshots');
 mkdirSync(out, { recursive: true });
@@ -43,10 +43,8 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
   for (const scheme of ['light', 'dark'] as const) {
     const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, locale: 'he-IL', colorScheme: scheme });
     const page = await ctx.newPage();
-    await page.goto(`${base}/login`);
-    await page.fill('input[name=user]', DEMO_USER.name);
-    await page.fill('input[name=password]', DEMO_USER.password);
-    await Promise.all([page.waitForNavigation(), page.click('button[type=submit]')]);
+    // The first visit goes through the demo's stand-in for accounts, which signs the browser in and comes back.
+    await page.goto(`${base}/`);
     // The pitch page's slug, from the lead page's link.
     await page.goto(`${base}/lead/1`);
     const href = await page.getAttribute('a[href*="/s/"]', 'href');
@@ -54,10 +52,9 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
     // The first WhatsApp demo conversation, from the chats list.
     await page.goto(`${base}/chats`);
     const chatHref = await page.getAttribute('.list a[href^="/chat/"]', 'href').catch(() => null);
-    const list: { name: string; path: string; full?: boolean }[] = [...shots, ...(chatHref ? [{ name: 'chat', path: chatHref }] : []), ...(pitch ? [{ name: 'pitch', path: pitch, full: true }] : []), { name: 'login', path: '/login' }];
+    const list: { name: string; path: string; full?: boolean }[] = [...shots, ...(chatHref ? [{ name: 'chat', path: chatHref }] : []), ...(pitch ? [{ name: 'pitch', path: pitch, full: true }] : [])];
     for (const s of list) {
       if (only && !only.includes(s.name)) continue;
-      if (s.name === 'login') await ctx.clearCookies();
       await page.goto(`${base}${s.path}`, { waitUntil: 'domcontentloaded' });
       await page.waitForLoadState('load', { timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(600);

@@ -24,7 +24,7 @@
     "web": "node scripts/web.ts",
     "start": "node scripts/web.ts --worker",
     "worker": "node scripts/worker.ts",
-    "user:add": "node scripts/user-add.ts",
+    "workspace:assign": "node scripts/workspace-assign.ts",
     "demo": "node scripts/demo.ts",
     "screenshots": "node scripts/screenshots.ts",
     "costs": "node scripts/costs.ts"

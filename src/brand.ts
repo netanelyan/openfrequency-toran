@@ -114,7 +114,7 @@ export const ICON_FILES: Record<string, { file: string; type: string }> = {
 export const MANIFEST = {
   name: 'תורן',
   short_name: 'תורן',
-  description: 'לידים, דפי הצגה ושיחות דמו של תורן.',
+  description: 'לידים, דפי דמו ושיחות דמו של תורן.',
   lang: 'he',
   dir: 'rtl',
   start_url: '/',

@@ -1,16 +1,20 @@
 import type { App } from '../../app.ts';
+import { displayName } from '../../ingest/brand.ts';
 import { audit, event } from '../../db/log.ts';
 import { enqueue } from '../../jobs/queue.ts';
 import { homeUrl, canonicalDomain } from '../../core/urls.ts';
 import { now } from '../../core/clock.ts';
 import { pageStats } from '../../pitch/track.ts';
+import { pitchGaps } from '../../pitch/ready.ts';
 import { contactTarget, firstMessage, followupDue, pitchUrl, reminderMessage } from '../../outreach.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
+import { storesOf } from '../workspace.ts';
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
 
 // Leads: the list (by status, with the score and what was found), adding one by URL,
 // and one lead's page: its score's parts, its contacts, its pitch page and what the
-// owner did with it, the message to copy, the one reminder, the timeline.
+// owner did with it, the message to copy, the one reminder, the timeline. The list is the session's workspace's;
+// one lead's page and actions are checked in server.ts before they run. Adding a store is the operator's.
 
 const FACTOR_HE: Record<string, string> = { platform: 'פלטפורמה', catalogue: 'קטלוג', hebrew: 'עברית', whatsapp: 'וואטסאפ', email: 'מייל', phone: 'טלפון', alive: 'פעילות', israeli: 'ישראלי', chain: 'רשת', restricted: 'קטגוריה' };
 
@@ -29,9 +33,9 @@ async function leadsPage(app: App, r: DashReq) {
   const status = r.url.searchParams.get('status') || '';
   const all = r.url.searchParams.get('all') === '1';
   const q = (r.url.searchParams.get('q') || '').trim();
-  const counts = Object.fromEntries((await app.db.query<{ status: string; n: number }>(`SELECT status, COUNT(*)::int AS n FROM stores ${all ? '' : 'WHERE qualified'} GROUP BY status`)).map((x) => [x.status, x.n]));
+  const counts = Object.fromEntries((await app.db.query<{ status: string; n: number }>(`SELECT status, COUNT(*)::int AS n FROM stores WHERE ${storesOf(r.scope)} ${all ? '' : 'AND qualified'} GROUP BY status`)).map((x) => [x.status, x.n]));
   const total = Object.values(counts).reduce((s: number, n: any) => s + Number(n), 0);
-  const where: string[] = [];
+  const where: string[] = [storesOf(r.scope)];
   const params: unknown[] = [];
   if (!all) where.push('qualified');
   if (status) {
@@ -53,6 +57,7 @@ ${addForm(r)}
 }
 
 export function addForm(r: DashReq) {
+  if (!r.scope.operator) return '';
   return `<form class="panel inline-form" method="post" action="/leads/add">${csrfField(r.ctx)}<input type="url" name="url" placeholder="https://store.co.il" aria-label="כתובת של חנות" required inputmode="url" dir="ltr"><button class="btn primary" type="submit">${icon('plus')}להוסיף ולבנות דף</button></form>`;
 }
 
@@ -66,20 +71,21 @@ async function leadPage(app: App, r: DashReq, id: number) {
   const cost = await app.db.one<any>("SELECT COALESCE(SUM(usd), 0)::float AS usd, COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(in_tokens + cache_read + cache_write), 0)::int AS tin, COALESCE(SUM(out_tokens), 0)::int AS tout FROM usage WHERE store_id = $1", [id]);
   const job = await app.db.one<any>("SELECT id, status, progress, last_error FROM jobs WHERE dedupe_key = $1 ORDER BY id DESC LIMIT 1", [`ingest:${id}`]);
   const url = s.slug ? pitchUrl(app.env, s.slug) : null;
-  const name = s.brand?.name || s.name || s.domain;
+  const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   const target = contactTarget(s);
   const ready = s.page_built_at && s.approved_at;
 
   const parts = (s.score_breakdown || []).map((f: any) => `<li class="${f.points < 0 ? 'neg' : ''}"><span>${esc(FACTOR_HE[f.factor] || f.factor)}</span>${f.max ? vbar(f.points, f.max) : '<span></span>'}<b>${f.points}${f.max ? `/${f.max}` : ''}</b><span class="ev" dir="auto">${esc(f.evidence)}</span></li>`).join('');
 
   const sendBox = () => {
-    if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${s.platform === 'shopify' ? 'אפשר לבנות אותו מכאן.' : `הפלטפורמה ${esc(PLATFORM_HE[s.platform] || s.platform)} עוד לא נקלטת בשלב הזה.`}</p>`;
+    if (s.taken_down_at) return '<p class="muted m0">העמוד הוסר, ולא כותבים להם יותר.</p>';
+    if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${s.platform === 'shopify' ? 'אפשר לבנות אותו מכאן.' : `עם ${esc(PLATFORM_HE[s.platform] || s.platform)} זה עוד לא עובד, רק עם Shopify.`}</p>`;
     if (!s.approved_at) return `<p class="muted m0">הדף מחכה לבדיקה שלך לפני שאפשר לשלוח אותו. <a href="/lead/${id}/review">לבדיקה</a></p>`;
     if (!s.sent_at) {
-      const text = firstMessage({ storeName: name, url: url!, ownerName: app.env.TORAN_OWNER_NAME });
+      const text = firstMessage({ storeName: name, url: url! });
       return `<label class="f">ההודעה הראשונה<textarea id="first-msg" rows="6" dir="rtl">${esc(text)}</textarea></label>
 <div class="row mt12"><button class="btn primary" type="button" data-copy="#first-msg" ${target.href ? `data-open="${esc(target.href)}"` : ''} data-done="ההודעה הועתקה">${icon('copy')}${esc(target.label)}</button>${postButton(r.ctx, `/lead/${id}/sent`, 'שלחתי', { cls: 'btn', iconName: 'send' })}</div>
-<p class="small muted mt8 m0">${target.kind ? `נשלח ל${target.kind === 'whatsapp' ? 'וואטסאפ של החנות' : `מייל ${esc(s.contact_email)}`}.` : 'לא נמצאה דרך ליצור קשר באתר.'} הדשבורד לא שולח כלום בעצמו: מעתיקים, שולחים, ולוחצים "שלחתי".</p>`;
+<p class="small muted mt8 m0">${target.kind ? `נשלח ל${target.kind === 'whatsapp' ? 'וואטסאפ של החנות' : `מייל ${esc(s.contact_email)}`}.` : 'לא נמצאה דרך ליצור קשר באתר.'} את ההודעה שולחים ידנית מהטלפון, ואחר כך לוחצים "שלחתי".</p>`;
     }
     if (!s.followup_sent_at && ['sent', 'opened'].includes(s.status)) {
       const due = s.followup_due_at ? new Date(s.followup_due_at).getTime() : followupDue(new Date(s.sent_at).getTime());
@@ -98,7 +104,8 @@ ${due <= now() ? `<label class="f mt12">התזכורת<textarea id="rem-msg" row
   <div class="end">${url ? `<a class="btn sm" href="${esc(url)}?preview=1" target="_blank" rel="noopener">${icon('eye')}הדף</a>` : ''}${s.page_built_at ? `<a class="btn sm" href="/lead/${id}/review">${icon('edit')}בדיקה ועריכה</a>` : ''}</div>
 </div>
 ${job && ['queued', 'running'].includes(job.status) ? `<div class="banner info" data-wait-job="${job.id}">${icon('clock')}<div><b>בעבודה</b><p data-progress>${esc(job.progress || 'בתור')}</p></div></div>` : ''}
-${job?.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>הקליטה האחרונה נכשלה</b><p>${esc(job.last_error || '')}</p></div></div>` : ''}
+${job?.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>הקריאה האחרונה של האתר נכשלה</b><p>${esc(job.last_error || '')}</p></div></div>` : ''}
+${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד הוסר ${esc(stamp(s.taken_down_at))}</b><p>הקישור כבר לא עובד, הקוד של הדמו כבוי, ולא כותבים להם יותר.</p></div></div>` : s.takedown_asked_at ? `<div class="banner warn">${icon('alert')}<div><b>לחצו על "להוריד את העמוד הזה" ${esc(stamp(s.takedown_asked_at))}</b><p>אם הגיעה מהם הודעה בוואטסאפ, מורידים את העמוד מכאן. הלחיצה לבד עוד לא מורידה אותו.</p></div>${postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm danger', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' })}</div>` : ''}
 <div class="cols">
   <div class="grid12">
     <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>
@@ -110,14 +117,14 @@ ${job?.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>ה
   <div class="grid12">
     <section class="panel"><header><h2>הדף</h2></header>
       ${s.page_built_at ? `<dl class="kv"><dt>כתובת</dt><dd><a href="${esc(url!)}?preview=1" target="_blank" rel="noopener"><bdi class="ltr">${esc(url!)}</bdi></a></dd><dt>קוד דמו</dt><dd class="ltr">${esc(s.demo_code)}</dd><dt>נפתח</dt><dd>${stats?.opens ? `${stats.opens} פעמים, ${stats.visitors} אנשים, אחרון ${esc(ago(stats.last))}` : 'עוד לא'}</dd><dt>גלילה</dt><dd>${stats?.depth ? `עד ${stats.depth}%` : '-'}</dd><dt>לחיצות על הדמו</dt><dd>${stats?.clicks || 0}</dd><dt>הדמו התחיל</dt><dd>${s.demo_started_at ? esc(stamp(s.demo_started_at)) : 'עוד לא'}</dd></dl>` : '<p class="muted m0">עוד לא נבנה.</p>'}
-      <div class="row mt16">${s.platform === 'shopify' ? postButton(r.ctx, `/lead/${id}/build`, s.page_built_at ? 'לקלוט מחדש ולבנות' : 'לקלוט ולבנות דף', { cls: s.page_built_at ? 'btn sm' : 'btn primary sm', iconName: 'refresh' }) : ''}${s.status !== 'skipped' ? postButton(r.ctx, `/lead/${id}/skip`, 'לדלג', { cls: 'btn sm danger', confirm: 'לדלג על החנות?' }) : ''}</div>
+      <div class="row mt16">${s.platform === 'shopify' ? postButton(r.ctx, `/lead/${id}/build`, s.page_built_at ? 'לקרוא את האתר מחדש' : 'לבנות דף', { cls: s.page_built_at ? 'btn sm' : 'btn primary sm', iconName: 'refresh' }) : ''}${s.status !== 'skipped' ? postButton(r.ctx, `/lead/${id}/skip`, 'לדלג', { cls: 'btn sm danger', confirm: 'לדלג על החנות?' }) : ''}${s.page_built_at && !s.taken_down_at ? postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' }) : ''}</div>
     </section>
     <section class="panel"><header><h2>מה נמצא באתר</h2></header>
       <dl class="kv">
         <dt>וואטסאפ</dt><dd>${s.contact_whatsapp ? `<bdi class="ltr">+${esc(s.contact_whatsapp)}</bdi>` : s.signals?.whatsappWidget ? `כפתור צ׳אט (${esc(s.signals.whatsappWidget)})` : 'לא נמצא'}</dd>
         <dt>מייל</dt><dd>${s.contact_email ? `<bdi class="ltr">${esc(s.contact_email)}</bdi>` : 'לא נמצא'}</dd>
         <dt>טלפון</dt><dd>${s.contact_phone ? `<bdi class="ltr">+${esc(s.contact_phone)}</bdi>` : 'לא נמצא'}</dd>
-        <dt>ידע</dt><dd>${pack?.products ? `${pack.products} מוצרים · ${pack.policies} דפי מדיניות · ${pack.faqs} שאלות` : 'עוד לא נקלט'}</dd>
+        <dt>ידע</dt><dd>${pack?.products ? `${pack.products} מוצרים · ${pack.policies} דפי מדיניות · ${pack.faqs} שאלות` : 'עוד לא נקרא'}</dd>
         <dt>נמצא דרך</dt><dd>${esc(s.source)}${s.source_detail?.query ? ` · "${esc(s.source_detail.query)}"` : ''}${s.source_detail?.from ? ` · מ־<bdi class="ltr">${esc(s.source_detail.from)}</bdi>` : ''}</dd>
         <dt>עלות עד עכשיו</dt><dd>${r.ctx.dev ? `$${Number(cost?.usd || 0).toFixed(3)} (במחירי API: $${Number(cost?.api || 0).toFixed(3)})` : `${tokenNum(cost?.api)} טוקנים`} · ${Number(cost?.tin || 0).toLocaleString('en-US')} טוקני קלט, ${Number(cost?.tout || 0).toLocaleString('en-US')} פלט</dd>
       </dl>
@@ -131,7 +138,7 @@ ${job?.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>ה
   return layout({ ...r.ctx, title: name, active: 'lead' }, body);
 }
 
-const EVENT_HE: Record<string, string> = { lead_found: 'נמצא', ingest: 'נקלט', page_built: 'הדף נבנה', approved: 'אושר', sent: 'נשלח', followup_sent: 'נשלחה תזכורת', page_open: 'הדף נפתח', demo_click: 'לחצו על הדמו', demo_bound: 'הדמו התחיל', handoff: 'העברה אליך', guard_cut: 'השומר חתך משפט', rescrape: 'רענון יומי', status: 'שינוי סטטוס', skipped: 'דילגת' };
+const EVENT_HE: Record<string, string> = { lead_found: 'נמצא', ingest: 'האתר נקרא', page_built: 'הדף נבנה', approved: 'אושר', sent: 'נשלח', followup_sent: 'נשלחה תזכורת', page_open: 'הדף נפתח', demo_click: 'לחצו על הדמו', demo_bound: 'הדמו התחיל', handoff: 'העברה אליך', guard_cut: 'משפט נמחק לפני השליחה', takedown_click: 'לחצו על "להוריד את העמוד הזה"', taken_down: 'העמוד הוסר', rescrape: 'רענון יומי', status: 'שינוי סטטוס', skipped: 'דילגת' };
 
 export function leadRoutes(app: App): Route<DashReq>[] {
   const store = async (id: string) => {
@@ -153,7 +160,7 @@ export function leadRoutes(app: App): Route<DashReq>[] {
       const existing = await app.db.one<{ id: number }>('SELECT id FROM stores WHERE domain = $1', [domain]);
       if (existing) {
         await enqueue(app.db, 'ingest', { storeId: existing.id }, { dedupeKey: `ingest:${existing.id}` });
-        return { redirect: `/lead/${existing.id}`, message: 'החנות כבר ברשימה. קולט אותה מחדש.' };
+        return { redirect: `/lead/${existing.id}`, message: 'החנות כבר ברשימה. אני קורא את האתר שלה מחדש.' };
       }
       await app.db.query("DELETE FROM seen_domains WHERE domain = $1 AND verdict = 'failed'", [domain]);
       const job = await enqueue(app.db, 'add_store', { url, by: r.user.name }, { dedupeKey: `add:${domain}`, maxAttempts: 1 });
@@ -171,18 +178,34 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
     }],
     ['POST', /^\/lead\/(\d+)\/build$/, async (r, m) => {
       const s = await store(m[1]);
-      if (s.platform !== 'shopify') throw new ActionError('בשלב הזה קולטים רק חנויות Shopify');
+      if (s.platform !== 'shopify') throw new ActionError('כרגע זה עובד רק עם חנויות Shopify');
       await enqueue(app.db, 'ingest', { storeId: s.id }, { dedupeKey: `ingest:${s.id}` });
       await audit(app.db, { actor: r.user.name, action: 'ingest', storeId: s.id });
-      return { redirect: `/lead/${s.id}`, message: 'קולט ובונה. הדף יתרענן לבד.' };
+      return { redirect: `/lead/${s.id}`, message: 'קורא את האתר ובונה את הדף. העמוד יתעדכן לבד.' };
     }],
     ['POST', /^\/lead\/(\d+)\/approve$/, async (r, m) => {
       const s = await store(m[1]);
       if (!s.page_built_at) throw new ActionError('אין עדיין דף לאשר');
+      if (s.taken_down_at) throw new ActionError('העמוד הזה הוסר, ואי אפשר לאשר אותו שוב.');
+      const gaps = await pitchGaps(app, s);
+      if (gaps.length) throw new ActionError(`עוד אי אפשר לאשר. ${gaps[0].he}`);
       await app.db.query('UPDATE stores SET approved_at = now(), updated_at = now() WHERE id = $1', [s.id]);
       await event(app.db, s.id, 'approved', { by: r.user.name });
       await audit(app.db, { actor: r.user.name, action: 'approve', storeId: s.id });
       return { message: `${s.brand?.name || s.name || s.domain} מוכנה לשליחה`, redirect: r.form.next || undefined };
+    }],
+    // "Take this page down": confirmed here, after the request arrived. The page and its demo code stop working,
+    // open demo bindings end, the reminder is cancelled, and the store is skipped: a takedown is an opt-out.
+    ['POST', /^\/lead\/(\d+)\/takedown$/, async (r, m) => {
+      const s = await store(m[1]);
+      if (s.taken_down_at) throw new ActionError('העמוד כבר הוסר');
+      await app.db.tx(async (t) => {
+        await t.query("UPDATE stores SET taken_down_at = now(), status = 'skipped', skipped_at = COALESCE(skipped_at, now()), followup_due_at = NULL, updated_at = now() WHERE id = $1", [s.id]);
+        await t.query('DELETE FROM wa_users WHERE store_id = $1', [s.id]);
+        await event(t, s.id, 'taken_down', { by: r.user.name, asked: Boolean(s.takedown_asked_at) });
+      });
+      await audit(app.db, { actor: r.user.name, action: 'takedown', storeId: s.id });
+      return { message: 'העמוד הוסר. הקישור והקוד של הדמו כבר לא עובדים.' };
     }],
     ['POST', /^\/lead\/(\d+)\/unapprove$/, async (r, m) => {
       const s = await store(m[1]);

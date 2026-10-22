@@ -18,15 +18,15 @@ export const defaultScript: Script = (req) => {
     const text = String(results[0].content);
     // A product line: "- [id 12] title: 89 ₪, במלאי, 3 options. https://..."
     const product = /^- \[id \d+\] (.+?): (.+?), (במלאי|אזל מהמלאי)/m.exec(text);
-    if (product) return [{ type: 'text', text: `${product[3] === 'במלאי' ? 'כן, יש במלאי.' : 'כרגע זה אזל מהמלאי.'} ${product[1]} עולה ${product[2]}. רוצים שאשלח קישור?` }];
+    if (product) return [{ type: 'text', text: `${product[3] === 'במלאי' ? 'כן, יש במלאי.' : 'כרגע זה לא במלאי.'} ${product[1]} עולה ${product[2]}. רוצים שאשלח קישור?` }];
     // A policy passage: its first sentence with substance.
     const passage = text.split('\n').find((l) => l.trim().length > 20 && /[א-ת]/.test(l) && !/^(From the store|Rule:|No products|What this store)/.test(l));
     if (passage && !/has not written/.test(text)) return [{ type: 'text', text: passage.trim() }];
-    return [{ type: 'text', text: 'אין לי תשובה בטוחה לזה, אז אני בודק מול החנות ומעדכן כאן.' }];
+    return [{ type: 'text', text: 'את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.' }];
   }
   const text = (blocks.find((b) => b.type === 'text') as { text?: string } | undefined)?.text || '';
   const q = text.replace(/^SERVER CONTEXT[\s\S]*?\n\n/, '').trim();
-  if (/משלוח|החזר|החלפ|תשלום|ביט|אספקה/.test(q)) return [{ type: 'tool_use', id: `s_${Date.now()}`, name: 'get_policy', input: { topic: q } }];
+  if (/משלוח|החזר|החלפ|תשלום|ביט|אספקה|מגיע/.test(q)) return [{ type: 'tool_use', id: `s_${Date.now()}`, name: 'get_policy', input: { topic: q } }];
   return [{ type: 'tool_use', id: `s_${Date.now()}`, name: 'search_products', input: { query: q } }];
 };
 

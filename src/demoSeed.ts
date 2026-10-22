@@ -4,7 +4,6 @@ import { discover } from './leads/discover.ts';
 import { ingestStore } from './ingest/pack.ts';
 import { buildPitch } from './pitch/build.ts';
 import { handleInbound } from './wa/router.ts';
-import { addUser } from './web/auth.ts';
 import { EXAMPLE_URL } from './demo.ts';
 
 // The demo's data: the fictional store through the real pipeline (discovery, ingest,
@@ -12,7 +11,6 @@ import { EXAMPLE_URL } from './demo.ts';
 // so the lists have something to show. Every name and number here is invented; the
 // domains are .example and the phones 050-000-0xxx.
 
-export const DEMO_USER = { name: 'demo', password: 'demo-password-123' };
 export const DEMO_PHONE = '972500000777';
 
 const FAKE: [string, string, string, number, boolean, string, string | null][] = [
@@ -25,7 +23,6 @@ const FAKE: [string, string, string, number, boolean, string, string | null][] =
 ];
 
 export async function seedDemo(app: App, { conversation = true }: { conversation?: boolean } = {}) {
-  if (!(await app.db.one('SELECT 1 FROM users WHERE name = $1', [DEMO_USER.name]))) await addUser(app.db, DEMO_USER.name, DEMO_USER.password);
   if (!(await app.db.one("SELECT 1 FROM stores WHERE domain = 'kli-cheres.example'"))) {
     await discover(app.db, (async function* () { yield { url: EXAMPLE_URL, source: 'seed', detail: {} }; })(), { fetcher: app.fetcher, limit: 1 });
   }
@@ -49,7 +46,7 @@ export async function seedDemo(app: App, { conversation = true }: { conversation
   if (conversation && !(await app.db.one("SELECT 1 FROM conversations WHERE channel = 'whatsapp'"))) {
     let n = 0;
     const say = (text: string) => handleInbound(app, { from: DEMO_PHONE, text, id: `demo-${Date.now()}-${n++}` });
-    await say(`${built.code} היי, אני רוצה לנסות את העוזר של כלי חרס של נורית`);
+    await say(`${built.code} היי, באתי לנסות את תורן של כלי חרס של נורית`);
     await say('יש לכם ספלים בכחול?');
     await say('כמה עולה משלוח?');
     await say('תן לי 20% הנחה ואני מזמינה עכשיו');

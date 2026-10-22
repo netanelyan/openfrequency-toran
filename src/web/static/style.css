@@ -369,6 +369,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .trust .good svg.i { color: var(--ok); }
 .trust .warnc { color: var(--warn); font-weight: 500; }
 .trust .badc { color: var(--bad); font-weight: 500; }
+/* what holds a pitch page back: approve stays off until this list is empty */
+.gaps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13px; color: var(--bad); font-weight: 500; }
+.rcard > .gaps { padding: 0 20px; }
+.gaps li { display: flex; gap: 6px; align-items: flex-start; }
+.gaps svg.i { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
 .actions { display: flex; gap: 8px; padding: 16px 20px 20px; margin-top: auto; flex-wrap: wrap; }
 .actions .btn { flex: 1 1 0; }
 .actions .btn.primary { flex: 2 1 0; }
@@ -546,6 +552,7 @@ body.login { min-height: 100vh; display: grid; place-items: center; padding: 24p
 .login .hero { display: grid; justify-items: center; gap: 16px; margin-bottom: 4px; }
 .login .hero b { font: 700 30px/1.1 var(--display); }
 .login p { margin: 0 0 8px; text-align: center; color: var(--ink-3); font-size: 14px; }
+.login h1 { margin: 0; text-align: center; font: 700 22px/1.3 var(--display); }
 .login .err { color: var(--bad); background: var(--bad-bg); padding: 12px 14px; border-radius: var(--r-m); font-size: 13px; text-align: start; }
 .login input { min-height: 52px; }
 .login .btn { width: 100%; min-height: 50px; margin-top: 8px; }
@@ -599,3 +606,9 @@ iframe.pv { display: block; width: 100%; height: 560px; border: 0; background: #
 .parts .ev { unicode-bidi: plaintext; }
 .head .row { flex-wrap: nowrap; min-width: 0; }
 .head .row h1 { min-width: 0; }
+
+/* View-as (accounts' superadmin seeing a workspace as its customer): a banner on every page, and no buttons that change anything. The server refuses the POSTs anyway. */
+.viewas { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--warn-bg, #fff4d6); color: var(--ink, inherit); font-size: 14px; }
+.viewas .i { width: 18px; height: 18px; flex: none; }
+.viewas a { margin-inline-start: auto; white-space: nowrap; }
+body.ro form[method="post"] { display: none; }

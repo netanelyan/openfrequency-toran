@@ -42,7 +42,7 @@ test('demo codes look like DEMO-XXXX without lookalike characters, and are found
 test('two people, two stores, one number: each phone gets its own store, with no crossover', async () => {
   const { app, a, b, codeA, codeB } = await twoStores();
   const r1 = await handleInbound(app, msg(P1, `${codeA} היי, אני רוצה לנסות את העוזר של כלי חרס של נורית`));
-  const r2 = await handleInbound(app, msg(P2, `${codeB} היי, אני רוצה לנסות את העוזר של עץ וחוט`));
+  const r2 = await handleInbound(app, msg(P2, `${codeB} היי, באתי לנסות את הבוט של עץ וחוט`));
   assert.deepEqual([r1.action, r1.storeId, r2.action, r2.storeId], ['bound', a, 'bound', b]);
   assert.match(r1.reply!, /כלי חרס של נורית/);
   assert.match(r2.reply!, /עץ וחוט/);
@@ -80,7 +80,7 @@ test('a new code overwrites the binding; a binding expires after 7 days; an unkn
 
   const stranger = await handleInbound(app, msg('972500000303', 'שלום, כמה עולה ספל?'));
   assert.equal(stranger.action, 'no_binding');
-  assert.match(stranger.reply!, /לפתוח את הקישור/);
+  assert.match(stranger.reply!, /בעמוד שהכנו לחנות/);
   assert.equal(await app.db.one("SELECT 1 FROM conversations WHERE peer = '972500000303'"), null, 'no conversation and no agent call for an unknown phone');
   await app.db.close();
 });

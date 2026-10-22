@@ -1,36 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { createHandler } from '../src/web/server.ts';
-import { DEMO_PHONE, seedDemo } from '../src/demoSeed.ts';
-import { followupDue } from '../src/outreach.ts';
+import { DEMO_PHONE } from '../src/demoSeed.ts';
 import { israelWeekdayHour } from '../src/core/clock.ts';
 import { toranMark, ofMark } from '../src/brand.ts';
-import { testApp } from './helpers.ts';
-
-async function serve() {
-  const app = await testApp();
-  app.env.DEMO_WA_NUMBER = '972500000999';
-  app.env.TORAN_OWNER_WHATSAPP = DEMO_PHONE; // the demo's own chat is the owner testing: it moves no lead
-  const seeded = await seedDemo(app, { conversation: true });
-  const server = createServer();
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  const port = (server.address() as AddressInfo).port;
-  const handler = createHandler(app, { port, failDelayMs: 0 });
-  server.on('request', handler);
-  const base = `http://127.0.0.1:${port}`;
-  let cookie = '';
-  const get = (p: string, headers: Record<string, string> = {}) => fetch(base + p, { headers: { cookie, ...headers }, redirect: 'manual' });
-  const post = (p: string, form: Record<string, string>, headers: Record<string, string> = {}) => fetch(base + p, { method: 'POST', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded', origin: base, ...headers }, body: new URLSearchParams(form), redirect: 'manual' });
-  const login = async () => {
-    const r = await post('/login', { user: 'demo', password: 'demo-password-123' });
-    cookie = String(r.headers.get('set-cookie')).split(';')[0];
-    return r;
-  };
-  const csrf = async (p = '/') => /name="_csrf" value="([^"]+)"/.exec(await (await get(p)).text())?.[1] || '';
-  return { app, seeded, server, base, get, post, login, csrf, close: async () => { server.close(); await app.db.close(); } };
-}
+import { setOffer } from '../src/offer.ts';
+import { handleInbound } from '../src/wa/router.ts';
+import { serve, TEST_OFFER } from './serve.ts';
 
 test('the marks come from the brand module, square and in their colours; OpenFrequency is the small halftone at 48px and below', () => {
   const t = toranMark(32);
@@ -40,11 +15,13 @@ test('the marks come from the brand module, square and in their colours; OpenFre
   assert.equal((ofMark(64).match(/<circle/g) || []).length, 37);
 });
 
-test('the dashboard: login, every page, CSRF on every action, noindex everywhere', async () => {
+test('the dashboard: the accounts login, every page, CSRF on every action, noindex everywhere', async () => {
   const s = await serve();
   try {
-    assert.equal((await s.get('/')).status, 303, 'no session: to the login');
-    assert.equal((await s.login()).status, 303);
+    const out = await s.get('/leads?all=1');
+    assert.equal(out.status, 303, 'no session: to the accounts login');
+    assert.equal(out.headers.get('location'), `https://accounts.test/login?next=${encodeURIComponent(`${s.base}/leads?all=1`)}`);
+    s.login();
     for (const p of ['/', '/leads', '/leads?all=1', '/lead/1', '/review', '/lead/1/review', '/chats', '/chat/1', '/followups', '/settings', '/brand']) {
       const r = await s.get(p);
       assert.equal(r.status, 200, p);
@@ -71,11 +48,16 @@ test('the funnel: review, approve, send by hand, the one reminder (never on Shab
     const id = s.seeded.storeId;
     assert.match(await (await s.get('/review')).text(), /כלי חרס של נורית/);
     const token = await s.csrf();
+    const held = await s.post(`/lead/${id}/approve`, { _csrf: token }, { 'x-tn-ajax': '1' });
+    assert.equal((await held.json()).ok, false, 'no price yet: the page cannot be approved');
+    assert.match(await (await s.get('/review')).text(), /המחיר עוד לא נקבע/);
+    await setOffer(s.app.db, TEST_OFFER);
     const ap = await s.post(`/lead/${id}/approve`, { _csrf: token }, { 'x-tn-ajax': '1' });
     assert.deepEqual((await ap.json()).ok, true);
     const lead = await (await s.get(`/lead/${id}`)).text();
     assert.match(lead, /id="first-msg"/);
-    assert.match(lead, /אם זה לא רלוונטי, אפשר לענות &quot;לא&quot; ולא אכתוב שוב/);
+    assert.match(lead, /היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן לוואטסאפ/);
+    assert.match(lead, /אם זה לא רלוונטי, אפשר לענות &quot;לא&quot; ולא נכתוב שוב/);
     await s.post(`/lead/${id}/sent`, { _csrf: token });
     const st = await s.app.db.one<any>('SELECT status, sent_at, followup_due_at FROM stores WHERE id = $1', [id]);
     assert.equal(st.status, 'sent');
@@ -83,7 +65,7 @@ test('the funnel: review, approve, send by hand, the one reminder (never on Shab
     const { weekday, hour } = israelWeekdayHour(due);
     assert.ok(!(weekday === 6 || (weekday === 5 && hour >= 13)), 'the reminder is not due on Shabbat');
     await s.app.db.query("UPDATE stores SET followup_due_at = now() - interval '1 hour' WHERE id = $1", [id]);
-    assert.match(await (await s.get('/followups')).text(), /זו ההודעה האחרונה שלי בנושא/);
+    assert.match(await (await s.get('/followups')).text(), /זו ההודעה האחרונה שלנו בנושא/);
     await s.post(`/lead/${id}/followup-sent`, { _csrf: token });
     const again = await s.post(`/lead/${id}/followup-sent`, { _csrf: token }, { 'x-tn-ajax': '1' });
     assert.equal((await again.json()).ok, false, 'one reminder, then stop');
@@ -96,13 +78,20 @@ test('the pitch page: noindex, the store\'s colours, the demo link with its code
   const s = await serve();
   try {
     const id = s.seeded.storeId;
-    await s.app.db.query("UPDATE stores SET status = 'sent' WHERE id = $1", [id]);
+    assert.equal((await s.get(`/s/${s.seeded.slug}`)).status, 404, 'not approved yet: nobody outside sees it');
+    await setOffer(s.app.db, TEST_OFFER);
+    await s.app.db.query("UPDATE stores SET status = 'sent', approved_at = now() WHERE id = $1", [id]);
     const r = await s.get(`/s/${s.seeded.slug}`);
     assert.equal(r.status, 200);
     assert.match(String(r.headers.get('x-robots-tag')), /noindex/);
     const html = await r.text();
     assert.match(html, new RegExp(`wa\\.me/972500000999\\?text=${s.seeded.code}`));
-    assert.match(html, /בניתי עוזר לוואטסאפ של כלי חרס של נורית/);
+    assert.match(html, /<h1>בנינו ל<bdi>כלי חרס של נורית<\/bdi> תורן לוואטסאפ<\/h1>/);
+    assert.match(html, /עברנו על האתר שלכם, על 14 המוצרים ועל עמודי המשלוחים וההחזרות\./);
+    assert.match(html, /199 ₪ לחודש, לא כולל מע״מ\./);
+    assert.equal((html.match(/class="msg /g) || []).length, 4, 'two questions and two answers');
+    assert.ok(!/class="ph"|class="held"/.test(html), 'a public page has no placeholder and no owner note');
+    assert.ok(!/ניסיון|חינם|ימי ניסיון/.test(html.replace(/<div class="msgs">[\s\S]*?<\/section>/, '')), 'no trial, no free period');
     assert.ok(!/[—–]/.test(html.replace(/<title>[\s\S]*?<\/title>/, '')), 'no em or en dashes in the copy');
     assert.match(await (await s.get(`/s/${s.seeded.slug}/theme.css`)).text(), /--store:#b4532a/);
     const st = await s.app.db.one<any>('SELECT status, opened_at FROM stores WHERE id = $1', [id]);
@@ -118,6 +107,38 @@ test('the pitch page: noindex, the store\'s colours, the demo link with its code
     await s.get(`/s/${s.seeded.slug}`);
     assert.equal(await opens(), before, 'the owner\'s own visits are not opens');
     assert.equal((await s.get('/s/no-such-page')).status, 404);
+  } finally {
+    await s.close();
+  }
+});
+
+test('take this page down: the click flags it, the owner confirms, then the page is gone, its demo code dead, no reminder', async () => {
+  const s = await serve();
+  try {
+    const id = s.seeded.storeId;
+    const slug = s.seeded.slug;
+    await setOffer(s.app.db, TEST_OFFER);
+    await s.app.db.query("UPDATE stores SET status = 'sent', approved_at = now(), sent_at = now(), followup_due_at = now() + interval '4 days' WHERE id = $1", [id]);
+    const html = await (await s.get(`/s/${slug}`)).text();
+    assert.match(html, new RegExp(`href="https://wa\\.me/${DEMO_PHONE}\\?text=[^"]+" data-takedown`), 'the link writes to our number, not the demo number');
+    const beacon = (kind: string) => fetch(`${s.base}/t`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug, kind }) });
+    assert.equal((await beacon('takedown_click')).status, 204);
+    const asked = await s.app.db.one<any>('SELECT takedown_asked_at, taken_down_at FROM stores WHERE id = $1', [id]);
+    assert.ok(asked.takedown_asked_at);
+    assert.equal(asked.taken_down_at, null);
+    assert.equal((await s.get(`/s/${slug}`)).status, 200, 'the click alone does not take it down');
+    await s.login();
+    assert.match(await (await s.get('/')).text(), /ביקשו להוריד את העמוד/);
+    await s.post(`/lead/${id}/takedown`, { _csrf: await s.csrf() });
+    const st = await s.app.db.one<any>('SELECT status, taken_down_at, followup_due_at FROM stores WHERE id = $1', [id]);
+    assert.equal(st.status, 'skipped');
+    assert.ok(st.taken_down_at);
+    assert.equal(st.followup_due_at, null, 'a takedown is an opt-out: no reminder');
+    assert.equal((await fetch(`${s.base}/s/${slug}`)).status, 410);
+    assert.match(await (await fetch(`${s.base}/s/${slug}`)).text(), /העמוד הזה הוסר/);
+    assert.equal((await handleInbound(s.app, { from: '972500000555', text: s.seeded.code, id: 'td-1' })).action, 'bad_code', 'the demo code no longer binds');
+    await s.app.db.query("UPDATE stores SET status = 'sent' WHERE id = $1", [id]);
+    assert.equal((await fetch(`${s.base}/s/${slug}`)).status, 410, 'changing the status back does not bring the page back');
   } finally {
     await s.close();
   }

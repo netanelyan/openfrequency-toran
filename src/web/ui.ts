@@ -95,6 +95,14 @@ export type PageCtx = {
   flash?: string | null;
   dev?: boolean;
   user?: { name: string; role: string };
+  /** The superadmin outside view-as: sees every workspace and the whole server's settings. */
+  operator?: boolean;
+  /** View-as: the server refuses every POST, and the page hides its buttons. */
+  readOnly?: boolean;
+  /** Set when the superadmin views a workspace as its customer: the banner on every page (accounts asks for it). */
+  viewAs?: { name: string; admin: string } | null;
+  /** Accounts' sign-out page. */
+  logout?: string;
 };
 
 export function layout(ctx: PageCtx, body: string): string {
@@ -126,8 +134,9 @@ export function layout(ctx: PageCtx, body: string): string {
 ${iconLinks()}
 <link rel="manifest" href="/static/manifest.webmanifest">
 </head>
-<body>
+<body${ctx.readOnly ? ' class="ro"' : ''}>
 ${SPRITE}
+${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צפייה בחשבון <b>${esc(ctx.viewAs.name)}</b>, כמו שהלקוח רואה אותו. אי אפשר לשנות כאן כלום.</span><a href="${esc(ctx.viewAs.admin)}">חזרה לניהול</a></div>` : ''}
 <header class="top"><div class="wrap">
   <a class="brand" href="/" aria-label="תורן, להיום">${toranMark(34, { label: null })}<b>תורן</b></a>
   <button class="sidetoggle" type="button" data-side aria-label="${ctx.side === 'mini' ? 'הרחבת סרגל הצד' : 'כיווץ סרגל הצד'}" aria-expanded="${ctx.side === 'mini' ? 'false' : 'true'}">${icon('sidebar')}</button>
@@ -162,7 +171,7 @@ export const STATUS_HE: Record<string, [string, string]> = {
   sent: ['נשלח', 'ok'],
   opened: ['נפתח', 'ok'],
   demo_started: ['התחיל דמו', 'ok'],
-  pilot: ['פיילוט', 'ok'],
+  pilot: ['בהקמה', 'ok'],
   paid: ['משלם', 'ok'],
   skipped: ['דילגתי', 'ghost'],
 };

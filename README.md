@@ -27,8 +27,8 @@ The audit that chose this stack is [docs/audit.md](docs/audit.md), the decisions
 ```sh
 npm install
 npm test          # offline: the fictional store, an in-memory Postgres, a scripted model
-npm run demo      # the dashboard and a pitch page for the fictional store on http://127.0.0.1:4711
-                  # (user demo, password demo-password-123); --live runs the real agent on your Claude Code login
+npm run demo      # the dashboard and a pitch page for the fictional store on http://localhost:4711
+                  # (a stand-in for openfrequency-accounts signs you in); --live runs the real agent on your Claude Code login
 ```
 
 ## Run it for real

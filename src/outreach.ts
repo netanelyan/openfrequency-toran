@@ -7,7 +7,8 @@ import { notOnShabbat, DAY } from './core/clock.ts';
 // another business asking whether it wants to hear more, so the first message asks,
 // says who is writing, and says how to stop; the reminder is the last one.
 //
-// Written in the hebrew-voice guide: first person, the thing first, no slogans.
+// Written in the hebrew-voice guide, as OpenFrequency (the company, "we"): the thing
+// first, no slogans.
 
 export const FOLLOWUP_DAYS = 4;
 
@@ -16,18 +17,21 @@ export function pitchUrl(env: Record<string, string | undefined>, slug: string):
   return `${base}/s/${slug}`;
 }
 
-export function firstMessage(o: { storeName: string; url: string; ownerName?: string }): string {
-  return `היי, כאן ${o.ownerName || 'נתנאל'}. בניתי ל${o.storeName} עוזר לוואטסאפ שעונה ללקוחות לפי המחירים והמדיניות שבאתר שלכם, והכנתי דמו שאפשר לנסות מהטלפון:
+/** "ל" joined to a Hebrew name, "ל־" before any other: "לכלי חרס של נורית", "ל־Nike". */
+export const le = (name: string) => `${/^[א-ת]/.test(name) ? 'ל' : 'ל־'}${name}`;
+
+export function firstMessage(o: { storeName: string; url: string }): string {
+  return `היי, כאן OpenFrequency. בנינו ${le(o.storeName)} תורן לוואטסאפ. הוא עונה ללקוחות על מחירים ומלאי לפי מה שכתוב באתר שלכם, ואפשר לנסות אותו עכשיו מהטלפון.
 ${o.url}
 
-אם זה לא רלוונטי, אפשר לענות "לא" ולא אכתוב שוב.`;
+אם זה לא רלוונטי, אפשר לענות "לא" ולא נכתוב שוב.`;
 }
 
 export function reminderMessage(o: { storeName: string; url: string }): string {
-  return `היי, רציתי לבדוק אם יצא לכם להציץ בדמו של ${o.storeName}:
+  return `היי, יצא לכם להציץ בעמוד שהכנו ${le(o.storeName)}?
 ${o.url}
 
-זו ההודעה האחרונה שלי בנושא.`;
+זו ההודעה האחרונה שלנו בנושא.`;
 }
 
 /** When the one reminder is due: four days after the first message, never on Shabbat. */
@@ -36,6 +40,6 @@ export const followupDue = (sentAt: number) => notOnShabbat(sentAt + FOLLOWUP_DA
 /** Where the owner sends it: the store's WhatsApp, else its email. The link opens the chat or the mail; the text is pasted by hand. */
 export function contactTarget(s: { contact_whatsapp: string | null; contact_email: string | null; name?: string | null }): { kind: 'whatsapp' | 'email' | null; href: string | null; label: string } {
   if (s.contact_whatsapp) return { kind: 'whatsapp', href: `https://wa.me/${s.contact_whatsapp}`, label: 'להעתיק ולפתוח וואטסאפ' };
-  if (s.contact_email) return { kind: 'email', href: `mailto:${s.contact_email}?subject=${encodeURIComponent(`עוזר וואטסאפ ל${s.name || 'החנות'}`)}`, label: 'להעתיק ולפתוח מייל' };
+  if (s.contact_email) return { kind: 'email', href: `mailto:${s.contact_email}?subject=${encodeURIComponent(`תורן לוואטסאפ ${le(s.name || 'החנות')}`)}`, label: 'להעתיק ולפתוח מייל' };
   return { kind: null, href: null, label: 'להעתיק' };
 }

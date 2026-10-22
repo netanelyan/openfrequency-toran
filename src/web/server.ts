@@ -6,9 +6,11 @@ import { gzipSync } from 'node:zlib';
 import { BRAND_DIR, brandCss, ICON_FILES, MANIFEST } from '../brand.ts';
 import type { App } from '../app.ts';
 import { audit } from '../db/log.ts';
-import { bootstrapOwner, checkPassword, clientIp, cookies, createLimiter, csrfFor, csrfOk, isHttps, makeSession, sessionCookie, sessionFrom, sessionSecret, sessionUser } from './auth.ts';
+import { clientIp, cookies, csrfFor, csrfOk, isHttps, sessionSecret } from './auth.ts';
+import { accountsClient, accountsLinks, refusal, sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
+import { ownsConversation, ownsJob, ownsStore, scopeOf, type Scope } from './workspace.ts';
 import type { PageCtx } from './ui.ts';
-import { loginPage, notFoundPage } from './pages/basic.ts';
+import { notFoundPage, refusalPage } from './pages/basic.ts';
 import { dashboardRoutes, headerCounts, storesCss } from './routes.ts';
 import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
@@ -19,14 +21,22 @@ import { demoArt } from './demoArt.ts';
 // THE CHECKS, IN ORDER, ON EVERY REQUEST (Teder's):
 //   - the Host header is ours (defeats DNS rebinding)
 //   - a request under the public name came over HTTPS, which only the proxy can say
-//   - public routes (static files, /s/<slug>, the beacon, the webhook) answer here with
-//     their own checks; everything else needs a session
-//   - every dashboard POST carries the CSRF token derived from its session, and an
-//     Origin that is ours
+//   - public routes (static files, /healthz, /s/<slug>, the beacon, the webhook) answer
+//     here with their own checks; everything else needs a session
+//   - the session is openfrequency-accounts' (accounts.ts): no session goes to its login,
+//     a closed workspace or a plan without Toran gets a page saying so, and a check that
+//     fails (accounts down, a wrong token) lets nobody in
+//   - every dashboard POST asks accounts afresh, carries the CSRF token derived from the
+//     session, and an Origin that is ours; a read-only session (view-as) posts nothing
+//   - a page or action about one store, chat or job answers only inside its workspace
+//     (workspace.ts); the whole server's settings are the operator's
 
 export type Out = { status?: number; message?: string; html?: string; json?: unknown; text?: string; type?: string; redirect?: string; headers?: Record<string, string | string[]>; body?: Buffer };
 export type Req = { req: IncomingMessage; url: URL; path: string; form: Record<string, string>; ip: string; secure: boolean; raw?: string };
-export type DashReq = Req & { user: { id: number; name: string; role: string }; ctx: PageCtx; ajax: boolean };
+export type DashReq = Req & { user: { id: number; name: string; role: string }; scope: Scope; ctx: PageCtx; ajax: boolean };
+
+/** The whole server's settings and adding stores: the operator's alone (the superadmin outside view-as). */
+const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev)|leads\/add)$/;
 export type Route<R> = [method: 'GET' | 'POST', re: RegExp, fn: (r: R, m: RegExpExecArray) => Promise<Out> | Out];
 
 export class ActionError extends Error {
@@ -85,11 +95,15 @@ const STATIC_FILES: Record<string, { file: string; type: string; cache: string }
   '/static/app.js': { file: path.join(STATIC, 'app.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.css': { file: path.join(STATIC, 'pitch.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.js': { file: path.join(STATIC, 'pitch.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
+  // Heebo (OFL, fonts/HEEBO-LICENSE.txt), served from here so a pitch page never calls Google Fonts.
+  '/static/fonts/heebo-hebrew.woff2': { file: path.join(STATIC, 'fonts/heebo-hebrew.woff2'), type: 'font/woff2', cache: 'public, max-age=31536000, immutable' },
+  '/static/fonts/heebo-latin.woff2': { file: path.join(STATIC, 'fonts/heebo-latin.woff2'), type: 'font/woff2', cache: 'public, max-age=31536000, immutable' },
 };
 
-export function createHandler(app: App, { port, limiter = createLimiter(), failDelayMs = 400 }: { port: number; limiter?: ReturnType<typeof createLimiter>; failDelayMs?: number }) {
+export function createHandler(app: App, { port, accounts = accountsClient({ env: app.env, log: app.log }) }: { port: number; accounts?: AccountsClient }) {
   const env = app.env;
   const secret = sessionSecret(env);
+  const links = accountsLinks(env);
   const publicHost = String(env.PUBLIC_HOST || '').trim().toLowerCase() || null;
   const pitchHost = (() => {
     try {
@@ -100,13 +114,11 @@ export function createHandler(app: App, { port, limiter = createLimiter(), failD
   })();
   const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, ...(publicHost ? [publicHost] : []), ...(pitchHost ? [pitchHost] : [])]);
   const origins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(publicHost ? [`https://${publicHost}`] : []), ...(pitchHost ? [`https://${pitchHost}`] : [])]);
-  const ready = bootstrapOwner(app.db, env).catch((e) => app.log(`[web] could not create the owner: ${e.message}`));
   const dash = dashboardRoutes(app);
-  const pub = publicRoutes(app);
+  const pub = publicRoutes(app, accounts);
 
   return async function handler(req: IncomingMessage, res: ServerResponse) {
     try {
-      await ready;
       const host = String(req.headers.host || '').toLowerCase();
       if (!hosts.has(host) && !(env.TORAN_ANY_HOST === '1')) return send(req, res, 421, 'wrong host', 'text/plain; charset=utf-8');
       const secure = isHttps(req);
@@ -145,69 +157,63 @@ export function createHandler(app: App, { port, limiter = createLimiter(), failD
         return reply(req, res, await fn({ req, url, path: p, form, ip: clientIp(req), secure, raw }, mm));
       }
 
-      // ---- login
+      // ---- everything else needs a session, and openfrequency-accounts says whose (accounts.ts)
       const jar = cookies(req);
-      if (p === '/login') {
-        if (method === 'POST') {
-          const ip = clientIp(req);
-          const wait = limiter.check(ip);
-          if (wait) return send(req, res, 429, loginPage({ error: `יותר מדי ניסיונות. אפשר לנסות שוב בעוד ${Math.ceil(wait / 60)} דקות.` }), 'text/html; charset=utf-8', { 'retry-after': String(wait) });
-          const origin = req.headers.origin;
-          if (origin && !origins.has(origin)) return send(req, res, 403, 'cross-origin', 'text/plain; charset=utf-8');
-          const form = Object.fromEntries(new URLSearchParams(await readBody(req, 4000)));
-          const user = await app.db.one<{ id: number; name: string; password_hash: string }>('SELECT id, name, password_hash FROM users WHERE name = $1', [String(form.user || '').trim()]);
-          if (user && checkPassword(form.password || '', user.password_hash)) {
-            limiter.succeed(ip);
-            await app.db.query('UPDATE users SET last_login_at = now() WHERE id = $1', [user.id]);
-            await audit(app.db, { actor: user.name, action: 'login' });
-            res.writeHead(303, { location: '/', 'set-cookie': sessionCookie(makeSession(user.id, secret), { secure }) });
-            return res.end();
-          }
-          limiter.fail(ip);
-          await new Promise((r) => setTimeout(r, failDelayMs));
-          const none = !(await app.db.one<{ n: number }>('SELECT COUNT(*)::int AS n FROM users'))?.n;
-          return send(req, res, 401, loginPage({ error: none ? 'עוד אין משתמש. צריך להגדיר TORAN_ADMIN_PASSWORD בקובץ private/.env ולהפעיל מחדש, או להריץ npm run user:add.' : 'שם המשתמש או הסיסמה לא נכונים.' }), 'text/html; charset=utf-8');
-        }
-        return send(req, res, 200, loginPage({}), 'text/html; charset=utf-8');
-      }
-
-      // ---- everything else needs a session
-      const session = sessionFrom(req);
-      const uid = sessionUser(session, secret);
-      const user = uid ? await app.db.one<{ id: number; name: string; role: string }>('SELECT id, name, role FROM users WHERE id = $1', [uid]) : null;
-      if (!user || !session) {
-        if (method !== 'GET') return send(req, res, 401, JSON.stringify({ ok: false, message: 'צריך להיכנס שוב.' }), 'application/json; charset=utf-8');
-        res.writeHead(303, { location: '/login' });
-        return res.end();
-      }
-      const csrf = csrfFor(session, secret);
       const ajax = req.headers['x-tn-ajax'] === '1';
+      const json = (status: number, body: unknown) => send(req, res, status, JSON.stringify(body), 'application/json; charset=utf-8');
+      const sid = sessionIdFrom(jar, { https: secure });
+      const who = await accounts.whoIs(sid, { live: method !== 'GET' });
+      if (who.status !== 200 || !sid) {
+        const kind = refusal(who.status, String(who.body?.error || ''));
+        const here = `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`;
+        if (kind === 'login') {
+          // A POST is refused, never carried out: the browser signs in again and comes back to the page.
+          if (method !== 'GET') return ajax ? json(401, { ok: false, message: 'צריך להיכנס שוב.', redirect: links.login(here) }) : reply(req, res, { redirect: links.login(here) });
+          return reply(req, res, { redirect: links.login(here) });
+        }
+        const href = kind === 'closed' ? links.logout : kind === 'not_in_plan' ? links.home : here;
+        const status = kind === 'error' ? 503 : 403;
+        if (method !== 'GET' && ajax) return json(status, { ok: false, message: kind === 'error' ? 'אי אפשר לבדוק את הכניסה כרגע, אז שום דבר לא נשמר.' : 'החשבון הזה לא יכול להשתמש בתורן.' });
+        return send(req, res, status, refusalPage(kind, href), 'text/html; charset=utf-8');
+      }
+      const session = who.body as Session;
+      const scope = scopeOf(session);
+      const user = { id: session.user.id, name: String(session.user.name || session.user.email), role: session.role };
+      const csrf = csrfFor(sid, secret);
       const setCookies: string[] = [];
       const flash = jar.tn_flash || null;
       if (flash) setCookies.push('tn_flash=; Path=/; Max-Age=0; SameSite=Strict');
-      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && user.role === 'owner', user, ...(await headerCounts(app)) };
+      const viewAs = session.viewAs ? { name: String(session.workspace?.name || session.workspace?.slug || ''), admin: links.admin } : null;
+      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, ...(await headerCounts(app, scope)) };
+      const notFound = () => (method === 'GET' ? send(req, res, 404, notFoundPage({ ...ctx, title: 'לא נמצא' }), 'text/html; charset=utf-8') : ajax ? json(404, { ok: false, message: 'לא נמצא' }) : send(req, res, 404, 'not found', 'text/plain; charset=utf-8'));
+
+      // One store, chat or job: only inside its workspace. Another workspace's is "not found", as one that never was.
+      const idOf = (re: RegExp) => Number(re.exec(p)?.[1] || 0);
+      const leadId = idOf(/^\/lead\/(\d+)(?:\/|$)/);
+      if (leadId && !(await ownsStore(app.db, scope, leadId))) return notFound();
+      const chatId = idOf(/^\/chat\/(\d+)$/);
+      if (chatId && !(await ownsConversation(app.db, scope, chatId))) return notFound();
+      const jobId = idOf(/^\/jobs?\/(\d+)(?:\.json)?$/);
+      if (jobId && !(await ownsJob(app.db, scope, jobId))) return notFound();
 
       let form: Record<string, string> = {};
       if (method === 'POST') {
         const origin = req.headers.origin;
-        if (origin && !origins.has(origin)) return send(req, res, 403, JSON.stringify({ ok: false, message: 'בקשה מאתר אחר נחסמה.' }), 'application/json; charset=utf-8');
+        if (origin && !origins.has(origin)) return json(403, { ok: false, message: 'בקשה מאתר אחר נחסמה.' });
+        if (scope.readOnly) return ajax ? json(403, { ok: false, message: 'במצב צפייה אי אפשר לשנות כלום.' }) : send(req, res, 403, 'read-only: view-as changes nothing', 'text/plain; charset=utf-8');
+        if (OPERATOR_ONLY.test(p) && !scope.operator) return ajax ? json(403, { ok: false, message: 'את זה משנים רק אנחנו, ב־OpenFrequency.' }) : send(req, res, 403, 'only the operator changes this', 'text/plain; charset=utf-8');
         form = Object.fromEntries(new URLSearchParams(await readBody(req)));
-        if (!csrfOk(form._csrf, session, secret)) return ajax ? send(req, res, 403, JSON.stringify({ ok: false, message: 'הדף ישן. צריך לרענן אותו.' }), 'application/json; charset=utf-8') : send(req, res, 403, 'stale page, reload it', 'text/plain; charset=utf-8');
-        if (p === '/logout') {
-          res.writeHead(303, { location: '/login', 'set-cookie': sessionCookie('', { secure, clear: true }) });
-          return res.end();
-        }
+        if (!csrfOk(form._csrf, sid, secret)) return ajax ? json(403, { ok: false, message: 'הדף ישן. צריך לרענן אותו.' }) : send(req, res, 403, 'stale page, reload it', 'text/plain; charset=utf-8');
         if (p === '/settings/dev') {
-          if (user.role !== 'owner') return reply(req, res, { redirect: '/settings' });
           const on = form.on === '1';
           const c = `tn_dev=${on ? '1' : ''}; Path=/; Max-Age=${on ? 31536000 : 0}; SameSite=Strict; HttpOnly${secure ? '; Secure' : ''}`;
           if (on) await audit(app.db, { actor: user.name, action: 'dev_mode' });
           return reply(req, res, { redirect: on ? '/settings#dev' : '/settings' }, { 'set-cookie': [c, flashCookie(on ? 'מצב מפתח פתוח' : 'מצב מפתח כבוי')] });
         }
       }
-      if (method === 'GET' && p === '/static/stores.css') return send(req, res, 200, await storesCss(app), 'text/css; charset=utf-8', { 'cache-control': 'private, max-age=60' });
+      if (method === 'GET' && p === '/static/stores.css') return send(req, res, 200, await storesCss(app, scope), 'text/css; charset=utf-8', { 'cache-control': 'private, max-age=60' });
 
-      const r: DashReq = { req, url, path: p, form, ip: clientIp(req), secure, user, ctx, ajax };
+      const r: DashReq = { req, url, path: p, form, ip: clientIp(req), secure, user, scope, ctx, ajax };
       for (const [m, re, fn] of dash) {
         if (m !== method) continue;
         const mm = re.exec(p);

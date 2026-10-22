@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAllow, guardReply, numbersIn, splitSentences } from '../src/agent/guard.ts';
+import { buildAllow, guardReply, numbersIn, splitSentences, undash } from '../src/agent/guard.ts';
 
 const tool = `2 matching products:
 - [id 12] ספל חול 350 מ"ל: 89 ₪, במלאי, 3 options. https://s.example/products/sandy-mug
@@ -67,7 +67,7 @@ test('a product\'s option count is a fact; a stock quantity never is; a cut take
   assert.equal(guardReply('בסיס המיטה עולה 3599 ₪ עד 6099 ₪, לפי הגרסה (יש 3 אפשרויות).', opts).redactions.length, 0);
   assert.equal(guardReply('נשארו רק 3 במלאי.', opts).redactions[0]?.rule, 'stock');
   const r = guardReply('יש שתי אפשרויות: הקטן עולה 999 ₪. הגדול במלאי.', opts);
-  assert.equal(r.text, 'את המחיר המדויק אני בודק מול החנות ומעדכן כאן. הגדול במלאי.');
+  assert.equal(r.text, 'את המחיר המדויק אני בודק עם החנות, ואחזור אליך כאן. הגדול במלאי.');
 });
 
 test('a number with a non-money unit is a quantity: "1 month" does not cut a correct price; days stay checked', () => {
@@ -84,4 +84,5 @@ test('English replies get English replacement lines; the customer\'s own numbers
   const own = buildAllow({ toolTexts: [tool], customerTexts: ['יש משהו עד 150 ₪?'] });
   assert.equal(guardReply('עד 150 ₪ יש את הצלחת, ב-149 ₪.', own).redactions.length, 0);
   assert.equal(guardReply('יש בכחול — וגם באפור.', allow()).text, 'יש בכחול, וגם באפור.');
+  assert.equal(undash('ההזמנה יוצאת תוך 1–3 ימי עסקים, ומגיעה תוך 6 – 12.'), 'ההזמנה יוצאת תוך 1-3 ימי עסקים, ומגיעה תוך 6-12.', 'a range keeps its hyphen');
 });

@@ -1,14 +1,20 @@
 import { randomBytes } from 'node:crypto';
 import type { App } from '../app.ts';
-import { pitchData, pitchPage, themeCss } from '../pitch/page.ts';
+import { goneHtml, pitchData, pitchPage, themeCss } from '../pitch/page.ts';
 import { recordBeacon, recordOpen } from '../pitch/track.ts';
 import { enqueue } from '../jobs/queue.ts';
-import { cookies, sessionFrom, sessionSecret, sessionUser } from './auth.ts';
+import { cookies } from './auth.ts';
+import { sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
+import { ownsStore, scopeOf } from './workspace.ts';
 import type { Out, Req, Route } from './server.ts';
 
 // The public routes, answered without a session:
 //
-//   GET  /s/<slug>             a store's pitch page (noindex)
+//   GET  /s/<slug>             a store's pitch page (noindex). Open to anyone only once it
+//                              is approved and complete (pitch/ready.ts); a signed-in
+//                              session whose workspace has the store (the operator: every
+//                              store) sees it always, with what holds it back; a taken-down page is
+//                              410 for everyone else
 //   GET  /s/<slug>/theme.css   its colours
 //   POST /t                    the page's beacon (scroll depth, demo taps), rate-limited
 //   POST /wa/twilio            Twilio's webhook: signature checked, acknowledged at once,
@@ -33,16 +39,29 @@ function limiter(max: number, windowMs: number) {
   };
 }
 
-export function publicRoutes(app: App): Route<Req>[] {
-  const secret = sessionSecret(app.env);
+export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
   const beaconOk = limiter(120, 3_600_000);
   const hookOk = limiter(600, 60_000);
-  const owner = (r: Req) => Boolean(sessionUser(sessionFrom(r.req), secret));
+  // The owner: a session accounts vouches for, whose workspace has this store. A visitor with no cookie never asks
+  // accounts, and a check that fails makes anyone a visitor, so the page stays as public as it is.
+  const session = async (r: Req): Promise<Session | null> => {
+    const sid = sessionIdFrom(cookies(r.req), { https: r.secure });
+    if (!sid) return null;
+    const who = await accounts.whoIs(sid);
+    return who.status === 200 ? (who.body as Session) : null;
+  };
+  const owner = async (r: Req, storeId: number) => {
+    const s = await session(r);
+    return Boolean(s) && ownsStore(app.db, scopeOf(s!), storeId);
+  };
 
   const pitch = async (r: Req, m: RegExpExecArray): Promise<Out> => {
     const d = await pitchData(app, m[1]);
-    if (!d) return { status: 404, html: notFound(), headers: pitchHeaders() };
-    const preview = r.url.searchParams.get('preview') === '1' && owner(r);
+    if (!d) return { status: 404, html: goneHtml(false), headers: pitchHeaders() };
+    const isOwner = await owner(r, d.store.id);
+    if (!isOwner && d.store.taken_down_at) return { status: 410, html: goneHtml(true), headers: pitchHeaders() };
+    if (!isOwner && !d.public) return { status: 404, html: goneHtml(false), headers: pitchHeaders() };
+    const preview = r.url.searchParams.get('preview') === '1' && isOwner;
     const jar = cookies(r.req);
     let visitor = /^[\w-]{16,40}$/.test(jar.tn_v || '') ? jar.tn_v : null;
     const set: string[] = [];
@@ -50,8 +69,8 @@ export function publicRoutes(app: App): Route<Req>[] {
       visitor = randomBytes(12).toString('base64url');
       set.push(`tn_v=${visitor}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly${r.secure ? '; Secure' : ''}`);
     }
-    if (!preview && !owner(r)) await recordOpen(app, d.store.id, visitor);
-    return { html: pitchPage(d, { env: app.env, preview }), headers: pitchHeaders(set.length ? { 'set-cookie': set, 'cache-control': 'no-store' } : { 'cache-control': 'no-store' }) };
+    if (!isOwner) await recordOpen(app, d.store.id, visitor);
+    return { html: pitchPage(d, { env: app.env, owner: isOwner, preview }), headers: pitchHeaders(set.length ? { 'set-cookie': set, 'cache-control': 'no-store' } : { 'cache-control': 'no-store' }) };
   };
 
   return [
@@ -68,7 +87,8 @@ export function publicRoutes(app: App): Route<Req>[] {
       } catch {
         return { status: 400, text: '' };
       }
-      if (owner(r)) return { status: 204, text: '' };
+      // Anyone signed in to OpenFrequency is one of us or a customer looking at a page, never a lead reading it.
+      if (await session(r)) return { status: 204, text: '' };
       const visitor = cookies(r.req).tn_v || null;
       await recordBeacon(app, String(body.slug || ''), String(body.kind || ''), body.depth ?? null, visitor);
       return { status: 204, text: '' };
@@ -89,6 +109,3 @@ export function publicRoutes(app: App): Route<Req>[] {
   ];
 }
 
-function notFound() {
-  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>הדף לא נמצא</title><link rel="stylesheet" href="/static/brand.css"><link rel="stylesheet" href="/static/pitch.css"></head><body><main class="page"><section class="letter"><h1>הדף הזה כבר לא כאן</h1><p class="lede">אולי הקישור ישן. אם קיבלתם אותו ממני, אפשר לכתוב לי ואשלח חדש.</p></section></main></body></html>`;
-}

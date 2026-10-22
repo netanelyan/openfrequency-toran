@@ -67,10 +67,26 @@ export const contrast = (a: string, b: string) => {
 /** White text on the colour if it reads (4.5:1), else near-black. */
 export const inkOn = (hex: string) => (contrast(hex, '#ffffff') >= 4.5 ? '#ffffff' : '#1d1d1f');
 
-/** The colour a store is shown in: its first brand colour, else a neutral graphite. */
+/** The store's own colour, or null when the site gave none (the pitch page then waits for the owner to pick one). */
+export function brandColor(b: Brand | null | undefined): string | null {
+  return (b?.colors || []).map(normHex).find((x) => x && isBrandish(x)) || null;
+}
+
+/** The colour a store is shown in on the dashboard: its first brand colour, else a neutral graphite. */
 export function storeColor(b: Brand | null | undefined): string {
-  const c = (b?.colors || []).map(normHex).find((x) => x && isBrandish(x));
-  return c || '#4a4a52';
+  return brandColor(b) || '#4a4a52';
+}
+
+/**
+ * The store's name as a person says it: a site title's tail after " | " or " – " is the tagline, not the name
+ * ("כלי חרס של נורית | קרמיקה בעבודת יד"). Null when there is no name at all, never the domain as a guess.
+ */
+export function displayName(...names: (string | null | undefined)[]): string | null {
+  for (const n of names) {
+    const s = String(n || '').split(/\s[|–—·]\s|\s-\s/)[0].replace(/\s+/g, ' ').trim();
+    if (s.length >= 2) return s.length > 60 ? `${s.slice(0, 57).trim()}...` : s;
+  }
+  return null;
 }
 
 /** A colour darkened until white text on it passes 4.5:1, for buttons and bubbles. */

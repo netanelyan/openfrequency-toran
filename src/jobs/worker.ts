@@ -65,7 +65,7 @@ async function ingestAndBuild(app: App, storeId: number, say: (l: string) => Pro
   // A daily re-scrape keeps the sample chat the owner approved; an ingest asked for by hand rebuilds the page.
   const built = await app.db.one('SELECT page_built_at FROM stores WHERE id = $1', [storeId]);
   if (!rescrape || !built?.page_built_at) {
-    await say('בונה את דף ההצגה ואת שיחת הדוגמה');
+    await say('בונה את דף הדמו ואת שיחת הדוגמה');
     await buildPitch(app, storeId);
   }
   if (rescrape) await event(app.db, storeId, 'rescrape', { products: s.products, gone: s.gone });

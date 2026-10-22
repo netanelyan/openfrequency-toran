@@ -163,7 +163,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
 
   const english = !/[א-ת]/.test(input.text) && /[a-z]{3}/i.test(input.text);
   if (!raw) {
-    raw = english ? "I'm checking this with the store and will update you here." : 'אני בודק את זה מול החנות ומעדכן כאן.';
+    raw = english ? "I'm checking this with the store and will update you here." : 'את זה אני בודק עם החנות, ואחזור אליך כאן.';
     handoff ??= { reason: 'unknown', summary: `no answer after ${rounds} rounds: ${cleanLine(input.text, 160)}` };
   }
 

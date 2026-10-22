@@ -1,0 +1,162 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { seedDemo } from '../src/demoSeed.ts';
+import { getOffer, setOffer, priceSentence, OFFER_DEFAULT } from '../src/offer.ts';
+import { pitchGaps } from '../src/pitch/ready.ts';
+import { pitchData, pitchPage, themeCss, type PitchData } from '../src/pitch/page.ts';
+import { buildPitch } from '../src/pitch/build.ts';
+import { contrast, displayName } from '../src/ingest/brand.ts';
+import { testApp } from './helpers.ts';
+
+const OFFER = { monthly: 199, vat: 'excluded' as const, setup: 0, city: 'אשדוד' };
+const ENV = { DEMO_WA_NUMBER: '972500000999', TORAN_OWNER_WHATSAPP: '972500000888', PUBLIC_BASE_URL: 'https://toran.example' };
+
+async function seeded() {
+  const app = await testApp();
+  Object.assign(app.env, ENV);
+  const s = await seedDemo(app, { conversation: false });
+  const store = await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [s.storeId]);
+  return { app, s, store };
+}
+
+test('the sample chat is two questions and two answers by the agent, about one product, second question from the pack', async () => {
+  const { app, s } = await seeded();
+  try {
+    const p = await app.db.one<any>('SELECT sample_chat FROM pitches WHERE store_id = $1', [s.storeId]);
+    assert.deepEqual(p.sample_chat.map((m: any) => m.role), ['customer', 'agent', 'customer', 'agent']);
+    assert.match(p.sample_chat[0].text, /^היי, יש לכם .+\? כמה זה עולה\?$/);
+    assert.equal(p.sample_chat[2].text, 'ותוך כמה זמן זה מגיע?', 'the store has a shipping page, so the second question is about delivery');
+    const ev = await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'page_built' ORDER BY at DESC LIMIT 1", [s.storeId]);
+    assert.equal(ev.data.sample, 'agent');
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('when every answer hands off there is no sample chat, no row-built stand-in, and the page waits with that gap', async () => {
+  const app = await testApp({
+    script: (req) => {
+      const last = req.messages[req.messages.length - 1];
+      const answered = Array.isArray(last.content) && last.content.some((b: any) => b.type === 'tool_result');
+      return answered ? [{ type: 'text', text: 'העברתי את השאלה לחנות, ויחזרו אליך כאן.' }] : [{ type: 'tool_use', id: 'h1', name: 'handoff', input: { reason: 'unknown', summary: 'x' } } as any];
+    },
+  });
+  Object.assign(app.env, ENV);
+  try {
+    const s = await seedDemo(app, { conversation: false });
+    const p = await app.db.one<any>('SELECT sample_chat FROM pitches WHERE store_id = $1', [s.storeId]);
+    assert.deepEqual(p.sample_chat, []);
+    const store = await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [s.storeId]);
+    assert.ok((await pitchGaps(app, store)).some((g) => g.key === 'sample'));
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('a page is held for each missing field: price, the two numbers, the colour, the name', async () => {
+  const { app, store } = await seeded();
+  try {
+    const keys = async () => (await pitchGaps(app, await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [store.id]))).map((g) => g.key).sort();
+    assert.deepEqual(await keys(), ['price'], 'no price set yet');
+    await setOffer(app.db, { ...OFFER, setup: null });
+    assert.deepEqual(await keys(), ['price'], 'a setup fee that is not decided still holds the page');
+    await setOffer(app.db, OFFER);
+    assert.deepEqual(await keys(), []);
+    app.env.TORAN_OWNER_WHATSAPP = app.env.DEMO_WA_NUMBER;
+    assert.deepEqual(await keys(), ['of_number'], 'our number may not be the demo number');
+    app.env.TORAN_OWNER_WHATSAPP = ENV.TORAN_OWNER_WHATSAPP;
+    delete app.env.DEMO_WA_NUMBER;
+    assert.deepEqual(await keys(), ['demo_number']);
+    app.env.DEMO_WA_NUMBER = ENV.DEMO_WA_NUMBER;
+    await app.db.query("UPDATE stores SET brand = brand - 'colors' WHERE id = $1", [store.id]);
+    assert.deepEqual(await keys(), ['color'], 'no colour from the site: no grey guess');
+    await app.db.query(`UPDATE stores SET brand_override = '{"colors":["#2e7d6b"]}'::jsonb WHERE id = $1`, [store.id]);
+    assert.deepEqual(await keys(), [], 'the owner picked one');
+    await app.db.query("UPDATE stores SET name = NULL, brand = brand - 'name' WHERE id = $1", [store.id]);
+    assert.deepEqual(await keys(), ['name'], 'no name: never the domain instead');
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('the owner\'s preview of a held page shows each gap as a visible placeholder and says why', async () => {
+  const { app, store } = await seeded();
+  try {
+    const d = (await pitchData(app, store.slug))!;
+    assert.equal(d.public, false);
+    const html = pitchPage(d, { env: app.env, owner: true });
+    assert.match(html, /class="held"/);
+    assert.match(html, /המחיר עוד לא נקבע/);
+    assert.match(html, /<mark class="ph" dir="rtl">\[המחיר\] ₪<\/mark> לחודש, <mark class="ph" dir="rtl">\[כולל או לא כולל מע״מ\]<\/mark>/);
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('the price sentence comes from the one offer, with VAT said and the setup fee only when there is one', async () => {
+  const plain = (s: string) => s;
+  assert.equal(priceSentence(OFFER, plain), 'זה 199 ₪ לחודש, לא כולל מע״מ.');
+  assert.equal(priceSentence({ ...OFFER, vat: 'included', setup: 1500 }, plain), 'זה 199 ₪ לחודש, כולל מע״מ, ועוד 1,500 ₪ דמי הקמה, פעם אחת.');
+  const { app } = await seeded();
+  try {
+    assert.deepEqual(await getOffer(app.db), OFFER_DEFAULT, 'no price until one is set: nothing is assumed');
+  } finally {
+    await app.db.close();
+  }
+});
+
+function fake(over: Partial<PitchData> = {}, name: string | null = 'כלי חרס של נורית'): PitchData {
+  return {
+    store: { id: 1, name, domain: 'shop.example', url: 'https://shop.example/', slug: 'shop-abcd', demo_code: 'DEMO-ABCD', brand: {}, brand_override: {}, config: {}, approved_at: new Date(), taken_down_at: null, status: 'sent' },
+    name,
+    color: '#b4532a',
+    chat: [{ role: 'customer', text: 'היי' }, { role: 'agent', text: 'כן' }, { role: 'customer', text: 'ו?' }, { role: 'agent', text: 'כן' }],
+    product: null,
+    counts: { products: 14, available: 12 },
+    pages: { shipping: true, returns: true },
+    offer: OFFER,
+    gaps: [],
+    public: true,
+    ...over,
+  };
+}
+
+test('the hero says only what was really read: the product count in any size, and only the pages that were found', () => {
+  const page = (d: PitchData) => pitchPage(d, { env: ENV });
+  assert.match(page(fake()), /עברנו על האתר שלכם, על 14 המוצרים ועל עמודי המשלוחים וההחזרות\./);
+  assert.match(page(fake({ counts: { products: 2431, available: 2000 }, pages: { shipping: true, returns: false } })), /על 2,431 המוצרים ועל עמוד המשלוחים\./);
+  assert.match(page(fake({ counts: { products: 3, available: 3 }, pages: { shipping: false, returns: true } })), /על 3 המוצרים ועל עמוד ההחזרות\./);
+  assert.match(page(fake({ counts: { products: 1, available: 1 }, pages: { shipping: false, returns: false } })), /עברנו על האתר שלכם ועל המוצר שבו\./);
+  assert.match(page(fake({}, 'Nike Store')), /<h1>בנינו ל־<bdi>Nike Store<\/bdi> תורן לוואטסאפ<\/h1>/);
+  const all = page(fake());
+  assert.ok(!/[—–]/.test(all.replace(/<title>[\s\S]*?<\/title>/, '')), 'no em or en dashes');
+  assert.ok(!/בניתי|אני נתנאל|לכתוב לי/.test(all), 'OpenFrequency speaks as "we"');
+  assert.match(all, /data-takedown/);
+  assert.match(all, /OpenFrequency<\/span>, אשדוד/);
+});
+
+test('the store colour is darkened until white text on it passes 4.5:1, whatever the site gave', () => {
+  for (const c of ['#ffd400', '#f8f8f8', '#7fd1ff', '#b4532a', '#00ff00']) {
+    const css = themeCss(fake({ color: c }));
+    const store = /--store:(#[0-9a-f]{6})/.exec(css)![1];
+    assert.ok(contrast(store, '#ffffff') >= 4.5, `${c} became ${store}`);
+    assert.match(css, /--store-ink:#ffffff/);
+  }
+});
+
+test('a store\'s name is its name, not its tagline and never its domain', () => {
+  assert.equal(displayName(null, 'כלי חרס של נורית | קרמיקה בעבודת יד'), 'כלי חרס של נורית');
+  assert.equal(displayName('', 'Shop – Handmade in Israel'), 'Shop');
+  assert.equal(displayName(null, undefined, ''), null);
+});
+
+test('rebuilding never fills a gap with a guess: the page keeps waiting until the agent answers cleanly', async () => {
+  const { app, s } = await seeded();
+  try {
+    const r = await buildPitch(app, s.storeId);
+    assert.equal(r.chat.length, 4);
+    assert.ok(r.turns >= 2 && r.turns <= 8);
+  } finally {
+    await app.db.close();
+  }
+});

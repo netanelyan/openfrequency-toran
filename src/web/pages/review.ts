@@ -4,14 +4,17 @@ import { audit } from '../../db/log.ts';
 import { forgetStorePrompt } from '../../agent/loop.ts';
 import { money } from '../../agent/tools.ts';
 import { buildPitch } from '../../pitch/build.ts';
-import { normHex, storeColor } from '../../ingest/brand.ts';
+import { brandColor, normHex } from '../../ingest/brand.ts';
 import { pitchUrl } from '../../outreach.ts';
+import { pitchGaps, type Gap } from '../../pitch/ready.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
+import { storesOf } from '../workspace.ts';
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, storeBadge } from '../ui.ts';
 
 // The review queue: Teder's approval flow, for pitch pages. Each store whose page is
 // built and not yet approved is a card: who it is, the sample chat the page shows, what
-// the checks found, and Approve / Edit / Skip. Approve posts in the background and the
+// the checks found, what still holds the page back (pitch/ready.ts: approve stays off
+// until that list is empty), and Approve / Edit / Skip. Approve posts in the background and the
 // card leaves (Teder's ajax "remove"); Skip asks for a reason first.
 //
 // The edit screen is the knowledge pack: fix a wrong price or a wrong line, answer an
@@ -23,38 +26,42 @@ async function flagsFor(app: App, s: any): Promise<{ good: string[]; warn: strin
   const warn: string[] = [];
   const pol = await app.db.query<{ kind: string }>('SELECT kind FROM policies WHERE store_id = $1', [s.id]);
   const n = await app.db.one<any>('SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE available)::int AS a FROM products WHERE store_id = $1 AND gone_at IS NULL', [s.id]);
-  const built = await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'page_built' ORDER BY at DESC LIMIT 1", [s.id]);
   const ingest = await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'ingest' ORDER BY at DESC LIMIT 1", [s.id]);
   good.push(`${n?.n || 0} מוצרים, ${n?.a || 0} במלאי`);
   if (pol.some((p) => p.kind === 'shipping')) good.push('מדיניות משלוחים');
-  else warn.push('לא נמצא דף משלוחים: שאלות על משלוח יעברו אליך');
+  else warn.push('לא נמצא דף משלוחים, אז שאלות על משלוח יעברו אליך');
   if (pol.some((p) => p.kind === 'returns')) good.push('מדיניות החזרות');
   else warn.push('לא נמצא דף החזרות');
-  if (built?.data?.sampleFrom === 'row') warn.push('שיחת הדוגמה נבנתה מהנתונים ולא מהעוזר: כדאי לבנות אותה שוב');
-  if (!s.brand?.colors?.length && !s.brand_override?.colors?.length) warn.push('לא נמצא צבע מותג: הדף בגוון ניטרלי');
   if (!s.brand?.tone) warn.push('לא נמצאה דוגמה לטון הכתיבה של החנות');
-  if (!s.contact_whatsapp && !s.contact_email) warn.push('אין דרך ליצור קשר: אין לאן לשלוח');
+  if (!s.contact_whatsapp && !s.contact_email) warn.push('לא מצאתי באתר וואטסאפ או מייל, אז אין לאן לשלוח');
   for (const w of ingest?.data?.warnings || []) if (/currency/.test(w)) warn.push(`מטבע: ${w}`);
   return { good, warn };
 }
+
+/** What holds a page back, in red, above everything else on its card. */
+const gapList = (gaps: Gap[]) => (gaps.length ? `<ul class="gaps">${gaps.map((g) => `<li>${icon('alert')}${esc(g.he)}</li>`).join('')}</ul>` : '');
 
 function chatBubbles(chat: { role: string; text: string }[]) {
   return `<div class="chat">${chat.map((m) => `<div class="b ${m.role === 'agent' ? 'agent' : 'customer'}">${esc(m.text)}</div>`).join('')}</div>`;
 }
 
 async function reviewQueue(app: App, r: DashReq) {
-  const rows = await app.db.query<any>("SELECT s.*, p.sample_chat FROM stores s LEFT JOIN pitches p ON p.store_id = s.id WHERE s.status = 'page_ready' AND s.approved_at IS NULL ORDER BY s.score DESC, s.page_built_at");
+  const rows = await app.db.query<any>(`SELECT s.*, p.sample_chat FROM stores s LEFT JOIN pitches p ON p.store_id = s.id WHERE s.status = 'page_ready' AND s.approved_at IS NULL AND ${storesOf(r.scope, 's')} ORDER BY s.score DESC, s.page_built_at`);
   const cards = [];
+  const ready: number[] = [];
   for (const s of rows) {
     const f = await flagsFor(app, s);
+    const gaps = await pitchGaps(app, s);
+    if (!gaps.length) ready.push(s.id);
     const name = s.brand?.name || s.name || s.domain;
     cards.push(`<article class="card rcard" data-item>
   <div class="meta"><span class="chip">${esc(PLATFORM_HE[s.platform] || s.platform)}</span><span class="chip">נבנה ${esc(ago(s.page_built_at))}</span><span class="end">${scoreNum(s.score, s.qualified)}</span></div>
   <div class="who">${storeBadge(s)}<div><h3>${esc(name)}</h3><small><bdi class="ltr">${esc(s.domain)}</bdi></small></div></div>
+  ${gapList(gaps)}
   <div class="preview">${chatBubbles(s.sample_chat || [])}</div>
   <div class="trust">${f.good.map((g) => `<span class="good">${icon('check')}${esc(g)}</span>`).join('')}${f.warn.map((w) => `<span class="warnc">${icon('alert')}${esc(w)}</span>`).join('')}</div>
   <div class="actions">
-    ${postButton(r.ctx, `/lead/${s.id}/approve`, 'לאשר', { cls: 'btn primary', ajax: 'remove', iconName: 'check' })}
+    ${gaps.length ? `<button class="btn primary" type="button" disabled>${icon('check')}לאשר</button>` : postButton(r.ctx, `/lead/${s.id}/approve`, 'לאשר', { cls: 'btn primary', ajax: 'remove', iconName: 'check' })}
     <a class="btn" href="/lead/${s.id}/review">${icon('edit')}לעריכה</a>
     <button class="btn ghost" type="button" data-toggle="#skip-${s.id}" aria-expanded="false">לדלג</button>
   </div>
@@ -64,8 +71,8 @@ async function reviewQueue(app: App, r: DashReq) {
   </form>
 </article>`);
   }
-  const ids = rows.map((s) => s.id);
-  const body = `<div class="head"><h1>לבדיקה</h1><p class="sub">${rows.length === 1 ? 'דף אחד מחכה לך. דף שמאשרים עובר לשליחה.' : rows.length ? `${rows.length} דפים מחכים לך. כל דף שמאשרים עובר לשליחה.` : 'אין דפים שמחכים.'}</p>${rows.length > 1 ? `<div class="end">${postButton(r.ctx, '/review/approve-all', `לאשר את כל ${rows.length}`, { cls: 'btn primary sm', confirm: `לאשר ${rows.length} דפים?`, fields: { ids: ids.join(',') } })}</div>` : ''}</div>
+  const held = rows.length - ready.length;
+  const body = `<div class="head"><h1>לבדיקה</h1><p class="sub">${rows.length === 1 ? 'דף אחד מחכה לך. דף שמאשרים עובר לשליחה.' : rows.length ? `${rows.length} דפים מחכים לך. כל דף שמאשרים עובר לשליחה.` : 'אין דפים שמחכים.'}${held ? ` ${held === 1 ? 'לדף אחד חסר משהו, והוא לא נפתח לאף אחד עד שזה מתמלא.' : `ל־${held} דפים חסר משהו, והם לא נפתחים לאף אחד עד שזה מתמלא.`}` : ''}</p>${ready.length > 1 ? `<div class="end">${postButton(r.ctx, '/review/approve-all', `לאשר את ${ready.length} המוכנים`, { cls: 'btn primary sm', confirm: `לאשר ${ready.length} דפים?`, fields: { ids: ready.join(',') } })}</div>` : ''}</div>
 ${rows.length ? `<div class="cards">${cards.join('')}</div>` : `<div class="empty">${icon('review')}<b>הכול נבדק</b>חנות חדשה נכנסת לכאן כשהדף שלה מוכן. <a href="/leads">ללידים</a></div>`}`;
   return layout({ ...r.ctx, title: 'לבדיקה', active: 'review' }, body);
 }
@@ -73,7 +80,7 @@ ${rows.length ? `<div class="cards">${cards.join('')}</div>` : `<div class="empt
 async function editPage(app: App, r: DashReq, id: number) {
   const s = await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [id]);
   if (!s) return null;
-  if (!s.page_built_at) throw new ActionError('לחנות הזאת עוד אין דף. קודם לקלוט ולבנות.', 400);
+  if (!s.page_built_at) throw new ActionError('לחנות הזאת עוד אין דף. קודם צריך לבנות אותו.', 400);
   const q = (r.url.searchParams.get('q') || '').trim();
   const pitch = await app.db.one<any>('SELECT sample_chat, built_at FROM pitches WHERE store_id = $1', [id]);
   const products = await app.db.query<any>(
@@ -84,6 +91,7 @@ async function editPage(app: App, r: DashReq, id: number) {
   const policies = await app.db.query<any>('SELECT id, kind, title, url, text, override_text FROM policies WHERE store_id = $1 ORDER BY kind', [id]);
   const faqs = await app.db.query<any>('SELECT id, question, site_answer, answer FROM faqs WHERE store_id = $1 ORDER BY id', [id]);
   const f = await flagsFor(app, s);
+  const gaps = await pitchGaps(app, s);
   const brand = { ...(s.brand || {}), ...(s.brand_override || {}) };
   const name = brand.name || s.name || s.domain;
   const currency = s.config?.currency || 'ILS';
@@ -102,22 +110,23 @@ async function editPage(app: App, r: DashReq, id: number) {
 
   const body = `<a class="back" href="/lead/${id}">${icon('chev')}${esc(name)}</a>
 <div class="head"><h1 class="title">בדיקה ועריכה</h1><p class="sub">מה שמתקנים כאן נשמר מעל מה שנקרא מהאתר, ונשאר גם אחרי הרענון היומי.</p></div>
+${gaps.length ? `<div class="banner bad">${icon('alert')}<div><b>הדף לא נפתח לאף אחד עד שזה מתמלא</b>${gapList(gaps)}</div></div>` : ''}
 <div class="cols">
   <div class="grid12">
     <section class="panel"><header><h2>שיחת הדוגמה</h2><span class="end">${postButton(r.ctx, `/lead/${id}/sample`, 'לבנות מחדש', { cls: 'btn sm', iconName: 'refresh' })}</span></header>${chatBubbles(pitch?.sample_chat || [])}
-      <p class="small muted mt8 m0">את התשובה כתב העוזר מהנתונים של החנות${pitch?.built_at ? `, ${esc(ago(pitch.built_at))}` : ''}.</p></section>
+      <p class="small muted mt8 m0">את התשובות כתב תורן מהנתונים של החנות${pitch?.built_at ? `, ${esc(ago(pitch.built_at))}` : ''}.</p></section>
     <section class="panel"><header><h2>מוצרים</h2><span class="end small muted">${total?.n || 0} בסך הכול</span></header>
       <form class="inline-form" method="get" action="/lead/${id}/review"><input type="search" name="q" value="${esc(q)}" placeholder="חיפוש מוצר"><button class="btn" type="submit">${icon('search')}</button></form>
       <div class="scrollx mt12"><table class="table stack"><thead><tr><th>מוצר</th><th>מחיר באתר</th><th>תיקון</th></tr></thead><tbody>${productRows.join('')}</tbody></table></div>
     </section>
     <section class="panel"><header><h2>מדיניות</h2></header>
       ${policies.length ? policies.map((p) => `<details class="panel mt12"><summary><b>${esc(p.title)}</b> <span class="chip">${esc(p.kind)}</span>${p.override_text ? '<span class="chip sig">תוקן</span>' : ''}</summary>
-      <form method="post" action="/lead/${id}/policy/${p.id}">${csrfField(r.ctx)}<label class="f">הטקסט שהעוזר קורא (ריק = מהאתר)<textarea name="override_text" rows="8" dir="rtl">${esc(p.override_text || '')}</textarea></label>
+      <form method="post" action="/lead/${id}/policy/${p.id}">${csrfField(r.ctx)}<label class="f">הטקסט שתורן קורא. אם משאירים ריק, הוא קורא את מה שבאתר<textarea name="override_text" rows="8" dir="rtl">${esc(p.override_text || '')}</textarea></label>
       <details class="mt8"><summary class="small">מה כתוב באתר</summary><blockquote class="q mt8">${esc(p.text.slice(0, 3000))}</blockquote></details>
       <button class="btn sm mt12" type="submit">לשמור</button></form></details>`).join('') : '<p class="muted m0">לא נמצאו דפי מדיניות באתר. כל שאלה על משלוח או החזרה תעבור אליך.</p>'}
     </section>
     <section class="panel"><header><h2>שאלות נפוצות</h2></header>
-      ${faqs.length ? faqs.map((x) => `<form class="mt12" method="post" action="/lead/${id}/faq/${x.id}" data-ajax="reload">${csrfField(r.ctx)}<label class="f">${esc(x.question)}${x.site_answer ? `<small>באתר: ${esc(x.site_answer.slice(0, 200))}</small>` : ''}<textarea name="answer" rows="2" dir="rtl" placeholder="התשובה שלך (העוזר מעדיף אותה)">${esc(x.answer || '')}</textarea></label><button class="btn sm mt8" type="submit">לשמור</button></form>`).join('') : '<p class="muted m0">לא נמצאו שאלות באתר.</p>'}
+      ${faqs.length ? faqs.map((x) => `<form class="mt12" method="post" action="/lead/${id}/faq/${x.id}" data-ajax="reload">${csrfField(r.ctx)}<label class="f">${esc(x.question)}${x.site_answer ? `<small>באתר: ${esc(x.site_answer.slice(0, 200))}</small>` : ''}<textarea name="answer" rows="2" dir="rtl" placeholder="התשובה שלך. תורן יענה לפיה ולא לפי האתר">${esc(x.answer || '')}</textarea></label><button class="btn sm mt8" type="submit">לשמור</button></form>`).join('') : '<p class="muted m0">לא נמצאו שאלות באתר.</p>'}
       <form class="mt16" method="post" action="/lead/${id}/faq">${csrfField(r.ctx)}<label class="f">שאלה חדשה<input type="text" name="question" dir="rtl" required></label><label class="f mt8">התשובה<textarea name="answer" rows="2" dir="rtl" required></textarea></label><button class="btn sm mt8" type="submit">${icon('plus')}להוסיף</button></form>
     </section>
   </div>
@@ -127,9 +136,9 @@ async function editPage(app: App, r: DashReq, id: number) {
     <section class="panel"><header><h2>מותג</h2>${storeBadge(s)}</header>
       <form method="post" action="/lead/${id}/brand" class="formgrid">${csrfField(r.ctx)}
         <label class="f">השם שמופיע בדף<input type="text" name="name" value="${esc(brand.name || '')}" dir="auto"></label>
-        <label class="f">צבע ראשי<small>מהאתר: ${esc((s.brand?.colors || []).join(', ') || 'לא נמצא')}. עכשיו: ${esc(storeColor(brand))}</small><input type="text" name="color" value="${esc(s.brand_override?.colors?.[0] || '')}" placeholder="#b4532a" dir="ltr"></label>
+        <label class="f">צבע ראשי<small>מהאתר: ${esc((s.brand?.colors || []).join(', ') || 'לא נמצא')}. עכשיו: ${esc(brandColor(brand) || 'אין צבע, אז הדף מחכה')}</small><input type="text" name="color" value="${esc(s.brand_override?.colors?.[0] || '')}" placeholder="#b4532a" dir="ltr"></label>
         <label class="f">לוגו (כתובת https)<input type="url" name="logo" value="${esc(s.brand_override?.logo || '')}" placeholder="${esc(s.brand?.logo || '')}" dir="ltr"></label>
-        <label class="f">טון הכתיבה של החנות<small>מהטקסטים באתר. העוזר מחקה אותו.</small><textarea name="tone" rows="5" dir="rtl">${esc(brand.tone || '')}</textarea></label>
+        <label class="f">טון הכתיבה של החנות<small>מהטקסטים באתר. תורן כותב בסגנון הזה.</small><textarea name="tone" rows="5" dir="rtl">${esc(brand.tone || '')}</textarea></label>
         <button class="btn sm" type="submit">לשמור</button>
       </form>
     </section>
@@ -137,7 +146,7 @@ async function editPage(app: App, r: DashReq, id: number) {
   </div>
 </div>
 <div class="actionbar">
-  ${s.approved_at ? postButton(r.ctx, `/lead/${id}/unapprove`, 'לבטל את האישור', { cls: 'btn' }) : postButton(r.ctx, `/lead/${id}/approve`, 'לאשר את הדף', { cls: 'btn primary', iconName: 'check', fields: { next: `/lead/${id}` } })}
+  ${s.approved_at ? postButton(r.ctx, `/lead/${id}/unapprove`, 'לבטל את האישור', { cls: 'btn' }) : gaps.length ? `<button class="btn primary" type="button" disabled>${icon('check')}לאשר את הדף</button>` : postButton(r.ctx, `/lead/${id}/approve`, 'לאשר את הדף', { cls: 'btn primary', iconName: 'check', fields: { next: `/lead/${id}` } })}
   <a class="btn" href="/lead/${id}">חזרה לליד</a>
 </div>`;
   return layout({ ...r.ctx, title: `בדיקה: ${name}`, active: 'review' }, body);
@@ -159,7 +168,10 @@ export function reviewRoutes(app: App): Route<DashReq>[] {
     ['POST', /^\/review\/approve-all$/, async (r) => {
       const ids = String(r.form.ids || '').split(',').map(Number).filter((x) => Number.isInteger(x) && x > 0);
       if (!ids.length) throw new ActionError('אין מה לאשר');
-      const done = await app.db.query("UPDATE stores SET approved_at = now() WHERE id = ANY($1::int[]) AND status = 'page_ready' AND approved_at IS NULL RETURNING id", [ids]);
+      // Only the session's workspace's pages with nothing missing: the server checks again, whatever the form said.
+      const complete: number[] = [];
+      for (const s of await app.db.query<any>(`SELECT id, name, brand, brand_override FROM stores WHERE id = ANY($1::int[]) AND ${storesOf(r.scope)}`, [ids])) if (!(await pitchGaps(app, s)).length) complete.push(s.id);
+      const done = complete.length ? await app.db.query("UPDATE stores SET approved_at = now() WHERE id = ANY($1::int[]) AND status = 'page_ready' AND approved_at IS NULL RETURNING id", [complete]) : [];
       await audit(app.db, { actor: r.user.name, action: 'approve_all', detail: { ids: done.map((d: any) => d.id) } });
       return { message: `${done.length} דפים אושרו`, redirect: '/' };
     }],
@@ -188,7 +200,7 @@ export function reviewRoutes(app: App): Route<DashReq>[] {
       await app.db.query('UPDATE policies SET override_text = $3 WHERE id = $1 AND store_id = $2', [Number(m[2]), id, text || null]);
       await touch(id);
       await audit(app.db, { actor: r.user.name, action: 'policy_override', storeId: id, detail: { policyId: Number(m[2]), cleared: !text } });
-      return { message: text ? 'הטקסט נשמר. העוזר יקרא אותו במקום מה שבאתר.' : 'חזר להיות כמו באתר' };
+      return { message: text ? 'הטקסט נשמר. תורן יקרא אותו במקום מה שבאתר.' : 'חזר להיות כמו באתר' };
     }],
     ['POST', /^\/lead\/(\d+)\/faq\/(\d+)$/, async (r, m) => {
       const id = Number(m[1]);

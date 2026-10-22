@@ -134,3 +134,43 @@ loads, goes in the letter.
 **The rule:** TORAN_OWNER_WHATSAPP can open any store's demo, and the store's status stays where it was.
 
 **Why:** you will test every page before sending it, and that must not read as the store starting a demo.
+
+## 2026-10-22: the pitch page, rebuilt in the Teder look, as OpenFrequency
+
+**The page:** one column on Teder's silver wallpaper and glass. OpenFrequency speaks, as "we", and Toran is the
+product's name on the page ("בנינו ל[חנות] תורן לוואטסאפ"). The sample chat is two questions and two answers about
+one real in-stock product, written by the real agent. The price comes from one setting (`src/offer.ts`, edited on
+/settings), never from a template. There is no free period anywhere. Light only for now. Heebo is served from our
+own server, so no visitor's address goes to Google.
+
+**Nothing is shown as a guess.** A page opens to anyone but the owner only when it is approved and nothing is missing
+(`src/pitch/ready.ts`): the store's name, its colour, a product count, the two-turn sample chat, the price, and the
+two WhatsApp numbers (the demo number, and OpenFrequency's own for "write to us" and takedowns). Before this, a
+missing colour became graphite, a failed sample answer was rebuilt from the product row, and any page could be opened
+by anyone with its link before approval. Now the review queue lists what is missing and approve stays off.
+
+**Take this page down:** the footer link opens WhatsApp to OpenFrequency's number. The click is recorded and flagged
+on Today and on the lead. Confirming it in the dashboard takes the page down (410), kills its demo code and open
+bindings, cancels the reminder and skips the store. A takedown is an opt-out, so the status cannot bring it back.
+
+**Kept from the old page:** the opens, scroll depth and demo-tap tracking (owner visits not counted), noindex in the
+meta and the header, the demo code in the WhatsApp link, the docked button on a phone, the dashboard preview, the
+contrast rule for the store colour. **Dropped:** the store's logo, the quoted policy lines (the hero now names the
+pages that were read), the "what does not work yet" section, and dark mode.
+
+## 2026-10-22: sign-in moves to openfrequency-accounts; every store belongs to a workspace
+
+**The change (the owner's call):** Toran's own login, its users table and its password hashes are gone, as in Teder.
+A browser without a session goes to `accounts.openfrequency.co.il/login?next=<the page>`; Toran sends the
+`__Secure-of_session` cookie (only that one over HTTPS, so a sibling subdomain cannot plant a plain one) to accounts'
+`GET /internal/session?product=toran` on this machine. Accounts' document says to ask on every request; the owner chose
+a page may reuse an answer for 60 seconds and every POST asks afresh, so no change acts on a session that has signed
+out or turned read-only. A failed check (accounts down, a wrong token) shows a page and lets nobody in. Sign-out is a
+link to accounts' sign-out. The CSRF token stays Toran's, derived from the accounts session id.
+
+**Workspaces:** `stores.workspace_id`, and everything else hangs off a store. A session sees its workspace's stores and
+nothing else; another workspace's store, chat or job is "not found", checked once in the server before any route runs.
+A store with no workspace is a lead the operator is still selling to: only the operator (the superadmin outside
+view-as) sees it, and every workspace besides. The offer on the pitch pages, lead discovery, adding a store, the keys
+and developer mode are the whole server's, so they are the operator's. View-as is read-only on the server, with the
+banner accounts asks for. A signed-in session counts as the owner on a pitch page only for its own workspace's store.

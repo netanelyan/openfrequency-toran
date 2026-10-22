@@ -116,6 +116,10 @@ The one price "invented before the guard" was a correct price sentence in Englis
 
 ## 4. The pitch page
 
+**Rebuilt on 2026-10-22** in the Teder look, as OpenFrequency ("we"), with a two-turn sample chat, the price from
+one setting, a publish gate for missing fields and a takedown link. See the last entry in
+[decisions.md](decisions.md). What follows is the first version.
+
 **What changed:** `src/pitch/*`, `pitch.css` and `pitch.js`.
 - **The letter:** first person, the store's own facts, what does not work yet.
 - **The sample chat:** the real agent, on a real product.
