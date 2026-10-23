@@ -113,26 +113,23 @@ test('the public routes need no session and never ask accounts: pitch pages, the
   }
 });
 
-test('a demo asked for on the website: only with the shared token and never through Caddy; a new store is queued, a known one gets the number', async () => {
+test('a demo asked for on the website: only with the shared token and never through Caddy; it is written down and waits for its WhatsApp message', async () => {
   const s = await serve();
   try {
     const token = String(s.app.env.OF_INTERNAL_TOKEN);
     const send = (body: unknown, headers: Record<string, string> = {}) =>
       fetch(`${s.base}/internal/lead`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...headers }, body: JSON.stringify(body) });
-    const ask = { url: 'https://www.new-shop.co.il/collections/sale', whatsapp: '972500000123' };
+    const ask = { url: 'https://www.new-shop.co.il/collections/sale', code: 'REQ-K7M2Q9' };
     assert.equal((await send(ask, { authorization: 'Bearer not-the-token-not-the-token-not-the' })).status, 403);
     assert.equal((await send(ask, { 'x-forwarded-for': '203.0.113.9' })).status, 403, 'from outside, through Caddy');
-    assert.equal((await send({ url: 'new-shop.co.il', whatsapp: '12345' })).status, 400);
+    assert.equal((await send({ url: 'new-shop.co.il', code: 'nope' })).status, 400);
+    assert.equal((await send({ url: 'new-shop.co.il', whatsapp: '972500000123' })).status, 400, 'a typed number proves nothing: no code, no request');
     const before = s.accounts.calls;
-    const r = await send(ask);
-    assert.equal(r.status, 200);
-    const job = await s.app.db.one<any>("SELECT payload FROM jobs WHERE kind = 'add_store' ORDER BY id DESC LIMIT 1");
-    assert.deepEqual(job.payload, { url: 'https://www.new-shop.co.il/', by: 'website', whatsapp: '972500000123' });
-    // A store Toran already has keeps its page, and the number that asked is the one to send it to.
-    const known = await (await send({ url: 'kli-cheres.example', whatsapp: '972500000124' })).json();
-    assert.equal(known.existing, true);
-    const store = await s.app.db.one<any>('SELECT contact_whatsapp FROM stores WHERE id = $1', [known.storeId]);
-    assert.equal(store.contact_whatsapp, '972500000124');
+    const jobsBefore = (await s.app.db.query("SELECT 1 FROM jobs WHERE kind = 'add_store'")).length;
+    assert.equal((await send(ask)).status, 200);
+    const row = await s.app.db.one<any>("SELECT url, domain, phone FROM demo_requests WHERE code = 'REQ-K7M2Q9'");
+    assert.deepEqual(row, { url: 'https://www.new-shop.co.il/', domain: 'new-shop.co.il', phone: null });
+    assert.equal((await s.app.db.query("SELECT 1 FROM jobs WHERE kind = 'add_store'")).length, jobsBefore, 'nothing is fetched until the person writes');
     assert.equal(s.accounts.calls, before, 'the website is no session: accounts is never asked');
   } finally {
     await s.close();

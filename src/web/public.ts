@@ -24,8 +24,8 @@ import type { Out, Req, Route } from './server.ts';
 //   POST /wa/sim               the simulator's webhook (development only)
 //   POST /internal/lead        a demo asked for on openfrequency.co.il (openfrequency-web/server/lead.mjs): from this
 //                              machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (so never through Caddy).
-//                              The store is added like "add by URL", with the WhatsApp number that asked, into the
-//                              operator's list; a store already here keeps its page and gets the number.
+//                              It is written down with its code (REQ-XXXXXX) and waits: only when the person writes
+//                              to the demo number with that code is the store added (channels/request.ts).
 //
 // Pitch pages get their own CSP: the store's logo and product photo load from its CDN
 // (https), and the dashboard may frame the page for its preview.
@@ -133,17 +133,12 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       }
       const url = homeUrl(String(body.url || ''));
       const domain = url ? canonicalDomain(url) : null;
-      const whatsapp = String(body.whatsapp || '').replace(/\D/g, '');
-      if (!url || !domain || !/^9725\d{8}$/.test(whatsapp)) return { status: 400, json: { ok: false, error: 'bad' } };
-      const existing = await app.db.one<{ id: number }>('SELECT id FROM stores WHERE domain = $1', [domain]);
-      if (existing) {
-        await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [existing.id, whatsapp]);
-        await audit(app.db, { actor: 'website', action: 'demo_asked', storeId: existing.id, detail: { url } });
-        return { json: { ok: true, storeId: existing.id, existing: true } };
-      }
-      const job = await enqueue(app.db, 'add_store', { url, by: 'website', whatsapp }, { dedupeKey: `add:${domain}`, maxAttempts: 1 });
-      await audit(app.db, { actor: 'website', action: 'add_store', detail: { url, from: 'website' } });
-      return { json: { ok: true, job } };
+      const code = String(body.code || '').toUpperCase();
+      if (!url || !domain || !/^REQ-[A-Z0-9]{6}$/.test(code)) return { status: 400, json: { ok: false, error: 'bad' } };
+      // Only written down: nothing happens until the person writes to the demo number with this code.
+      await app.db.query('INSERT INTO demo_requests (code, url, domain) VALUES ($1, $2, $3) ON CONFLICT (code) DO NOTHING', [code, url, domain]);
+      await audit(app.db, { actor: 'website', action: 'demo_request', detail: { url, code } });
+      return { json: { ok: true } };
     }],
   ];
 }
