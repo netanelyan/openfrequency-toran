@@ -1,0 +1,1349 @@
+{
+  "steps": [
+    {
+      "action": "bound",
+      "storeId": 1,
+      "reply": "היי, כאן כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_"
+    },
+    {
+      "action": "answered",
+      "storeId": 1,
+      "reply": "כן, יש במלאי. קערת זית גדולה עולה 165 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_"
+    },
+    {
+      "action": "answered",
+      "storeId": 1,
+      "reply": "את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.\n\n_דמו של תורן_"
+    },
+    {
+      "action": "duplicate"
+    },
+    {
+      "action": "bad_code"
+    },
+    {
+      "action": "bound",
+      "storeId": 2,
+      "reply": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_"
+    },
+    {
+      "action": "no_text",
+      "storeId": 2
+    },
+    {
+      "action": "no_binding",
+      "reply": "היי, זה מספר הדמו של תורן. כדי להתחיל לוחצים על הכפתור בעמוד שהכנו לחנות, והוא שולח לכאן הודעה עם קוד."
+    },
+    {
+      "action": "bound",
+      "storeId": 2,
+      "reply": "היי, כאן עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_"
+    },
+    {
+      "action": "limit",
+      "storeId": 2
+    },
+    {
+      "action": "no_binding",
+      "storeId": 1,
+      "reply": "עברו 7 ימים מאז שהדמו הזה התחיל, אז סגרנו אותו. כדי להתחיל מחדש לוחצים שוב על הכפתור בעמוד."
+    }
+  ],
+  "outbox": [
+    {
+      "to": "972500000101",
+      "text": "היי, כאן כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
+      "inReplyTo": "g0"
+    },
+    {
+      "to": "972500000101",
+      "text": "כן, יש במלאי. קערת זית גדולה עולה 165 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+      "inReplyTo": "g1"
+    },
+    {
+      "to": "972500000101",
+      "text": "את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.\n\n_דמו של תורן_",
+      "inReplyTo": "g2"
+    },
+    {
+      "to": "972500000202",
+      "text": "את הקוד הזה אנחנו לא מכירים. אפשר ללחוץ שוב על הכפתור בעמוד?",
+      "inReplyTo": "g3"
+    },
+    {
+      "to": "972500000202",
+      "text": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+      "inReplyTo": "g4"
+    },
+    {
+      "to": "972500000202",
+      "text": "בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?",
+      "inReplyTo": "g5"
+    },
+    {
+      "to": "972500000303",
+      "text": "היי, זה מספר הדמו של תורן. כדי להתחיל לוחצים על הכפתור בעמוד שהכנו לחנות, והוא שולח לכאן הודעה עם קוד.",
+      "inReplyTo": "g6"
+    },
+    {
+      "to": "972500000404",
+      "text": "היי, כאן עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
+      "inReplyTo": "g7"
+    },
+    {
+      "to": "972500000202",
+      "text": "בדמו אפשר לשאול עד 40 שאלות ביום, והן נגמרו להיום. אפשר להמשיך מחר.",
+      "inReplyTo": "g8"
+    },
+    {
+      "to": "972500000101",
+      "text": "עברו 7 ימים מאז שהדמו הזה התחיל, אז סגרנו אותו. כדי להתחיל מחדש לוחצים שוב על הכפתור בעמוד.",
+      "inReplyTo": "g9"
+    },
+    {
+      "to": "972500000404",
+      "text": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+      "inReplyTo": "g-queued"
+    }
+  ],
+  "stores": [
+    {
+      "id": 1,
+      "status": "demo_started",
+      "demo_started": true
+    },
+    {
+      "id": 2,
+      "status": "demo_started",
+      "demo_started": true
+    }
+  ],
+  "wa_users": [
+    {
+      "phone": "972500000101",
+      "store_id": 1,
+      "code": "DEMO-<A>",
+      "inbound": true
+    },
+    {
+      "phone": "972500000202",
+      "store_id": 2,
+      "code": "DEMO-<B>",
+      "inbound": true
+    },
+    {
+      "phone": "972500000404",
+      "store_id": 2,
+      "code": "DEMO-<B>",
+      "inbound": true
+    }
+  ],
+  "conversations": [
+    {
+      "id": 2,
+      "store_id": 1,
+      "channel": "whatsapp",
+      "peer": "972500000101",
+      "handoffs": 0,
+      "misses": 0,
+      "closed_at": null
+    },
+    {
+      "id": 3,
+      "store_id": 2,
+      "channel": "whatsapp",
+      "peer": "972500000202",
+      "handoffs": 0,
+      "misses": 0,
+      "closed_at": null
+    },
+    {
+      "id": 4,
+      "store_id": 2,
+      "channel": "whatsapp",
+      "peer": "972500000404",
+      "handoffs": 0,
+      "misses": 0,
+      "closed_at": null
+    }
+  ],
+  "messages": [
+    {
+      "id": 5,
+      "conversation_id": 2,
+      "role": "customer",
+      "text": "DEMO-<A> היי, אני רוצה לנסות את העוזר של כלי חרס של נורית",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": "g0"
+    },
+    {
+      "id": 6,
+      "conversation_id": 2,
+      "role": "agent",
+      "text": "היי, כאן כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 7,
+      "conversation_id": 2,
+      "role": "customer",
+      "text": "יש לכם קערה?",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": "g1"
+    },
+    {
+      "id": 8,
+      "conversation_id": 2,
+      "role": "agent",
+      "text": "כן, יש במלאי. קערת זית גדולה עולה 165 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+      "raw_text": null,
+      "tools": [
+        {
+          "ok": true,
+          "name": "search_products",
+          "input": {
+            "query": "יש לכם קערה?"
+          },
+          "result": "2 matching products:\n- [id 3] קערת זית גדולה: 165 ₪, במלאי. https://kli-cheres.example/products/olive-bowl\n- [id 4] קערת דגנים: 72 ₪, במלאי, 3 options. https://kli-cheres.example/products/cereal-bowl\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product."
+        }
+      ],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 9,
+      "conversation_id": 2,
+      "role": "customer",
+      "text": "כמה עולה משלוח?",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": "g2"
+    },
+    {
+      "id": 10,
+      "conversation_id": 2,
+      "role": "agent",
+      "text": "את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.\n\n_דמו של תורן_",
+      "raw_text": null,
+      "tools": [
+        {
+          "ok": true,
+          "name": "get_policy",
+          "input": {
+            "topic": "כמה עולה משלוח?"
+          },
+          "result": "From the store's shipping page (מדיניות משלוחים, https://kli-cheres.example/policies/shipping-policy):\nמדיניות משלוחים\nמשלוח עד הבית בכל הארץ עולה 35 ₪. בהזמנה מעל 300 ₪ המשלוח חינם.\nההזמנה מגיעה תוך 3 עד 5 ימי עסקים. כלים שמסומנים \"בהכנה\" יוצאים תוך 14 ימי עסקים.\nאפשר גם לאסוף מהסטודיו בקיבוץ, בלי תשלום, אחרי שמתאמים איתי.\nכרגע אין משלוחים לחו\"ל.\n\nFrom the store's returns page (החזרות והחלפות, https://kli-cheres.example/policies/refund-policy):\nהחזרות והחלפות\nאפשר להחזיר או להחליף כלי תוך 14 יום מיום קבלתו, כשהוא שלם ולא בשימוש. דמי המשלוח חזרה על חשבון הלקוח.\nהגיע כלי שבור? שולחים לי תמונה בוואטסאפ תוך 48 שעות, ואני שולחת חדש או מחזירה את הכסף.\nאת הכסף אני מחזירה לאותו אמצעי תשלום, תוך 7 ימי עסקים מהיום שהכלי חוזר אליי.\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the customer asked about installation and they are about shipping), say the store has not written about it, tell the customer you are checking with the store, and call handoff with reason \"unknown\" in this same answer."
+        }
+      ],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 11,
+      "conversation_id": 3,
+      "role": "customer",
+      "text": "יש מגש?",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": "g4"
+    },
+    {
+      "id": 12,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+      "raw_text": null,
+      "tools": [
+        {
+          "ok": true,
+          "name": "search_products",
+          "input": {
+            "query": "יש מגש?"
+          },
+          "result": "1 matching product:\n- [id 16] מגש עץ אלון: 210 ₪, במלאי. https://wood-and-thread.example/products/w-2\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product."
+        }
+      ],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 13,
+      "conversation_id": 3,
+      "role": "customer",
+      "text": "   ",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": "g5"
+    },
+    {
+      "id": 14,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 15,
+      "conversation_id": 4,
+      "role": "customer",
+      "text": "DEMO-<B>",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": "g7"
+    },
+    {
+      "id": 16,
+      "conversation_id": 4,
+      "role": "agent",
+      "text": "היי, כאן עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 17,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 18,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 19,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 20,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 21,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 22,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 23,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 24,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 25,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 26,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 27,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 28,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 29,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 30,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 31,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 32,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 33,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 34,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 35,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 36,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 37,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 38,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 39,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 40,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 41,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 42,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 43,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 44,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 45,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 46,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 47,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 48,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 49,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 50,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 51,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 52,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 53,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 54,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 55,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 56,
+      "conversation_id": 3,
+      "role": "agent",
+      "text": "x",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    },
+    {
+      "id": 57,
+      "conversation_id": 4,
+      "role": "customer",
+      "text": "יש מגש?",
+      "raw_text": null,
+      "tools": [],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": "g-queued"
+    },
+    {
+      "id": 58,
+      "conversation_id": 4,
+      "role": "agent",
+      "text": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+      "raw_text": null,
+      "tools": [
+        {
+          "ok": true,
+          "name": "search_products",
+          "input": {
+            "query": "יש מגש?"
+          },
+          "result": "1 matching product:\n- [id 16] מגש עץ אלון: 210 ₪, במלאי. https://wood-and-thread.example/products/w-2\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product."
+        }
+      ],
+      "guard": [],
+      "handoff": null,
+      "miss": false,
+      "ext_id": null
+    }
+  ],
+  "events": [
+    {
+      "store_id": 1,
+      "kind": "demo_bound",
+      "data": {
+        "owner": false
+      }
+    },
+    {
+      "store_id": 1,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-0",
+        "conversationId": 2
+      }
+    },
+    {
+      "store_id": 1,
+      "kind": "wa_in",
+      "data": {
+        "chars": 12,
+        "preview": "יש לכם קערה?",
+        "conversationId": 2
+      }
+    },
+    {
+      "store_id": 1,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-1",
+        "conversationId": 2
+      }
+    },
+    {
+      "store_id": 1,
+      "kind": "wa_in",
+      "data": {
+        "chars": 15,
+        "preview": "כמה עולה משלוח?",
+        "conversationId": 2
+      }
+    },
+    {
+      "store_id": 1,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-2",
+        "conversationId": 2
+      }
+    },
+    {
+      "store_id": null,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-3",
+        "conversationId": null
+      }
+    },
+    {
+      "store_id": null,
+      "kind": "wa_bad_code",
+      "data": {
+        "code": "DEMO-ZZZZ"
+      }
+    },
+    {
+      "store_id": 2,
+      "kind": "demo_bound",
+      "data": {
+        "owner": false
+      }
+    },
+    {
+      "store_id": 2,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-4",
+        "conversationId": 3
+      }
+    },
+    {
+      "store_id": 2,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-5",
+        "conversationId": 3
+      }
+    },
+    {
+      "store_id": null,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-6",
+        "conversationId": null
+      }
+    },
+    {
+      "store_id": null,
+      "kind": "wa_unbound",
+      "data": {}
+    },
+    {
+      "store_id": 2,
+      "kind": "demo_bound",
+      "data": {
+        "owner": true
+      }
+    },
+    {
+      "store_id": 2,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-7",
+        "conversationId": 4
+      }
+    },
+    {
+      "store_id": 2,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-8",
+        "conversationId": 3
+      }
+    },
+    {
+      "store_id": 1,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-9",
+        "conversationId": null
+      }
+    },
+    {
+      "store_id": 2,
+      "kind": "wa_in",
+      "data": {
+        "chars": 7,
+        "preview": "יש מגש?",
+        "conversationId": 4
+      }
+    },
+    {
+      "store_id": 2,
+      "kind": "wa_out",
+      "data": {
+        "id": "sim-out-<ms>-10",
+        "conversationId": 4
+      }
+    }
+  ],
+  "usage": [
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 1,
+      "conversation_id": 2,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 1,
+      "conversation_id": 2,
+      "kind": "llm",
+      "backend": "scripted",
+      "model": "scripted",
+      "units": 0,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "agent"
+    },
+    {
+      "store_id": 1,
+      "conversation_id": 2,
+      "kind": "llm",
+      "backend": "scripted",
+      "model": "scripted",
+      "units": 0,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "agent"
+    },
+    {
+      "store_id": 1,
+      "conversation_id": 2,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 1,
+      "conversation_id": 2,
+      "kind": "llm",
+      "backend": "scripted",
+      "model": "scripted",
+      "units": 0,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "agent"
+    },
+    {
+      "store_id": 1,
+      "conversation_id": 2,
+      "kind": "llm",
+      "backend": "scripted",
+      "model": "scripted",
+      "units": 0,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "agent"
+    },
+    {
+      "store_id": 1,
+      "conversation_id": 2,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 3,
+      "kind": "llm",
+      "backend": "scripted",
+      "model": "scripted",
+      "units": 0,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "agent"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 3,
+      "kind": "llm",
+      "backend": "scripted",
+      "model": "scripted",
+      "units": 0,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "agent"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 3,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 3,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 4,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 3,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 1,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    },
+    {
+      "store_id": null,
+      "conversation_id": null,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_in"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 4,
+      "kind": "llm",
+      "backend": "scripted",
+      "model": "scripted",
+      "units": 0,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "agent"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 4,
+      "kind": "llm",
+      "backend": "scripted",
+      "model": "scripted",
+      "units": 0,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "agent"
+    },
+    {
+      "store_id": 2,
+      "conversation_id": 4,
+      "kind": "bsp",
+      "backend": "sim",
+      "model": null,
+      "units": 1,
+      "usd": 0,
+      "api_usd": 0,
+      "tag": "wa_out"
+    }
+  ],
+  "jobs": [
+    {
+      "kind": "wa_inbound",
+      "status": "done",
+      "result": {
+        "reply": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+        "action": "answered",
+        "storeId": 2
+      }
+    }
+  ]
+}
