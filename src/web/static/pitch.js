@@ -34,7 +34,7 @@
       { threshold: 0.35 },
     );
     document.querySelectorAll('[data-depth]').forEach((el) => io.observe(el));
-    const first = document.querySelector('.hero .wa');
+    const first = document.querySelector('.read-cta .wa');
     const dock = document.querySelector('.dock');
     if (first && dock) new IntersectionObserver(([e]) => dock.classList.toggle('show', !e.isIntersecting && e.boundingClientRect.top < 0), { threshold: 0 }).observe(first);
   }
