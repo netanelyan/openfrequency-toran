@@ -59,14 +59,14 @@ img { max-width: 100%; }
 .ph { unicode-bidi: isolate; background: #fff1b8; color: #6b4f00; border-radius: 6px; padding: 0 4px; font-weight: 600; }
 
 /* the hero */
-.hero { text-align: center; padding: 44px 0 30px; }
+.hero { text-align: center; padding: 32px 0 26px; }
 .marks { display: flex; justify-content: center; align-items: center; gap: 12px; }
 .initial { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--store); color: var(--store-ink); font: 700 28px/1 var(--font); box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.35); }
 .initial.sm { width: 40px; height: 40px; font-size: 18px; box-shadow: none; }
-h1 { font-size: clamp(30px, 8.6vw, 42px); font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; margin: 22px auto 14px; max-width: 640px; text-wrap: balance; overflow-wrap: anywhere; }
+h1 { font-size: clamp(30px, 8.6vw, 42px); font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; margin: 18px auto 12px; max-width: 640px; text-wrap: balance; overflow-wrap: anywhere; }
 /* the store's name, under a marker stroke in its own colour, as on openfrequency.co.il */
 h1 .hl { padding-inline: 0.08em; background: linear-gradient(transparent 58%, color-mix(in srgb, var(--store) 30%, transparent) 58%, color-mix(in srgb, var(--store) 30%, transparent) 92%, transparent 92%); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-.lede { font-size: 18px; line-height: 1.6; color: var(--ink-2); margin: 0 auto 24px; max-width: 560px; text-wrap: pretty; }
+.lede { font-size: 18px; line-height: 1.6; color: var(--ink-2); margin: 0 auto; max-width: 560px; text-wrap: pretty; }
 .quiet { font-size: 14px; line-height: 1.55; color: var(--ink-3); margin: 14px auto 0; max-width: 460px; }
 
 /* buttons: pills. Green is Toran's WhatsApp; grey is everything else */
@@ -103,11 +103,13 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 @keyframes shelf-up { to { transform: translateY(-50%); } }
 /* Wide: the hero and the products side by side, wider than the reading column, the text set to the start. */
 @media (min-width: 980px) {
-  .lead.with-shelf { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 56px; align-items: center; margin-top: 28px; width: min(1040px, 100vw - 64px); margin-inline: calc((100% - min(1040px, 100vw - 64px)) / 2); }
+  .lead.with-shelf { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 56px; align-items: center; margin-top: 28px; margin-bottom: 32px; width: min(1040px, 100vw - 64px); margin-inline: calc((100% - min(1040px, 100vw - 64px)) / 2); }
   .with-shelf .hero { text-align: start; padding: 40px 0; }
   .with-shelf .marks { justify-content: flex-start; }
   .with-shelf h1, .with-shelf .lede, .with-shelf .quiet { margin-inline: 0; }
-  .with-shelf .shelf { grid-template-columns: 1fr 1fr; gap: 12px; height: 560px; margin: 0; -webkit-mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); }
+  .with-shelf .read-cta { text-align: start; }
+  /* the columns take the hero's height, whatever it is (contain: size keeps them from setting it) */
+  .with-shelf .shelf { grid-template-columns: 1fr 1fr; gap: 12px; contain: size; align-self: stretch; min-height: 480px; margin: 0; -webkit-mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); }
   .with-shelf .shelf-row { padding: 0 4px; overflow: hidden; }
   .with-shelf .shelf-track { flex-direction: column; width: auto; animation-name: shelf-up; }
   .with-shelf .shelf ul { flex-direction: column; gap: 12px; padding: 0 0 12px; }
@@ -131,8 +133,10 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 @media (min-width: 560px) { .stats { grid-template-columns: repeat(4, auto); justify-content: space-between; } }
 .pages { margin: 16px 0 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
 .pages span { display: block; font-weight: 600; color: var(--ink); }
+/* In the hero, under the title: what was read, then the way to try it, so both are on the first screen. */
+.hero .read { margin: 22px 0 0; padding: 18px 2px 0; text-align: start; }
 /* after the numbers, the way to try it */
-.read-cta { margin: -4px 0 36px; text-align: center; }
+.read-cta { margin: 24px 0 0; text-align: center; }
 .read-cta .wa { width: 100%; max-width: 360px; }
 
 /* the sample chat */

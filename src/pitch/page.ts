@@ -195,15 +195,14 @@ ${iconLinks()}
     <div class="marks">${initial()}${toranMark(64, { label: 'תורן' })}</div>
     <h1>בנינו ${leName} תורן לוואטסאפ</h1>
     <p class="lede">${esc(read)} אפשר לכתוב לו עכשיו כמו לקוח ולראות מה הוא עונה.</p>
+    ${readSec}
+    <div class="read-cta">
+      ${greenBtn('לכתוב לו בוואטסאפ', 'big')}
+      <p class="quiet">זו הדגמה. אף לקוח שלכם לא רואה אותה.</p>
+    </div>
   </section>
 
   ${shelfSec}
-  </div>
-
-  ${readSec}
-  <div class="read-cta">
-    ${greenBtn('לכתוב לו בוואטסאפ', 'big')}
-    <p class="quiet">זו הדגמה. אף לקוח שלכם לא רואה אותה.</p>
   </div>
 
   <section class="glass chat" data-depth="25" aria-label="שיחת דוגמה">
