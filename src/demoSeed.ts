@@ -3,7 +3,7 @@ import { J } from './db/index.ts';
 import { discover } from './leads/discover.ts';
 import { ingestStore } from './ingest/pack.ts';
 import { buildPitch } from './pitch/build.ts';
-import { handleInbound } from './wa/router.ts';
+import { handleInbound } from './channels/route.ts';
 import { EXAMPLE_URL } from './demo.ts';
 
 // The demo's data: the fictional store through the real pipeline (discovery, ingest,

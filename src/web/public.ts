@@ -20,7 +20,7 @@ import type { Out, Req, Route } from './server.ts';
 //   GET  /s/<slug>/theme.css   its colours
 //   POST /t                    the page's beacon (scroll depth, demo taps), rate-limited
 //   POST /wa/twilio            Twilio's webhook: signature checked, acknowledged at once,
-//                              the message handled by the worker
+//                              the message handled by the worker (channels/route.ts)
 //   POST /wa/sim               the simulator's webhook (development only)
 //   POST /internal/lead        a demo asked for on openfrequency.co.il (openfrequency-web/server/lead.mjs): from this
 //                              machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (so never through Caddy).
@@ -118,7 +118,8 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
         app.log(`[wa] webhook signature failed from ${r.ip}`);
         return { status: 403, text: 'bad signature' };
       }
-      for (const msg of inbound) await enqueue(app.db, 'wa_inbound', msg, { dedupeKey: `wa:${msg.id}` });
+      // Stamped on arrival: the reply window is measured from here, however long the message waits in the queue.
+      for (const msg of inbound) await enqueue(app.db, 'wa_inbound', { ...msg, at: Date.now() }, { dedupeKey: `wa:${msg.id}` });
       const ack = app.wa.ack();
       return { text: ack.body, type: ack.type };
     }],

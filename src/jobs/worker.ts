@@ -3,7 +3,7 @@ import { cleanLine } from '../core/hebrew.ts';
 import { ingestStore } from '../ingest/pack.ts';
 import { buildPitch } from '../pitch/build.ts';
 import { forgetStorePrompt } from '../agent/loop.ts';
-import { handleInbound } from '../wa/router.ts';
+import { handleInbound } from '../channels/route.ts';
 import { discover } from '../leads/discover.ts';
 import { canonicalDomain } from '../core/urls.ts';
 import { event } from '../db/log.ts';
@@ -11,7 +11,7 @@ import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
-//   wa_inbound   a WhatsApp message: route it, answer it (router.ts)
+//   wa_inbound   a WhatsApp message: route it, answer it (channels/route.ts)
 //   add_store    "add by URL" from the dashboard, or a demo asked for on the website: detect and score, ingest, build
 //                the page
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)

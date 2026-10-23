@@ -7,8 +7,8 @@
 
 import { createInterface } from 'node:readline';
 import { makeApp } from '../src/app.ts';
-import { simProvider } from '../src/wa/providers.ts';
-import { handleInbound } from '../src/wa/router.ts';
+import { simProvider } from '../src/channels/whatsapp.ts';
+import { handleInbound } from '../src/channels/route.ts';
 
 const args = process.argv.slice(2);
 let phone = args.includes('--phone') ? args[args.indexOf('--phone') + 1].replace(/\D/g, '') : '972500000101';

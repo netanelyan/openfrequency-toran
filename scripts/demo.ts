@@ -15,7 +15,7 @@ import { openDb } from '../src/db/index.ts';
 import { exampleFetcher } from '../src/demo.ts';
 import { scriptedClient } from '../src/agent/llm/scripted.ts';
 import { cliClient } from '../src/agent/llm/cli.ts';
-import { simProvider } from '../src/wa/providers.ts';
+import { simProvider } from '../src/channels/whatsapp.ts';
 import { listen } from '../src/web/server.ts';
 import { startWorker } from '../src/jobs/worker.ts';
 import { seedDemo } from '../src/demoSeed.ts';

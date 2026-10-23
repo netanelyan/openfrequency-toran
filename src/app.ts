@@ -7,7 +7,7 @@ import { type Fetcher, liveFetcher } from './core/http.ts';
 import { renderHtml } from './core/browser.ts';
 import { type Db, openDb } from './db/index.ts';
 import { type Llm, makeLlm } from './agent/llm/index.ts';
-import { type WaProvider, makeWaProvider } from './wa/providers.ts';
+import { type WaProvider, makeWaProvider } from './channels/whatsapp.ts';
 
 // The one object every part of the engine is handed: the database, the settings, a
 // log, the fetcher, the model and the WhatsApp provider. Tests build their own with a

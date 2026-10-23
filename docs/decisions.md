@@ -174,3 +174,30 @@ A store with no workspace is a lead the operator is still selling to: only the o
 view-as) sees it, and every workspace besides. The offer on the pitch pages, lead discovery, adding a store, the keys
 and developer mode are the whole server's, so they are the operator's. View-as is read-only on the server, with the
 banner accounts asks for. A signed-in session counts as the owner on a pitch page only for its own workspace's store.
+
+## 2026-10-23: a channel layer, with WhatsApp as its first adapter
+
+**The change:** Toran is moving from WhatsApp only to email, Messenger and Instagram: the same agent, the same
+knowledge pack, one inbox. Step one moves WhatsApp behind an adapter interface (`src/channels/`) and changes nothing
+else. `types.ts` holds the shapes, and `whatsapp.ts` the Twilio and simulator adapters. `policy.ts` has each channel's
+rules, and `send.ts` is the one place a message leaves. `route.ts` takes every inbound message, and `demo.ts` is the
+shared demo number's code binding. `src/wa/` keeps two re-exports so old imports still resolve.
+
+**Rules in code, not in the prompt:** before every send, `send.ts` asks `sendPlan()` whether the channel's reply window
+is open (24 hours on WhatsApp, measured from when the webhook received the message), and `fit()` cuts a reply into
+parts the provider takes (Twilio: 1,600 characters a body).
+
+**Proof of no behaviour change:** `test/channels-golden.test.ts` was committed on the old code first. It covers every
+router outcome in one scripted run, and everything sent and written. It passes unchanged on the new code. The only
+differences are two cases that never happen in that run, and the new tests cover both. A message answered more than
+24 hours after it arrived is now held back and recorded (`wa_blocked`), where Twilio would have refused it. A reply
+over 1,600 characters now goes in parts, where Twilio would have refused it whole.
+
+**Decided for the steps after this one (the owner's calls):**
+
+- An owner's reply pauses the agent in that conversation, until "להחזיר לתורן" or 12 hours after the owner's last
+  message.
+- Each channel is `off`, `demo` or `live` in the global list, so the website never calls a demo "live".
+- Channel connections belong to a store (its knowledge pack answers them); a workspace's list is its stores'.
+- Email is sent from our own subdomain first, and from the store's own domain later.
+- OpenFrequency is the business for Meta's verification, and its own Page and Instagram account carry the demo.

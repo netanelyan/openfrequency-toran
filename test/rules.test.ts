@@ -23,18 +23,22 @@ test('every setting the code reads is listed in .env.example', () => {
   assert.deepEqual(missing, []);
 });
 
-test('nothing sends outreach: WhatsApp sends only from the router, in answer to an inbound message; no mail, no SMS', () => {
+// The channel adapters: the only files that talk to a messaging provider.
+const ADAPTERS = ['src/channels/whatsapp.ts'];
+
+test('nothing sends outreach: messages go out only from send.ts, in answer to an inbound message; no mail, no SMS', () => {
   for (const f of src) {
     const text = readFileSync(f, 'utf8');
     const r = rel(f);
-    if (/\bwa\.send\(/.test(text)) assert.equal(r, 'src/wa/router.ts', `${r} sends WhatsApp messages`);
-    if (/api\.twilio\.com|graph\.facebook\.com|waba|360dialog/i.test(text) && r !== 'src/wa/providers.ts') assert.fail(`${r} talks to a messaging API`);
+    if (/\b(wa|adapter)\.send\(/.test(text)) assert.equal(r, 'src/channels/send.ts', `${r} sends messages`);
+    if (/api\.twilio\.com|graph\.facebook\.com|waba|360dialog/i.test(text) && !ADAPTERS.includes(r)) assert.fail(`${r} talks to a messaging API`);
     assert.ok(!/nodemailer|smtp|sendgrid|mailgun|\bses\b.*send/i.test(text) || r === 'test/rules.test.ts', `${r} sends mail`);
   }
-  // The router's only send goes through reply(), which always answers the inbound being handled.
-  const router = readFileSync(path.join(ROOT, 'src/wa/router.ts'), 'utf8');
-  assert.equal((router.match(/app\.wa\.send\(/g) || []).length, 1);
-  assert.match(router, /app\.wa\.send\(to\.from, text, to\)/);
+  // The only send is in reply(), which always answers the inbound being handled, after the channel's rules allow it.
+  const send = readFileSync(path.join(ROOT, 'src/channels/send.ts'), 'utf8');
+  assert.equal((send.match(/\.send\(/g) || []).length, 1);
+  assert.match(send, /adapter\.send\(to\.from, part, to\)/);
+  assert.ok(send.indexOf('sendPlan(') < send.indexOf('adapter.send('), 'the window is checked before the send');
 });
 
 test('no file in the repository names a real store (the pre-commit check, run as a test)', async () => {
