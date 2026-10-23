@@ -1,5 +1,7 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { App } from '../app.ts';
+import { canonicalDomain, homeUrl } from '../core/urls.ts';
+import { audit } from '../db/log.ts';
 import { goneHtml, pitchData, pitchPage, themeCss } from '../pitch/page.ts';
 import { recordBeacon, recordOpen } from '../pitch/track.ts';
 import { enqueue } from '../jobs/queue.ts';
@@ -20,12 +22,26 @@ import type { Out, Req, Route } from './server.ts';
 //   POST /wa/twilio            Twilio's webhook: signature checked, acknowledged at once,
 //                              the message handled by the worker
 //   POST /wa/sim               the simulator's webhook (development only)
+//   POST /internal/lead        a demo asked for on openfrequency.co.il (openfrequency-web/server/lead.mjs): from this
+//                              machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (so never through Caddy).
+//                              The store is added like "add by URL", with the WhatsApp number that asked, into the
+//                              operator's list; a store already here keeps its page and gets the number.
 //
 // Pitch pages get their own CSP: the store's logo and product photo load from its CDN
 // (https), and the dashboard may frame the page for its preview.
 
 const PITCH_CSP = "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 const pitchHeaders = (extra: Record<string, string | string[]> = {}) => ({ 'content-security-policy': PITCH_CSP, 'x-robots-tag': 'noindex, nofollow, noarchive', 'x-frame-options': 'SAMEORIGIN', 'referrer-policy': 'strict-origin-when-cross-origin', ...extra });
+
+/** The website's lead service on this machine: the shared token, and a request that did not come through Caddy. */
+function fromWebsite(env: Record<string, string | undefined>, r: Req): boolean {
+  const token = String(env.OF_INTERNAL_TOKEN || '').trim();
+  if (token.length < 32 || r.req.headers['x-forwarded-for']) return false;
+  const local = /^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(r.req.socket.remoteAddress || '');
+  const got = Buffer.from(String(r.req.headers.authorization || ''));
+  const want = Buffer.from(`Bearer ${token}`);
+  return local && got.length === want.length && timingSafeEqual(got, want);
+}
 
 function limiter(max: number, windowMs: number) {
   const hits = new Map<string, number[]>();
@@ -105,6 +121,28 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       for (const msg of inbound) await enqueue(app.db, 'wa_inbound', msg, { dedupeKey: `wa:${msg.id}` });
       const ack = app.wa.ack();
       return { text: ack.body, type: ack.type };
+    }],
+    ['POST', /^\/internal\/lead$/, async (r) => {
+      if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
+      let body: any = {};
+      try {
+        body = JSON.parse(r.raw || '{}');
+      } catch {
+        return { status: 400, json: { ok: false, error: 'bad' } };
+      }
+      const url = homeUrl(String(body.url || ''));
+      const domain = url ? canonicalDomain(url) : null;
+      const whatsapp = String(body.whatsapp || '').replace(/\D/g, '');
+      if (!url || !domain || !/^9725\d{8}$/.test(whatsapp)) return { status: 400, json: { ok: false, error: 'bad' } };
+      const existing = await app.db.one<{ id: number }>('SELECT id FROM stores WHERE domain = $1', [domain]);
+      if (existing) {
+        await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [existing.id, whatsapp]);
+        await audit(app.db, { actor: 'website', action: 'demo_asked', storeId: existing.id, detail: { url } });
+        return { json: { ok: true, storeId: existing.id, existing: true } };
+      }
+      const job = await enqueue(app.db, 'add_store', { url, by: 'website', whatsapp }, { dedupeKey: `add:${domain}`, maxAttempts: 1 });
+      await audit(app.db, { actor: 'website', action: 'add_store', detail: { url, from: 'website' } });
+      return { json: { ok: true, job } };
     }],
   ];
 }

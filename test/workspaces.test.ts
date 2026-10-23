@@ -113,6 +113,32 @@ test('the public routes need no session and never ask accounts: pitch pages, the
   }
 });
 
+test('a demo asked for on the website: only with the shared token and never through Caddy; a new store is queued, a known one gets the number', async () => {
+  const s = await serve();
+  try {
+    const token = String(s.app.env.OF_INTERNAL_TOKEN);
+    const send = (body: unknown, headers: Record<string, string> = {}) =>
+      fetch(`${s.base}/internal/lead`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...headers }, body: JSON.stringify(body) });
+    const ask = { url: 'https://www.new-shop.co.il/collections/sale', whatsapp: '972500000123' };
+    assert.equal((await send(ask, { authorization: 'Bearer not-the-token-not-the-token-not-the' })).status, 403);
+    assert.equal((await send(ask, { 'x-forwarded-for': '203.0.113.9' })).status, 403, 'from outside, through Caddy');
+    assert.equal((await send({ url: 'new-shop.co.il', whatsapp: '12345' })).status, 400);
+    const before = s.accounts.calls;
+    const r = await send(ask);
+    assert.equal(r.status, 200);
+    const job = await s.app.db.one<any>("SELECT payload FROM jobs WHERE kind = 'add_store' ORDER BY id DESC LIMIT 1");
+    assert.deepEqual(job.payload, { url: 'https://www.new-shop.co.il/', by: 'website', whatsapp: '972500000123' });
+    // A store Toran already has keeps its page, and the number that asked is the one to send it to.
+    const known = await (await send({ url: 'kli-cheres.example', whatsapp: '972500000124' })).json();
+    assert.equal(known.existing, true);
+    const store = await s.app.db.one<any>('SELECT contact_whatsapp FROM stores WHERE id = $1', [known.storeId]);
+    assert.equal(store.contact_whatsapp, '972500000124');
+    assert.equal(s.accounts.calls, before, 'the website is no session: accounts is never asked');
+  } finally {
+    await s.close();
+  }
+});
+
 test('a workspace without Toran, a closed workspace, and accounts down: refused, never let through', async () => {
   const s = await serve();
   try {

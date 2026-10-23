@@ -12,7 +12,8 @@ import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
 //   wa_inbound   a WhatsApp message: route it, answer it (router.ts)
-//   add_store    "add by URL" from the dashboard: detect and score, ingest, build the page
+//   add_store    "add by URL" from the dashboard, or a demo asked for on the website: detect and score, ingest, build
+//                the page
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
 //   rescrape     the daily refresh of a store whose demo is open
 //
@@ -37,6 +38,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
         const seen = await app.db.one<{ reason: string | null }>('SELECT reason FROM seen_domains WHERE domain = $1', [domain]);
         throw new Error(seen?.reason ? `האתר לא נכנס כליד: ${seen.reason}` : 'האתר לא נמצא או לא ענה');
       }
+      // Asked for on the website: the number that asked is the one to send the page to.
+      if (/^9725\d{8}$/.test(String(p.whatsapp || ''))) await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [store.id, p.whatsapp]);
       if (store.platform !== 'shopify') return { storeId: store.id, stats: r.stats, ingested: false, why: `the platform is ${store.platform}: phase 1 ingests Shopify only` };
       return { storeId: store.id, ...(await ingestAndBuild(app, store.id, say)) };
     }
