@@ -131,6 +131,9 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 @media (min-width: 560px) { .stats { grid-template-columns: repeat(4, auto); justify-content: space-between; } }
 .pages { margin: 16px 0 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
 .pages span { display: block; font-weight: 600; color: var(--ink); }
+/* after the numbers, the way to try it */
+.read-cta { margin: -4px 0 36px; text-align: center; }
+.read-cta .wa { width: 100%; max-width: 360px; }
 
 /* the sample chat */
 .chat { overflow: hidden; }
@@ -154,8 +157,10 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 .if { padding: 40px 4px 8px; }
 .if h2 { font-size: 24px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; margin: 0 0 14px; }
 .if ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.if li { position: relative; padding-inline-start: 20px; color: var(--ink-2); }
-.if li::before { content: ''; position: absolute; inset-inline-start: 2px; top: 0.7em; width: 7px; height: 7px; border-radius: 50%; background: rgba(29, 29, 31, 0.35); }
+/* each line after a check in Toran green, on a pale green disc */
+.if li { position: relative; padding-inline-start: 32px; color: var(--ink-2); }
+.if li::before { content: ''; position: absolute; inset-inline-start: 0; top: 0.2em; width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--green) 14%, transparent); }
+.if li::after { content: ''; position: absolute; inset-inline-start: 8px; top: calc(0.2em + 5px); width: 5px; height: 10px; border-right: 2.4px solid var(--green); border-bottom: 2.4px solid var(--green); transform: rotate(45deg); }
 
 /* the note from OpenFrequency */
 .note { margin-top: 32px; padding: 24px 22px; }

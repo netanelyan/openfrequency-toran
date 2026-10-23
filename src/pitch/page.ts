@@ -203,6 +203,7 @@ ${iconLinks()}
   </div>
 
   ${readSec}
+  <div class="read-cta">${greenBtn('לשאול אותו על החנות שלכם')}</div>
 
   <section class="glass chat" data-depth="25" aria-label="שיחת דוגמה">
     <header class="ch-head">${initial('initial sm')}<div><b>${name}</b><small>שיחה על מוצר אמיתי מהאתר שלכם</small></div></header>
