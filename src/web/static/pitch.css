@@ -87,8 +87,9 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
   .glass { background: rgba(255, 255, 255, 0.9); }
 }
 
-/* the store's products, moving past under the hero: one or two rows to the screen's edges on a phone, fading out at
-   the sides, the second row the other way. Each row's pace comes from theme.css (--shelf-0, --shelf-1). */
+/* the store's products. On a phone they move past under the hero: one or two rows to the screen's edges, fading out
+   at the sides, the second row the other way. On a wide screen they stand beside the title (below), as columns moving
+   up and down. Each row's pace comes from theme.css (--shelf-0, --shelf-1). */
 .shelf { display: grid; margin: 0 -20px 26px; overflow: hidden; direction: ltr; -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
 .shelf-row { padding: 4px 0 12px; }
 .shelf-track { display: flex; width: max-content; animation: shelf var(--shelf-0, 40s) linear infinite; }
@@ -99,7 +100,20 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 .shelf b { display: block; margin: 8px 4px 0; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.3; white-space: nowrap; text-overflow: ellipsis; }
 .shelf small { display: block; margin: 1px 4px 0; font-size: 13px; color: var(--ink-3); }
 @keyframes shelf { to { transform: translateX(-50%); } }
-@media (min-width: 880px) { .shelf { margin-inline: -60px; } }
+@keyframes shelf-up { to { transform: translateY(-50%); } }
+/* Wide: the hero and the products side by side, wider than the reading column, the text set to the start. */
+@media (min-width: 980px) {
+  .lead.with-shelf { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 56px; align-items: center; margin-top: 28px; width: min(1040px, 100vw - 64px); margin-inline: calc((100% - min(1040px, 100vw - 64px)) / 2); }
+  .with-shelf .hero { text-align: start; padding: 40px 0; }
+  .with-shelf .marks { justify-content: flex-start; }
+  .with-shelf h1, .with-shelf .lede, .with-shelf .quiet { margin-inline: 0; }
+  .with-shelf .shelf { grid-template-columns: 1fr 1fr; gap: 12px; height: 560px; margin: 0; -webkit-mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); }
+  .with-shelf .shelf-row { padding: 0 4px; overflow: hidden; }
+  .with-shelf .shelf-track { flex-direction: column; width: auto; animation-name: shelf-up; }
+  .with-shelf .shelf ul { flex-direction: column; gap: 12px; padding: 0 0 12px; }
+  .with-shelf .shelf li { width: auto; }
+  .wrap:has(.with-shelf) > :is(.top, .held) { width: min(1040px, 100vw - 64px); margin-inline: calc((100% - min(1040px, 100vw - 64px)) / 2); }
+}
 @media (prefers-reduced-motion: reduce) {
   .shelf-track { animation: none; }
   .shelf-row { overflow-x: auto; }

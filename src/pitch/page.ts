@@ -190,6 +190,7 @@ ${iconLinks()}
   </header>
   ${held}
 
+  <div class="lead${d.shelf.length ? ' with-shelf' : ''}">
   <section class="hero">
     <div class="marks">${initial()}${toranMark(64, { label: 'תורן' })}</div>
     <h1>בנינו ${leName} תורן לוואטסאפ</h1>
@@ -199,6 +200,7 @@ ${iconLinks()}
   </section>
 
   ${shelfSec}
+  </div>
 
   ${readSec}
 
