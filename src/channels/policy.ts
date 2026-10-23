@@ -7,6 +7,9 @@ import type { Channel, ChannelLimits } from './types.ts';
 export const LIMITS: Record<Channel, ChannelLimits> = {
   // Meta's service window is 24 hours from the customer's last message; past it only an approved template goes out.
   whatsapp: { maxChars: 4096, window: { hours: 24 }, outside: 'template', markup: 'whatsapp', attachments: { inbound: false, outbound: false } },
+  // Email has no window. A reply is one message however long; the cap only stops a runaway one. Attachments that come
+  // in are listed for the owner (the agent is told it cannot open them); none go out.
+  email: { maxChars: 8000, window: null, outside: null, markup: 'plain', attachments: { inbound: true, outbound: false } },
 };
 
 export type SendPlan = { ok: true; mode: 'response' } | { ok: false; reason: 'window_closed' };

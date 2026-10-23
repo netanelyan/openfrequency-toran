@@ -36,7 +36,7 @@ export type Req = { req: IncomingMessage; url: URL; path: string; form: Record<s
 export type DashReq = Req & { user: { id: number; name: string; role: string }; scope: Scope; ctx: PageCtx; ajax: boolean };
 
 /** The whole server's settings and adding stores: the operator's alone (the superadmin outside view-as). */
-const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev)|leads\/add)$/;
+const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add)$/;
 export type Route<R> = [method: 'GET' | 'POST', re: RegExp, fn: (r: R, m: RegExpExecArray) => Promise<Out> | Out];
 
 export class ActionError extends Error {
@@ -191,7 +191,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const idOf = (re: RegExp) => Number(re.exec(p)?.[1] || 0);
       const leadId = idOf(/^\/lead\/(\d+)(?:\/|$)/);
       if (leadId && !(await ownsStore(app.db, scope, leadId))) return notFound();
-      const chatId = idOf(/^\/chat\/(\d+)$/);
+      const chatId = idOf(/^\/chat\/(\d+)(?:\/|$)/);
       if (chatId && !(await ownsConversation(app.db, scope, chatId))) return notFound();
       const jobId = idOf(/^\/jobs?\/(\d+)(?:\.json)?$/);
       if (jobId && !(await ownsJob(app.db, scope, jobId))) return notFound();

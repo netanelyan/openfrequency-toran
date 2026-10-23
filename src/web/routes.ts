@@ -6,6 +6,7 @@ import { leadRoutes } from './pages/leads.ts';
 import { reviewRoutes } from './pages/review.ts';
 import { storeColor } from '../ingest/brand.ts';
 import { storeIdIn, storesOf, type Scope } from './workspace.ts';
+import { messagingSql } from '../channels/config.ts';
 
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
@@ -15,7 +16,7 @@ export async function headerCounts(app: App, sc: Scope) {
     `SELECT
        (SELECT COUNT(*)::int FROM stores WHERE status = 'page_ready' AND approved_at IS NULL AND ${storesOf(sc)}) AS review,
        (SELECT COUNT(*)::int FROM stores WHERE followup_due_at <= now() AND followup_sent_at IS NULL AND status IN ('sent','opened') AND ${storesOf(sc)}) AS followups,
-       (SELECT COUNT(*)::int FROM conversations c WHERE c.channel = 'whatsapp' AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storeIdIn(sc, 'c.store_id')}) AS chats,
+       (SELECT COUNT(*)::int FROM conversations c WHERE ${messagingSql('c.channel')} AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storeIdIn(sc, 'c.store_id')}) AS chats,
        (SELECT COALESCE(SUM(CASE WHEN backend = 'claude-cli' THEN api_usd ELSE usd END), 0)::float FROM usage WHERE at >= date_trunc('month', now()) AND ${storeIdIn(sc, 'store_id')}) AS usd`,
   );
   // The monthly cap is the whole server's: only the operator sees the ring measured against it.

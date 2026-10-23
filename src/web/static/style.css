@@ -518,13 +518,17 @@ pre.msg { margin: 0; padding: 14px 16px; border-radius: var(--r-m); background: 
 .chat .b { max-width: 82%; padding: 9px 13px 7px; border-radius: 18px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; unicode-bidi: plaintext; text-align: start; overflow-wrap: anywhere; }
 .chat .b.customer { justify-self: start; background: var(--fill); border-start-start-radius: 6px; }
 .chat .b.agent { justify-self: end; background: color-mix(in srgb, var(--accent-fill) 14%, var(--solid)); border-start-end-radius: 6px; }
+.chat .b.owner { justify-self: end; background: color-mix(in srgb, var(--ok) 16%, var(--solid)); border-start-end-radius: 6px; }
 .chat .b.system { justify-self: center; background: none; color: var(--ink-3); font-size: 12px; }
+.chat .b.system.hand { box-shadow: none; color: var(--bad); }
 .chat .b .at { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-3); text-align: end; }
 .chat .b.flag { box-shadow: inset 0 0 0 2px var(--warn); }
 .chat .b.hand { box-shadow: inset 0 0 0 2px var(--bad); }
 .chat .note { justify-self: end; max-width: 82%; font-size: 12px; color: var(--ink-3); display: grid; gap: 2px; margin: -2px 6px 4px 0; }
 .chat .note .bad { color: var(--bad); }
 .chat .note .warn { color: var(--warn); }
+.chat .note.start { justify-self: start; margin: -2px 0 4px 6px; }
+textarea.wide { width: 100%; }
 
 /* ------------------------------------------------------------ the brand page */
 

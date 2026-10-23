@@ -9,6 +9,7 @@ import { pitchGaps } from '../../pitch/ready.ts';
 import { contactTarget, firstMessage, followupDue, pitchUrl, reminderMessage } from '../../outreach.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { storesOf } from '../workspace.ts';
+import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../channels/config.ts';
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
 
 // Leads: the list (by status, with the score and what was found), adding one by URL,
@@ -61,13 +62,29 @@ export function addForm(r: DashReq) {
   return `<form class="panel inline-form" method="post" action="/leads/add">${csrfField(r.ctx)}<input type="url" name="url" placeholder="https://store.co.il" aria-label="כתובת של חנות" required inputmode="url" dir="ltr"><button class="btn primary" type="submit">${icon('plus')}להוסיף ולבנות דף</button></form>`;
 }
 
+/** The store's own channels: its email address, connected or not, and the automated mail that came to it (Gmail's forwarding confirmation lands there). */
+function channelsPanel(r: DashReq, id: number, account: any, address: string, automatedMail: any[]) {
+  const on = account?.status === 'active';
+  return `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header>
+  <dl class="kv"><dt>וואטסאפ</dt><dd>הדמו, על המספר שלנו</dd><dt>מייל</dt><dd>${on ? `<bdi class="ltr">${esc(account.external_id)}</bdi> · <span class="chip ok">מחובר</span>` : '<span class="chip ghost">לא מחובר</span>'}</dd></dl>
+  ${on ? `<p class="small mt12 m0">מעבירים לכתובת הזו את המייל של החנות, למשל ב־Gmail: הגדרות, "העברה ו־POP/IMAP", "הוספת כתובת להעברה". Gmail שולח לכתובת קוד אישור, והוא מופיע כאן למטה ובשיחות. תורן עונה משם בשם החנות.</p>
+  ${automatedMail.length ? `<div class="list mt12">${automatedMail.map((m) => `<a href="/chat/${m.id}"><span class="ico warn">${icon('alert')}</span><span class="t"><b>${esc(m.subject || 'מייל אוטומטי')}</b><small>${esc(ago(m.at))} · מייל אוטומטי, תורן לא ענה</small></span></a>`).join('')}</div>` : ''}
+  <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>`
+  : `<p class="small mt12 m0">החנות מקבלת כתובת משלה, <bdi class="ltr">${esc(address)}</bdi>, ומעבירה אליה את המייל שלה. תורן עונה משם בשם החנות, ומה שהוא לא יודע עובר אליך.</p>
+  <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לחבר מייל', { cls: 'btn sm primary', fields: { on: '1' } })}</div>`}
+</section>`;
+}
+
 async function leadPage(app: App, r: DashReq, id: number) {
   const s = await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [id]);
   if (!s) return null;
   const stats = await pageStats(app, id);
   const pack = await app.db.one<any>("SELECT (SELECT COUNT(*)::int FROM products WHERE store_id = $1 AND gone_at IS NULL) AS products, (SELECT COUNT(*)::int FROM policies WHERE store_id = $1) AS policies, (SELECT COUNT(*)::int FROM faqs WHERE store_id = $1) AS faqs", [id]);
-  const convs = await app.db.query<any>("SELECT c.*, (SELECT text FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_text FROM conversations c WHERE store_id = $1 AND channel = 'whatsapp' ORDER BY last_at DESC LIMIT 10", [id]);
-  const events = await app.db.query<any>("SELECT kind, at, data FROM events WHERE store_id = $1 AND kind NOT IN ('scroll', 'wa_in', 'wa_out') ORDER BY at DESC LIMIT 25", [id]);
+  const convs = await app.db.query<any>(`SELECT c.*, (SELECT text FROM messages WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1) AS last_text FROM conversations c WHERE store_id = $1 AND ${messagingSql('channel')} ORDER BY last_at DESC LIMIT 10`, [id]);
+  const mailOn = enabledChannels(app.env).has('email') && Boolean(app.mail);
+  const mailAccount = mailOn ? await app.db.one<any>("SELECT id, external_id, status, connected_at FROM channel_accounts WHERE store_id = $1 AND channel = 'email' ORDER BY id DESC LIMIT 1", [id]) : null;
+  const automatedMail = mailAccount ? await app.db.query<any>("SELECT c.id, c.meta->>'subject' AS subject, m.at FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.account_id = $1 AND m.automated IS NOT NULL ORDER BY m.id DESC LIMIT 3", [mailAccount.id]) : [];
+  const events = await app.db.query<any>("SELECT kind, at, data FROM events WHERE store_id = $1 AND kind NOT IN ('scroll', 'wa_in', 'wa_out', 'mail_in', 'mail_out') ORDER BY at DESC LIMIT 25", [id]);
   const cost = await app.db.one<any>("SELECT COALESCE(SUM(usd), 0)::float AS usd, COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(in_tokens + cache_read + cache_write), 0)::int AS tin, COALESCE(SUM(out_tokens), 0)::int AS tout FROM usage WHERE store_id = $1", [id]);
   const job = await app.db.one<any>("SELECT id, status, progress, last_error FROM jobs WHERE dedupe_key = $1 ORDER BY id DESC LIMIT 1", [`ingest:${id}`]);
   const url = s.slug ? pitchUrl(app.env, s.slug) : null;
@@ -110,8 +127,9 @@ ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד 
   <div class="grid12">
     <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>
     <section class="panel"><header><h2>הציון</h2><span class="end">${scoreNum(s.score, s.qualified)}</span></header><ul class="parts">${parts}</ul></section>
-    <section class="panel"><header><h2>שיחות דמו</h2><a class="end small" href="/chats?store=${id}">כולן</a></header>
-      ${convs.length ? `<div class="list">${convs.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : ''}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc((c.last_text || '').replace(/\n/g, ' ').slice(0, 80))}</b><small>${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}</small></span></a>`).join('')}</div>` : '<p class="muted m0">עוד אין שיחות.</p>'}
+    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail) : ''}
+    <section class="panel"><header><h2>שיחות</h2><a class="end small" href="/chats?store=${id}">כולן</a></header>
+      ${convs.length ? `<div class="list">${convs.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : ''}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc((c.last_text || '').replace(/\n/g, ' ').slice(0, 80))}</b><small>${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)} · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}</small></span></a>`).join('')}</div>` : '<p class="muted m0">עוד אין שיחות.</p>'}
     </section>
   </div>
   <div class="grid12">
@@ -138,7 +156,7 @@ ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד 
   return layout({ ...r.ctx, title: name, active: 'lead' }, body);
 }
 
-const EVENT_HE: Record<string, string> = { lead_found: 'נמצא', ingest: 'האתר נקרא', page_built: 'הדף נבנה', approved: 'אושר', sent: 'נשלח', followup_sent: 'נשלחה תזכורת', page_open: 'הדף נפתח', demo_click: 'לחצו על הדמו', demo_bound: 'הדמו התחיל', handoff: 'העברה אליך', guard_cut: 'משפט נמחק לפני השליחה', takedown_click: 'לחצו על "להוריד את העמוד הזה"', taken_down: 'העמוד הוסר', rescrape: 'רענון יומי', status: 'שינוי סטטוס', skipped: 'דילגת' };
+const EVENT_HE: Record<string, string> = { lead_found: 'נמצא', ingest: 'האתר נקרא', page_built: 'הדף נבנה', approved: 'אושר', sent: 'נשלח', followup_sent: 'נשלחה תזכורת', page_open: 'הדף נפתח', demo_click: 'לחצו על הדמו', demo_bound: 'הדמו התחיל', handoff: 'העברה אליך', guard_cut: 'משפט נמחק לפני השליחה', takedown_click: 'לחצו על "להוריד את העמוד הזה"', owner_reply: 'ענית ללקוח', held: 'הודעה חיכתה לך, ותורן לא ענה', mail_automated: 'הגיע מייל אוטומטי', mail_blocked: 'מייל לא נשלח', wa_blocked: 'הודעה לא נשלחה', taken_down: 'העמוד הוסר', rescrape: 'רענון יומי', status: 'שינוי סטטוס', skipped: 'דילגת' };
 
 export function leadRoutes(app: App): Route<DashReq>[] {
   const store = async (id: string) => {
@@ -175,6 +193,21 @@ export function leadRoutes(app: App): Route<DashReq>[] {
       const body = `<div class="head"><h1>${j.status === 'failed' ? 'זה לא הצליח' : 'עובד על זה'}</h1><p class="sub"><bdi class="ltr">${esc(j.payload?.url || '')}</bdi></p></div>
 ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא הצלחתי להוסיף את החנות</b><p>${esc(j.last_error || '')}</p></div><a class="btn sm" href="/leads">חזרה</a></div>` : j.status === 'done' ? `<div class="banner warn">${icon('alert')}<div><b>החנות נוספה, בלי דף</b><p>${esc(j.result?.why || '')}</p></div></div>` : `<div class="panel" data-wait-job="${j.id}"><p class="m0"><b data-progress>${esc(j.progress || 'בתור')}</b></p><p class="small muted mt8 m0">בודק את האתר, קורא את המוצרים והמדיניות, ובונה את הדף ואת שיחת הדוגמה. זה לוקח דקה או שתיים. הדף יתרענן לבד.</p></div>`}`;
       return { html: layout({ ...r.ctx, title: 'מוסיף חנות', active: 'add' }, body) };
+    }],
+    ['POST', /^\/lead\/(\d+)\/channels\/email$/, async (r, m) => {
+      const s = await store(m[1]);
+      if (!enabledChannels(app.env).has('email') || !app.mail) throw new ActionError('המייל עוד כבוי בשרת (TORAN_CHANNELS).');
+      const address = storeAddress(s, app.mail.domain);
+      if (r.form.on === '1') {
+        const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
+        const taken = await app.db.one<{ store_id: number }>("SELECT store_id FROM channel_accounts WHERE channel = 'email' AND external_id = $1", [address]);
+        if (taken && taken.store_id !== s.id) throw new ActionError('הכתובת הזו כבר שייכת לחנות אחרת.');
+        await app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, name) VALUES ($1, 'email', $2, $3, $4) ON CONFLICT (channel, external_id) DO UPDATE SET status = 'active', kind = EXCLUDED.kind, name = EXCLUDED.name, connected_at = now()", [s.id, app.mail.kind, address, name]);
+      } else {
+        await app.db.query("UPDATE channel_accounts SET status = 'off' WHERE store_id = $1 AND channel = 'email'", [s.id]);
+      }
+      await audit(app.db, { actor: r.user.name, action: r.form.on === '1' ? 'email_connect' : 'email_disconnect', storeId: s.id, detail: { address } });
+      return { redirect: `/lead/${s.id}#channels`, message: r.form.on === '1' ? `המייל מחובר. מעבירים אליו את המייל של החנות: ${address}` : 'המייל נותק. תורן לא עונה יותר על מיילים לכתובת הזו.' };
     }],
     ['POST', /^\/lead\/(\d+)\/build$/, async (r, m) => {
       const s = await store(m[1]);

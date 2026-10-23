@@ -201,3 +201,33 @@ over 1,600 characters now goes in parts, where Twilio would have refused it whol
 - Channel connections belong to a store (its knowledge pack answers them); a workspace's list is its stores'.
 - Email is sent from our own subdomain first, and from the store's own domain later.
 - OpenFrequency is the business for Meta's verification, and its own Page and Instagram account carry the demo.
+
+## 2026-10-23: email, the first channel past WhatsApp
+
+**Inbound:** Resend's inbound webhook on a receiving subdomain, rather than a forwarding service per store. Each
+store gets `<slug>@TORAN_MAIL_DOMAIN` and forwards its own mail there. The webhook carries only the metadata, so the
+worker fetches the body and the headers from Resend before routing (`complete()` in `src/channels/email.ts`). The
+signature is Svix's, checked with no library.
+
+**Outbound:** through Resend, from the store's address with the store's name. A reply carries `In-Reply-To` and
+`References`, so it threads in the customer's mail. A reply in the thread, or one with the same subject within 30
+days, stays one conversation. The agent's replies say `Auto-Submitted: auto-replied`; the owner's do not.
+
+**Never answered, in code:** `Auto-Submitted`, `Precedence: bulk/list/junk`, list headers, auto-reply headers, an
+empty `Return-Path`, delivery reports, no-reply and daemon senders, and our own domain. Such mail is kept and shown
+as automatic. A bounce or a complaint suppresses the address (`mail_suppressed`). An email with only files hands the
+conversation to the owner. A customer gets at most 20 agent answers a day per store address.
+
+**The owner's reply, on every channel:** from the chat page, through the conversation's own adapter and the same
+checks as any send. It pauses the agent there for 12 hours from the owner's last reply, until "להחזיר לתורן". On
+WhatsApp the reply box closes 24 hours after the customer's last message, because Toran has no approved templates.
+
+**The agent:** one line changed. The server context names the channel (for WhatsApp it is byte-identical), and the
+owner's replies are part of the history it reads. A store's own channel has no demo footer.
+
+**Config:** `TORAN_CHANNELS` turns a channel's code on (`whatsapp,email`). The operator sets each channel to `off`,
+`demo` or `live` on /settings, and a channel whose code is off cannot be set past `off`. `GET /channels.json` gives
+the website those states and nothing about any store.
+
+**Not done here:** an address on the store's own domain (it needs DNS on their side), sending attachments, and
+merging one customer across channels.

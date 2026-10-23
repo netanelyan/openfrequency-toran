@@ -60,5 +60,9 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'PUBLIC_HOST', group: 'website', he: 'שם המארח של הדשבורד מאחורי Caddy' },
   { name: 'SESSION_SECRET', group: 'website', he: 'חתימה על אסימוני ה־CSRF בטפסים' },
   { name: 'OF_INTERNAL_TOKEN', group: 'website', he: 'המפתח המשותף עם openfrequency-accounts, שבודק מי מחובר. אותו ערך בכל השירותים' },
+  { name: 'TORAN_CHANNELS', group: 'channels', he: 'הערוצים שהקוד שלהם פועל, למשל whatsapp,email. וואטסאפ תמיד פועל' },
+  { name: 'RESEND_API_KEY', group: 'channels', he: 'Resend: שליחת תשובות במייל וקריאת המיילים שמגיעים' },
+  { name: 'RESEND_WEBHOOK_SECRET', group: 'channels', he: 'Resend: הסוד (whsec_...) שבודק את החתימה על ה־webhook' },
+  { name: 'TORAN_MAIL_DOMAIN', group: 'channels', he: 'הדומיין שמקבל את המייל של החנויות, למשל in.openfrequency.co.il' },
   { name: 'DATABASE_URL', group: 'database', he: 'Postgres בפרודקשן. בלעדיו: PGlite בתוך התיקייה הפרטית' },
 ];

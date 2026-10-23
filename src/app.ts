@@ -8,10 +8,12 @@ import { renderHtml } from './core/browser.ts';
 import { type Db, openDb } from './db/index.ts';
 import { type Llm, makeLlm } from './agent/llm/index.ts';
 import { type WaProvider, makeWaProvider } from './channels/whatsapp.ts';
+import { type EmailAdapter, makeEmailAdapter } from './channels/email.ts';
+import { enabledChannels } from './channels/config.ts';
 
 // The one object every part of the engine is handed: the database, the settings, a
-// log, the fetcher, the model and the WhatsApp provider. Tests build their own with a
-// fixture fetcher, a scripted model and the simulated provider.
+// log, the fetcher, the model and the channels' adapters (WhatsApp always; email when TORAN_CHANNELS turns it on).
+// Tests build their own with a fixture fetcher, a scripted model and the simulated providers.
 
 export type Env = Record<string, string | undefined>;
 
@@ -23,6 +25,7 @@ export type App = {
   render?: (url: string) => Promise<string | null>;
   llm: Llm;
   wa: WaProvider;
+  mail?: EmailAdapter;
 };
 
 /** A log line to the console and to private/logs/toran.log, one line each (no forged entries). */
@@ -46,7 +49,7 @@ export function makeLog(env: Env = process.env, { quiet = false } = {}): (m: str
   };
 }
 
-export async function makeApp({ env = process.env, db, fetcher, llm, wa, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; llm?: Llm; wa?: WaProvider; quiet?: boolean } = {}): Promise<App> {
+export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; llm?: Llm; wa?: WaProvider; mail?: EmailAdapter; quiet?: boolean } = {}): Promise<App> {
   if (env === process.env) loadEnv(env);
   const log = makeLog(env, { quiet });
   const theDb = db || (await openDb({ env }));
@@ -58,5 +61,6 @@ export async function makeApp({ env = process.env, db, fetcher, llm, wa, quiet =
     render: (url) => renderHtml(url),
     llm: llm || makeLlm(env, { log }),
     wa: wa || makeWaProvider(env, { log }),
+    mail: mail || (enabledChannels(env).has('email') ? makeEmailAdapter(env) : undefined),
   };
 }

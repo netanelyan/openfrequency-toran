@@ -8,6 +8,7 @@ import { enqueue } from '../jobs/queue.ts';
 import { cookies } from './auth.ts';
 import { sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
 import { ownsStore, scopeOf } from './workspace.ts';
+import { enabledChannels, publicChannels } from '../channels/config.ts';
 import type { Out, Req, Route } from './server.ts';
 
 // The public routes, answered without a session:
@@ -22,6 +23,12 @@ import type { Out, Req, Route } from './server.ts';
 //   POST /wa/twilio            Twilio's webhook: signature checked, acknowledged at once,
 //                              the message handled by the worker (channels/route.ts)
 //   POST /wa/sim               the simulator's webhook (development only)
+//   POST /mail/resend          Resend's webhook (email.received, email.bounced, email.complained): Svix signature
+//                              checked, acknowledged at once, handled by the worker. 404 while TORAN_CHANNELS has
+//                              no email
+//   POST /mail/sim             the email simulator's webhook (development only)
+//   GET  /channels.json        each channel's state (off, demo, live) for the website's "בקרוב" tags; nothing about
+//                              any store
 //   POST /internal/lead        a demo asked for on openfrequency.co.il (openfrequency-web/server/lead.mjs): from this
 //                              machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (so never through Caddy).
 //                              It is written down with its code (REQ-XXXXXX) and waits: only when the person writes
@@ -123,6 +130,21 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       const ack = app.wa.ack();
       return { text: ack.body, type: ack.type };
     }],
+    ['POST', /^\/mail\/(resend|sim)$/, async (r, m) => {
+      if (!hookOk(r.ip)) return { status: 429, text: '' };
+      const mail = app.mail;
+      if (!mail || !enabledChannels(app.env).has('email') || m[1] !== mail.kind) return { status: 404, text: '' };
+      if (mail.kind === 'sim' && app.env.TORAN_ENV === 'prod') return { status: 404, text: '' };
+      const inbound = mail.parse({ raw: r.raw || '', form: r.form, headers: r.req.headers, url: '' });
+      if (inbound === null) {
+        app.log(`[mail] webhook signature failed from ${r.ip}`);
+        return { status: 403, text: 'bad signature' };
+      }
+      for (const msg of inbound) await enqueue(app.db, 'mail_inbound', { ...msg, at: Date.now() }, { dedupeKey: `mail:${msg.id}` });
+      const ack = mail.ack();
+      return { text: ack.body, type: ack.type };
+    }],
+    ['GET', /^\/channels\.json$/, async () => ({ json: await publicChannels(app.db), headers: { 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' } })],
     ['POST', /^\/internal\/lead$/, async (r) => {
       if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
       let body: any = {};
