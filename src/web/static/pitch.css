@@ -68,7 +68,6 @@ h1 { font-size: clamp(30px, 8.6vw, 42px); font-weight: 800; line-height: 1.15; l
 h1 .hl { padding-inline: 0.08em; background: linear-gradient(transparent 58%, color-mix(in srgb, var(--store) 30%, transparent) 58%, color-mix(in srgb, var(--store) 30%, transparent) 92%, transparent 92%); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .lede { font-size: 18px; line-height: 1.6; color: var(--ink-2); margin: 0 auto 24px; max-width: 560px; text-wrap: pretty; }
 .quiet { font-size: 14px; line-height: 1.55; color: var(--ink-3); margin: 14px auto 0; max-width: 460px; }
-.code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.95em; direction: ltr; }
 
 /* buttons: pills. Green is Toran's WhatsApp; grey is everything else */
 .wa, .grey { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 50px; padding: 0 24px; border-radius: 999px; font: 600 17px/1 var(--font); text-decoration: none; white-space: nowrap; transition: background 0.15s, transform 0.15s; }
