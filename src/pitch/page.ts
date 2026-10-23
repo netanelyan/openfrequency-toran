@@ -139,18 +139,18 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
 
   // What we read, as numbers: the products, their images, the information pages (named under them) and the prices.
   const num = (x: number) => x.toLocaleString('he-IL');
-  const stat = (v: string, label: string) => `<div><dt>${label}</dt><dd>${v}</dd></div>`;
+  const stat = (v: string, label: string, cls = '') => `<div${cls ? ` class="${cls}"` : ''}><dt>${label}</dt><dd>${v}</dd></div>`;
   const range = d.counts.min == null ? null : d.counts.max == null || d.counts.max === d.counts.min ? esc(money(d.counts.min, currency)) : `${esc(money(d.counts.min, currency))} <small>עד</small> ${esc(money(d.counts.max, currency))}`;
   const stats = [
     stat(num(n), n === 1 ? 'מוצר' : 'מוצרים'),
     d.counts.images ? stat(num(d.counts.images), d.counts.images === 1 ? 'תמונת מוצר' : 'תמונות מוצרים') : '',
     d.pages.titles.length ? stat(num(d.pages.titles.length), d.pages.titles.length === 1 ? 'עמוד מידע' : 'עמודי מידע') : '',
-    range ? stat(range, 'טווח המחירים') : '',
+    range ? stat(range, 'טווח המחירים', 'wide') : '',
   ].join('');
   const readSec = `<section class="read" aria-labelledby="read-h">
     <h2 id="read-h">מה קראנו באתר שלכם</h2>
     <dl class="stats">${stats}</dl>
-    ${d.pages.titles.length ? `<p class="pages"><span>עמודי המידע שקראנו</span> ${d.pages.titles.map((t) => `<bdi>${esc(t)}</bdi>`).join(', ')}</p>` : ''}
+    ${d.pages.titles.length ? `<div class="pages"><span id="pages-h">עמודי המידע שקראנו</span><ul aria-labelledby="pages-h">${d.pages.titles.map((t) => `<li><bdi>${esc(t)}</bdi></li>`).join('')}</ul></div>` : ''}
   </section>`;
 
   // The store's own products, moving past under the hero in one or two rows, so the page opens on their shop. Each row

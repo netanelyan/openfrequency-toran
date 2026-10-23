@@ -159,7 +159,8 @@ test('the page counts what was read: products, their images, the information pag
   assert.match(html, /<dt>תמונות מוצרים<\/dt><dd>31<\/dd>/);
   assert.match(html, /<dt>עמודי מידע<\/dt><dd>3<\/dd>/);
   assert.match(html, /<dt>טווח המחירים<\/dt><dd>39 ₪ <small>עד<\/small> 329 ₪<\/dd>/);
-  assert.match(html, /<bdi>מדיניות משלוחים<\/bdi>, <bdi>החזרות והחלפות<\/bdi>, <bdi>שאלות נפוצות<\/bdi>/);
+  assert.match(html, /<li><bdi>מדיניות משלוחים<\/bdi><\/li><li><bdi>החזרות והחלפות<\/bdi><\/li><li><bdi>שאלות נפוצות<\/bdi><\/li>/);
+  assert.match(html, /<div class="wide"><dt>טווח המחירים<\/dt>/, 'the range takes a row of its own on a phone');
   // Nothing found, nothing said: no zero images, no empty page list; one price is one price, not a range.
   const bare = page(fake({ counts: { products: 1, available: 1, images: 0, min: 49, max: 49 }, pages: { shipping: false, returns: false, titles: [] } }));
   assert.match(bare, /<dt>מוצר<\/dt><dd>1<\/dd>/);
