@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { seedDemo } from '../src/demoSeed.ts';
 import { getOffer, setOffer, priceSentence, OFFER_DEFAULT } from '../src/offer.ts';
 import { pitchGaps } from '../src/pitch/ready.ts';
-import { pitchData, pitchPage, themeCss, type PitchData } from '../src/pitch/page.ts';
+import { pitchData, pitchPage, shelfRows, themeCss, type PitchData } from '../src/pitch/page.ts';
 import { buildPitch } from '../src/pitch/build.ts';
 import { contrast, displayName } from '../src/ingest/brand.ts';
 import { testApp } from './helpers.ts';
@@ -114,6 +114,7 @@ function fake(over: Partial<PitchData> = {}, name: string | null = 'כלי חר�
     product: null,
     counts: { products: 14, available: 12, images: 31, min: 39, max: 329 },
     pages: { shipping: true, returns: true, titles: ['מדיניות משלוחים', 'החזרות והחלפות', 'שאלות נפוצות'] },
+    shelf: [],
     offer: OFFER,
     gaps: [],
     public: true,
@@ -134,6 +135,21 @@ test('the hero says only what was really read: the product count in any size, an
   assert.ok(!/בניתי|אני נתנאל|לכתוב לי/.test(all), 'OpenFrequency speaks as "we"');
   assert.match(all, /data-takedown/);
   assert.match(all, /OpenFrequency<\/span>, אשדוד/);
+});
+
+test("the strip under the hero shows the store's own products, loops without a gap, and is left out with too few", () => {
+  const item = (i: number) => ({ title: `מוצר ${i}`, image: `https://cdn.shopify.com/s/files/p${i}.jpg?v=1`, price_min: 10 * i });
+  const page = (n: number) => pitchPage(fake({ shelf: Array.from({ length: n }, (_, i) => item(i + 1)) }), { env: ENV });
+  assert.doesNotMatch(page(0), /class="shelf"/);
+  const html = page(7);
+  assert.match(html, /<div class="shelf" aria-hidden="true">/, 'a picture of their shop, repeated to loop: not read out');
+  assert.equal((html.match(/class="shelf-row/g) || []).length, 2, '6 or more products: two rows');
+  assert.match(html, /src="https:\/\/cdn\.shopify\.com\/s\/files\/p1\.jpg\?v=1&amp;width=300"/, 'a Shopify photo is asked for at the tile size');
+  assert.match(html, /<b>מוצר 1<\/b><small>10 ₪<\/small>/);
+  // Every row holds at least 8 tiles in each of its two copies, and the pace grows with the row.
+  for (const n of [3, 5, 7, 16]) for (const row of shelfRows(Array.from({ length: n }, (_, i) => item(i)))) assert.ok(row.length >= 8, `${n} products: a row of ${row.length}`);
+  assert.equal(shelfRows(Array.from({ length: 4 }, (_, i) => item(i))).length, 1, 'a few products: one row');
+  assert.match(themeCss(fake({ shelf: Array.from({ length: 7 }, (_, i) => item(i)) })), /--shelf-0:32s;--shelf-1:36s/);
 });
 
 test('the page counts what was read: products, their images, the information pages by name, and the price range', () => {

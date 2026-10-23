@@ -5,9 +5,9 @@
   const page = document.querySelector('[data-slug]');
   if (!page) return;
   const slug = page.dataset.slug;
-  // A product photo that does not load is removed rather than shown broken.
+  // A product photo that does not load is removed rather than shown broken; in the strip, with its tile.
   document.querySelectorAll('img[data-hide-on-error]').forEach((img) => {
-    const hide = () => img.remove();
+    const hide = () => (img.closest('.shelf li') || img).remove();
     if (img.complete && !img.naturalWidth) hide();
     else img.addEventListener('error', hide);
   });

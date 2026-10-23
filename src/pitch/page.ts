@@ -34,10 +34,17 @@ export type PitchData = {
   product: { title: string; image: string | null; url: string; price_min: number | null } | null;
   counts: { products: number; available: number; images: number; min: number | null; max: number | null };
   pages: { shipping: boolean; returns: boolean; titles: string[] };
+  shelf: ShelfItem[];
   offer: Offer;
   gaps: Gap[];
   public: boolean;
 };
+
+export type ShelfItem = { title: string; image: string; price_min: number | null };
+
+/** How many of the store's products the strip under the hero shows, and the fewest it needs to show any. */
+const SHELF_MAX = 16;
+const SHELF_MIN = 3;
 
 export async function pitchData(app: App, slug: string): Promise<PitchData | null> {
   const store = await app.db.one<any>('SELECT id, name, domain, url, slug, demo_code, brand, brand_override, config, approved_at, taken_down_at, status FROM stores WHERE slug = $1 AND page_built_at IS NOT NULL', [slug]);
@@ -48,6 +55,11 @@ export async function pitchData(app: App, slug: string): Promise<PitchData | nul
   const counts = await app.db.one<any>('SELECT COUNT(*)::int AS products, COUNT(*) FILTER (WHERE available)::int AS available, COALESCE(SUM(image_count), 0)::int AS images, MIN(price_min)::float AS min, MAX(price_max)::float AS max FROM products WHERE store_id = $1 AND gone_at IS NULL', [store.id]);
   const policies = await app.db.query<{ kind: string; title: string }>('SELECT kind, title FROM policies WHERE store_id = $1 ORDER BY id', [store.id]);
   const kinds = new Set(policies.map((p) => p.kind));
+  // The store's own products with a photo, in stock first, for the strip under the hero.
+  const shelf = await app.db.query<ShelfItem>(
+    "SELECT title, image, price_min::float FROM products WHERE store_id = $1 AND gone_at IS NULL AND image IS NOT NULL AND image <> '' AND COALESCE((override->>'hidden')::boolean, false) = false ORDER BY available DESC, id LIMIT $2",
+    [store.id, SHELF_MAX],
+  );
   const gaps = await pitchGaps(app, store);
   return {
     store,
@@ -57,6 +69,7 @@ export async function pitchData(app: App, slug: string): Promise<PitchData | nul
     product,
     counts,
     pages: { shipping: kinds.has('shipping'), returns: kinds.has('returns'), titles: [...new Set(policies.map((p) => p.title.trim()).filter(Boolean))] },
+    shelf: shelf.length >= SHELF_MIN ? shelf : [],
     offer: await getOffer(app.db),
     gaps,
     public: isPublic(store, gaps),
@@ -66,8 +79,23 @@ export async function pitchData(app: App, slug: string): Promise<PitchData | nul
 /** The store's colour for its page, darkened until white text on it passes 4.5:1. Graphite only in the owner's preview of a page held for its colour. */
 export function themeCss(d: PitchData): string {
   const c = readableShade(d.color || '#4a4a52');
-  return `:root{--store:${c};--store-ink:${inkOn(c)}}`;
+  // Each row of the strip takes 4 seconds a product to come round, so a longer row is not a faster one.
+  const pace = shelfRows(d.shelf).map((r, i) => `--shelf-${i}:${r.length * 4}s`).join(';');
+  return `:root{--store:${c};--store-ink:${inkOn(c)}${pace ? ';' + pace : ''}}`;
 }
+
+/**
+ * The strip's rows: one row for a few products, two from 6 on, every other product to each. A row repeats its
+ * products until it holds at least 8, so one copy of it is wider than the page and the loop has no gap.
+ */
+export function shelfRows(shelf: ShelfItem[]): ShelfItem[][] {
+  if (!shelf.length) return [];
+  const rows = shelf.length >= 6 ? [shelf.filter((_, i) => i % 2 === 0), shelf.filter((_, i) => i % 2 === 1)] : [shelf];
+  return rows.map((r) => Array.from({ length: Math.ceil(8 / r.length) }, () => r).flat());
+}
+
+/** A Shopify photo at the size the strip shows it, so a page never loads a full-size photo for a 132px tile. */
+const thumb = (src: string) => (/(^https:\/\/cdn\.shopify\.com\/|\/cdn\/shop\/)/.test(src) ? `${src}${src.includes('?') ? '&' : '?'}width=300` : src);
 
 const initialOf = (name: string | null) => (String(name || '').trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase();
 
@@ -125,6 +153,16 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
     ${d.pages.titles.length ? `<p class="pages"><span>עמודי המידע שקראנו</span> ${d.pages.titles.map((t) => `<bdi>${esc(t)}</bdi>`).join(', ')}</p>` : ''}
   </section>`;
 
+  // The store's own products, moving past under the hero in one or two rows, so the page opens on their shop. Each row
+  // is two identical lists side by side, moved by one list's width. It is a picture of their shop, repeated to loop,
+  // so it is hidden from screen readers; the numbers under it say what was read.
+  const tile = (p: ShelfItem) => `<li><img src="${esc(thumb(p.image))}" alt="" width="132" height="132" referrerpolicy="no-referrer" decoding="async" data-hide-on-error><b>${esc(shortTitle(p.title))}</b>${p.price_min != null ? `<small>${esc(money(p.price_min, currency))}</small>` : ''}</li>`;
+  const shelfSec = d.shelf.length
+    ? `<div class="shelf" aria-hidden="true">
+    ${shelfRows(d.shelf).map((row, r) => `<div class="shelf-row r${r}"><div class="shelf-track">${[0, 1].map(() => `<ul>${row.map(tile).join('')}</ul>`).join('')}</div></div>`).join('\n    ')}
+  </div>`
+    : '';
+
   const greenBtn = (label: string, cls = '') => (demo ? `<a class="wa ${cls}" href="${esc(demo)}" data-demo rel="noopener">${waIcon()}<span>${label}</span></a>` : `<span class="wa off ${cls}">${waIcon()}<span>${owner ? ph('[מספר הדמו]') : label}</span></span>`);
   const held = owner && !d.public ? `<aside class="held" role="note"><b>${d.store.taken_down_at ? 'העמוד הזה הוסר. רואים אותו רק מהדשבורד.' : 'את העמוד הזה רואים רק מהדשבורד, עוד לא לכולם.'}</b>${d.gaps.length ? `<ul>${d.gaps.map((g) => `<li>${esc(g.he)}</li>`).join('')}</ul>` : !d.store.approved_at && !d.store.taken_down_at ? '<p>הוא נפתח לכולם אחרי שמאשרים אותו בבדיקה.</p>' : ''}</aside>` : '';
 
@@ -159,6 +197,8 @@ ${iconLinks()}
     ${greenBtn('לכתוב לו בוואטסאפ', 'big')}
     <p class="quiet">זו הדגמה. אף לקוח שלכם לא רואה אותה.</p>
   </section>
+
+  ${shelfSec}
 
   ${readSec}
 
