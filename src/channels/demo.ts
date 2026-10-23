@@ -4,11 +4,14 @@ import { cleanLine } from '../core/hebrew.ts';
 import { event } from '../db/log.ts';
 import { conversationFor, DEMO_FOOTER, runTurn } from '../agent/loop.ts';
 import { CODE_RE } from '../pitch/build.ts';
+import { claimRequest } from './request.ts';
 import { reply } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
+//   a message with a request code (REQ-XXXXXX, from the website's demo form) asks for a
+//   demo for a store, from this number (request.ts)
 //   a message with a code (DEMO-XXXX, from a pitch page's button) binds that phone to
 //   that store in wa_users for 7 days; a new code overwrites the binding
 //   every later message from that phone goes to the bound store's agent
@@ -36,7 +39,7 @@ const msg = {
   noText: 'בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?',
 };
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text'; storeId?: number; reply?: string };
+export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 
@@ -52,6 +55,10 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
   const phone = inbound.from;
   const text = String(inbound.text || '').trim();
   const isOwner = ownerPhones(app.env).has(phone);
+
+  // A demo asked for on the website, confirmed by this message (request.ts); null when the message holds no request.
+  const requested = await claimRequest(app, adapter, inbound);
+  if (requested) return requested;
 
   // A code binds (or re-binds) the phone to its store.
   const m = CODE_RE.exec(text);
