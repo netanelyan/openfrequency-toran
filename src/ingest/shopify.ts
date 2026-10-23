@@ -19,6 +19,7 @@ export type ProductRow = {
   tags: string[];
   url: string;
   image: string | null;
+  image_count: number;
   currency: string;
   price_min: number | null;
   price_max: number | null;
@@ -78,6 +79,7 @@ export function toRow(p: any, origin: string, currency: string): ProductRow {
     tags,
     url: `${origin}/products/${p.handle}`,
     image: p.images?.[0]?.src || p.image?.src || null,
+    image_count: Array.isArray(p.images) ? p.images.length : p.image?.src ? 1 : 0,
     currency,
     price_min: prices.length ? Math.min(...prices) : null,
     price_max: prices.length ? Math.max(...prices) : null,

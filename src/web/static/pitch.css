@@ -64,6 +64,8 @@ img { max-width: 100%; }
 .initial { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--store); color: var(--store-ink); font: 700 28px/1 var(--font); box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.35); }
 .initial.sm { width: 40px; height: 40px; font-size: 18px; box-shadow: none; }
 h1 { font-size: clamp(30px, 8.6vw, 42px); font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; margin: 22px auto 14px; max-width: 640px; text-wrap: balance; overflow-wrap: anywhere; }
+/* the store's name, under a marker stroke in its own colour, as on openfrequency.co.il */
+h1 .hl { padding-inline: 0.08em; background: linear-gradient(transparent 58%, color-mix(in srgb, var(--store) 30%, transparent) 58%, color-mix(in srgb, var(--store) 30%, transparent) 92%, transparent 92%); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .lede { font-size: 18px; line-height: 1.6; color: var(--ink-2); margin: 0 auto 24px; max-width: 560px; text-wrap: pretty; }
 .quiet { font-size: 14px; line-height: 1.55; color: var(--ink-3); margin: 14px auto 0; max-width: 460px; }
 .code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.95em; direction: ltr; }
@@ -85,6 +87,18 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass { background: rgba(255, 255, 255, 0.9); }
 }
+
+/* what we read: the numbers, two to a row on a phone and four on a wider screen, and the pages named under them */
+.read { margin: 0 0 28px; padding: 22px 4px 4px; border-top: 1px solid rgba(0, 0, 0, 0.08); }
+.read h2 { font-size: 20px; font-weight: 700; line-height: 1.3; margin: 0 0 16px; }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; margin: 0; }
+.stats div { display: flex; flex-direction: column-reverse; gap: 2px; min-width: 0; }
+.stats dd { margin: 0; font: 800 clamp(26px, 7vw, 34px)/1.1 var(--font); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stats dd small { font-size: 0.5em; font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
+.stats dt { font-size: 14px; color: var(--ink-3); }
+@media (min-width: 560px) { .stats { grid-template-columns: repeat(4, auto); justify-content: space-between; } }
+.pages { margin: 16px 0 0; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
+.pages span { display: block; font-weight: 600; color: var(--ink); }
 
 /* the sample chat */
 .chat { overflow: hidden; }

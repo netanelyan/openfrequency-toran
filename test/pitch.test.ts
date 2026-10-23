@@ -112,8 +112,8 @@ function fake(over: Partial<PitchData> = {}, name: string | null = 'כלי חר�
     color: '#b4532a',
     chat: [{ role: 'customer', text: 'היי' }, { role: 'agent', text: 'כן' }, { role: 'customer', text: 'ו?' }, { role: 'agent', text: 'כן' }],
     product: null,
-    counts: { products: 14, available: 12 },
-    pages: { shipping: true, returns: true },
+    counts: { products: 14, available: 12, images: 31, min: 39, max: 329 },
+    pages: { shipping: true, returns: true, titles: ['מדיניות משלוחים', 'החזרות והחלפות', 'שאלות נפוצות'] },
     offer: OFFER,
     gaps: [],
     public: true,
@@ -124,15 +124,31 @@ function fake(over: Partial<PitchData> = {}, name: string | null = 'כלי חר�
 test('the hero says only what was really read: the product count in any size, and only the pages that were found', () => {
   const page = (d: PitchData) => pitchPage(d, { env: ENV });
   assert.match(page(fake()), /עברנו על האתר שלכם, על 14 המוצרים ועל עמודי המשלוחים וההחזרות\./);
-  assert.match(page(fake({ counts: { products: 2431, available: 2000 }, pages: { shipping: true, returns: false } })), /על 2,431 המוצרים ועל עמוד המשלוחים\./);
-  assert.match(page(fake({ counts: { products: 3, available: 3 }, pages: { shipping: false, returns: true } })), /על 3 המוצרים ועל עמוד ההחזרות\./);
-  assert.match(page(fake({ counts: { products: 1, available: 1 }, pages: { shipping: false, returns: false } })), /עברנו על האתר שלכם ועל המוצר שבו\./);
-  assert.match(page(fake({}, 'Nike Store')), /<h1>בנינו ל־<bdi>Nike Store<\/bdi> תורן לוואטסאפ<\/h1>/);
+  const counts = (products: number) => ({ products, available: products, images: 0, min: null, max: null });
+  assert.match(page(fake({ counts: counts(2431), pages: { shipping: true, returns: false, titles: [] } })), /על 2,431 המוצרים ועל עמוד המשלוחים\./);
+  assert.match(page(fake({ counts: counts(3), pages: { shipping: false, returns: true, titles: [] } })), /על 3 המוצרים ועל עמוד ההחזרות\./);
+  assert.match(page(fake({ counts: counts(1), pages: { shipping: false, returns: false, titles: [] } })), /עברנו על האתר שלכם ועל המוצר שבו\./);
+  assert.match(page(fake({}, 'Nike Store')), /<h1>בנינו ל־<span class="hl"><bdi>Nike Store<\/bdi><\/span> תורן לוואטסאפ<\/h1>/, 'the name under its marker stroke');
   const all = page(fake());
   assert.ok(!/[—–]/.test(all.replace(/<title>[\s\S]*?<\/title>/, '')), 'no em or en dashes');
   assert.ok(!/בניתי|אני נתנאל|לכתוב לי/.test(all), 'OpenFrequency speaks as "we"');
   assert.match(all, /data-takedown/);
   assert.match(all, /OpenFrequency<\/span>, אשדוד/);
+});
+
+test('the page counts what was read: products, their images, the information pages by name, and the price range', () => {
+  const page = (d: PitchData) => pitchPage(d, { env: ENV });
+  const html = page(fake());
+  assert.match(html, /<dt>מוצרים<\/dt><dd>14<\/dd>/);
+  assert.match(html, /<dt>תמונות מוצרים<\/dt><dd>31<\/dd>/);
+  assert.match(html, /<dt>עמודי מידע<\/dt><dd>3<\/dd>/);
+  assert.match(html, /<dt>טווח המחירים<\/dt><dd>39 ₪ <small>עד<\/small> 329 ₪<\/dd>/);
+  assert.match(html, /<bdi>מדיניות משלוחים<\/bdi>, <bdi>החזרות והחלפות<\/bdi>, <bdi>שאלות נפוצות<\/bdi>/);
+  // Nothing found, nothing said: no zero images, no empty page list; one price is one price, not a range.
+  const bare = page(fake({ counts: { products: 1, available: 1, images: 0, min: 49, max: 49 }, pages: { shipping: false, returns: false, titles: [] } }));
+  assert.match(bare, /<dt>מוצר<\/dt><dd>1<\/dd>/);
+  assert.doesNotMatch(bare, /תמונות|תמונת|עמודי מידע|עמוד מידע|עמודי המידע/);
+  assert.match(bare, /<dt>טווח המחירים<\/dt><dd>49 ₪<\/dd>/);
 });
 
 test('the store colour is darkened until white text on it passes 4.5:1, whatever the site gave', () => {

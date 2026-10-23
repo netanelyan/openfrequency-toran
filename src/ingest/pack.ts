@@ -80,12 +80,12 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
     for (const r of rows) {
       ids.push(r.ext_id);
       await t.query(
-        `INSERT INTO products (store_id, ext_id, handle, title, vendor, product_type, tags, url, image, currency, price_min, price_max, compare_at_max, available, variants, body_text, search_text, source_updated_at, scraped_at, gone_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7::text[],$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,now(),NULL)
+        `INSERT INTO products (store_id, ext_id, handle, title, vendor, product_type, tags, url, image, currency, price_min, price_max, compare_at_max, available, variants, body_text, search_text, source_updated_at, image_count, scraped_at, gone_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::text[],$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,$19,now(),NULL)
          ON CONFLICT (store_id, ext_id) DO UPDATE SET handle = EXCLUDED.handle, title = EXCLUDED.title, vendor = EXCLUDED.vendor, product_type = EXCLUDED.product_type, tags = EXCLUDED.tags,
            url = EXCLUDED.url, image = EXCLUDED.image, currency = EXCLUDED.currency, price_min = EXCLUDED.price_min, price_max = EXCLUDED.price_max, compare_at_max = EXCLUDED.compare_at_max,
-           available = EXCLUDED.available, variants = EXCLUDED.variants, body_text = EXCLUDED.body_text, search_text = EXCLUDED.search_text, source_updated_at = EXCLUDED.source_updated_at, scraped_at = now(), gone_at = NULL`,
-        [storeId, r.ext_id, r.handle, r.title, r.vendor, r.product_type, r.tags, r.url, r.image, r.currency, r.price_min, r.price_max, r.compare_at_max, r.available, J(r.variants), r.body_text, r.search_text, r.source_updated_at],
+           available = EXCLUDED.available, variants = EXCLUDED.variants, body_text = EXCLUDED.body_text, search_text = EXCLUDED.search_text, source_updated_at = EXCLUDED.source_updated_at, image_count = EXCLUDED.image_count, scraped_at = now(), gone_at = NULL`,
+        [storeId, r.ext_id, r.handle, r.title, r.vendor, r.product_type, r.tags, r.url, r.image, r.currency, r.price_min, r.price_max, r.compare_at_max, r.available, J(r.variants), r.body_text, r.search_text, r.source_updated_at, r.image_count],
       );
     }
     const g = await t.query<{ id: number }>('UPDATE products SET gone_at = now() WHERE store_id = $1 AND gone_at IS NULL AND NOT (ext_id = ANY($2::text[])) RETURNING id', [storeId, ids]);

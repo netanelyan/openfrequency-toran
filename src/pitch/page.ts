@@ -32,8 +32,8 @@ export type PitchData = {
   color: string | null;
   chat: SampleChat;
   product: { title: string; image: string | null; url: string; price_min: number | null } | null;
-  counts: { products: number; available: number };
-  pages: { shipping: boolean; returns: boolean };
+  counts: { products: number; available: number; images: number; min: number | null; max: number | null };
+  pages: { shipping: boolean; returns: boolean; titles: string[] };
   offer: Offer;
   gaps: Gap[];
   public: boolean;
@@ -45,8 +45,9 @@ export async function pitchData(app: App, slug: string): Promise<PitchData | nul
   const brand = { ...(store.brand || {}), ...(store.brand_override || {}) };
   const pitch = await app.db.one<any>('SELECT product_id, sample_chat FROM pitches WHERE store_id = $1', [store.id]);
   const product = pitch?.product_id ? await app.db.one<any>('SELECT title, image, url, price_min::float FROM products WHERE id = $1', [pitch.product_id]) : null;
-  const counts = await app.db.one<any>('SELECT COUNT(*)::int AS products, COUNT(*) FILTER (WHERE available)::int AS available FROM products WHERE store_id = $1 AND gone_at IS NULL', [store.id]);
-  const kinds = new Set((await app.db.query<{ kind: string }>("SELECT DISTINCT kind FROM policies WHERE store_id = $1 AND kind IN ('shipping', 'returns')", [store.id])).map((p) => p.kind));
+  const counts = await app.db.one<any>('SELECT COUNT(*)::int AS products, COUNT(*) FILTER (WHERE available)::int AS available, COALESCE(SUM(image_count), 0)::int AS images, MIN(price_min)::float AS min, MAX(price_max)::float AS max FROM products WHERE store_id = $1 AND gone_at IS NULL', [store.id]);
+  const policies = await app.db.query<{ kind: string; title: string }>('SELECT kind, title FROM policies WHERE store_id = $1 ORDER BY id', [store.id]);
+  const kinds = new Set(policies.map((p) => p.kind));
   const gaps = await pitchGaps(app, store);
   return {
     store,
@@ -55,7 +56,7 @@ export async function pitchData(app: App, slug: string): Promise<PitchData | nul
     chat: (pitch?.sample_chat || []).length >= 4 ? pitch.sample_chat : [],
     product,
     counts,
-    pages: { shipping: kinds.has('shipping'), returns: kinds.has('returns') },
+    pages: { shipping: kinds.has('shipping'), returns: kinds.has('returns'), titles: [...new Set(policies.map((p) => p.title.trim()).filter(Boolean))] },
     offer: await getOffer(app.db),
     gaps,
     public: isPublic(store, gaps),
@@ -92,7 +93,7 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
   const ph = (label: string) => `<mark class="ph" dir="rtl">${esc(label)}</mark>`;
   const nameText = d.name || d.store.domain;
   const name = d.name ? `<bdi>${esc(d.name)}</bdi>` : ph('[שם החנות]');
-  const leName = d.name ? `${le(d.name)}${name}` : `ל${name}`;
+  const leName = d.name ? `${le(d.name)}<span class="hl">${name}</span>` : `ל${name}`;
   const demo = waLink(env, d.store.demo_code, nameText);
   const of = ofWhatsapp(env);
   const url = pitchUrl(env, d.store.slug);
@@ -107,6 +108,22 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
   const prods = n === 1 ? 'המוצר' : `${n.toLocaleString('he-IL')} המוצרים`;
   const pages = d.pages.shipping && d.pages.returns ? 'עמודי המשלוחים וההחזרות' : d.pages.shipping ? 'עמוד המשלוחים' : d.pages.returns ? 'עמוד ההחזרות' : null;
   const read = pages ? `עברנו על האתר שלכם, על ${prods} ועל ${pages}. תורן כבר מכיר אותם.` : `עברנו על האתר שלכם ועל ${prods} שבו. תורן כבר מכיר ${n === 1 ? 'אותו' : 'אותם'}.`;
+
+  // What we read, as numbers: the products, their images, the information pages (named under them) and the prices.
+  const num = (x: number) => x.toLocaleString('he-IL');
+  const stat = (v: string, label: string) => `<div><dt>${label}</dt><dd>${v}</dd></div>`;
+  const range = d.counts.min == null ? null : d.counts.max == null || d.counts.max === d.counts.min ? esc(money(d.counts.min, currency)) : `${esc(money(d.counts.min, currency))} <small>עד</small> ${esc(money(d.counts.max, currency))}`;
+  const stats = [
+    stat(num(n), n === 1 ? 'מוצר' : 'מוצרים'),
+    d.counts.images ? stat(num(d.counts.images), d.counts.images === 1 ? 'תמונת מוצר' : 'תמונות מוצרים') : '',
+    d.pages.titles.length ? stat(num(d.pages.titles.length), d.pages.titles.length === 1 ? 'עמוד מידע' : 'עמודי מידע') : '',
+    range ? stat(range, 'טווח המחירים') : '',
+  ].join('');
+  const readSec = `<section class="read" aria-labelledby="read-h">
+    <h2 id="read-h">מה קראנו באתר שלכם</h2>
+    <dl class="stats">${stats}</dl>
+    ${d.pages.titles.length ? `<p class="pages"><span>עמודי המידע שקראנו</span> ${d.pages.titles.map((t) => `<bdi>${esc(t)}</bdi>`).join(', ')}</p>` : ''}
+  </section>`;
 
   const greenBtn = (label: string, cls = '') => (demo ? `<a class="wa ${cls}" href="${esc(demo)}" data-demo rel="noopener">${waIcon()}<span>${label}</span></a>` : `<span class="wa off ${cls}">${waIcon()}<span>${owner ? ph('[מספר הדמו]') : label}</span></span>`);
   const held = owner && !d.public ? `<aside class="held" role="note"><b>${d.store.taken_down_at ? 'העמוד הזה הוסר. רואים אותו רק מהדשבורד.' : 'את העמוד הזה רואים רק מהדשבורד, עוד לא לכולם.'}</b>${d.gaps.length ? `<ul>${d.gaps.map((g) => `<li>${esc(g.he)}</li>`).join('')}</ul>` : !d.store.approved_at && !d.store.taken_down_at ? '<p>הוא נפתח לכולם אחרי שמאשרים אותו בבדיקה.</p>' : ''}</aside>` : '';
@@ -142,6 +159,8 @@ ${iconLinks()}
     ${greenBtn('לכתוב לו בוואטסאפ', 'big')}
     <p class="quiet">הוא רץ על מספר שלנו, אז אף לקוח שלכם לא רואה אותו. ההודעה שנפתחת מתחילה בקוד <bdi class="code">${esc(d.store.demo_code)}</bdi>, וככה הוא יודע שזו החנות שלכם.</p>
   </section>
+
+  ${readSec}
 
   <section class="glass chat" data-depth="25" aria-label="שיחת דוגמה">
     <header class="ch-head">${initial('initial sm')}<div><b>${name}</b><small>שיחה על מוצר אמיתי מהאתר שלכם</small></div></header>
