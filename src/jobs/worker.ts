@@ -12,6 +12,7 @@ import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
 //   wa_inbound   a WhatsApp message: route it, answer it (channels/route.ts)
+//   mail_inbound an email to a store's address, or Resend's report of a bounce: the same
 //   add_store    "add by URL" from the dashboard, or a demo asked for on the website: detect and score, ingest, build
 //                the page
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
@@ -26,6 +27,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
   switch (job.kind) {
     case 'wa_inbound':
       return handleInbound(app, p);
+    case 'mail_inbound':
+      return handleInbound(app, { ...p, channel: 'email' });
     case 'add_store': {
       await say('בודק את האתר');
       const domain = canonicalDomain(p.url);
@@ -103,7 +106,7 @@ async function runOne(app: App, job: Job) {
   }
 }
 
-/** The long-running worker: WhatsApp messages first (a customer waits on them), then the rest. */
+/** The long-running worker: messages first (a customer waits on them), then the rest. */
 export function startWorker(app: App, { idleMs = 1000, concurrency = 2 }: { idleMs?: number; concurrency?: number } = {}) {
   let stopped = false;
   let lastSchedule = 0;
@@ -114,7 +117,7 @@ export function startWorker(app: App, { idleMs = 1000, concurrency = 2 }: { idle
           lastSchedule = Date.now();
           await schedule(app);
         }
-        const job = (await claim(app.db, ['wa_inbound'])) || (await claim(app.db));
+        const job = (await claim(app.db, ['wa_inbound', 'mail_inbound'])) || (await claim(app.db));
         if (job) await runOne(app, job);
         else await new Promise((r) => setTimeout(r, idleMs));
       } catch (e: any) {

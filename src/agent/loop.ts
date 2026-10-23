@@ -29,7 +29,9 @@ const MAX_ROUNDS = 6;
 const HISTORY = 16; // messages replayed: 8 exchanges is a long WhatsApp chat
 export const DEMO_FOOTER = '_דמו של תורן_';
 
-export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean };
+// channel names where the reply goes (absent: the WhatsApp demo); context is a line from the app for this turn only
+// (the files an email carried), shown to the model and never stored as the customer's words.
+export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; channel?: string; context?: string };
 export type ToolRecord = { name: string; input: unknown; ok: boolean; result: string };
 export type TurnOutput = { reply: string; rawReply: string; tools: ToolRecord[]; redactions: Redaction[]; handoff: { reason: string; summary: string } | null; miss: boolean; rounds: number; usd: number; apiUsd: number; tokens: { in: number; out: number; cacheRead: number; cacheWrite: number }; agentMessageId: number | null };
 
@@ -68,7 +70,8 @@ const stripFooter = (t: string) => t.replace(new RegExp(`\\n*${DEMO_FOOTER.repla
 
 /** The conversation so far, as the model sees it: alternating text turns, oldest first. */
 async function history(db: Db, conversationId: number): Promise<{ messages: Msg[]; toolTexts: string[]; customerTexts: string[] }> {
-  const rows = (await db.query<{ role: string; text: string; tools: ToolRecord[] }>('SELECT role, text, tools FROM messages WHERE conversation_id = $1 AND role IN ($2, $3) ORDER BY id DESC LIMIT $4', [conversationId, 'customer', 'agent', HISTORY])).reverse();
+  // The owner's replies from the inbox are the store's side of the chat too, so the agent picks up where they left off.
+  const rows = (await db.query<{ role: string; text: string; tools: ToolRecord[] }>('SELECT role, text, tools FROM messages WHERE conversation_id = $1 AND role IN ($2, $3, $4) ORDER BY id DESC LIMIT $5', [conversationId, 'customer', 'agent', 'owner', HISTORY])).reverse();
   const messages: Msg[] = [];
   const toolTexts: string[] = [];
   const customerTexts: string[] = [];
@@ -85,9 +88,14 @@ async function history(db: Db, conversationId: number): Promise<{ messages: Msg[
   return { messages, toolTexts, customerTexts };
 }
 
-function serverContext(now = new Date()): string {
+const CHANNEL_LINE: Record<string, string> = {
+  whatsapp: "Channel: the store's WhatsApp, demo.",
+  email: "Channel: the store's email. Your reply is the body of an email: plain text, no markdown, no subject line and no signature (the store's name is added).",
+};
+
+function serverContext(now = new Date(), channel = 'whatsapp', context?: string): string {
   const day = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
-  return `SERVER CONTEXT (written by the app, not by the customer): ${day}, Israel time. Channel: the store's WhatsApp, demo.`;
+  return `SERVER CONTEXT (written by the app, not by the customer): ${day}, Israel time. ${CHANNEL_LINE[channel] || CHANNEL_LINE.whatsapp}${context ? ` ${context}` : ''}`;
 }
 
 export function runTurn(app: App, input: TurnInput): Promise<TurnOutput> {
@@ -100,7 +108,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const system = await systemOf(db, store);
   const past = await history(db, input.conversationId);
   const messages: Msg[] = [...past.messages];
-  const userText = `${serverContext()}\n\n${input.text}`;
+  const userText = `${serverContext(new Date(), input.channel, input.context)}\n\n${input.text}`;
   const prev = messages[messages.length - 1];
   if (prev && prev.role === 'user') prev.content = `${prev.content}\n\n${userText}`;
   else messages.push({ role: 'user', content: userText });

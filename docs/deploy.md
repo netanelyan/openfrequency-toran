@@ -68,6 +68,29 @@ Toran has no login of its own. A browser without a session goes to
    every demo conversation is started by the store owner (a service conversation). Toran never starts a
    conversation.
 
+## Email (Resend)
+
+The email channel's code is off until `TORAN_CHANNELS` lists `email`. Each store gets an address on a receiving
+subdomain, `<slug>@in.openfrequency.co.il`, and forwards its own support mail there. Toran answers from that address,
+with the store's name. A subdomain keeps the main domain's own mail where it is.
+
+1. **Receiving.** In Resend, add `in.openfrequency.co.il` as a receiving domain, and add the MX record it gives
+   you at the DNS host. Mail to any address on it then reaches Resend.
+2. **Sending.** Verify the same domain for sending in Resend (its SPF and DKIM records), so the replies are signed
+   by our own domain and land in the inbox.
+3. **The webhook.** In Resend's webhooks, add `https://<pitch host>/mail/resend` with the events `email.received`,
+   `email.bounced` and `email.complained`. Copy its signing secret (`whsec_...`) to `RESEND_WEBHOOK_SECRET`.
+4. **The settings.** Set `RESEND_API_KEY` (a key that can send and read received emails),
+   `TORAN_MAIL_DOMAIN=in.openfrequency.co.il`, and add `email` to `TORAN_CHANNELS`. Restart.
+5. **A store.** On the store's page in the dashboard, "לחבר מייל" gives it its address. The owner forwards the
+   store's mail to it. Gmail first sends a confirmation code to the new address, and that email shows up in the
+   inbox, marked automatic (Toran never answers it).
+6. **The website.** On /settings, under "ערוצים", set email to "פעיל" only once a paying store can use it.
+   `GET /channels.json` is what the website reads for its "בקרוב" tags.
+
+Toran never answers auto-replies, mailing lists, bounces or no-reply senders. Its own replies say
+`Auto-Submitted: auto-replied`, and an address that bounced or complained gets no more mail.
+
 ## Development
 
 There is nothing to install beyond `npm install`:

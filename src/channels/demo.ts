@@ -5,6 +5,7 @@ import { event } from '../db/log.ts';
 import { conversationFor, DEMO_FOOTER, runTurn } from '../agent/loop.ts';
 import { CODE_RE } from '../pitch/build.ts';
 import { claimRequest } from './request.ts';
+import { hold, isPaused } from './owner.ts';
 import { reply } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 
@@ -39,7 +40,7 @@ const msg = {
   noText: 'בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?',
 };
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested'; storeId?: number; reply?: string };
+export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 
@@ -48,6 +49,12 @@ async function logPair(app: App, conversationId: number, inbound: Inbound, text:
   await app.db.query('INSERT INTO messages (conversation_id, role, text, ext_id) VALUES ($1, $2, $3, $4) ON CONFLICT (ext_id) DO NOTHING', [conversationId, 'customer', inbound.text, inbound.id]);
   await app.db.query('INSERT INTO messages (conversation_id, role, text) VALUES ($1, $2, $3)', [conversationId, 'agent', text]);
   await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [conversationId]);
+}
+
+async function held(app: App, conv: number, inbound: Inbound, storeId: number): Promise<RouteResult> {
+  await hold(app, conv, inbound);
+  await event(app.db, storeId, 'held', { conversationId: conv });
+  return { action: 'held', storeId };
 }
 
 export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult> {
@@ -87,6 +94,7 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
       await reply(app, adapter, inbound, welcome, store.id, conv);
       return { action: 'bound', storeId: store.id, reply: welcome };
     }
+    if (await isPaused(app, conv)) return held(app, conv, { ...inbound, text: rest }, store.id);
     const o = await runTurn(app, { storeId: store.id, conversationId: conv, text: rest, extId: inbound.id });
     await reply(app, adapter, inbound, o.reply, store.id, conv);
     return { action: 'bound', storeId: store.id, reply: o.reply };
@@ -104,6 +112,8 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
   }
   await db.query('UPDATE wa_users SET last_inbound_at = now() WHERE phone = $1', [phone]);
   const conv = await conversationFor(db, binding.store_id, 'whatsapp', phone);
+  // The owner answered here from the inbox (owner.ts): the message waits for them, and nothing is sent.
+  if (await isPaused(app, conv)) return held(app, conv, { ...inbound, text }, binding.store_id);
   if (!text) {
     await logPair(app, conv, inbound, msg.noText);
     await reply(app, adapter, inbound, msg.noText, binding.store_id, conv);

@@ -10,8 +10,10 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { ago, csrfField, esc, icon, layout, postButton, stamp, storeBadge, tokenNum, usd } from '../ui.ts';
 import { addForm, leadRow } from './leads.ts';
 import { storeIdIn, storesOf } from '../workspace.ts';
+import { ALL_CHANNELS, CHANNEL_HE, channelStates, enabledChannels, MESSAGING, messagingSql, setChannelState, type ChannelState } from '../../channels/config.ts';
+import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../../channels/owner.ts';
 
-// Today, the chats, the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
+// Today, the inbox (every channel's conversations, and the owner's reply in each), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
 // the offer, lead discovery, the keys and developer mode are the whole server's, so only the operator sees them.
 
 async function today(app: App, r: DashReq) {
@@ -26,7 +28,7 @@ async function today(app: App, r: DashReq) {
   const ready = await app.db.query<any>(`SELECT * FROM stores WHERE approved_at IS NOT NULL AND sent_at IS NULL AND status <> 'skipped' AND ${w} ORDER BY score DESC LIMIT 8`);
   const fresh = await app.db.query<any>(`SELECT * FROM stores WHERE qualified AND status = 'new' AND ${w} ORDER BY score DESC LIMIT 6`);
   const down = await app.db.query<any>(`SELECT * FROM stores WHERE takedown_asked_at IS NOT NULL AND taken_down_at IS NULL AND ${w} ORDER BY takedown_asked_at DESC`);
-  const hand = await app.db.query<any>(`SELECT c.id, c.handoffs, c.misses, c.last_at, s.id AS store_id, s.name, s.domain, s.brand, (SELECT handoff->>'summary' FROM messages WHERE conversation_id = c.id AND handoff IS NOT NULL ORDER BY id DESC LIMIT 1) AS summary FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.channel = 'whatsapp' AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storesOf(r.scope, 's')} ORDER BY c.last_at DESC LIMIT 6`);
+  const hand = await app.db.query<any>(`SELECT c.id, c.handoffs, c.misses, c.last_at, s.id AS store_id, s.name, s.domain, s.brand, (SELECT handoff->>'summary' FROM messages WHERE conversation_id = c.id AND handoff IS NOT NULL ORDER BY id DESC LIMIT 1) AS summary FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${messagingSql('c.channel')} AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storesOf(r.scope, 's')} ORDER BY c.last_at DESC LIMIT 6`);
   const lead = c.review ? { n: c.review, l: c.review === 1 ? 'דף מחכה לבדיקה' : 'דפים מחכים לבדיקה', href: '/review', s: 'דף שמאשרים עובר לשליחה' } : c.ready ? { n: c.ready, l: c.ready === 1 ? 'מוכן לשליחה' : 'מוכנים לשליחה', href: '#ready', s: 'שולחים ידנית ומסמנים שנשלח' } : { n: c.fresh, l: c.fresh === 1 ? 'ליד חדש שמתאים' : 'לידים חדשים שמתאימים', href: '/leads?status=new', s: 'אפשר לבנות להם דף' };
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(now())))}</p></div>
 <div class="kpis">
@@ -49,8 +51,14 @@ ${hand.length ? `<section class="group mt24"><header><h2>העברות אליך</
 async function chats(app: App, r: DashReq) {
   const filter = r.url.searchParams.get('filter') || '';
   const storeId = Number(r.url.searchParams.get('store') || 0);
-  const where = ["c.channel = 'whatsapp'", storesOf(r.scope, 's')];
+  const shown = MESSAGING.filter((ch) => enabledChannels(app.env).has(ch));
+  const channel = (shown as string[]).includes(r.url.searchParams.get('channel') || '') ? r.url.searchParams.get('channel')! : '';
+  const where = [messagingSql('c.channel'), storesOf(r.scope, 's')];
   const params: unknown[] = [];
+  if (channel) {
+    params.push(channel);
+    where.push(`c.channel = $${params.length}`);
+  }
   if (filter === 'handoff') where.push('c.handoffs > 0');
   if (filter === 'miss') where.push('c.misses > 0');
   if (storeId) {
@@ -58,10 +66,14 @@ async function chats(app: App, r: DashReq) {
     where.push(`c.store_id = $${params.length}`);
   }
   const rows = await app.db.query<any>(`SELECT c.*, s.name, s.domain, s.brand, s.id AS sid, (SELECT COUNT(*)::int FROM messages WHERE conversation_id = c.id) AS n, (SELECT text FROM messages WHERE conversation_id = c.id AND role = 'customer' ORDER BY id DESC LIMIT 1) AS last_q FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
-  const tab = (f: string, label: string) => `<a href="/chats?${new URLSearchParams({ ...(f ? { filter: f } : {}), ...(storeId ? { store: String(storeId) } : {}) })}"${filter === f ? ' aria-current="true"' : ''}>${label}</a>`;
-  const body = `<div class="head"><h1>שיחות</h1><p class="sub">כל שיחות הדמו בוואטסאפ. באדום שיחות שתורן העביר אליך. בכתום שיחות שבהן נמחק משפט לפני השליחה, כי היה בו מחיר או הבטחה שלא הגיעו מהאתר.</p></div>
+  const link = (o: Record<string, string>) => `/chats?${new URLSearchParams(Object.entries({ filter, channel, store: storeId ? String(storeId) : '', ...o }).filter(([, v]) => v))}`;
+  const tab = (f: string, label: string) => `<a href="${link({ filter: f })}"${filter === f ? ' aria-current="true"' : ''}>${label}</a>`;
+  const chTab = (ch: string, label: string) => `<a href="${link({ channel: ch })}"${channel === ch ? ' aria-current="true"' : ''}>${label}</a>`;
+  const paused = (c: any) => c.agent_paused_until && new Date(c.agent_paused_until).getTime() > now();
+  const body = `<div class="head"><h1>שיחות</h1><p class="sub">כל השיחות, מכל הערוצים. באדום שיחות שתורן העביר אליך. בכתום שיחות שבהן נמחק משפט לפני השליחה, כי היה בו מחיר או הבטחה שלא הגיעו מהאתר.</p></div>
 <nav class="tabs">${tab('', 'הכול')}${tab('handoff', 'עם העברה')}${tab('miss', 'עם פספוס')}</nav>
-${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : 'ok'}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc(c.brand?.name || c.name || c.domain)} · ${esc((c.last_q || '').replace(/\n/g, ' ').slice(0, 70))}</b><small>${c.n} הודעות · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''} · <bdi class="ltr">${esc(maskPhone(c.peer))}</bdi></small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר.</div>`}`;
+${shown.length > 1 ? `<nav class="tabs mt8">${chTab('', 'כל הערוצים')}${shown.map((ch) => chTab(ch, CHANNEL_HE[ch])).join('')}</nav>` : ''}
+${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : 'ok'}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc(c.brand?.name || c.name || c.domain)} · ${esc((c.last_q || c.meta?.subject || '').replace(/\n/g, ' ').slice(0, 70))}</b><small><span class="chip">${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)}</span> · ${c.n} הודעות · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}${paused(c) ? ' · <span class="chip sig">אצלך</span>' : ''} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer))}</bdi></small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר, או כותב למייל של חנות שמחוברת.</div>`}`;
   return layout({ ...r.ctx, title: 'שיחות', active: 'chats' }, body);
 }
 
@@ -69,6 +81,20 @@ ${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><s
 const waMarkup = (html: string) => html.replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1<i>$2</i>').replace(/(^|\s)\*([^*\n]+)\*(?=\s|$)/g, '$1<b>$2</b>');
 
 const maskPhone = (p: string | null) => (p ? `+${p.slice(0, 5)}•••${p.slice(-3)}` : '');
+/** The customer, as the inbox shows them: a phone or an address, partly hidden. */
+const maskPeer = (channel: string, p: string | null) => {
+  if (!p) return '';
+  if (channel !== 'email') return maskPhone(p);
+  const [user, domain] = p.split('@');
+  return `${user.slice(0, 2)}•••@${domain || ''}`;
+};
+
+const BLOCKED_HE: Record<string, string> = {
+  window_closed: 'עברו יותר מ־24 שעות מההודעה האחרונה של הלקוח. בוואטסאפ אפשר לענות אחרי זה רק בתבנית שמטא אישרה, ולתורן עוד אין תבניות, אז מכאן אי אפשר לענות בשיחה הזו.',
+  suppressed: 'מייל לכתובת הזו חזר או סומן כספאם, אז לא שולחים אליה יותר.',
+  no_customer: 'הלקוח עוד לא כתב בשיחה הזו, אז אין למי לענות.',
+  channel_off: 'הערוץ של השיחה הזו כבוי בשרת (TORAN_CHANNELS), אז אי אפשר לשלוח ממנו.',
+};
 
 const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', continuation: 'המשך של משפט שנחתך' };
 
@@ -77,18 +103,34 @@ async function chat(app: App, r: DashReq, id: number) {
   if (!c) return null;
   const msgs = await app.db.query<any>('SELECT * FROM messages WHERE conversation_id = $1 ORDER BY id', [id]);
   const cost = await app.db.one<any>('SELECT COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE conversation_id = $1', [id]);
+  const markup = (t: string) => (c.channel === 'whatsapp' ? waMarkup(esc(t)) : esc(t));
   const out = msgs.map((m) => {
-    const cls = m.role === 'agent' ? `agent${m.handoff ? ' hand' : m.guard?.length ? ' flag' : ''}` : 'customer';
+    const cls = m.role === 'agent' ? `agent${m.handoff ? ' hand' : m.guard?.length ? ' flag' : ''}` : m.role === 'owner' ? 'owner' : m.role === 'system' ? `system${m.handoff ? ' hand' : ''}` : 'customer';
     const notes = m.role === 'agent' ? [
       ...(m.tools || []).map((t: any) => `<span>${icon('search')} ${esc(t.name)} ${esc(JSON.stringify(t.input)).slice(0, 120)}</span>`),
       ...(m.guard || []).filter((g: any) => g.rule !== 'continuation').map((g: any) => `<span class="warn">${icon('alert')} נמחק לפני השליחה (${esc(RULE_HE[g.rule] || g.rule)}): "${esc(g.sentence)}"</span>`),
       ...(m.handoff ? [`<span class="bad">${icon('hand')} הועבר אליך (${esc(m.handoff.reason)}): ${esc(m.handoff.summary)}</span>`] : []),
+    ] : m.role === 'owner' ? [`<span>${icon('send')} נשלח מכאן${m.author ? ` (${esc(m.author)})` : ''}</span>`]
+    : m.role === 'customer' ? [
+      ...(m.automated ? [`<span class="warn">${icon('alert')} הודעה אוטומטית (${esc(m.automated)}), ותורן לא ענה עליה</span>`] : []),
+      ...((m.attachments || []).length ? [`<span>קבצים: ${(m.attachments as any[]).map((a) => `${esc(a.name)} (${Math.max(1, Math.round((Number(a.size) || 0) / 1024))}KB)`).join(', ')}</span>`] : []),
     ] : [];
-    return `<div class="b ${cls}">${waMarkup(esc(m.text))}<span class="at">${esc(stamp(m.at))}</span></div>${notes.length ? `<div class="note">${notes.join('')}</div>` : ''}`;
+    return `<div class="b ${cls}">${markup(m.text)}<span class="at">${esc(stamp(m.at))}</span></div>${notes.length ? `<div class="note${m.role === 'customer' ? ' start' : ''}">${notes.join('')}</div>` : ''}`;
   });
+  const st = await replyState(app, id);
+  const ch = CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel;
+  const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">ענית בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה לך כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm' })}</div>` : '';
+  const windowNote = st.windowEnds ? `אפשר לענות עד ${esc(stamp(st.windowEnds))}, 24 שעות מההודעה האחרונה של הלקוח. ` : '';
+  const replyBox = (MESSAGING as string[]).includes(c.channel) ? `<section class="panel mt16" id="reply"><header><h2>לענות ללקוח</h2><span class="end chip">${esc(ch)}</span></header>
+  ${pausedNote}
+  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto" required maxlength="4000" class="wide" aria-label="התשובה שלך"></textarea><div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
+  <p class="small muted mt8 m0">${windowNote}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה שלך.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc(BLOCKED_HE[st.reason || ''] || '')}</p>`}
+</section>` : '';
+  const subject = c.channel === 'email' && c.meta?.subject ? ` · "${esc(c.meta.subject)}"` : '';
   const body = `<a class="back" href="/chats">${icon('chev')}שיחות</a>
-<div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub"><bdi class="ltr">${esc(maskPhone(c.peer) || c.channel)}</bdi> · התחילה ${esc(stamp(c.started_at))} · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}</p><div class="end"><a class="btn sm" href="/lead/${c.sid}">לליד</a></div></div>
-<section class="panel"><div class="chat">${out.join('')}</div></section>`;
+<div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub">${esc(ch)} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer) || c.channel)}</bdi>${subject} · התחילה ${esc(stamp(c.started_at))} · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}</p><div class="end"><a class="btn sm" href="/lead/${c.sid}">לליד</a></div></div>
+<section class="panel"><div class="chat">${out.join('')}</div></section>
+${replyBox}`;
   return layout({ ...r.ctx, title: 'שיחה', active: 'chat' }, body);
 }
 
@@ -116,7 +158,7 @@ async function settings(app: App, r: DashReq) {
   const costs = await app.db.query<any>(`SELECT s.id, s.name, s.domain, s.brand,
       COALESCE(SUM(u.api_usd) FILTER (WHERE u.kind = 'llm'), 0)::float AS llm_api, COALESCE(SUM(u.usd) FILTER (WHERE u.kind = 'llm'), 0)::float AS llm_paid,
       COALESCE(SUM(u.usd) FILTER (WHERE u.kind = 'bsp'), 0)::float AS bsp, COALESCE(SUM(u.units) FILTER (WHERE u.kind = 'bsp'), 0)::int AS msgs,
-      (SELECT COUNT(*)::int FROM conversations c WHERE c.store_id = s.id AND c.channel = 'whatsapp') AS demos
+      (SELECT COUNT(*)::int FROM conversations c WHERE c.store_id = s.id AND ${messagingSql('c.channel')}) AS demos
     FROM stores s JOIN usage u ON u.store_id = s.id WHERE ${storesOf(r.scope, 's')} GROUP BY s.id ORDER BY llm_api DESC LIMIT 40`);
   const tot = await app.db.one<any>(`SELECT COALESCE(SUM(usd), 0)::float AS paid, COALESCE(SUM(api_usd) FILTER (WHERE kind = 'llm'), 0)::float AS api, COALESCE(SUM(units) FILTER (WHERE kind = 'search'), 0)::int AS searches FROM usage WHERE at >= date_trunc('month', now()) AND ${storeIdIn(r.scope, 'store_id')}`);
   const op = r.scope.operator;
@@ -139,6 +181,7 @@ async function settings(app: App, r: DashReq) {
   </div>
   <div class="grid12">
     ${op ? `${offerPanel(r, offer)}
+    ${channelsPanel(r, await channelStates(app.db), enabledChannels(app.env))}
     <section class="panel"><header><h2>מפתחות</h2></header><ul class="keys">${keys}</ul><p class="small muted mt12 m0">הערכים נשמרים ב־<span class="ltr">private/.env</span> בלבד ולא מוצגים כאן.</p></section>` : ''}
     <section class="panel"><header><h2>המותג</h2></header><a class="btn sm" href="/brand">לדף המותג</a></section>
     ${dev ? `<section class="panel dev" id="dev"><header><h2>מצב מפתח</h2></header><dl class="kv"><dt>מודל</dt><dd class="ltr">${esc(app.llm.backend)} · ${esc(app.env.TORAN_MODEL_AGENT || 'claude-opus-5-5')}</dd><dt>וואטסאפ</dt><dd class="ltr">${esc(app.wa.kind)}</dd><dt>מסד נתונים</dt><dd class="ltr">${esc(app.db.kind)}</dd></dl><form method="post" action="/settings/dev" class="mt12">${csrfField(r.ctx)}<input type="hidden" name="on" value="0"><button class="btn sm" type="submit">לסגור מצב מפתח</button></form></section>` : ''}
@@ -147,6 +190,16 @@ async function settings(app: App, r: DashReq) {
 </div>
 ${op ? `<form class="ver" method="post" action="/settings/dev" data-devtap>${csrfField(r.ctx)}<input type="hidden" name="on" value="1">תורן · גרסה 0.1</form>` : '<p class="ver">תורן · גרסה 0.1</p>'}`;
   return layout({ ...r.ctx, title: 'הגדרות', active: 'settings' }, body);
+}
+
+/** Each channel's state as the website shows it (GET /channels.json); a channel whose code is off stays off. */
+function channelsPanel(r: DashReq, states: Record<string, ChannelState>, on: Set<string>) {
+  const label: Record<ChannelState, string> = { off: 'כבוי', demo: 'דמו', live: 'פעיל' };
+  const row = (c: string) => `<label class="f mt8">${esc(CHANNEL_HE[c as keyof typeof CHANNEL_HE])}${on.has(c) ? '' : '<small>הקוד של הערוץ הזה עוד כבוי בשרת, אז הוא נשאר כבוי.</small>'}<select name="${c}"${on.has(c) ? '' : ' disabled'}>${(['off', 'demo', 'live'] as ChannelState[]).map((v) => `<option value="${v}"${states[c] === v ? ' selected' : ''}>${label[v]}</option>`).join('')}</select></label>`;
+  return `<section class="panel" id="channels"><header><h2>ערוצים</h2></header>
+  <form method="post" action="/settings/channels">${csrfField(r.ctx)}${ALL_CHANNELS.map(row).join('')}<button class="btn sm mt12" type="submit">לשמור</button></form>
+  <p class="small muted mt12 m0">מה שנבחר כאן מופיע באתר: ערוץ שלא פעיל מסומן שם "בקרוב". "פעיל" בוחרים רק כשחנות שמשלמת יכולה לקבל בו את תורן.</p>
+</section>`;
 }
 
 /** The offer every pitch page quotes: one place, and until it is set every page waits (offer.ts). */
@@ -172,6 +225,30 @@ export function homeRoutes(app: App): Route<DashReq>[] {
       const html = await chat(app, r, Number(m[1]));
       if (!html) throw new ActionError('אין שיחה כזו', 404);
       return { html };
+    }],
+    ['POST', /^\/chat\/(\d+)\/reply$/, async (r, m) => {
+      const text = String(r.form.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 4000);
+      if (!text) throw new ActionError('התשובה ריקה.');
+      const d = await ownerReply(app, Number(m[1]), text, r.user.name);
+      if (!d.ok) throw new ActionError(BLOCKED_HE[d.reason] || 'לא נשלח.');
+      return { redirect: `/chat/${m[1]}#reply`, message: `נשלח. תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות.` };
+    }],
+    ['POST', /^\/chat\/(\d+)\/resume$/, async (r, m) => {
+      await resumeAgent(app, Number(m[1]), r.user.name);
+      return { redirect: `/chat/${m[1]}`, message: 'תורן עונה שוב בשיחה הזו, מההודעה הבאה.' };
+    }],
+    ['POST', /^\/settings\/channels$/, async (r) => {
+      const on = enabledChannels(app.env);
+      for (const c of ALL_CHANNELS) {
+        if (!on.has(c) || !r.form[c]) continue;
+        try {
+          await setChannelState(app.db, app.env, c, r.form[c]);
+        } catch (e: any) {
+          throw new ActionError(String(e?.message || e));
+        }
+      }
+      await audit(app.db, { actor: r.user.name, action: 'channels', detail: await channelStates(app.db) });
+      return { redirect: '/settings#channels', message: 'נשמר. האתר רואה את השינוי בתוך חמש דקות.' };
     }],
     ['GET', /^\/followups$/, async (r) => ({ html: await followups(app, r) })],
     ['GET', /^\/settings$/, async (r) => ({ html: await settings(app, r) })],
