@@ -186,7 +186,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       }
       const method = req.method === 'HEAD' ? 'GET' : (req.method as 'GET' | 'POST');
       // Never the machine-to-machine routes or the providers' webhooks under the admin prefix.
-      if (viaAdmin && /^\/(internal|wa|mail)\//.test(p)) return send(req, res, 404, 'not found', 'text/plain; charset=utf-8');
+      if (viaAdmin && /^\/(internal|wa|mail|meta)\//.test(p)) return send(req, res, 404, 'not found', 'text/plain; charset=utf-8');
 
       // ---- static files and brand assets, no session
       if (method === 'GET') {
@@ -290,7 +290,8 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
             const msg = out.message;
             if (ajax) return reply(req, res, { json: { ok: true, message: msg, redirect: out.redirect } });
             const back = out.redirect || refererPath(req.headers.referer, viaAdmin ? adminOrigin : `http://${host}`, viaAdmin) || '/';
-            return reply(req, res, { redirect: back }, { 'set-cookie': [...setCookies, ...(msg ? [flashCookie(msg)] : [])] });
+            const own = out.headers?.['set-cookie'];
+            return reply(req, res, { redirect: back }, { 'set-cookie': [...setCookies, ...(own ? [own].flat() : []), ...(msg ? [flashCookie(msg)] : [])] });
           }
           return reply(req, res, out, setCookies.length ? { 'set-cookie': setCookies } : {});
         } catch (e) {

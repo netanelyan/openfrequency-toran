@@ -10,6 +10,8 @@ import { sessionIdFrom, type AccountsClient, type Session } from './accounts.ts'
 import { ownsStore, scopeOf } from './workspace.ts';
 import { enabledChannels, publicChannels } from '../channels/config.ts';
 import { metaSettings, parseWebhook, signatureOk } from '../channels/meta.ts';
+import { parseSocial, socialSettings, type Social } from '../channels/social.ts';
+import { finishConnect, NONCE_COOKIE } from '../channels/socialStore.ts';
 import type { Out, Req, Route } from './server.ts';
 import { J } from '../db/index.ts';
 import { secretOf, verify } from '../owners/teder.ts';
@@ -33,9 +35,15 @@ import { opsRoutes } from '../ops/api.ts';
 //                              no email
 //   POST /mail/sim             the email simulator's webhook (development only)
 //   GET  /meta/webhook         Meta's check of the webhook (hub.verify_token = META_WEBHOOK_VERIFY_TOKEN)
-//   POST /meta/webhook         Meta's webhook for every store's own WhatsApp number: X-Hub-Signature-256 checked,
-//                              acknowledged at once; messages, the owner's own messages from the phone, delivery
-//                              failures and account changes handled by the worker (channels/meta.ts, waStore.ts)
+//   POST /meta/webhook         Meta's webhook for every store's own WhatsApp number, Facebook Page and Instagram
+//                              account: X-Hub-Signature-256 checked (under the app's secret, or the Instagram app's),
+//                              acknowledged at once; messages, the owner's own messages from the phone, the Page's
+//                              inbox or the Instagram app, delivery failures and account changes handled by the worker
+//                              (channels/meta.ts, waStore.ts, social.ts, socialStore.ts). Messenger and Instagram are
+//                              acknowledged and dropped while TORAN_CHANNELS does not list them
+//   GET  /meta/oauth/<channel> Meta's answer to a store's login for Messenger or Instagram: the state and this
+//                              browser's cookie checked, the account connected, and the store sent to its page
+//                              (channels/socialStore.ts)
 //   GET  /channels.json        each channel's state (off, demo, live) for the website's "בקרוב" tags; nothing about
 //                              any store
 //   POST /internal/lead        a demo asked for on openfrequency.co.il (openfrequency-web/server/lead.mjs): from this
@@ -171,7 +179,10 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       if (!hookOk(r.ip)) return { status: 429, text: '' };
       const m = metaSettings(app.env);
       if (!m.appSecret) return { status: 404, text: '' };
-      if (!signatureOk(m.appSecret, r.raw || '', r.req.headers['x-hub-signature-256'])) {
+      // Instagram Login's webhooks may be signed with the Instagram app's own secret; both are ours.
+      const ig = socialSettings(app.env).igAppSecret;
+      const sig = r.req.headers['x-hub-signature-256'];
+      if (!signatureOk(m.appSecret, r.raw || '', sig) && !(ig && signatureOk(ig, r.raw || '', sig))) {
         app.log(`[meta] webhook signature failed from ${r.ip}`);
         return { status: 403, text: 'bad signature' };
       }
@@ -180,6 +191,14 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
         body = JSON.parse(r.raw || '');
       } catch {
         return { status: 400, text: '' };
+      }
+      const dm = parseSocial(body);
+      if (dm.channel) {
+        if (!enabledChannels(app.env).has(dm.channel)) return { text: 'ok' };
+        for (const msg of dm.messages) await enqueue(app.db, 'dm_inbound', { ...msg, at: Date.now() }, { dedupeKey: `dm:${msg.id}` });
+        // A few seconds later: an echo of Toran's own send is known by its id once that send is in the ledger.
+        for (const e of dm.echoes) await enqueue(app.db, 'dm_echo', e, { dedupeKey: `dm_echo:${e.id}`, runAt: new Date(Date.now() + 5_000) });
+        return { text: 'ok' };
       }
       const w = parseWebhook(body);
       // Stamped on arrival, as on Twilio's: the reply window is measured from here.
@@ -191,6 +210,16 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
         for (const a of rows) await enqueue(app.db, 'wa_check', { accountId: a.id }, { dedupeKey: `wa_check:${a.id}`, maxAttempts: 1 });
       }
       return { text: 'ok' };
+    }],
+    ['GET', /^\/meta\/oauth\/(messenger|instagram)$/, async (r, m) => {
+      const channel = m[1] as Social;
+      if (!enabledChannels(app.env).has(channel)) return { status: 404, text: '' };
+      const q = r.url.searchParams;
+      const out = await finishConnect(app, channel, { state: q.get('state') || '', code: q.get('code') || '', error: q.get('error') || '', nonce: cookies(r.req)[NONCE_COOKIE] || '' });
+      const headers = { 'set-cookie': `${NONCE_COOKIE}=; Path=/meta/oauth; Max-Age=0; HttpOnly; SameSite=Lax${r.secure ? '; Secure' : ''}`, 'referrer-policy': 'no-referrer' };
+      if (!out.storeId) return { status: 400, html: '<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><title>תורן</title><p>הקישור הזה כבר לא עובד. חוזרים לתורן ומחברים שוב.</p></html>', headers };
+      const done = out.outcome === 'pick' ? `pick=${encodeURIComponent(out.state!)}` : out.outcome === 'connected' ? 'connected=1' : `error=${out.why}`;
+      return { redirect: `/lead/${out.storeId}/${channel}?${done}`, headers };
     }],
     ['GET', /^\/channels\.json$/, async () => ({ json: await publicChannels(app.db), headers: { 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' } })],
     ['POST', /^\/internal\/teder\/events$/, async (r) => {

@@ -9,8 +9,8 @@ import { hold, isPaused } from './owner.ts';
 import { LEDGER, reply } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 
-// A message to a store's own account (its email address now; its Page and Instagram account next): the store is the
-// account's, so there is no code and no binding. The agent answers as the store, with no demo footer, unless the mail
+// A message to a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the
+// store is the account's, so there is no code and no binding. The agent answers as the store, with no demo footer, unless the mail
 // was automated, the owner has taken the conversation (owner.ts), or the customer reached today's limit; then the
 // message is kept for the owner and nothing is sent.
 
@@ -26,12 +26,15 @@ export async function accountFor(app: App, channel: string, externalId: string):
 const bareSubject = (s: string | undefined) => String(s || '').replace(/^\s*((re|fwd?|תשובה|השב|הועבר)\s*:\s*)+/i, '').trim().toLowerCase();
 
 /** The conversation an email belongs to: one this sender's thread already holds an id of, else the same subject within 30 days, else a new one. */
-async function threadFor(app: App, account: Account, inbound: Inbound): Promise<number> {
-  // WhatsApp has no threads: one customer is one conversation until a week of silence, as on the demo number.
-  if (account.channel === 'whatsapp') {
+async function threadFor(app: App, adapter: ChannelAdapter, account: Account, inbound: Inbound): Promise<number> {
+  // WhatsApp, Messenger and Instagram have no threads: one customer is one conversation until a week of silence, as on
+  // the demo number. On Messenger and Instagram the customer's id means nothing to the owner, so a new conversation
+  // keeps the name Meta gives for them.
+  if (account.channel !== 'email') {
     const c = await app.db.one<{ id: number }>("SELECT id FROM conversations WHERE account_id = $1 AND peer = $2 AND last_at > now() - interval '7 days' AND closed_at IS NULL ORDER BY last_at DESC LIMIT 1", [account.id, inbound.from]);
     if (c) return c.id;
-    return (await app.db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer, account_id) VALUES ($1, 'whatsapp', $2, $3) RETURNING id", [account.store_id, inbound.from, account.id]))!.id;
+    const name = adapter.profile ? await adapter.profile(inbound.from) : null;
+    return (await app.db.one<{ id: number }>('INSERT INTO conversations (store_id, channel, peer, account_id, meta) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id', [account.store_id, account.channel, inbound.from, account.id, J(name ? { name } : {})]))!.id;
   }
   const refs = [inbound.thread?.inReplyTo, ...(inbound.thread?.references || [])].filter(Boolean) as string[];
   if (refs.length) {
@@ -68,7 +71,7 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   const { tag } = LEDGER[adapter.channel];
   const store = await db.one<any>('SELECT id, name, domain, brand, brand_override FROM stores WHERE id = $1', [account.store_id]);
   if (!store) return { action: 'unknown_account' };
-  const conv = await threadFor(app, account, inbound);
+  const conv = await threadFor(app, adapter, account, inbound);
   await remember(app, conv, inbound);
   const text = String(inbound.text || '').trim();
   const files = inbound.attachments || [];

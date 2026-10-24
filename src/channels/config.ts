@@ -10,7 +10,8 @@ import type { Channel } from './types.ts';
 //               what the website says (its "בקרוב" tags read GET /channels.json), so it says "live" only when a
 //               paying store can really have Toran answer there. A channel whose code is off cannot be demo or live.
 //
-// Messenger and Instagram are listed so the website can show them as coming; their code arrives in later steps.
+// Messenger and Instagram are behind the flag: until TORAN_CHANNELS lists them, their webhooks are ignored, no store
+// can connect them, and the website shows them as coming.
 
 export const ALL_CHANNELS = ['whatsapp', 'email', 'messenger', 'instagram'] as const;
 export type AnyChannel = (typeof ALL_CHANNELS)[number];
@@ -18,7 +19,7 @@ export type ChannelState = 'off' | 'demo' | 'live';
 const STATES: ChannelState[] = ['off', 'demo', 'live'];
 
 /** The channels of a conversation the inbox shows (the others are the CLI, the pitch builder and the evals). */
-export const MESSAGING: Channel[] = ['whatsapp', 'email'];
+export const MESSAGING: Channel[] = ['whatsapp', 'email', 'messenger', 'instagram'];
 export const messagingSql = (column = 'channel') => `${column} IN (${MESSAGING.map((c) => `'${c}'`).join(', ')})`;
 
 export const CHANNEL_HE: Record<AnyChannel, string> = { whatsapp: 'וואטסאפ', email: 'מייל', messenger: 'מסנג׳ר', instagram: 'אינסטגרם' };

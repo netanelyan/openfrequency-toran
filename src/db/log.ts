@@ -19,7 +19,7 @@ export async function audit(db: Db, { actor = null, action, storeId = null, deta
 export type Usage = {
   storeId?: number | null;
   conversationId?: number | null;
-  kind: 'llm' | 'bsp' | 'mail' | 'search' | 'fetch' | 'embed';
+  kind: 'llm' | 'bsp' | 'mail' | 'dm' | 'search' | 'fetch' | 'embed';
   backend?: string;
   model?: string | null;
   inTokens?: number;

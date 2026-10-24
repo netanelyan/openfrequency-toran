@@ -15,7 +15,7 @@ repository, unused.
 | Email | Built: Resend, signed webhook, threads, bounces, owner replies | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
 | WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox | Waits for the Meta app and its settings (step 2) |
 | WhatsApp, our demo number and owner line | Built on Twilio's code; moving them to Meta is a later item | On the simulator |
-| Instagram, Messenger | **Not built.** Next, behind a flag | Shown as "בקרוב" on the website |
+| Instagram, Messenger | Built, behind the flag: login at Meta, `/meta/oauth/<channel>`, the same `/meta/webhook`, replies through the Send API inside the 24 hours, the owner's own answers in the inbox | Off: `TORAN_CHANNELS` does not list them (step 4) |
 
 ## How to change a setting on the server
 
@@ -34,7 +34,7 @@ journalctl -u toran -n 30 --no-pager    # if it is not active
 To see which settings are present without printing any value:
 
 ```
-ssh tiyul-vps 'cd /opt/toran; for k in ANTHROPIC_API_KEY META_APP_ID META_APP_SECRET META_WA_CONFIG_ID META_WEBHOOK_VERIFY_TOKEN TORAN_SECRETS_KEY RESEND_API_KEY RESEND_WEBHOOK_SECRET TORAN_MAIL_DOMAIN TORAN_CHANNELS; do grep -qE "^$k=.+" private/.env && echo "$k: set" || echo "$k: MISSING"; done'
+ssh tiyul-vps 'cd /opt/toran; for k in ANTHROPIC_API_KEY META_APP_ID META_APP_SECRET META_WA_CONFIG_ID META_WEBHOOK_VERIFY_TOKEN META_FB_CONFIG_ID META_IG_APP_ID META_IG_APP_SECRET PUBLIC_BASE_URL TORAN_SECRETS_KEY RESEND_API_KEY RESEND_WEBHOOK_SECRET TORAN_MAIL_DOMAIN TORAN_CHANNELS; do grep -qE "^$k=.+" private/.env && echo "$k: set" || echo "$k: MISSING"; done'
 ```
 
 ## Step 0. The model: check this first
@@ -158,22 +158,66 @@ too, with coexistence, so OpenFrequency's own number (`TORAN_OWNER_WHATSAPP`, th
 your phone) stays in the WhatsApp Business app on the phone. That is a separate item. The owner line's five
 templates (docs/whatsapp-templates.md) are then submitted to Meta directly.
 
-## Step 4. Instagram and Messenger: next, behind a flag
+## Step 4. Instagram and Messenger: built, behind a flag
 
-Both go through the same Meta app. The code is next: a "connect your Facebook page or Instagram" button (Meta
-login, then picking the page or account), the token sealed like WhatsApp's, the same `/meta/webhook`, and replies
-inside the 24-hour window. Past it, only with a tag Meta allows. They stay behind a flag, off in production.
+Both go through the same Meta app as WhatsApp, and stay off until `TORAN_CHANNELS` lists them. Off means their pages
+answer 404, Meta's webhook calls about them are acknowledged and dropped, and the website keeps "בקרוב".
 
-**What you can do now:**
-1. In the same app, add the products **Messenger** and **Instagram** (the Instagram API with Instagram Login).
-2. **The app's public details:** privacy policy URL `https://openfrequency.co.il/privacy`, terms URL
-   `https://openfrequency.co.il/terms`, an icon, and a data deletion instructions URL.
-3. **A test Page and Instagram account:** a Facebook Page and an Instagram professional account of our own, to try
-   it end to end in development mode.
+**What a store does.** In Settings, under its channels, "לחבר את הדף בפייסבוק" or "לחבר את האינסטגרם". The page lists
+what to check first, and the button sends the owner to Meta's login:
+- **Messenger:** they log in with the Facebook account that manages the store's Page and approve, and Toran gets the
+  Page's token. Someone who manages several Pages picks the store's one.
+- **Instagram:** they log in with the store's Instagram professional account (Instagram Login, no Facebook Page
+  needed). The token lasts 60 days, and the worker renews it 20 days before it ends.
 
-App Review for `pages_messaging`, `pages_manage_metadata`, `pages_show_list`, `instagram_business_basic` and
-`instagram_business_manage_messages` (check the exact names in the App Review screen) is yours to submit, after the
-code exists. Claude never submits it.
+Either way, Meta is asked to send the account's messages to `/meta/webhook`. Toran answers inside the 24 hours. When
+the owner answers from the Page's inbox, Meta Business Suite or the Instagram app, the answer shows in the inbox and
+Toran stops answering in that conversation for 12 hours. The login comes back to `/meta/oauth/<channel>`, and Toran
+takes it only in the browser that pressed the button, within 15 minutes.
+
+**What you set up once, at Meta** (the same app as step 2, items 1 and 2):
+1. **Messenger.** Add the **Messenger** product. Under Facebook Login for Business, Settings:
+   - Add `https://toran.openfrequency.co.il/meta/oauth/messenger` to the valid OAuth redirect URIs.
+   - Optionally create a configuration with `pages_show_list`, `pages_messaging` and `pages_manage_metadata`, and put
+     its id in `META_FB_CONFIG_ID`. Without it, the login asks for those permissions itself.
+2. **Instagram.** Add the **Instagram** product with "API setup with Instagram login":
+   - Copy the **Instagram app ID** and **Instagram app secret**. They are not the Meta app's.
+   - Under "Set up Instagram business login", add the redirect URL `https://toran.openfrequency.co.il/meta/oauth/instagram`.
+3. **The webhooks.**
+   - **Messenger:** in the app's Webhooks, product **Page**, callback URL `https://toran.openfrequency.co.il/meta/webhook`,
+     verify token `META_WEBHOOK_VERIFY_TOKEN`. Subscribe the fields `messages`, `messaging_postbacks` and
+     `message_echoes`.
+   - **Instagram:** in Instagram, "Configure webhooks", the same URL and token, with the field `messages`.
+4. **The app's public details:**
+   - privacy policy URL `https://openfrequency.co.il/privacy`
+   - terms URL `https://openfrequency.co.il/terms`
+   - an icon
+   - a data deletion instructions URL
+5. **A test Page and Instagram account** of our own, to try it end to end while the app is in development mode. Only
+   people with a role on the app can connect until App Review.
+6. **`.env`**, then restart:
+   ```
+   TORAN_CHANNELS=whatsapp,messenger,instagram      # add email too once step 1 is done
+   META_FB_CONFIG_ID=<optional, item 1>
+   META_IG_APP_ID=<item 2>
+   META_IG_APP_SECRET=<item 2>
+   PUBLIC_BASE_URL=https://toran.openfrequency.co.il  # already set; the redirect URIs are built from it
+   ```
+   `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` and `TORAN_SECRETS_KEY` are step 2's, and needed here too.
+7. **Try it** with the test Page and account, from a customer's dashboard (a store with a workspace). The operator's
+   view under /admin shows the page without the button: the store connects its own accounts.
+
+**App Review** is yours to submit, never Claude's. It covers:
+- `pages_messaging`, `pages_manage_metadata` and `pages_show_list` for Messenger
+- `instagram_business_basic` and `instagram_business_manage_messages` for Instagram
+
+Check the exact names in the App Review screen. Meta asks for a screen recording of the connect and of a reply.
+
+**Past 24 hours.** Meta allows only a person's answer, tagged `HUMAN_AGENT`, up to 7 days after the customer's last
+message. Once Meta approves Human Agent for the app, set `META_HUMAN_AGENT=1`, and the owner's answers from the inbox go
+out tagged, up to those 7 days. The agent never answers past 24 hours.
+
+**Then** set Messenger and Instagram to "דמו" or "פעיל" under "ערוצים" on your Settings page, as for email.
 
 ## When a channel is live
 

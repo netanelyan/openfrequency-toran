@@ -91,6 +91,8 @@ async function history(db: Db, conversationId: number): Promise<{ messages: Msg[
 const CHANNEL_LINE: Record<string, string> = {
   whatsapp: "Channel: the store's WhatsApp, demo.",
   email: "Channel: the store's email. Your reply is the body of an email: plain text, no markdown, no subject line and no signature (the store's name is added).",
+  messenger: "Channel: the store's Facebook Page, in Messenger. Plain text only: no markdown, no asterisks or underscores for emphasis. Keep it short, as a chat message.",
+  instagram: "Channel: the store's Instagram, in direct messages. Plain text only: no markdown, no asterisks or underscores for emphasis. Keep it short: Instagram takes about 500 Hebrew letters in one message.",
 };
 
 function serverContext(now = new Date(), channel = 'whatsapp', context?: string): string {

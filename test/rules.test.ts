@@ -24,7 +24,7 @@ test('every setting the code reads is listed in .env.example', () => {
 });
 
 // The channel adapters: the only files that talk to a messaging or mail provider.
-const ADAPTERS = ['src/channels/whatsapp.ts', 'src/channels/email.ts', 'src/channels/meta.ts'];
+const ADAPTERS = ['src/channels/whatsapp.ts', 'src/channels/email.ts', 'src/channels/meta.ts', 'src/channels/social.ts'];
 
 test('nothing sends outreach: messages and mail go out only from send.ts, in answer to an inbound message; no SMS', () => {
   for (const f of src) {
@@ -32,14 +32,15 @@ test('nothing sends outreach: messages and mail go out only from send.ts, in ans
     const r = rel(f);
     if (/\b(wa|mail|adapter)\.send\(/.test(text)) assert.equal(r, 'src/channels/send.ts', `${r} sends messages`);
     // A provider's API host, or a BSP's: only an adapter file names one. (Meta's own ids, such as a business account's
-    // waba_id, appear wherever a connected number is kept; the calls are all in meta.ts.)
+    // waba_id, appear wherever a connected number is kept; the calls are all in meta.ts, and Messenger's and
+    // Instagram's in social.ts.)
     if (/api\.twilio\.com|graph\.facebook\.com|graph\.instagram\.com|api\.resend\.com|360dialog/i.test(text) && !ADAPTERS.includes(r)) assert.fail(`${r} talks to a messaging API`);
     assert.ok(!/nodemailer|smtp|sendgrid|mailgun|\bses\b.*send/i.test(text) || r === 'test/rules.test.ts', `${r} sends mail`);
   }
   // The only send is in reply(), which always answers an inbound message, after the channel's rules allow it.
   const send = readFileSync(path.join(ROOT, 'src/channels/send.ts'), 'utf8');
   assert.equal((send.match(/\.send\(/g) || []).length, 1);
-  assert.match(send, /adapter\.send\(to\.from, part, to, ctx\)/);
+  assert.match(send, /adapter\.send\(to\.from, part, to, sendCtx\)/);
   assert.ok(send.indexOf('sendPlan(') < send.indexOf('adapter.send('), 'the window is checked before the send');
 });
 

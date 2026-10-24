@@ -15,6 +15,8 @@ import { storesOf, type Scope } from '../workspace.ts';
 import { conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
 import { waAccountOf, waLine } from './whatsapp.ts';
 import { waConnectReady } from '../../channels/meta.ts';
+import { socialReady } from '../../channels/social.ts';
+import { socialAccountOf, socialLine } from './social.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -55,7 +57,10 @@ async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel; on: boo
   return [
     { ch: 'whatsapp', on: wa?.status === 'active', text: waLine(wa && wa.status !== 'off' ? wa : null, s, waConnectReady(app.env)) },
     { ch: 'email', on: Boolean(mail), text: mail ? `מחובר, <bdi class="ltr">${esc(mail.external_id)}</bdi>` : code.has('email') && app.mail ? 'לא מחובר. מחברים בהגדרות.' : 'בקרוב' },
-    ...(['instagram', 'messenger'] as const).map((ch) => ({ ch, on: Boolean(has(ch)), text: has(ch) ? 'מחובר' : states[ch] === 'live' && code.has(ch) ? 'עוד לא מחובר' : 'בקרוב' })),
+    ...(await Promise.all((['instagram', 'messenger'] as const).map(async (ch) => {
+      const a = await socialAccountOf(app, s.id, ch);
+      return { ch, on: a?.status === 'active', text: socialLine(a && a.status !== 'off' ? a : null, ch, s, socialReady(app.env, ch)) };
+    }))),
   ];
 }
 

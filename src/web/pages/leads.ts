@@ -10,6 +10,8 @@ import { contactTarget, firstMessage, followupDue, pitchUrl, reminderMessage } f
 import { PLANS, planOf, type PlanKey } from '../../plans.ts';
 import { waAccountOf, waLine } from './whatsapp.ts';
 import { waConnectReady } from '../../channels/meta.ts';
+import { SOCIAL, socialReady } from '../../channels/social.ts';
+import { socialAccountOf, socialLine } from './social.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { storesOf } from '../workspace.ts';
 import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../channels/config.ts';
@@ -66,10 +68,10 @@ export function addForm(r: DashReq) {
 }
 
 /** The store's own channels: its email address, connected or not, and the automated mail that came to it (Gmail's forwarding confirmation lands there). */
-function channelsPanel(r: DashReq, id: number, account: any, address: string, automatedMail: any[], wa: string) {
+function channelsPanel(r: DashReq, id: number, account: any, address: string, automatedMail: any[], wa: string, social: string) {
   const on = account?.status === 'active';
   return `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header>
-  <dl class="kv"><dt>וואטסאפ</dt><dd>${wa}</dd><dt>מייל</dt><dd>${on ? `<bdi class="ltr">${esc(account.external_id)}</bdi> · <span class="chip ok">מחובר</span>` : '<span class="chip ghost">לא מחובר</span>'}</dd></dl>
+  <dl class="kv"><dt>וואטסאפ</dt><dd>${wa}</dd>${social}<dt>מייל</dt><dd>${on ? `<bdi class="ltr">${esc(account.external_id)}</bdi> · <span class="chip ok">מחובר</span>` : '<span class="chip ghost">לא מחובר</span>'}</dd></dl>
   ${on ? `<p class="small mt12 m0">מעבירים לכתובת הזו את המייל של החנות, למשל ב־Gmail: הגדרות, "העברה ו־POP/IMAP", "הוספת כתובת להעברה". Gmail שולח לכתובת קוד אישור, והוא מופיע כאן למטה ובשיחות. תורן עונה משם בשם החנות.</p>
   ${automatedMail.length ? `<div class="list mt12">${automatedMail.map((m) => `<a href="/chat/${m.id}"><span class="ico warn">${icon('alert')}</span><span class="t"><b>${esc(m.subject || 'מייל אוטומטי')}</b><small>${esc(ago(m.at))} · מייל אוטומטי, תורן לא ענה</small></span></a>`).join('')}</div>` : ''}
   <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>`
@@ -87,9 +89,15 @@ async function leadPage(app: App, r: DashReq, id: number) {
   const mailOn = enabledChannels(app.env).has('email') && Boolean(app.mail);
   const mailAccount = mailOn ? await app.db.one<any>("SELECT id, external_id, status, connected_at FROM channel_accounts WHERE store_id = $1 AND channel = 'email' ORDER BY id DESC LIMIT 1", [id]) : null;
   const automatedMail = mailAccount ? await app.db.query<any>("SELECT c.id, c.meta->>'subject' AS subject, m.at FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.account_id = $1 AND m.automated IS NOT NULL ORDER BY m.id DESC LIMIT 3", [mailAccount.id]) : [];
-  const events = await app.db.query<any>("SELECT kind, at, data FROM events WHERE store_id = $1 AND kind NOT IN ('scroll', 'wa_in', 'wa_out', 'mail_in', 'mail_out') ORDER BY at DESC LIMIT 25", [id]);
+  const events = await app.db.query<any>("SELECT kind, at, data FROM events WHERE store_id = $1 AND kind NOT IN ('scroll', 'wa_in', 'wa_out', 'mail_in', 'mail_out', 'fb_in', 'fb_out', 'ig_in', 'ig_out') ORDER BY at DESC LIMIT 25", [id]);
   const cost = await app.db.one<any>("SELECT COALESCE(SUM(usd), 0)::float AS usd, COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(in_tokens + cache_read + cache_write), 0)::int AS tin, COALESCE(SUM(out_tokens), 0)::int AS tout FROM usage WHERE store_id = $1", [id]);
   const job = await app.db.one<any>("SELECT id, status, progress, last_error FROM jobs WHERE dedupe_key = $1 ORDER BY id DESC LIMIT 1", [`ingest:${id}`]);
+  // Messenger and Instagram, where their code is on (TORAN_CHANNELS).
+  let social = '';
+  for (const ch of SOCIAL.filter((c) => enabledChannels(app.env).has(c))) {
+    const a = await socialAccountOf(app, id, ch);
+    social += `<dt>${esc(CHANNEL_HE[ch])}</dt><dd>${socialLine(a && a.status !== 'off' ? a : null, ch, s, socialReady(app.env, ch))}</dd>`;
+  }
   const url = s.slug ? pitchUrl(app.env, s.slug) : null;
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   const target = contactTarget(s);
@@ -130,7 +138,7 @@ ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד 
   <div class="grid12">
     <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>
     <section class="panel"><header><h2>הציון</h2><span class="end">${scoreNum(s.score, s.qualified)}</span></header><ul class="parts">${parts}</ul></section>
-    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env))) : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env))}</dd></dl></section>`}
+    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env)), social) : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env))}</dd>${social}</dl></section>`}
     <section class="panel"><header><h2>שיחות</h2><a class="end small" href="/chats?store=${id}">כולן</a></header>
       ${convs.length ? `<div class="list">${convs.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : ''}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc((c.last_text || '').replace(/\n/g, ' ').slice(0, 80))}</b><small>${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)} · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}</small></span></a>`).join('')}</div>` : '<p class="muted m0">עוד אין שיחות.</p>'}
     </section>

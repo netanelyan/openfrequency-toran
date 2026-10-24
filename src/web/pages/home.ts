@@ -94,7 +94,7 @@ ${list.length ? `<div class="list">${list.map((c) => conversationRow({ ...c, sto
   const body = `<div class="head"><h1>שיחות</h1><p class="sub">כל השיחות, מכל הערוצים. באדום שיחות שתורן העביר אליך. בכתום שיחות שבהן נמחק משפט לפני השליחה, כי היה בו מחיר או הבטחה שלא הגיעו מהאתר.</p></div>
 <nav class="tabs">${tab('', 'הכול')}${tab('handoff', 'עם העברה')}${tab('miss', 'עם פספוס')}${stTab('waiting')}${stTab('fixed')}</nav>
 ${shown.length > 1 ? `<nav class="tabs mt8">${chTab('', 'כל הערוצים')}${shown.map((ch) => chTab(ch, CHANNEL_HE[ch])).join('')}</nav>` : ''}
-${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : 'ok'}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc(c.brand?.name || c.name || c.domain)} · ${esc((c.last_q || c.meta?.subject || '').replace(/\n/g, ' ').slice(0, 70))}</b><small><span class="chip">${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)}</span> · ${c.n} הודעות · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}${paused(c) ? ' · <span class="chip sig">אצלך</span>' : ''} · ${stateChip(c.state)} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer))}</bdi></small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר, או כותב למייל של חנות שמחוברת.</div>`}`;
+${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : 'ok'}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc(c.brand?.name || c.name || c.domain)} · ${esc((c.last_q || c.meta?.subject || '').replace(/\n/g, ' ').slice(0, 70))}</b><small><span class="chip">${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)}</span> · ${c.n} הודעות · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}${paused(c) ? ' · <span class="chip sig">אצלך</span>' : ''} · ${stateChip(c.state)} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer, c.meta?.name))}</bdi></small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר, או כותב למייל של חנות שמחוברת.</div>`}`;
   return layout({ ...r.ctx, title: 'שיחות', active: 'chats' }, body);
 }
 
@@ -106,6 +106,12 @@ const BLOCKED_HE: Record<string, string> = {
   suppressed: 'מייל לכתובת הזו חזר או סומן כספאם, אז לא שולחים אליה יותר.',
   no_customer: 'הלקוח עוד לא כתב בשיחה הזו, אז אין למי לענות.',
   channel_off: 'הערוץ של השיחה הזו כבוי בשרת (TORAN_CHANNELS), אז אי אפשר לשלוח ממנו.',
+};
+
+/** Messenger and Instagram past their window: Meta lets nothing more go out until the customer writes again. */
+const DM_CLOSED: Record<string, string> = {
+  messenger: 'עבר יותר מדי זמן מההודעה האחרונה של הלקוח, ו־Meta לא מאפשרת לענות במסנג׳ר אחרי זה. כשהלקוח יכתוב שוב, אפשר לענות מכאן.',
+  instagram: 'עבר יותר מדי זמן מההודעה האחרונה של הלקוח, ו־Meta לא מאפשרת לענות באינסטגרם אחרי זה. כשהלקוח יכתוב שוב, אפשר לענות מכאן.',
 };
 
 const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', continuation: 'המשך של משפט שנחתך' };
@@ -134,7 +140,7 @@ async function chat(app: App, r: DashReq, id: number) {
   const st = await replyState(app, id);
   const ch = CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel;
   const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">${op ? 'ענית' : 'עניתם'} בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה ${op ? 'לך' : 'לכם'} כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm' })}</div>` : '';
-  const windowNote = st.windowEnds ? `אפשר לענות עד ${esc(stamp(st.windowEnds))}, 24 שעות מההודעה האחרונה של הלקוח. ` : '';
+  const windowNote = st.windowEnds ? `אפשר לענות עד ${esc(stamp(st.windowEnds))}, ${st.windowHours && st.windowHours > 24 ? `${Math.round(st.windowHours / 24)} ימים` : '24 שעות'} מההודעה האחרונה של הלקוח. ` : '';
   // A question Toran handed over: the owner's answer can stay with Toran for next time ("מה שתענו הוא יזכור לפעם הבאה").
   const waiting = c.state === 'waiting';
   const asked = waiting ? await questionOf(app, id) : null;
@@ -145,13 +151,13 @@ async function chat(app: App, r: DashReq, id: number) {
   const replyBox = (MESSAGING as string[]).includes(c.channel) ? `<section class="panel mt16" id="reply"><header><h2>לענות ללקוח</h2><span class="end chip">${esc(ch)}</span></header>
   ${pausedNote}
   ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto" required maxlength="4000" class="wide" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>${learn}<div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
-  <p class="small muted mt8 m0">${windowNote}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc(BLOCKED_HE[st.reason || ''] || '')}</p>`}
+  <p class="small muted mt8 m0">${windowNote}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc((st.reason === 'window_closed' && DM_CLOSED[c.channel]) || BLOCKED_HE[st.reason || ''] || '')}</p>`}
   ${settle}
   ${learned.length ? `<p class="small mt12 m0">${icon('book')} תורן שמר מהשיחה הזו את התשובה ל"${esc(learned.map((x) => x.question).join('", "'))}". <a href="/lead/${c.sid}/knowledge#answers">${op ? 'לתשובות של החנות' : 'לתשובות שלכם'}</a></p>` : ''}
 </section>` : '';
   const subject = c.channel === 'email' && c.meta?.subject ? ` · "${esc(c.meta.subject)}"` : '';
   const body = `<a class="back" href="/chats">${icon('chev')}שיחות</a>
-<div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub">${stateChip(c.state)} · ${esc(ch)}${c.channel === 'whatsapp' && !c.account_id ? ' (דמו)' : ''} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer) || c.channel)}</bdi>${subject} · התחילה ${esc(stamp(c.started_at))}${op ? ` · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}` : ''}</p><div class="end">${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}מה הוא יודע</a>`}</div></div>
+<div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub">${stateChip(c.state)} · ${esc(ch)}${c.channel === 'whatsapp' && !c.account_id ? ' (דמו)' : ''} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer, c.meta?.name) || c.channel)}</bdi>${subject} · התחילה ${esc(stamp(c.started_at))}${op ? ` · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}` : ''}</p><div class="end">${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}מה הוא יודע</a>`}</div></div>
 <section class="panel"><div class="chat">${out.join('')}</div></section>
 ${replyBox}`;
   return layout({ ...r.ctx, title: 'שיחה', active: 'chat' }, body);

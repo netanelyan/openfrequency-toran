@@ -31,8 +31,12 @@ export const STATE_SQL = `(CASE WHEN ${WAITING_SQL} THEN 'waiting'
 export const stateChip = (s: InboxState) => `<span class="chip ${STATE_HE[s][1]}">${STATE_HE[s][0]}</span>`;
 
 const maskPhone = (p: string | null) => (p ? `+${p.slice(0, 5)}•••${p.slice(-3)}` : '');
-/** The customer, as the inbox shows them: a phone or an address, partly hidden. */
-export const maskPeer = (channel: string, p: string | null) => {
+/**
+ * The customer, as the inbox shows them: a phone or an address, partly hidden. On Messenger and Instagram the id is
+ * Meta's and means nothing to the owner, so it is the name Meta gave for them (store.ts), or nothing.
+ */
+export const maskPeer = (channel: string, p: string | null, name?: string | null) => {
+  if (channel === 'messenger' || channel === 'instagram') return String(name || '').slice(0, 60);
   if (!p) return '';
   if (channel !== 'email') return maskPhone(p);
   const [user, domain] = p.split('@');

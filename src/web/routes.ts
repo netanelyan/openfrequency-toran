@@ -12,6 +12,7 @@ import { counted, planOf, usageOf } from '../plans.ts';
 import { WAITING_SQL } from './inbox.ts';
 import { customerRoutes } from './pages/customer.ts';
 import { whatsappRoutes } from './pages/whatsapp.ts';
+import { socialRoutes } from './pages/social.ts';
 
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
@@ -46,6 +47,7 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
   return [
     ...customerRoutes(app),
     ...whatsappRoutes(app),
+    ...socialRoutes(app),
     ...homeRoutes(app),
     ...leadRoutes(app),
     ...reviewRoutes(app),

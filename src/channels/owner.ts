@@ -5,6 +5,7 @@ import { audit, event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
 import { adapterOf } from './adapters.ts';
 import { blockedFor, reply, type Blocked, type Delivery } from './send.ts';
+import { humanAgentOn } from './policy.ts';
 import type { Channel, ChannelAdapter, Inbound } from './types.ts';
 
 // The store's owner in a conversation, on any channel: they answer from the inbox, and the agent steps back.
@@ -51,7 +52,7 @@ export async function replyTarget(app: App, conversationId: number): Promise<Tar
 }
 
 /** What the inbox shows above the reply box: whether a reply can go out, and until when. */
-export async function replyState(app: App, conversationId: number): Promise<{ canReply: boolean; reason: Blocked | 'no_customer' | 'channel_off' | null; windowEnds: number | null; pausedUntil: number | null }> {
+export async function replyState(app: App, conversationId: number): Promise<{ canReply: boolean; reason: Blocked | 'no_customer' | 'channel_off' | null; windowEnds: number | null; windowHours?: number; pausedUntil: number | null }> {
   let t: Target | null;
   try {
     t = await replyTarget(app, conversationId);
@@ -59,10 +60,12 @@ export async function replyState(app: App, conversationId: number): Promise<{ ca
     return { canReply: false, reason: 'channel_off', windowEnds: null, pausedUntil: null };
   }
   if (!t) return { canReply: false, reason: 'no_customer', windowEnds: null, pausedUntil: null };
-  const blocked = await blockedFor(app, t.adapter, t.to);
+  const blocked = await blockedFor(app, t.adapter, t.to, 'owner');
   const w = t.adapter.limits.window;
+  // The owner's own answer: on Messenger and Instagram up to 7 days, tagged HUMAN_AGENT, once Meta approved it.
+  const hours = w && t.adapter.limits.humanAgent && humanAgentOn(app.env) ? t.adapter.limits.humanAgent.hours : w?.hours;
   const pausedUntil = t.pausedUntil && t.pausedUntil > now() ? t.pausedUntil : null;
-  return { canReply: !blocked, reason: blocked, windowEnds: w ? t.to.at! + w.hours * HOUR : null, pausedUntil };
+  return { canReply: !blocked, reason: blocked, windowEnds: hours ? t.to.at! + hours * HOUR : null, ...(hours ? { windowHours: hours } : {}), pausedUntil };
 }
 
 export async function ownerReply(app: App, conversationId: number, text: string, author: string): Promise<Delivery | { ok: false; reason: 'no_customer' }> {
