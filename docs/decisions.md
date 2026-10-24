@@ -332,3 +332,19 @@ An hour covers all of it, with room to spare.
 **Requests with nothing to send:** a store that is not on Shopify (Toran reads Shopify only), a site that could not
 be read, or a page that is held back. The dashboard lists them under "ביקשו דמו באתר, ועוד אין מה לשלוח", so the
 operator answers them in person.
+
+## 2026-10-24: the owner line speaks Teder's own assistant API
+
+Two Teder sides were built for the owner line at once: ours (a contract in docs/owner-line.md, on Teder's branch
+`owner-line`) and another session's (`src/assistant/`, docs/assistant-api.md). The other one reached Teder's main
+and production first, so it is the one. Toran now speaks it:
+- the signature with a nonce and a direction
+- the routes under `/customers/<workspace>/`
+- `by` as the person, from accounts
+- the edit by field (hook, sub, title, body)
+- a rejection's `redo`: writing, none or paused
+
+Teder holds its own events through the owner's quiet hours and Shabbat, so Toran no longer asks Teder whether it is
+quiet. post.ready names one post, so Toran gathers them for 90 seconds and sends the whole list of posts waiting as
+one numbered message. That keeps "1" meaning what the owner sees. post.published is sent inside the 24 hours only,
+since it has no template. Teder's branch `owner-line` is not merged.

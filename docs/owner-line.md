@@ -85,83 +85,35 @@ All of them take the same `Authorization: Bearer <OF_INTERNAL_TOKEN>`, loopback 
 Claiming a number that is already linked to the same user and workspace just verifies it again and keeps the code's
 opt-in choice. A number linked to another workspace is `409 phone_taken`, and it has to be removed there first.
 
-## 2. Teder: the posts, for the assistant
+## 2. Teder: its assistant API
 
-### Signing (both directions)
+Teder defines this side, in openfrequency-teder's `docs/assistant-api.md` (`src/assistant/`), and that document
+is the contract. In short:
 
-One secret, `OF_ASSISTANT_SECRET` (32 characters or more), is set in Teder's and Toran's `.env` to the same value.
-While it is unset or short, the routes answer `503 not_configured` and nothing is sent. Every request carries:
+- **Requests:** Toran calls `/internal/assistant/customers/<workspace>/...` on Teder's own port (`TEDER_INTERNAL`,
+  default `http://127.0.0.1:4700`):
+  - `posts/pending`, `status`, `posts/<id>/bundle`
+  - `posts/<id>/approve`, `posts/<id>/reject` (`reason`, `freeText`), `posts/<id>/edit` (`slide`, `field`, `newText`)
 
-```
-X-OF-Timestamp: <unix seconds>
-X-OF-Signature: v1=<hex HMAC-SHA256(secret, "v1\n" + ts + "\n" + METHOD + "\n" + pathWithQuery + "\n" + sha256hex(rawBody))>
-```
+  Every change names the person in `by` (`{ name, userId }`, from accounts), and Teder records it as theirs.
+- **Signing**, both ways, with `OF_ASSISTANT_SECRET`:
 
-`rawBody` is the empty string for a GET. The receiver refuses a timestamp more than 300 seconds away from its clock
-(`401 stale`) and a signature that does not match (`401 bad_signature`, compared in constant time). It also refuses a
-request with `X-Forwarded-For`, or one from a socket that is not loopback (`403 not_local`).
+  ```
+  X-OF-Signature: t=<unix seconds>,n=<nonce>,s=<hex HMAC-SHA256>
+  ```
 
-### Teder's internal listener: 127.0.0.1:`TEDER_INTERNAL_PORT` (default 4701), JSON in and out
+  It is over six lines: the direction (`toran->teder` for a request, `teder->toran` for an event), t, the nonce, the
+  method, the path with its query, and the body's SHA-256. A t more than 300 seconds off, or a nonce seen again, is
+  refused.
+- **Events:** Teder sends them to `POST /internal/teder/events` as `{ id, type, at, sentAt, customer, data }`.
+  - The types are post.ready (one post each), post.reminder, post.published, post.unposted, quota.low and
+    weekly.summary.
+  - Teder holds them through the customer's quiet hours and Shabbat, and lets the customer turn each type off on its
+    Settings page. Toran sends what arrives.
+- **Slide images:** signed links that work for 24 hours.
 
-It is a separate listener, never proxied, in the same process as Teder's site. Toran reaches it at
-`TEDER_INTERNAL` (default `http://127.0.0.1:4701`). Every route is scoped to one accounts workspace: a post of
-another workspace is `404 not_found`, exactly like one that does not exist. A workspace that has no Teder account is
-`404 no_teder`.
-
-Every POST body carries `actor` (who asked, e.g. `wa:972500000123`). Teder records it as `approved_by`, in `edits`
-and in its audit.
-
-**A post, as listed:**
-
-```json
-{ "id": 812, "number": null, "account": { "id": "dana-shop", "name": "דנה שופ" }, "status": "queued",
-  "hook": "5 טעויות בבחירת נעלי ריצה", "slotAt": "2026-10-25T07:00:00.000Z", "slides": 7,
-  "cover": { "url": "https://teder.openfrequency.co.il/m/<token>.jpg" } }
-```
-
-`number` is always null: Toran numbers the posts it shows, never Teder. `cover.url` and every image URL below are
-signed links that work without a session for 7 days (`GET /m/<token>.jpg` on Teder's public site, the token being
-the post, the platform, the slide index and the expiry, HMAC-signed with `SESSION_SECRET`). WhatsApp fetches them
-from Meta's servers.
-
-| Route | Answers |
-|---|---|
-| `GET /internal/assistant/status?workspace=<id>` | `200 { "workspace": 3, "accounts": [{ "id", "name", "mode", "status" }], "pending": 3, "approvedThisWeek": 4, "publishedThisWeek": 5, "quota": { "month": "2026-10", "suggested": { "used": 31, "limit": 40 }, "redos": { "used": 8, "limit": 10 } }, "quiet": { "now": false, "until": null, "reason": null }, "quietHours": { "start": "22:00", "end": "08:00" }, "shabbat": true }` |
-| `GET /internal/assistant/posts?workspace=<id>&status=queued` | `200 { "posts": [post, ...] }`, oldest slot first. `status` is optional, default `queued` (waiting for approval). |
-| `GET /internal/assistant/posts/<id>?workspace=<id>` | `200 { "post": post + { "caption", "hashtags": [...], "slideList": [{ "idx": 1, "kind": "cover", "lines": ["...", "..."], "image": { "url" } }] } }` |
-| `POST /internal/assistant/posts/<id>/approve` with `{ workspace, actor }` | `200 { "post": { "id", "status": "approved" } }`; `409 not_pending` |
-| `POST /internal/assistant/posts/<id>/reject` with `{ workspace, actor, reason: "topic"\|"shorter"\|"tone"\|"photo"\|"other", note }` | `200 { "post": { "id", "status": "rejected" }, "replacement": { "id", "status": "drafting" } \| null, "redosLeft": 2 }`; `409 not_pending`. A rejection writes a replacement while redos are left, the same way the dashboard's reject does. |
-| `POST /internal/assistant/posts/<id>/edit` with `{ workspace, actor, slide: 1-based, line: 1-based, text }` | `200 { "post": post, "slide": { "idx", "lines", "image": { "url" } } }` after the checks and the re-render; `422 failed_checks { "problems": ["..."] }`; `409 not_pending`; `400 bad_line` |
-| `GET /internal/assistant/posts/<id>/bundle?workspace=<id>` | `200 { "post": { "id", "hook" }, "images": [{ "url" }, ...], "caption": "the caption to copy, hashtags included" }`, the Instagram set |
-
-A slide's `lines` are its title line first, then its body's lines. `edit` with `line: 1` changes the title, and
-`line: k` changes the body's line `k-1`.
-
-`quiet` says whether a message to the owner may go out now. `now: true` comes with `until` (the end of the quiet
-time) and `reason`:
-- `shabbat`: the workspace's `shabbat` setting is on (the default), and it is Shabbat or a holiday by Teder's own
-  calendar (`restAt`).
-- `quiet_hours`: the time is inside the workspace's quiet hours (default 22:00 to 08:00, Israel time).
-
-Both settings are on Teder's settings page, per workspace.
-
-### Events: Teder → Toran
-
-Teder writes each event to an outbox table and posts it to `TORAN_INTERNAL` (default `http://127.0.0.1:4710`)
-`/internal/teder/events`, signed as above. It retries with backoff (1, 5, 15, 60 minutes, then hourly) for 24 hours
-on anything but a `2xx`. Toran answers `200 { "ok": true }` to an event it already has.
-
-```json
-{ "id": "evt_3f2a...", "type": "post.ready", "workspace": 3, "at": "2026-10-24T09:00:00.000Z", "data": { ... } }
-```
-
-| `type` | When | `data` |
-|---|---|---|
-| `post.ready` | At the end of a run that queued posts for approval, one event per workspace | `{ "posts": [post, ...] }` (the ones queued in that run) |
-| `post.reminder` | When an approved post's slot comes and the owner posts it themselves (a draft) | `{ "post": post, "platform": "tiktok" }` |
-| `post.unposted` | When the slot passed and the post was not published | `{ "post": post, "platform": "instagram" }` (Toran fetches the bundle) |
-| `quota.low` | Once a month per kind, when the suggestions used reach 80% of the limit, or 2 redos are left | `{ "kind": "suggested"\|"redos", "used": 32, "limit": 40, "month": "2026-10" }` |
-| `weekly.summary` | Sunday 09:00 Israel time, for the 7 days before | `{ "from": "2026-10-18", "to": "2026-10-24", "made": 9, "approved": 7, "rejected": 2, "published": 6, "expired": 0, "pending": 1, "quota": { ...as in status } }` |
+Toran maps an owner's "line 1 / line 2" of a slide to Teder's fields. On the cover, line 1 is `hook` and line 2 is
+`sub`. On any other slide, line 1 is `title` and line 2 is `body`. The last slide is not editable.
 
 ## 3. Toran: the line
 
@@ -173,9 +125,9 @@ on anything but a `2xx`. Toran answers `200 { "ok": true }` to an event it alrea
 | `teder.ts` | The signed Teder client and the signature check on events |
 | `intents.ts` | Owner replies about posts read in code: approve, reject (with a reason), shorter, edit a line, show, the bundle, every post, "all but". A message the parser does not wholly understand goes to the model. |
 | `line.ts` | One message from an owner's number, end to end, in order: identity, "הפסק" and "התחל", the rate limit, the disclosure, Toran's pending "כן", the parser, then the model with Toran's tools and Teder's |
-| `notify.ts` | The only place Toran writes to someone who did not just write. It sends only to a verified number that opted in and did not opt out, outside Teder's quiet time and within the per-number limit. Inside the 24 hours it sends text and images; outside them it sends an approved template only. Every attempt is recorded in `owner_notifications`, whatever happened to it. |
+| `notify.ts` | The only place Toran writes to someone who did not just write. It sends only to a verified number that opted in and did not opt out, within the per-number limit (Teder already held its events through quiet time). Inside the 24 hours it sends text and images; outside them it sends an approved template only. Every attempt is recorded in `owner_notifications`, whatever happened to it. |
 | `posts.ts` | What the line does with posts: show the posts waiting (and keep their order), act on numbered ones, send one ready to post, say the status. The reader in code and the model's tools both use it. |
-| `events.ts` | The text and images for each Teder event |
+| `events.ts` | The text and images for each Teder event. Teder's post.ready events, one per post, are gathered for 90 seconds and sent as one numbered list of everything waiting. |
 | `templates.ts` | The utility templates, as submitted to Meta (docs/whatsapp-templates.md) |
 
 **Numbers belong to the list the owner last saw.** When Toran shows posts, it keeps their order (`owner_lists`),

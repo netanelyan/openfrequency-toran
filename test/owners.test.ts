@@ -9,9 +9,9 @@ import { handleInbound } from '../src/channels/route.ts';
 import { createHandler } from '../src/web/server.ts';
 import { drain } from '../src/jobs/worker.ts';
 import { J } from '../src/db/index.ts';
-import { handleTederEvent } from '../src/owners/events.ts';
+import { handleTederEvent, handleTederReady } from '../src/owners/events.ts';
 import { DISCLOSURE, PUSHES_PER_DAY } from '../src/owners/notify.ts';
-import { signature, signedHeaders, verify } from '../src/owners/teder.ts';
+import { DIR, signature, signedHeaders, verify } from '../src/owners/teder.ts';
 import { FOOTER, TEMPLATES, templatesDoc } from '../src/owners/templates.ts';
 import { OWNER_PER_10_MIN } from '../src/owners/line.ts';
 import type { Block, TurnReq } from '../src/agent/llm/types.ts';
@@ -54,10 +54,15 @@ async function setup(script?: Script) {
     teder.add({ id: 11, workspace: WS, hook: '5 טעויות בבחירת נעלי ריצה' });
     teder.add({ id: 12, workspace: WS, hook: 'איך לשמור על הגב בריצה' });
     teder.add({ id: 13, workspace: WS, hook: 'מה לאכול לפני מרתון' });
-    return [11, 12, 13].map((id) => ({ id, hook: teder.posts.get(id)!.hook, cover: { url: `https://teder.test/m/${id}-1.jpg` } }));
+    return [11, 12, 13].map((id) => ({ id: String(id), coverLine: teder.posts.get(id)!.hook, image: `https://teder.test/m/${id}/instagram/1?e=1&s=x` }));
+  };
+  // Teder sends one post.ready per post; Toran gathers them and sends the whole list once (handleTederReady).
+  const postReady = async (posts: { id: string; coverLine: string }[]) => {
+    for (const p of posts) await event('post.ready', { post: p, redoOf: null });
+    return handleTederReady(app, WS);
   };
   return {
-    app, accounts, teder, outbox, write, event, toOwner, notes, three,
+    app, accounts, teder, outbox, write, event, postReady, toOwner, notes, three,
     close: async () => {
       await accounts.close();
       await teder.close();
@@ -66,16 +71,19 @@ async function setup(script?: Script) {
   };
 }
 
-test('the signature: one HMAC over the method, the path, the body and the time; stale or changed is refused', () => {
+test("the signature is Teder's: six lines (direction, time, nonce, method, path, body hash) under one HMAC; stale, changed, turned around or replayed is refused", () => {
   const body = '{"a":1}';
-  const want = `v1=${createHmac('sha256', SECRET).update(`v1\n1700000000\nPOST\n/internal/teder/events\n${createHash('sha256').update(body).digest('hex')}`).digest('hex')}`;
-  assert.equal(signature(SECRET, 1700000000, 'POST', '/internal/teder/events', body), want, 'the string docs/owner-line.md gives');
-  const h = signedHeaders(SECRET, 'POST', '/x', body, 1700000000);
-  assert.equal(verify(SECRET, h, 'POST', '/x', body, 1700000100), null);
+  const nonce = 'abcdefghijklmnop';
+  const want = `t=1700000000,n=${nonce},s=${createHmac('sha256', SECRET).update(['toran->teder', 1700000000, nonce, 'POST', '/internal/assistant/customers/7/posts/p1/approve', createHash('sha256').update(body).digest('hex')].join('\n')).digest('hex')}`;
+  assert.equal(signature(SECRET, { dir: DIR.out, method: 'POST', path: '/internal/assistant/customers/7/posts/p1/approve', body, t: 1700000000, nonce }), want, "the string Teder's docs/assistant-api.md gives");
+  const h = { 'x-of-signature': signature(SECRET, { dir: DIR.in, method: 'POST', path: '/x', body, t: 1700000000 }) };
   assert.equal(verify(SECRET, h, 'POST', '/x', body, 1700000400), 'stale');
   assert.equal(verify(SECRET, h, 'POST', '/x', '{"a":2}', 1700000100), 'bad_signature');
   assert.equal(verify(SECRET, h, 'GET', '/x', body, 1700000100), 'bad_signature');
+  assert.equal(verify(SECRET, signedHeaders(SECRET, 'POST', '/x', body, 1700000000), 'POST', '/x', body, 1700000100), 'bad_signature', 'a request signed toran->teder is not an event');
   assert.equal(verify(null, h, 'POST', '/x', body, 1700000100), 'not_configured');
+  assert.equal(verify(SECRET, h, 'POST', '/x', body, 1700000100), null);
+  assert.equal(verify(SECRET, h, 'POST', '/x', body, 1700000100), 'replay', 'the same nonce twice');
 });
 
 test('identity: an unknown number is told it is not linked (once an hour); a link code links it; accounts down acts for nobody', async () => {
@@ -122,8 +130,7 @@ test('a duplicate delivery of the same message is acted on once', async () => {
   const s = await setup();
   try {
     s.accounts.link({ phone: OWNER, workspace: WS });
-    const posts = s.three();
-    await s.event('post.ready', { posts });
+    await s.postReady(s.three());
     await s.write('אשר את 1', OWNER, 'SM-dup');
     const again = await s.write('אשר את 1', OWNER, 'SM-dup');
     assert.equal(again.action, 'duplicate');
@@ -141,11 +148,11 @@ test('post.ready inside the 24 hours: the covers numbered, then "אשר את 1 �
     const before = s.toOwner().length;
     assert.ok(s.toOwner()[0].text.startsWith(DISCLOSURE), 'the first answer opens with the disclosure');
     const posts = s.three();
-    const { result } = await s.event('post.ready', { posts });
-    assert.equal(result.sent, 1);
+    const result = await s.postReady(posts);
+    assert.equal(result.sent, 1, 'three post.ready events, one message');
     const sent = s.toOwner().slice(before);
-    assert.equal(sent[0].text, '3 מצגות חדשות מוכנות לאישור:');
-    assert.deepEqual(sent.slice(1, 4).map((m) => [m.mediaUrl, m.text]), posts.map((p, i) => [p.cover.url, `${i + 1}. ${p.hook}`]));
+    assert.equal(sent[0].text, '3 מצגות מוכנות לאישור:');
+    assert.deepEqual(sent.slice(1, 4).map((m) => [m.mediaUrl, m.text]), posts.map((p, i) => [p.image, `${i + 1}. ${p.coverLine}`]));
     assert.match(sent[4].text, /אשר את 1 ו-3/);
     assert.ok(!sent.some((m) => m.text.includes(DISCLOSURE)), 'disclosed once per number, not per message');
     assert.ok(sent.every((m) => m.from === LINE), 'from the owner line');
@@ -153,16 +160,17 @@ test('post.ready inside the 24 hours: the covers numbered, then "אשר את 1 �
 
     const r = await s.write('אשר את 1 ו-3, את 2 תעשה קצר יותר');
     assert.equal(r.action, 'assistant');
-    assert.deepEqual(s.teder.calls.filter((c) => c.method === 'POST').map((c) => [c.path, c.body.reason ?? null, c.body.note ?? null, c.body.actor]), [
-      ['/internal/assistant/posts/11/approve', null, null, `wa:${OWNER}`],
-      ['/internal/assistant/posts/12/reject', 'shorter', 'תעשה קצר יותר', `wa:${OWNER}`],
-      ['/internal/assistant/posts/13/approve', null, null, `wa:${OWNER}`],
-    ]);
+    const by = { name: 'דנה', userId: 100 + WS };
+    assert.deepEqual(s.teder.calls.filter((c) => c.method === 'POST').map((c) => [c.path, c.body.reason ?? null, c.body.freeText ?? null, c.body.by]), [
+      [`/internal/assistant/customers/${WS}/posts/11/approve`, null, null, by],
+      [`/internal/assistant/customers/${WS}/posts/12/reject`, 'shorter', 'תעשה קצר יותר', by],
+      [`/internal/assistant/customers/${WS}/posts/13/approve`, null, null, by],
+    ], 'Teder records the person who asked, from accounts');
     const reply = s.outbox.at(-1)!.text;
     assert.match(reply, /^אישרתי את 1 ו-3\./);
     assert.match(reply, /את 2 החזרתי לכתיבה מחדש עם ההערה "תעשה קצר יותר"/);
     const audit = await s.app.db.query<any>("SELECT action, actor, detail FROM audit WHERE action LIKE 'teder_%' ORDER BY id");
-    assert.deepEqual(audit.map((a) => [a.action, a.actor, a.detail.post]), [['teder_approve', `wa:${OWNER}`, 11], ['teder_reject', `wa:${OWNER}`, 12], ['teder_approve', `wa:${OWNER}`, 13]]);
+    assert.deepEqual(audit.map((a) => [a.action, a.actor, a.detail.post]), [['teder_approve', `wa:${OWNER}`, '11'], ['teder_reject', `wa:${OWNER}`, '12'], ['teder_approve', `wa:${OWNER}`, '13']]);
 
     // A number past the list is answered in code, and nothing is done.
     await s.write('אשר את 4');
@@ -173,7 +181,7 @@ test('post.ready inside the 24 hours: the covers numbered, then "אשר את 1 �
     // Rejected with no replacement (no redos left): the owner hears there is no new version coming.
     s.teder.redos = 0;
     s.teder.add({ id: 14, workspace: WS, hook: 'עוד אחת' });
-    await s.event('post.ready', { posts: [{ id: 14, hook: 'עוד אחת', cover: null }] });
+    await s.postReady([{ id: '14', coverLine: 'עוד אחת' }]);
     await s.write('דחה');
     assert.match(s.outbox.at(-1)!.text, /^את 1 דחיתי\. הכתיבות מחדש של החודש נגמרו/);
   } finally {
@@ -185,13 +193,12 @@ test('outside the 24 hours only the approved template goes out, and without its 
   const s = await setup();
   try {
     s.accounts.link({ phone: OWNER, workspace: WS });
-    const posts = s.three();
     // Never wrote: no window.
-    await s.event('post.ready', { posts });
+    await s.postReady(s.three());
     const t = s.toOwner();
     assert.equal(t.length, 1);
     assert.equal(t[0].template, 'teder_posts_ready');
-    assert.deepEqual(t[0].vars, ['3 מצגות חדשות']);
+    assert.deepEqual(t[0].vars, ['3 מצגות']);
     assert.equal(t[0].mediaUrl, undefined, 'no covers outside the window');
     const n = (await s.notes()).at(-1);
     assert.deepEqual([n.status, n.mode, n.template], ['sent', 'template', 'teder_posts_ready']);
@@ -207,7 +214,7 @@ test('outside the 24 hours only the approved template goes out, and without its 
     await s.app.db.query("UPDATE owner_numbers SET last_inbound_at = now() - interval '25 hours'");
     s.app.env.TWILIO_TEMPLATES = '';
     const count = s.toOwner().length;
-    await s.event('quota.low', { kind: 'suggested', used: 32, limit: 40, month: '2026-10' });
+    await s.event('quota.low', { account: { id: 'acc', name: 'חשבון' }, quota: { month: '2026-10', suggestions: { used: 32, held: 0, limit: 40, left: 8 }, redos: { used: 3, held: 0, limit: 10, left: 7 } } });
     assert.equal(s.toOwner().length, count);
     assert.deepEqual([(await s.notes()).at(-1).status, (await s.notes()).at(-1).reason], ['skipped', 'no_template']);
 
@@ -225,7 +232,7 @@ test('"הפסק" stops every Teder message (here and in accounts); "התחל" br
   try {
     s.accounts.link({ phone: OWNER, workspace: WS, optIn: null });
     s.teder.add({ id: 11, workspace: WS, hook: 'a' });
-    await s.event('post.ready', { posts: [{ id: 11, hook: 'a', cover: null }] });
+    await s.postReady([{ id: '11', coverLine: 'a' }]);
     assert.equal(s.toOwner().length, 0);
     assert.equal((await s.notes()).at(-1).reason, 'no_opt_in');
 
@@ -234,46 +241,39 @@ test('"הפסק" stops every Teder message (here and in accounts); "התחל" br
     assert.match(s.outbox.at(-1)!.text, /הפסקתי\. לא אשלח לכם יותר הודעות מתדר/);
     assert.deepEqual(s.accounts.calls.filter((c) => c.path.endsWith('/consent')).map((c) => c.body), [{ phone: OWNER, optIn: false, source: 'whatsapp' }]);
     const sentBefore = s.toOwner().length;
-    await s.event('weekly.summary', { from: '2026-10-18', to: '2026-10-24', made: 9, approved: 7, rejected: 2, published: 6, pending: 1 });
-    await s.event('quota.low', { kind: 'redos', used: 8, limit: 10, month: '2026-10' });
+    await s.event('weekly.summary', { from: '2026-10-18T06:00:00.000Z', to: '2026-10-25T06:00:00.000Z', accounts: [{ account: { id: 'acc', name: 'חשבון' }, week: { published: 6, views: 1500, best: { id: 'p1', coverLine: 'הכי טוב', views: 900 } }, quota: { suggestions: { left: 28, limit: 40 } } }] });
+    await s.event('quota.low', { account: { id: 'acc', name: 'חשבון' }, quota: { month: '2026-10', suggestions: { used: 32, held: 0, limit: 40, left: 8 }, redos: { used: 3, held: 0, limit: 10, left: 7 } } });
     assert.equal(s.toOwner().length, sentBefore, 'nothing after "הפסק"');
     assert.deepEqual((await s.notes()).slice(-2).map((n) => n.reason), ['opted_out', 'opted_out']);
 
     // Kept here too: accounts forgetting the stop (an older opt-in) still sends nothing.
     s.accounts.owners.get(OWNER)!.optOut = null;
-    await s.event('quota.low', { kind: 'redos', used: 9, limit: 10, month: '2026-10' });
+    await s.event('quota.low', { account: { id: 'acc', name: 'חשבון' }, quota: { month: '2026-10', suggestions: { used: 32, held: 0, limit: 40, left: 8 }, redos: { used: 3, held: 0, limit: 10, left: 7 } } });
     assert.equal(s.toOwner().length, sentBefore);
 
     await s.write('התחל');
     assert.match(s.outbox.at(-1)!.text, /מעכשיו ההודעות מתדר יגיעו לכאן/);
-    const { result } = await s.event('weekly.summary', { from: '2026-10-18', to: '2026-10-24', made: 9, approved: 7, rejected: 2, published: 6, pending: 1 });
+    const { result } = await s.event('weekly.summary', { from: '2026-10-18T06:00:00.000Z', to: '2026-10-25T06:00:00.000Z', accounts: [{ account: { id: 'acc', name: 'חשבון' }, week: { published: 6, views: 1500, best: { id: 'p1', coverLine: 'הכי טוב', views: 900 } }, quota: { suggestions: { left: 28, limit: 40 } } }] });
     assert.equal(result.sent, 1);
-    assert.equal(s.outbox.at(-1)!.text, 'הסיכום השבועי מתדר, 18.10 עד 24.10:\nנוצרו 9 פוסטים. אישרתם 7 ודחיתם 2.\nעלו 6. מצגת אחת מחכה לאישור.');
+    assert.equal(s.outbox.at(-1)!.text, 'הסיכום השבועי מתדר, 18.10 עד 25.10:\nעלו 6 פוסטים, עם 1,500 צפיות. הכי נצפה: "הכי טוב". נשארו 28 מתוך 40 הצעות למצגות.');
   } finally {
     await s.close();
   }
 });
 
-test("Teder's quiet time puts the event off to its end, and it goes out once", async () => {
+test("Teder's post.ready events are gathered into one numbered list, sent once (Teder itself holds them through quiet hours and Shabbat)", async () => {
   const s = await setup();
   try {
     s.accounts.link({ phone: OWNER, workspace: WS });
     await s.write('היי');
-    const until = new Date(Date.now() + 3 * 3_600_000).toISOString();
-    s.teder.quiet = { now: true, until, reason: 'shabbat' };
-    const posts = s.three();
     const before = s.toOwner().length;
-    const { id, result } = await s.event('post.ready', { posts });
-    assert.equal(result.deferred, until);
-    assert.equal(s.toOwner().length, before, 'nothing during Shabbat');
-    assert.deepEqual([(await s.notes()).at(-1).status, (await s.notes()).at(-1).reason], ['deferred', 'shabbat']);
-    const job = await s.app.db.one<any>("SELECT run_at, payload FROM jobs WHERE kind = 'teder_event' ORDER BY id DESC LIMIT 1");
-    assert.equal(job.payload.id, id);
-    assert.ok(new Date(job.run_at).getTime() > new Date(until).getTime(), 'queued again for after the quiet time');
-
-    s.teder.quiet = { now: false, until: null, reason: null };
-    await handleTederEvent(s.app, id);
-    await handleTederEvent(s.app, id);
+    for (const p of s.three()) assert.deepEqual((await s.event('post.ready', { post: p, redoOf: null })).result, { gathered: true });
+    assert.equal(s.toOwner().length, before, 'nothing yet: the next ones may be coming');
+    const jobs = await s.app.db.query<any>("SELECT payload, run_at FROM jobs WHERE kind = 'teder_ready'");
+    assert.equal(jobs.length, 1, 'one gathering per workspace');
+    assert.ok(new Date(jobs[0].run_at).getTime() > Date.now() + 60_000, 'a moment later');
+    await handleTederReady(s.app, WS);
+    await handleTederReady(s.app, WS);
     assert.equal(s.toOwner().length - before, 5, 'sent once: the head, three covers, the hint');
   } finally {
     await s.close();
@@ -284,7 +284,7 @@ test('the limits: messages started to one number a day, and messages from one nu
   const s = await setup((_req, call) => say(`תשובה ${call}`));
   try {
     s.accounts.link({ phone: OWNER, workspace: WS });
-    for (let i = 0; i < PUSHES_PER_DAY + 1; i++) await s.event('quota.low', { kind: 'redos', used: 8, limit: 10, month: '2026-10' });
+    for (let i = 0; i < PUSHES_PER_DAY + 1; i++) await s.event('quota.low', { account: { id: 'acc', name: 'חשבון' }, quota: { month: '2026-10', suggestions: { used: 32, held: 0, limit: 40, left: 8 }, redos: { used: 3, held: 0, limit: 10, left: 7 } } });
     const n = await s.notes();
     assert.equal(n.filter((x) => x.status === 'sent').length, PUSHES_PER_DAY);
     assert.equal(n.at(-1).reason, 'rate_limited');
@@ -302,15 +302,15 @@ test('post.unposted inside the window: every image in order and the caption alon
   try {
     s.accounts.link({ phone: OWNER, workspace: WS });
     await s.write('היי');
-    s.teder.add({ id: 21, workspace: WS, hook: 'מה לאכול לפני מרתון', status: 'approved', slides: [['a'], ['b'], ['c']], caption: 'הכיתוב להעתקה #ריצה' });
+    s.teder.add({ id: 21, workspace: WS, hook: 'מה לאכול לפני מרתון', status: 'approved', slides: [['a', ''], ['b', ''], ['c', '']], caption: 'הכיתוב להעתקה #ריצה' });
     const before = s.toOwner().length;
-    await s.event('post.unposted', { post: { id: 21, hook: 'מה לאכול לפני מרתון' }, platform: 'instagram' });
+    await s.event('post.unposted', { post: { id: '21', coverLine: 'מה לאכול לפני מרתון' }, delivery: 'by_hand', platforms: { instagram: 'by_hand' }, minutesLate: 61 });
     const sent = s.toOwner().slice(before);
     assert.equal(sent[0].text, '"מה לאכול לפני מרתון" עוד לא עלה לאינסטגרם. הנה הכול, מוכן להעלאה.');
-    assert.deepEqual(sent.slice(1, 4).map((m) => m.mediaUrl), ['https://teder.test/m/21-1.jpg', 'https://teder.test/m/21-2.jpg', 'https://teder.test/m/21-3.jpg']);
+    assert.deepEqual(sent.slice(1, 4).map((m) => m.mediaUrl), [1, 2, 3].map((n) => `https://teder.test/m/21/instagram/${n}?e=1&s=x`));
     assert.equal(sent.at(-1)!.text, 'הכיתוב להעתקה #ריצה', 'the caption as Teder wrote it, nothing added');
 
-    await s.event('post.reminder', { post: { id: 21, hook: 'מה לאכול לפני מרתון' }, platform: 'tiktok' });
+    await s.event('post.reminder', { post: { id: '21', coverLine: 'מה לאכול לפני מרתון' }, delivery: 'by_hand', platforms: { tiktok: 'by_hand' }, sound: null });
     assert.equal(s.outbox.at(-1)!.text, 'הגיע הזמן להעלות את "מה לאכול לפני מרתון" לטיקטוק. כתבו "שלח" ואשלח לכאן את התמונות ואת הכיתוב.');
     const n = s.toOwner().length;
     await s.write('שלח');
@@ -336,16 +336,16 @@ test("the model's actions on posts: only numbers the owner's message names, and 
   const s = await setup(script);
   try {
     s.accounts.link({ phone: OWNER, workspace: WS, products: ['teder'] });
-    await s.event('post.ready', { posts: s.three() });
+    await s.postReady(s.three());
     await s.write('את הראשונה תאשר, היא מעולה. למה היא לא עלתה אתמול?');
     assert.match(seen[0], /does not name post 2/);
-    assert.deepEqual(s.teder.calls.filter((c) => c.method === 'POST').map((c) => c.path), ['/internal/assistant/posts/11/approve'], 'only 1, after the refusal');
+    assert.deepEqual(s.teder.calls.filter((c) => c.method === 'POST').map((c) => c.path), [`/internal/assistant/customers/${WS}/posts/11/approve`], 'only 1, after the refusal');
 
     await s.write('בשנייה, תשנה את הכותרת של הפתיחה ל"גב חזק בריצה", בסדר?');
     assert.match(seen[2], /owner's exact words/);
     const edit = s.teder.calls.find((c) => c.path.endsWith('/edit'))!;
-    assert.deepEqual([edit.body.slide, edit.body.line, edit.body.text], [1, 1, 'גב חזק בריצה']);
-    assert.ok(s.toOwner().some((m) => m.mediaUrl === 'https://teder.test/m/12-1-v2.jpg'), 'the slide as Teder drew it again');
+    assert.deepEqual([edit.body.slide, edit.body.field, edit.body.newText], [1, 'hook', 'גב חזק בריצה'], "the cover's first line is its hook");
+    assert.ok(s.toOwner().some((m) => m.mediaUrl === 'https://teder.test/m/12/instagram/1-v2?e=1&s=x'), 'the slide as Teder drew it again');
     // A Teder-only owner's chat is kept by number, with no store.
     const kept = await s.app.db.query<any>('SELECT store_id, workspace_id, phone FROM assistant_messages');
     assert.ok(kept.length && kept.every((k) => k.store_id === null && k.workspace_id === WS && k.phone === OWNER));
@@ -364,19 +364,22 @@ test("Teder's events come in signed, from this machine only, once each", async (
   const post = (raw: string, headers: Record<string, string>) => fetch(`http://127.0.0.1:${port}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: raw });
   try {
     s.accounts.link({ phone: OWNER, workspace: WS });
-    const ev = JSON.stringify({ id: 'evt_signed_1', type: 'quota.low', workspace: WS, at: '2026-10-24T09:00:00.000Z', data: { kind: 'suggested', used: 32, limit: 40, month: '2026-10' } });
-    assert.equal((await post(ev, signedHeaders('wrong-secret-000000000000000000000000', 'POST', path, ev))).status, 401);
-    assert.equal((await post(ev, signedHeaders(SECRET, 'POST', path, ev, Math.floor(Date.now() / 1000) - 600))).status, 401, 'stale');
-    assert.equal((await post(ev, { ...signedHeaders(SECRET, 'POST', path, ev), 'x-forwarded-for': '1.2.3.4' })).status, 403, 'never through Caddy');
-    const ok = await post(ev, signedHeaders(SECRET, 'POST', path, ev));
+    // As Teder sends it: its body, X-OF-Event, and the signature in the direction teder->toran.
+    const signed = (raw: string, secret = SECRET, t?: number) => ({ 'x-of-event': 'quota.low', 'x-of-signature': signature(secret, { dir: DIR.in, method: 'POST', path, body: raw, ...(t ? { t } : {}) }) });
+    const ev = JSON.stringify({ id: 'evt_signed_1', type: 'quota.low', at: '2026-10-24T09:00:00.000Z', sentAt: '2026-10-24T09:00:01.000Z', customer: WS, data: { account: { id: 'acc', name: 'חשבון' }, quota: { month: '2026-10', suggestions: { used: 32, held: 0, limit: 40, left: 8 }, redos: { used: 3, held: 0, limit: 10, left: 7 } } } });
+    assert.equal((await post(ev, signed(ev, 'wrong-secret-000000000000000000000000'))).status, 401);
+    assert.equal((await post(ev, signed(ev, SECRET, Math.floor(Date.now() / 1000) - 600))).status, 401, 'stale');
+    assert.equal((await post(ev, signedHeaders(SECRET, 'POST', path, ev))).status, 401, 'a request signed toran->teder is not an event');
+    assert.equal((await post(ev, { ...signed(ev), 'x-forwarded-for': '1.2.3.4' })).status, 403, 'never through Caddy');
+    const ok = await post(ev, signed(ev));
     assert.equal(ok.status, 200);
-    assert.equal((await post(ev, signedHeaders(SECRET, 'POST', path, ev))).status, 200, 'again: acknowledged');
+    assert.equal((await post(ev, signed(ev))).status, 200, 'again (a retry, a new nonce): acknowledged');
     assert.equal((await s.app.db.one<any>("SELECT COUNT(*)::int AS n FROM jobs WHERE kind = 'teder_event'")).n, 1, 'and kept once');
-    const bad = JSON.stringify({ id: 'evt_x', type: 'post.deleted', workspace: WS, data: {} });
-    assert.equal((await post(bad, signedHeaders(SECRET, 'POST', path, bad))).status, 400);
+    const bad = JSON.stringify({ id: 'evt_x', type: 'post.deleted', customer: WS, data: {} });
+    assert.equal((await post(bad, signed(bad))).status, 400);
     await drain(s.app);
     assert.equal(s.toOwner().at(-1)!.template, 'teder_quota_low');
-    assert.deepEqual(s.toOwner().at(-1)!.vars, ['8 מתוך 40 הצעות לפוסטים']);
+    assert.deepEqual(s.toOwner().at(-1)!.vars, ['8 מתוך 40 הצעות למצגות']);
     assert.ok(s.teder.refused.length === 0, 'Toran signed every request it made to Teder');
   } finally {
     server.close();
@@ -394,7 +397,7 @@ test('an owner of both: Toran\'s "כן" still answers its own offer, and Teder\'
     assert.match(s.outbox.at(-1)!.text, /היום לא היו שיחות\./);
     assert.equal((await s.app.db.one<any>("SELECT store_id FROM assistant_messages WHERE role = 'owner' ORDER BY id DESC LIMIT 1")).store_id, store);
 
-    await s.event('post.ready', { posts: s.three() });
+    await s.postReady(s.three());
     await s.write('מאשר את כולן');
     assert.equal(s.teder.calls.filter((c) => c.path.endsWith('/approve')).length, 3);
 

@@ -90,67 +90,73 @@ export async function fakeOwnerAccounts() {
   };
 }
 
-export type FakePost = { id: number; workspace: number; status: string; hook: string; slides?: string[][]; caption?: string };
+export type FakePost = { id: number | string; workspace: number; status: string; hook: string; slides?: string[][]; caption?: string };
 
+/**
+ * Teder's assistant API as its docs/assistant-api.md gives it: /internal/assistant/customers/<ws>/..., every request's
+ * X-OF-Signature checked in the direction toran->teder (a bad one refused, as Teder does), the posts' shapes, the
+ * refusals (wrong_state, not_approved, not_editable, too_long, refused) and the redo a rejection writes.
+ */
 export async function fakeTeder() {
-  const posts = new Map<number, FakePost>();
+  const posts = new Map<string, FakePost>();
   const calls: { method: string; path: string; body: any }[] = [];
   const refused: string[] = [];
-  let quiet: { now: boolean; until: string | null; reason: string | null } = { now: false, until: null, reason: null };
   let down = false;
   let redosLeft = 5;
-  let nextId = 900;
+  const img = (p: FakePost, n: number, v = '') => `https://teder.test/m/${p.id}/instagram/${n}${v}?e=1&s=x`;
   const server = http.createServer(async (req, res) => {
     const raw = req.method === 'POST' ? await body(req) : '';
-    const why = verify(SECRET, req.headers, req.method || '', req.url || '', raw);
+    const why = verify(SECRET, req.headers, req.method || '', req.url || '', raw, Math.floor(Date.now() / 1000), 'toran->teder');
     if (why) {
       refused.push(why);
-      return out(res, 401, { error: why });
+      return out(res, 401, { ok: false, error: why });
     }
     const url = new URL(req.url || '/', 'http://internal');
     const b = raw ? JSON.parse(raw) : null;
-    const ws = Number(b?.workspace ?? url.searchParams.get('workspace'));
     calls.push({ method: req.method || '', path: url.pathname, body: b });
-    if (down) return out(res, 500, { error: 'server_error' });
-    const listed = (p: FakePost) => ({ id: p.id, number: null, account: { id: 'acc', name: 'חשבון' }, status: p.status, hook: p.hook, slotAt: null, slides: (p.slides || []).length, cover: { url: `https://teder.test/m/${p.id}-1.jpg` } });
-    const P = '/internal/assistant';
-    if (url.pathname === `${P}/status`) {
-      const mine = [...posts.values()].filter((p) => p.workspace === ws);
-      return out(res, 200, { workspace: ws, accounts: [{ id: 'acc', name: 'חשבון', mode: 'approve', status: 'active' }], pending: mine.filter((p) => p.status === 'queued').length, approvedThisWeek: mine.filter((p) => p.status === 'approved').length, publishedThisWeek: 2, quota: { month: '2026-10', suggested: { used: 31, limit: 40 }, redos: { used: 3, limit: 10 } }, quiet, quietHours: { start: '22:00', end: '08:00' }, shabbat: true });
+    if (down) return out(res, 500, { ok: false, error: 'server_error' });
+    const m = /^\/internal\/assistant\/customers\/(\d+)\/(.+)$/.exec(url.pathname);
+    if (!m) return out(res, 404, { ok: false, error: 'not_found' });
+    const ws = Number(m[1]);
+    const rest = m[2];
+    const view = (p: FakePost) => ({ id: String(p.id), status: p.status, account: { id: 'acc', name: 'חשבון', handle: 'acc' }, coverLine: p.hook, slotAt: null, caption: p.caption || '', slides: (p.slides || []).map((l, i) => ({ n: i + 1, kind: i === 0 ? 'cover' : 'item', title: l[0] || '', body: l[1] || '', image: img(p, i + 1) })) });
+    const mine = [...posts.values()].filter((p) => p.workspace === ws);
+    if (rest === 'status') return out(res, 200, { ok: true, customer: ws, accounts: [{ account: { id: 'acc', name: 'חשבון' }, quota: { month: '2026-10', suggestions: { used: 12, held: 0, limit: 40, left: 28 }, redos: { used: 3, held: 0, limit: 10, left: 7 } }, next: [], week: { from: '', to: '', published: 2, views: 1500, best: null } }] });
+    if (rest === 'posts/pending') return out(res, 200, { ok: true, customer: ws, posts: mine.filter((p) => p.status === 'queued').map(view) });
+    const pm = /^posts\/([\w-]+)\/(approve|reject|edit|bundle)$/.exec(rest);
+    const p = pm ? posts.get(pm[1]) : null;
+    if (!pm || !p || p.workspace !== ws) return out(res, 404, { ok: false, error: 'not_found' });
+    if (pm[2] === 'bundle') {
+      if (!['approved', 'publishing', 'published'].includes(p.status)) return out(res, 409, { ok: false, error: 'not_approved' });
+      return out(res, 200, { ok: true, post: { ...view(p), platforms: { instagram: { images: (p.slides || []).map((_, i) => img(p, i + 1)), caption: p.caption || '', hashtags: ['#תדר'], text: p.caption || '' } } } });
     }
-    if (url.pathname === `${P}/posts`) return out(res, 200, { posts: [...posts.values()].filter((p) => p.workspace === ws && p.status === 'queued').map(listed) });
-    const m = /^\/internal\/assistant\/posts\/(\d+)(?:\/(approve|reject|edit|bundle))?$/.exec(url.pathname);
-    const p = m ? posts.get(Number(m[1])) : null;
-    if (!m || !p || p.workspace !== ws) return out(res, 404, { error: 'not_found' });
-    if (!m[2]) return out(res, 200, { post: { ...listed(p), caption: p.caption || '', hashtags: [], slideList: (p.slides || []).map((lines, i) => ({ idx: i + 1, kind: i ? 'item' : 'cover', lines, image: { url: `https://teder.test/m/${p.id}-${i + 1}.jpg` } })) } });
-    if (m[2] === 'bundle') return out(res, 200, { post: { id: p.id, hook: p.hook }, images: (p.slides || [[]]).map((_, i) => ({ url: `https://teder.test/m/${p.id}-${i + 1}.jpg` })), caption: p.caption || '' });
-    if (p.status !== 'queued') return out(res, 409, { error: 'not_pending' });
-    if (m[2] === 'approve') {
+    if (p.status !== 'queued') return out(res, 409, { ok: false, error: 'wrong_state', message: 'הפוסט לא מחכה לאישור' });
+    if (pm[2] === 'approve') {
       p.status = 'approved';
-      return out(res, 200, { post: { id: p.id, status: 'approved' } });
+      return out(res, 200, { ok: true, message: 'אושר', post: { id: String(p.id), status: 'approved' } });
     }
-    if (m[2] === 'reject') {
+    if (pm[2] === 'reject') {
       p.status = 'rejected';
-      const replacement = redosLeft > 0 ? { id: nextId++, status: 'drafting' } : null;
-      if (replacement) redosLeft--;
-      return out(res, 200, { post: { id: p.id, status: 'rejected' }, replacement, redosLeft });
+      const redo = redosLeft > 0 ? 'writing' : 'none';
+      if (redosLeft > 0) redosLeft--;
+      return out(res, 200, { ok: true, message: 'נדחה', post: { id: String(p.id), status: 'rejected' }, redo });
     }
-    const lines = p.slides?.[b.slide - 1];
-    if (!lines || !lines[b.line - 1]) return out(res, 400, { error: 'bad_line' });
-    if (String(b.text).length > 40) return out(res, 422, { error: 'failed_checks', problems: ['השורה ארוכה מ-6 מילים'] });
-    lines[b.line - 1] = b.text;
-    return out(res, 200, { post: listed(p), slide: { idx: b.slide, lines, image: { url: `https://teder.test/m/${p.id}-${b.slide}-v2.jpg` } } });
+    const slide = p.slides?.[b.slide - 1];
+    if (!slide || b.slide === (p.slides || []).length && (p.slides || []).length > 2) return out(res, 422, { ok: false, error: 'not_editable' });
+    if (String(b.newText).length > 40) return out(res, 422, { ok: false, error: 'too_long', max: 40 });
+    if (String(b.newText).includes('הכי טוב בעולם')) return out(res, 422, { ok: false, error: 'refused', message: 'בדיקת העובדות עצרה את השינוי: אין מקור לטענה.', problems: ['superlative'] });
+    slide[b.field === 'hook' || b.field === 'title' ? 0 : 1] = b.newText;
+    const v = view(p);
+    v.slides = v.slides.map((x) => (x.n === b.slide ? { ...x, image: img(p, x.n, '-v2') } : x));
+    return out(res, 200, { ok: true, message: 'נשמר', post: v });
   });
   const port = await listen(server);
   return {
     env: { OF_ASSISTANT_SECRET: SECRET, TEDER_INTERNAL: `http://127.0.0.1:${port}` },
-    posts,
+    posts: { get: (id: number | string) => posts.get(String(id)) },
     calls,
     refused,
-    add: (p: Omit<FakePost, 'status'> & { status?: string }) => posts.set(p.id, { status: 'queued', slides: [['כותרת', 'שורה'], ['שקופית שתיים', 'עוד שורה']], caption: `הכיתוב של ${p.id} #תדר`, ...p }),
-    set quiet(q: { now: boolean; until: string | null; reason: string | null }) {
-      quiet = q;
-    },
+    add: (p: Omit<FakePost, 'status'> & { status?: string }) => posts.set(String(p.id), { status: 'queued', slides: [['כותרת', 'שורה'], ['שקופית שתיים', 'עוד שורה']], caption: `הכיתוב של ${p.id} #תדר`, ...p }),
     set down(v: boolean) {
       down = v;
     },

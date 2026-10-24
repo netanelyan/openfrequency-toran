@@ -9,7 +9,7 @@ import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../channels/ow
 import { asked, conversation, outOfStock, overview, waiting, who } from './data.ts';
 import type { Part } from '../channels/send.ts';
 import { mentioned, normalize, type Intent, type Reason } from '../owners/intents.ts';
-import { act, lastList, sendBundle, showPending, statusLines, type ListItem, type PostsCtx } from '../owners/posts.ts';
+import { act, lastList, sendBundle, showPending, status, type ListItem, type PostsCtx } from '../owners/posts.ts';
 
 // The owner's assistant: the store's owner writes to Toran (on the dashboard, or from their own WhatsApp number) and
 // Toran answers about the store from what it holds: the conversations, the questions waiting for them, what customers
@@ -110,7 +110,7 @@ export const TEDER_TOOLS: ToolDef[] = [
   },
   {
     name: 'teder_edit',
-    description: "Change one line of one slide to the owner's exact words from this message. Line 1 is the slide's title, line 2 the first line under it.",
+    description: "Change one line of one slide to the owner's exact words from this message. Line 1 is the slide's headline (on the cover, its hook), line 2 the text under it. The last slide cannot be changed.",
     input_schema: { type: 'object', properties: { number: { type: 'integer' }, slide: { type: 'integer' }, line: { type: 'integer' }, text: { type: 'string' } }, required: ['number', 'slide', 'line', 'text'] },
   },
   {
@@ -257,22 +257,24 @@ async function runTederTool(t: TederTurn, name: string, input: any): Promise<{ o
     return items[k - 1];
   };
   if (name === 'teder_status') {
-    const r = await t.ctx.teder.status();
-    return r.ok ? { ok: true, content: statusLines(r.body).join('\n') } : { ok: false, content: TEDER_DOWN };
+    const r = await status(t.ctx);
+    return { ok: !r.lines[0]?.startsWith('לא הצלחתי'), content: r.lines.join('\n') };
   }
   if (name === 'teder_pending') {
     const r = await showPending(t.ctx);
     if (!r.posts) return { ok: false, content: TEDER_DOWN };
     t.parts.push(...r.parts);
-    return { ok: true, content: r.posts.length ? `Sent to the owner with your answer, numbered: ${r.posts.map((p, i) => `${i + 1}. ${p.hook}`).join(' | ')}. The app already wrote the line above the covers and how to answer, so say nothing more about the list unless they asked something else.` : 'No posts are waiting for approval.' };
+    return { ok: true, content: r.posts.length ? `Sent to the owner with your answer, numbered: ${r.posts.map((p, i) => `${i + 1}. ${p.coverLine}`).join(' | ')}. The app already wrote the line above the covers and how to answer, so say nothing more about the list unless they asked something else.` : 'No posts are waiting for approval.' };
   }
   if (name === 'teder_post') {
     const it = pick(input?.number);
     if (typeof it === 'string') return { ok: false, content: it };
-    const r = await t.ctx.teder.post(it.id);
-    if (!r.ok) return { ok: false, content: r.status === 404 ? 'Teder has no such post any more.' : TEDER_DOWN };
-    const p = r.body.post;
-    return { ok: true, content: [`Post ${input.number}: "${p.hook}" (${p.status}).`, ...(p.slideList || []).map((s) => `- slide ${s.idx}: ${s.lines.map((l, i) => `[line ${i + 1}] ${l}`).join(' ')}`), p.caption ? `Caption: ${p.caption}` : ''].filter(Boolean).join('\n') };
+    // Teder lists a post's slides with the posts waiting; one approved since is no longer among them.
+    const r = await t.ctx.teder.pending();
+    if (!r.ok) return { ok: false, content: TEDER_DOWN };
+    const p = (r.body.posts || []).find((x) => String(x.id) === String(it.id));
+    if (!p) return { ok: false, content: 'That post is no longer waiting for approval, so its slides are not listed here.' };
+    return { ok: true, content: [`Post ${input.number}: "${p.coverLine}" (${p.status}).`, ...(p.slides || []).map((s) => `- slide ${s.n} (${s.kind}): [line 1] ${s.title} [line 2] ${s.body}`), p.caption ? `Caption: ${p.caption}` : ''].filter(Boolean).join('\n') };
   }
   if (name === 'teder_bundle') {
     const it = pick(input?.number);
