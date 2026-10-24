@@ -8,6 +8,7 @@ import { claimRequest } from './request.ts';
 import { hold, isPaused } from './owner.ts';
 import { reply } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
+import { ask, storeOfOwner } from '../assistant/index.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
@@ -40,7 +41,7 @@ const msg = {
   noText: 'בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?',
 };
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account'; storeId?: number; reply?: string };
+export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 
@@ -98,6 +99,18 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
     const o = await runTurn(app, { storeId: store.id, conversationId: conv, text: rest, extId: inbound.id });
     await reply(app, adapter, inbound, o.reply, store.id, conv);
     return { action: 'bound', storeId: store.id, reply: o.reply };
+  }
+
+  // A store's owner, from a number they gave us (stores.owner_phones): they are talking to their assistant
+  // (src/assistant), not asking as a customer. A code still binds them to a demo above; to try the demo as a customer,
+  // they write from another number.
+  const ownStore = await storeOfOwner(app, phone);
+  if (ownStore) {
+    if (!text) return { action: 'no_text', storeId: ownStore };
+    const answer = await ask(app, { storeId: ownStore, text, via: 'whatsapp', author: phone });
+    await reply(app, adapter, inbound, answer, ownStore, null);
+    await event(db, ownStore, 'assistant_whatsapp', {});
+    return { action: 'assistant', storeId: ownStore, reply: answer };
   }
 
   const binding = await db.one<{ store_id: number; expired: boolean }>('SELECT store_id, expires_at < now() AS expired FROM wa_users WHERE phone = $1', [phone]);

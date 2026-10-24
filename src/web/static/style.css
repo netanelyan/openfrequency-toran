@@ -238,7 +238,8 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
   z-index: 30;
   height: var(--tab);
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-auto-flow: column;
   gap: 2px;
   padding: 4px;
   border-radius: 31px;
@@ -626,3 +627,11 @@ iframe.pv { display: block; width: 100%; height: 560px; border: 0; background: #
 .viewas .i { width: 18px; height: 18px; flex: none; }
 .viewas a { margin-inline-start: auto; white-space: nowrap; }
 body.ro form[method="post"] { display: none; }
+
+/* ---- the owner's assistant (pages/assistant.ts): Toran's answers on the start side, the owner's on the end */
+.chat .b.toran { justify-self: start; background: var(--fill); border-start-start-radius: 6px; }
+.assistant .chat { margin-bottom: 14px; }
+.assistant .pending { justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--warn, #a44200) 10%, transparent); margin-bottom: 12px; }
+.assistant .pending p { display: flex; gap: 8px; align-items: flex-start; flex: 1 1 260px; }
+.assistant .starters { flex-wrap: wrap; gap: 6px; }
+.assistant .starters form { margin: 0; }

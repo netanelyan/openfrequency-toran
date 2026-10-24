@@ -71,6 +71,7 @@ const SPRITE = `<svg class="sr" width="0" height="0" aria-hidden="true"><defs>
 <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></symbol>
 <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.5L19.5 10l-5.6 1.6L12 17l-1.9-5.4L4.5 10l5.6-1.5z"/></symbol>
 </defs></svg>`;
 
 // Six sections, the same in the tab bar (phone) and the sidebar (desk).
@@ -79,6 +80,7 @@ export const NAV: [string, string, string, string][] = [
   ['/leads', 'לידים', 'leads', 'leads'],
   ['/review', 'לבדיקה', 'review', 'review'],
   ['/chats', 'שיחות', 'chats', 'chat'],
+  ['/assistant', 'העוזר', 'assistant', 'spark'],
   ['/followups', 'מעקב', 'followups', 'clock'],
   ['/settings', 'הגדרות', 'settings', 'settings'],
 ];

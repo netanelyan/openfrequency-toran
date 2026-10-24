@@ -4,6 +4,7 @@ import { brandPage } from './pages/brand.ts';
 import { homeRoutes } from './pages/home.ts';
 import { leadRoutes } from './pages/leads.ts';
 import { reviewRoutes } from './pages/review.ts';
+import { assistantRoutes } from './pages/assistant.ts';
 import { storeColor } from '../ingest/brand.ts';
 import { storeIdIn, storesOf, type Scope } from './workspace.ts';
 import { messagingSql } from '../channels/config.ts';
@@ -35,6 +36,7 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
     ...homeRoutes(app),
     ...leadRoutes(app),
     ...reviewRoutes(app),
+    ...assistantRoutes(app),
     ['GET', /^\/brand$/, (r) => ({ html: brandPage(r.ctx) })],
     ['GET', /^\/jobs\/(\d+)\.json$/, async (_r, m) => ({ json: (await app.db.one('SELECT id, kind, status, progress, last_error, result FROM jobs WHERE id = $1', [Number(m[1])])) || { status: 'missing' } })],
   ];
