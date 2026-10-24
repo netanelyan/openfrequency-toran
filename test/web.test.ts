@@ -89,7 +89,8 @@ test('the pitch page: noindex, the store\'s colours, the demo link with its code
     assert.match(html, /<h1>בנינו ל<span class="hl"><bdi>כלי חרס של נורית<\/bdi><\/span> תורן לוואטסאפ<\/h1>/);
     assert.match(html, /<dt>מוצרים<\/dt><dd>14<\/dd><\/div><div><dt>תמונות מוצרים<\/dt><dd>14<\/dd><\/div><div><dt>עמודי מידע<\/dt><dd>4<\/dd>/, 'the numbers come from the ingested store');
     assert.match(html, /עברנו על האתר שלכם, על 14 המוצרים ועל עמודי המשלוחים וההחזרות\./);
-    assert.match(html, /199 ₪ לחודש, לא כולל מע״מ\./);
+    assert.match(html, /<span class="num">199<\/span><span class="cur">₪<\/span><span class="per">לחודש<\/span>/);
+    assert.match(html, /<p class="price-notes">לא כולל מע״מ\./);
     assert.equal((html.match(/class="msg /g) || []).length, 4, 'two questions and two answers');
     assert.ok(!/class="ph"|class="held"/.test(html), 'a public page has no placeholder and no owner note');
     assert.ok(!/ניסיון|חינם|ימי ניסיון/.test(html.replace(/<div class="msgs">[\s\S]*?<\/section>/, '')), 'no trial, no free period');

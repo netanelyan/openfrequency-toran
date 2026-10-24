@@ -180,6 +180,11 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
 .ring.warn circle.v { stroke: var(--warn); }
 .ring.bad circle.v { stroke: var(--bad); }
 @media (max-width: 520px) { .spend .lbl { display: none; } }
+/* Signing out, on every page: beside the month's tokens on a phone, at the foot of the side bar on a desk. */
+.top .logout { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; min-width: 40px; padding: 0 14px; border-radius: 999px; background: var(--fill); color: var(--ink-2); font-size: 13px; white-space: nowrap; }
+.top .logout:hover { text-decoration: none; background: var(--fill-2); color: var(--ink); }
+.top .logout svg.i { width: 18px; height: 18px; }
+@media (max-width: 520px) { .top .logout { padding: 0; } .top .logout .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } }
 
 .sidetoggle { display: none; }
 
@@ -205,6 +210,9 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
   .top .tools { grid-column: 1 / -1; grid-row: 3; align-self: end; margin: 0; }
   .spend { width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; gap: 10px; }
   .spend .amt { margin-inline-start: auto; }
+  .top .tools { flex-direction: column; align-items: stretch; gap: 4px; }
+  .top .logout { justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 12px; border-radius: 12px; background: none; }
+  .top .logout svg.i { color: var(--ink-3); }
 
   .side-mini .top .wrap { grid-template-columns: 1fr; grid-template-rows: auto auto auto 1fr; justify-items: center; padding: 16px 10px 10px; }
   .side-mini .brand { padding: 0; }
@@ -216,6 +224,8 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
   .side-mini .nav .badge { position: absolute; top: 3px; inset-inline-start: calc(50% + 2px); margin: 0; min-width: 16px; height: 16px; line-height: 16px; font-size: 10px; padding: 0 4px; }
   .side-mini .top .tools { grid-row: 4; justify-self: center; }
   .side-mini .spend { width: 44px; min-height: 44px; padding: 0; justify-content: center; border-radius: 12px; }
+  .side-mini .top .logout { width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+  .side-mini .top .logout .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .side-mini .ring { width: 22px; height: 22px; }
 }
 
