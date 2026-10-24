@@ -20,9 +20,10 @@ const chip = (p: Kind) => `<span class="chip ${p === 'toran' ? 'sig' : 'ok'}">${
 const badge = (key: string, name: string, domain: string) => storeBadge({ id: Number(key.replace(/\D/g, '')) || 0, name, domain });
 const act = (ctx: { csrf: string }, kind: Kind, id: string, what: string, label: string, cls = 'btn', fields: Record<string, unknown> = {}) => postButton(ctx, `/ops/${kind}/${encodeURIComponent(id)}/${what}`, label, { cls, ajax: 'remove', fields });
 
-const lostForm = (ctx: { csrf: string }, kind: Kind, id: string) => `<form method="post" action="/ops/${kind}/${encodeURIComponent(id)}/lost" data-ajax="remove" class="row">${csrfField(ctx)}<select name="reason" aria-label="למה לא">${Object.entries(LOST_REASONS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select><button class="btn ghost" type="submit">לא מעוניינים</button></form>`;
+// "Not interested" asks why first: the reasons open under it, and the choice is saved with the button beside them.
+const lostForm = (ctx: { csrf: string }, kind: Kind, id: string) => `<details class="lost"><summary class="btn sm ghost">לא מעוניינים</summary><form method="post" action="/ops/${kind}/${encodeURIComponent(id)}/lost" data-ajax="remove" class="row">${csrfField(ctx)}<select name="reason" aria-label="למה">${Object.entries(LOST_REASONS).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select><button class="btn sm" type="submit">לסמן</button></form></details>`;
 
-const nextForm = (ctx: { csrf: string }, kind: Kind, id: string, text: string | null, ajax = 'reload') => `<form method="post" action="/ops/${kind}/${encodeURIComponent(id)}/next" data-ajax="${ajax}" class="row">${csrfField(ctx)}<input name="text" maxlength="300" value="${esc(text || '')}" placeholder="הצעד הבא, למשל: לשלוח הצעת מחיר" aria-label="הצעד הבא"><select name="days" aria-label="מתי"><option value="1">מחר</option><option value="3">בעוד 3 ימים</option><option value="7">בעוד שבוע</option><option value="14">בעוד שבועיים</option></select><button class="btn sm" type="submit">לשמור</button></form>`;
+const nextForm = (ctx: { csrf: string }, kind: Kind, id: string, text: string | null, ajax = 'reload') => `<form method="post" action="/ops/${kind}/${encodeURIComponent(id)}/next" data-ajax="${ajax}" class="row">${csrfField(ctx)}<input type="text" name="text" maxlength="300" value="${esc(text || '')}" placeholder="הצעד הבא, למשל: לשלוח הצעת מחיר" aria-label="הצעד הבא"><select name="days" aria-label="מתי"><option value="1">מחר</option><option value="3">בעוד 3 ימים</option><option value="7">בעוד שבוע</option><option value="14">בעוד שבועיים</option></select><button class="btn sm" type="submit">לשמור</button></form>`;
 
 function card(r: DashReq, it: Item): string {
   const ctx = r.ctx;
@@ -37,9 +38,10 @@ function card(r: DashReq, it: Item): string {
         it.direct ? act(ctx, it.product, it.id, 'direct', `${icon('send')}לשלוח עכשיו מהמספר של הדמו`, 'btn primary') : '',
         `<button class="btn${it.direct ? '' : ' primary'}" type="button" data-copy="#${msgId}" ${it.target.href ? `data-open="${esc(it.target.href)}"` : ''} data-done="ההודעה הועתקה">${icon('copy')}${esc(it.target.label)}</button>`,
         act(ctx, it.product, it.id, it.mark, 'שלחתי'),
-        act(ctx, it.product, it.id, 'replied', 'ענו לי', 'btn ghost'),
-        act(ctx, it.product, it.id, 'later', 'מחר', 'btn ghost', { days: 1 }),
-        act(ctx, it.product, it.id, 'later', 'בעוד שבוע', 'btn ghost', { days: 7 }),
+        '<span class="break" aria-hidden="true"></span>',
+        act(ctx, it.product, it.id, 'replied', 'ענו לי', 'btn sm ghost'),
+        act(ctx, it.product, it.id, 'later', 'מחר', 'btn sm ghost', { days: 1 }),
+        act(ctx, it.product, it.id, 'later', 'בעוד שבוע', 'btn sm ghost', { days: 7 }),
         lostForm(ctx, it.product, it.id),
       ].join('');
   return `<article class="card rcard ops" data-item>
