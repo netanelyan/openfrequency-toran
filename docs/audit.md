@@ -221,7 +221,7 @@ openfrequency-toran/
   scripts/     one entry point per npm script
   test/        node:test, offline, PGlite in memory, the fictional store
   examples/    the fictional store (the only store data in the repo)
-  deploy/      docker-compose.yml, Dockerfile, Caddyfile.example
+  deploy/      docker-compose.yml (Postgres), ecosystem.config.cjs (pm2), Caddyfile.example
   docs/        this audit, decisions, the bot page, milestone reports, screenshots of the fictional store
   private/     gitignored: .env, the PGlite database, models, eval transcripts, known-stores.txt
 ```

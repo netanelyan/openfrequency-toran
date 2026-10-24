@@ -1,15 +1,15 @@
-# Copy to deploy/Caddyfile and put your two names in. One host for the owner's dashboard, one for the pitch pages and
-# the WhatsApp webhook (the app tells them apart by PUBLIC_HOST and PUBLIC_BASE_URL in private/.env).
+# Toran, for the host's Caddy (/etc/caddy/Caddyfile, the one tiyul, brickdeal, accounts and Teder use). Append this
+# block and don't change the other blocks, then:
+#   sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && sudo systemctl reload caddy
+#
+# The app is the pm2 job "toran" on 127.0.0.1:4710 (deploy/ecosystem.config.cjs). One name is enough: with
+# PUBLIC_HOST=toran.openfrequency.co.il and PUBLIC_BASE_URL=https://toran.openfrequency.co.il in private/.env, the
+# dashboard, the pitch pages and the webhooks are all served on it. A second name for the pitch pages would need a
+# block like this one and its own PUBLIC_BASE_URL.
 
-toran.example.com {
+toran.openfrequency.co.il {
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000"
 	header X-Robots-Tag "noindex, nofollow"
-	reverse_proxy app:4710
-}
-
-demo.example.com {
-	encode zstd gzip
-	header Strict-Transport-Security "max-age=31536000"
-	reverse_proxy app:4710
+	reverse_proxy 127.0.0.1:4710
 }

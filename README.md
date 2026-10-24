@@ -59,7 +59,7 @@ copy the message, mark it sent, see the chats.
 | `src/web` | the dashboard (Teder's look), auth, the public routes |
 | `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape) |
 | `src/brand.ts` | the family's marks and tokens; `assets/brand/` holds the files |
-| `deploy/` | Docker Compose (Postgres with pgvector, the app, Caddy); see docs/deploy.md |
+| `deploy/` | Postgres with pgvector in Docker Compose, the pm2 job, the host Caddy block; see docs/deploy.md |
 
 ## The public repo, the private folder
 
