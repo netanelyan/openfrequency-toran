@@ -231,7 +231,7 @@ test('"הפסק" stops every Teder message (here and in accounts); "התחל" br
 
     s.accounts.link({ phone: OWNER, workspace: WS });
     await s.write('הפסק');
-    assert.match(s.outbox.at(-1)!.text, /הפסקתי\. לא אשלח לכם יותר הודעות מטדר/);
+    assert.match(s.outbox.at(-1)!.text, /הפסקתי\. לא אשלח לכם יותר הודעות מתדר/);
     assert.deepEqual(s.accounts.calls.filter((c) => c.path.endsWith('/consent')).map((c) => c.body), [{ phone: OWNER, optIn: false, source: 'whatsapp' }]);
     const sentBefore = s.toOwner().length;
     await s.event('weekly.summary', { from: '2026-10-18', to: '2026-10-24', made: 9, approved: 7, rejected: 2, published: 6, pending: 1 });
@@ -245,10 +245,10 @@ test('"הפסק" stops every Teder message (here and in accounts); "התחל" br
     assert.equal(s.toOwner().length, sentBefore);
 
     await s.write('התחל');
-    assert.match(s.outbox.at(-1)!.text, /מעכשיו ההודעות מטדר יגיעו לכאן/);
+    assert.match(s.outbox.at(-1)!.text, /מעכשיו ההודעות מתדר יגיעו לכאן/);
     const { result } = await s.event('weekly.summary', { from: '2026-10-18', to: '2026-10-24', made: 9, approved: 7, rejected: 2, published: 6, pending: 1 });
     assert.equal(result.sent, 1);
-    assert.equal(s.outbox.at(-1)!.text, 'הסיכום השבועי מטדר, 18.10 עד 24.10:\nנוצרו 9 פוסטים. אישרתם 7 ודחיתם 2.\nעלו 6. מצגת אחת מחכה לאישור.');
+    assert.equal(s.outbox.at(-1)!.text, 'הסיכום השבועי מתדר, 18.10 עד 24.10:\nנוצרו 9 פוסטים. אישרתם 7 ודחיתם 2.\nעלו 6. מצגת אחת מחכה לאישור.');
   } finally {
     await s.close();
   }

@@ -14,6 +14,7 @@ import type { Out, Req, Route } from './server.ts';
 import { J } from '../db/index.ts';
 import { secretOf, verify } from '../owners/teder.ts';
 import { EVENT_TYPES } from '../owners/events.ts';
+import { opsRoutes } from '../ops/api.ts';
 
 // The public routes, answered without a session:
 //
@@ -41,6 +42,8 @@ import { EVENT_TYPES } from '../owners/events.ts';
 //                              machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (so never through Caddy).
 //                              It is written down with its code (REQ-XXXXXX) and waits: only when the person writes
 //                              to the demo number with that code is the store added (channels/request.ts).
+//   GET  /internal/ops         the operator's dashboard as data, for accounts' /admin (ops/api.ts); its POSTs are
+//                              the dashboard's buttons. From this machine only, with OF_INTERNAL_TOKEN
 //   POST /internal/teder/events Teder's news for an owner (docs/owner-line.md): from this machine only, no
 //                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET (owners/teder.ts). Kept once by its id
 //                              and handled by the worker (owners/events.ts).
@@ -210,6 +213,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       if (fresh) await enqueue(app.db, 'teder_event', { id }, { dedupeKey: `teder:${id}`, maxAttempts: 8 });
       return { json: { ok: true } };
     }],
+    ...opsRoutes(app),
     ['POST', /^\/internal\/lead$/, async (r) => {
       if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
       let body: any = {};

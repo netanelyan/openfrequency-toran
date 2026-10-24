@@ -59,13 +59,13 @@ async function messageFor(app: App, ev: TederEvent): Promise<Omit<Push, 'eventId
     const limit = Number(d.limit);
     if (!Number.isFinite(used) || !Number.isFinite(limit) || !KIND_HE[d.kind]) return null;
     const left = `${Math.max(0, limit - used)} מתוך ${limit} ${KIND_HE[d.kind]}`;
-    return { session: [{ text: `בטדר נשארו לכם החודש ${left}. בתחילת החודש הבא המונה מתחיל מחדש.` }], template: { name: 'teder_quota_low', vars: [left] } };
+    return { session: [{ text: `בתדר נשארו לכם החודש ${left}. בתחילת החודש הבא המונה מתחיל מחדש.` }], template: { name: 'teder_quota_low', vars: [left] } };
   }
   if (ev.type === 'weekly.summary') {
     const n = (k: string) => (Number.isFinite(Number(d[k])) ? Number(d[k]) : null);
     if ([n('made'), n('approved'), n('published')].some((x) => x == null)) return null;
     const span = `${dayMonth(d.from)} עד ${dayMonth(d.to)}`;
-    const lines = [`הסיכום השבועי מטדר, ${span}:`, `נוצרו ${n('made')} פוסטים. אישרתם ${n('approved')}${n('rejected') != null ? ` ודחיתם ${n('rejected')}` : ''}.`, `עלו ${n('published')}.${n('pending') ? ` ${n('pending') === 1 ? 'מצגת אחת מחכה' : `${n('pending')} מצגות מחכות`} לאישור.` : ''}`];
+    const lines = [`הסיכום השבועי מתדר, ${span}:`, `נוצרו ${n('made')} פוסטים. אישרתם ${n('approved')}${n('rejected') != null ? ` ודחיתם ${n('rejected')}` : ''}.`, `עלו ${n('published')}.${n('pending') ? ` ${n('pending') === 1 ? 'מצגת אחת מחכה' : `${n('pending')} מצגות מחכות`} לאישור.` : ''}`];
     return { session: [{ text: lines.join('\n') }], template: { name: 'teder_weekly_summary', vars: [span, String(n('made')), String(n('approved')), String(n('published'))] } };
   }
   return null;

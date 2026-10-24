@@ -7,7 +7,7 @@ import { markLost, markReminded, markReplied, markSent, markWon, later, sendDire
 import { customers, syncTeder, type Customer } from '../src/ops/sources.ts';
 import { funnels, money, rate } from '../src/ops/funnel.ts';
 import { israelWeekdayHour } from '../src/core/clock.ts';
-import { customer, INTERNAL_TOKEN, operator, testApp } from './helpers.ts';
+import { customer, INTERNAL_TOKEN, testApp } from './helpers.ts';
 import { serve } from './serve.ts';
 
 // The operator's dashboard (src/ops/, pages/ops.ts, docs/operator.md): who to write to today and in what order, what
@@ -80,7 +80,7 @@ test('who to write to today, in order: tried the demo, asked on the website, the
     assert.equal(askedItem.target.href, `https://wa.me/${PHONE}`);
     assert.match(askedItem.message!, /הדמו של תורן ל־asked מוכן/);
     assert.match(q.items[0].message!, /ראינו שניסיתם את הדמו/, 'tried the demo: the question takes the reminder\'s place');
-    assert.match(q.items[1].message!, /ביקשתם באתר דמו של טדר[^]*https:\/\/teder\.example\/s\/tb-x1/);
+    assert.match(q.items[1].message!, /ביקשתם באתר דמו של תדר[^]*https:\/\/teder\.example\/s\/tb-x1/);
     assert.equal(q.items[3].target.kind, 'email');
   } finally {
     await svc.close();
@@ -196,28 +196,40 @@ test('the funnel counts each stage and its rate from the one before; customers a
   }
 });
 
-test('the dashboard is the operator\'s: on Today for them, absent for a customer, and its buttons refuse anyone else', async () => {
+test("the dashboard is accounts' /admin's: Toran gives it as data on /internal/ops, from this machine with the token only, and Today shows Toran alone", async () => {
   const s = await serve();
   try {
     const id = await store(s.app, 'zz.example', { status: 'page_ready', approved_at: ago(1), page_built_at: ago(1), contact_whatsapp: '972500000316' });
+    const token = { authorization: `Bearer ${INTERNAL_TOKEN}` };
+    const get = (h: Record<string, string>) => fetch(`${s.base}/internal/ops`, { headers: h });
+    assert.equal((await get({})).status, 403);
+    assert.equal((await get({ ...token, 'x-forwarded-for': '1.2.3.4' })).status, 403, 'never through Caddy');
+    const r = await get(token);
+    assert.equal(r.status, 200);
+    const d = await r.json();
+    const item = d.items.find((i: any) => i.key === `toran:${id}`);
+    assert.equal(item.reason, 'first_send');
+    assert.match(item.leadUrl, new RegExp(`/lead/${id}$`));
+    assert.equal(d.funnels.toran.at(-1).key, 'customers');
+    assert.equal(d.funnels.toran.at(-1).all, null, "customers are accounts' to fill");
+
+    const post = (path: string, body: unknown) => fetch(`${s.base}/internal/ops/${path}`, { method: 'POST', headers: { ...token, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const sent = await post(`toran/${id}/sent`, { by: 'operator@example.test' });
+    assert.deepEqual(await sent.json(), { ok: true, message: 'סומן שנשלח. התזכורת האחת תחכה ברשימה בעוד ארבעה ימים.' });
+    const again = await post(`toran/${id}/sent`, { by: 'op' });
+    assert.equal(again.status, 400);
+    assert.match((await again.json()).error, /כבר סומן/);
+    assert.equal((await fetch(`${s.base}/internal/ops/toran/${id}/lost`, { method: 'POST', body: '{}' })).status, 403);
+    assert.equal((await s.app.db.one<any>("SELECT actor FROM audit WHERE action = 'ops_sent'")).actor, 'operator@example.test');
+
+    // Toran's own site shows Toran only: no cross-product dashboard on Today, for anyone.
     s.login();
     const home = await (await s.get('/')).text();
-    assert.match(home, /לפנות היום/);
-    assert.match(home, /zz\.example/);
-    assert.match(home, /לא הצלחתי לקרוא את הלקוחות מ־accounts/, 'accounts not answering: that part says so, the rest works');
-    const token = await s.csrf('/');
-    const r = await s.post(`/ops/toran/${id}/sent`, { _csrf: token }, { 'x-tn-ajax': '1' });
-    assert.equal(r.status, 200);
-    assert.match((await r.json()).message, /סומן שנשלח/);
-
+    assert.doesNotMatch(home, /לפנות היום|לקוחות וכסף|המשפך/);
+    assert.match(home, /מוכנים לשליחה/);
     const cust = s.accounts.session(customer(5));
     s.as(cust.cookie);
-    const theirs = await (await s.get('/')).text();
-    assert.doesNotMatch(theirs, /לפנות היום|לקוחות וכסף/);
-    const t2 = await s.csrf('/');
-    assert.ok([403, 404].includes((await s.post(`/ops/toran/${id}/lost`, { _csrf: t2, reason: 'price' })).status));
-    assert.equal((await s.app.db.one<any>('SELECT lost_at FROM stores WHERE id = $1', [id])).lost_at, null);
-    void operator;
+    assert.doesNotMatch(await (await s.get('/')).text(), /לפנות היום/);
   } finally {
     await s.close();
   }

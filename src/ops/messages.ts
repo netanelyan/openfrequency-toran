@@ -25,7 +25,7 @@ export const triedDemo = (o: { storeName: string }) =>
 
 /** A Teder demo someone asked for on the website: its page. */
 export const tederFirst = (o: { storeName: string; url: string }) =>
-  `היי, כאן OpenFrequency. ביקשתם באתר דמו של טדר, אז הכנו ${le(o.storeName)} מצגת לדוגמה על נושא מהתחום של החנות, בגדלים של טיקטוק ואינסטגרם:
+  `היי, כאן OpenFrequency. ביקשתם באתר דמו של תדר, אז הכנו ${le(o.storeName)} מצגת לדוגמה על נושא מהתחום של החנות, בגדלים של טיקטוק ואינסטגרם:
 ${o.url}
 
 אם זה כבר לא רלוונטי, אפשר לענות "לא" ולא נכתוב שוב.`;
