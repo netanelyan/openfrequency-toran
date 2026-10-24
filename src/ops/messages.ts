@@ -19,7 +19,7 @@ ${o.url}
 
 /** In the reminder's place, for a store that tried the demo: asking how it went. */
 export const triedDemo = (o: { storeName: string }) =>
-  `היי, ראינו שניסיתם את הדמו של תורן ${le(o.storeName)}. איך היה? אם תרצו, נקבע שיחה קצרה ונראה לכם איך הוא עובד על הוואטסאפ של החנות.
+  `היי, ראינו שניסיתם את הדמו של תורן ${le(o.storeName)}. איך היה? אם תרצו, נקבע שיחה קצרה ונראה לכם איך הוא עובד עם הלקוחות של החנות.
 
 אם זה לא רלוונטי, אפשר לענות "לא" ולא נכתוב שוב.`;
 

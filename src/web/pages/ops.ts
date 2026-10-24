@@ -3,7 +3,7 @@ import { ago, csrfField, dayHe, esc, icon, postButton, stamp, storeBadge } from 
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { accountsLinks } from '../accounts.ts';
 import { customers, syncTeder, type Customer } from '../../ops/sources.ts';
-import { conversations, queue, type Conversation, type Item } from '../../ops/queue.ts';
+import { conversations, queue, stuckRequests, type Conversation, type Item } from '../../ops/queue.ts';
 import { funnels, money, rate, type Stage } from '../../ops/funnel.ts';
 import { LOST_REASONS } from '../../ops/messages.ts';
 import { later, markLost, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, setNext, type Kind } from '../../ops/actions.ts';
@@ -90,7 +90,7 @@ ${list('מתחדשים ב־7 הימים הקרובים', m.renewals.map((x) => `
 /** The operator's sections, above the rest of Today. */
 export async function opsSections(app: App, r: DashReq): Promise<string> {
   const tederOk = await syncTeder(app);
-  const [q, convs, cust] = await Promise.all([queue(app), conversations(app), customers(app)]);
+  const [q, convs, cust, stuck] = await Promise.all([queue(app), conversations(app), customers(app), stuckRequests(app)]);
   const f = await funnels(app, cust?.workspaces || null);
   const m = cust ? money(cust.workspaces, cust.today) : null;
   const shown = q.items.slice(0, SHOWN);
@@ -108,6 +108,7 @@ ${tederOk ? '' : `<p class="small muted">את המצגות של טדר לא הצ
 ${shown.length ? `<div class="cards">${shown.map((it) => card(r, it)).join('')}</div>${q.items.length > SHOWN ? `<p class="small muted mt8">ועוד ${q.items.length - SHOWN}. הם יופיעו כאן כשהרשימה תתקצר.</p>` : ''}` : `<div class="empty">${icon('send')}<b>אין כרגע למי לכתוב</b>כאן יופיעו דפים מוכנים, תזכורות שהגיע זמנן, ומי שביקשו דמו באתר.</div>`}
 ${q.noContact.length ? `<details class="mt16"><summary>${q.noContact.length === 1 ? 'דף אחד מוכן, ואין לנו איך לפנות לחנות' : `${q.noContact.length} דפים מוכנים, ואין לנו איך לפנות לחנויות`}</summary><div class="list mt8">${q.noContact.slice(0, 30).map((s) => `<a href="/lead/${s.id}">${storeBadge(s)}<span class="t"><b>${esc(s.brand?.name || s.name || s.domain)}</b><small class="ltr">${esc(s.domain)}</small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div><p class="small muted mt8 m0">אין באתר שלהן וואטסאפ או מייל. אפשר לחפש איש קשר באינסטגרם או בפייסבוק, ולהוסיף אותו בעמוד של הליד.</p></details>` : ''}
 </section>
+${stuck.length ? `<section class="group" id="stuck"><header><h2>ביקשו דמו באתר, ועוד אין מה לשלוח</h2></header><div class="list">${stuck.map((x) => `<a href="${x.storeId ? `/lead/${x.storeId}` : `https://wa.me/${esc(x.phone)}`}"${x.storeId ? '' : ' target="_blank" rel="noopener"'}><span class="ico warn">${icon('alert')}</span><span class="t"><b><bdi class="ltr">${esc(x.domain)}</bdi></b><small>${esc(x.why)} · ביקשו ${esc(ago(x.at))}</small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div><p class="small muted mt8 m0">הם כתבו לנו מהמספר שלהם ומחכים לדמו. כשאין דף לשלוח, כדאי לענות להם בעצמך.</p></section>` : ''}
 <section class="group" id="talking"><header><h2>בשיחה</h2></header>${convs.length ? `<div class="cards">${convs.map((c) => conversationRow(r, c)).join('')}</div>` : `<div class="empty">${icon('chat')}<b>אף אחד עוד לא בשיחה</b>מי שעונים לך עוברים לכאן כשמסמנים "ענו לי".</div>`}</section>
 <section class="group" id="funnel"><header><h2>המשפך</h2></header><div class="ops-funnels">${funnelTable('תורן', f.toran)}${funnelTable('טדר', f.teder)}</div></section>
 <section class="group" id="money"><header><h2>לקוחות וכסף</h2></header>${moneyPanel(app, cust)}</section>`;

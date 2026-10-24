@@ -63,7 +63,7 @@ test('a page is held for each missing field: price, the two numbers, the colour,
     await setOffer(app.db, OFFER);
     assert.deepEqual(await keys(), []);
     app.env.TORAN_OWNER_WHATSAPP = app.env.DEMO_WA_NUMBER;
-    assert.deepEqual(await keys(), ['of_number'], 'our number may not be the demo number');
+    assert.deepEqual(await keys(), [], 'our number may be the demo number too: one number for support and the demos');
     app.env.TORAN_OWNER_WHATSAPP = ENV.TORAN_OWNER_WHATSAPP;
     delete app.env.DEMO_WA_NUMBER;
     assert.deepEqual(await keys(), ['demo_number']);
@@ -130,7 +130,7 @@ test('the hero says only what was really read: the product count in any size, an
   assert.match(page(fake({ counts: counts(2431), pages: { shipping: true, returns: false, titles: [] } })), /על 2,431 המוצרים ועל עמוד המשלוחים\./);
   assert.match(page(fake({ counts: counts(3), pages: { shipping: false, returns: true, titles: [] } })), /על 3 המוצרים ועל עמוד ההחזרות\./);
   assert.match(page(fake({ counts: counts(1), pages: { shipping: false, returns: false, titles: [] } })), /עברנו על האתר שלכם ועל המוצר שבו\./);
-  assert.match(page(fake({}, 'Nike Store')), /<h1>בנינו ל־<span class="hl"><bdi>Nike Store<\/bdi><\/span> תורן לוואטסאפ<\/h1>/, 'the name under its marker stroke');
+  assert.match(page(fake({}, 'Nike Store')), /<h1>בנינו ל־<span class="hl"><bdi>Nike Store<\/bdi><\/span> תורן שעונה ללקוחות שלכם<\/h1>/, 'the name under its marker stroke');
   const all = page(fake());
   assert.ok(!/[—–]/.test(all.replace(/<title>[\s\S]*?<\/title>/, '')), 'no em or en dashes');
   assert.ok(!/בניתי|אני נתנאל|לכתוב לי/.test(all), 'OpenFrequency speaks as "we"');

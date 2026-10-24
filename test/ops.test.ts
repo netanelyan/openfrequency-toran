@@ -235,3 +235,70 @@ test('Teder not answering: the copy from before stays, and syncTeder says it fai
     await app.db.close();
   }
 });
+
+test("one number for us and the demos: the page's own messages reach the operator, not the demo's reply", async () => {
+  const { handleInbound } = await import('../src/channels/route.ts');
+  const { PAGE_ABOUT, PAGE_DOWN } = await import('../src/offer.ts');
+  const app = await testApp();
+  try {
+    app.env.DEMO_WA_NUMBER = app.env.TORAN_OWNER_WHATSAPP = '972500000999';
+    const id = await store(app, 'shop.example', { status: 'sent', approved_at: ago(10), page_built_at: ago(10), sent_at: ago(5) });
+    const down = await handleInbound(app, { from: '972500000321', text: `${PAGE_DOWN} לshop? https://toran.example/s/shop-x1`, id: 'p1', at: Date.now() });
+    assert.equal(down.action, 'takedown');
+    assert.match(down.reply!, /נוריד את העמוד/);
+    assert.ok((await app.db.one<any>('SELECT takedown_asked_at FROM stores WHERE id = $1', [id])).takedown_asked_at, 'Today lists it');
+    const about = await handleInbound(app, { from: '972500000322', text: `${PAGE_ABOUT} לshop: https://toran.example/s/shop-x1`, id: 'p2', at: Date.now() });
+    assert.equal(about.action, 'contact');
+    const c = await app.db.one<any>("SELECT c.handoffs FROM conversations c WHERE c.peer = '972500000322'");
+    assert.equal(c.handoffs, 1, 'handed to the operator, in the store\'s chat');
+    // Anything else without a code is still the demo's "press the button" answer.
+    assert.equal((await handleInbound(app, { from: '972500000323', text: 'היי, מה זה?', id: 'p3', at: Date.now() })).action, 'no_binding');
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('a demo asked for on the website goes out by itself once its page is public, once, inside the 23 hours', async () => {
+  const { discover } = await import('../src/leads/discover.ts');
+  const { ingestStore } = await import('../src/ingest/pack.ts');
+  const { buildPitch } = await import('../src/pitch/build.ts');
+  const { setOffer } = await import('../src/offer.ts');
+  const { deliverRequested } = await import('../src/ops/actions.ts');
+  const app = await testApp();
+  try {
+    Object.assign(app.env, { DEMO_WA_NUMBER: '972500000999', TORAN_OWNER_WHATSAPP: '972500000999', PUBLIC_BASE_URL: 'https://toran.example' });
+    await setOffer(app.db, { monthly: 199, vat: 'excluded', setup: 0, city: 'אשדוד' });
+    await discover(app.db, (async function* () { yield { url: 'https://kli-cheres.example/', source: 'seed', detail: {} }; })(), { fetcher: app.fetcher, limit: 1 });
+    const s = (await app.db.one<any>("SELECT id FROM stores WHERE domain = 'kli-cheres.example'"))!;
+    await app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-DDDDDD', 'https://kli-cheres.example/', 'kli-cheres.example', $1, $2)", [PHONE, ago(1)]);
+    assert.equal(await deliverRequested(app), 0, 'no page yet: nothing');
+    await ingestStore(app, s.id);
+    await buildPitch(app, s.id);
+    assert.ok((await app.db.one<any>('SELECT approved_at FROM stores WHERE id = $1', [s.id])).approved_at, 'nothing missing: the page approved itself');
+    assert.equal(await deliverRequested(app), 1);
+    const out = app.wa.outbox!.at(-1)!;
+    assert.equal(out.to, PHONE);
+    assert.match(out.text, /הדמו של תורן[^]*https:\/\/toran\.example\/s\//);
+    assert.equal(await deliverRequested(app), 0, 'once');
+    assert.ok((await app.db.one<any>('SELECT sent_at FROM stores WHERE id = $1', [s.id])).sent_at);
+    // Past the 23 hours it waits for the operator, who sends it from their own WhatsApp.
+    await app.db.query("UPDATE stores SET sent_at = NULL WHERE id = $1", [s.id]);
+    await app.db.query("UPDATE demo_requests SET claimed_at = now() - interval '25 hours'");
+    assert.equal(await deliverRequested(app), 0);
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('a demo asked for on the website with nothing to send is listed, with why', async () => {
+  const { stuckRequests } = await import('../src/ops/queue.ts');
+  const app = await testApp();
+  try {
+    await store(app, 'wix-shop.example', { platform: 'wix' });
+    await app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-EEEEEE', 'https://wix-shop.example/', 'wix-shop.example', $1, now()), ('REQ-FFFFFF', 'https://gone.example/', 'gone.example', '972500000331', now())", [PHONE]);
+    const s = await stuckRequests(app);
+    assert.deepEqual(s.map((x) => [x.domain, x.why]), [['wix-shop.example', 'האתר על Wix, ותורן בונה דמו רק לחנויות Shopify'], ['gone.example', 'לא הצלחנו לקרוא את האתר']]);
+  } finally {
+    await app.db.close();
+  }
+});

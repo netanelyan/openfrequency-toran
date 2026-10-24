@@ -56,7 +56,7 @@ test('the funnel: review, approve, send by hand, the one reminder (never on Shab
     assert.deepEqual((await ap.json()).ok, true);
     const lead = await (await s.get(`/lead/${id}`)).text();
     assert.match(lead, /id="first-msg"/);
-    assert.match(lead, /היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן לוואטסאפ/);
+    assert.match(lead, /היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן שעונה ללקוחות שלכם/);
     assert.match(lead, /אם זה לא רלוונטי, אפשר לענות &quot;לא&quot; ולא נכתוב שוב/);
     await s.post(`/lead/${id}/sent`, { _csrf: token });
     const st = await s.app.db.one<any>('SELECT status, sent_at, followup_due_at FROM stores WHERE id = $1', [id]);
@@ -86,7 +86,7 @@ test('the pitch page: noindex, the store\'s colours, the demo link with its code
     assert.match(String(r.headers.get('x-robots-tag')), /noindex/);
     const html = await r.text();
     assert.match(html, new RegExp(`wa\\.me/972500000999\\?text=${s.seeded.code}`));
-    assert.match(html, /<h1>בנינו ל<span class="hl"><bdi>כלי חרס של נורית<\/bdi><\/span> תורן לוואטסאפ<\/h1>/);
+    assert.match(html, /<h1>בנינו ל<span class="hl"><bdi>כלי חרס של נורית<\/bdi><\/span> תורן שעונה ללקוחות שלכם<\/h1>/);
     assert.match(html, /<dt>מוצרים<\/dt><dd>14<\/dd><\/div><div><dt>תמונות מוצרים<\/dt><dd>14<\/dd><\/div><div><dt>עמודי מידע<\/dt><dd>4<\/dd>/, 'the numbers come from the ingested store');
     assert.match(html, /עברנו על האתר שלכם, על 14 המוצרים ועל עמודי המשלוחים וההחזרות\./);
     assert.match(html, /<span class="num">199<\/span><span class="cur">₪<\/span><span class="per">לחודש<\/span>/);

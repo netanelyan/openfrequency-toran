@@ -21,7 +21,7 @@ export function pitchUrl(env: Record<string, string | undefined>, slug: string):
 export const le = (name: string) => `${/^[א-ת]/.test(name) ? 'ל' : 'ל־'}${name}`;
 
 export function firstMessage(o: { storeName: string; url: string }): string {
-  return `היי, כאן OpenFrequency. בנינו ${le(o.storeName)} תורן לוואטסאפ. הוא עונה ללקוחות על מחירים ומלאי לפי מה שכתוב באתר שלכם, ואפשר לנסות אותו עכשיו מהטלפון.
+  return `היי, כאן OpenFrequency. בנינו ${le(o.storeName)} תורן שעונה ללקוחות שלכם על מחירים ומלאי, לפי מה שכתוב באתר שלכם. אפשר לנסות אותו עכשיו מהטלפון.
 ${o.url}
 
 אם זה לא רלוונטי, אפשר לענות "לא" ולא נכתוב שוב.`;
@@ -40,6 +40,6 @@ export const followupDue = (sentAt: number) => notOnShabbat(sentAt + FOLLOWUP_DA
 /** Where the owner sends it: the store's WhatsApp, else its email. The link opens the chat or the mail; the text is pasted by hand. */
 export function contactTarget(s: { contact_whatsapp: string | null; contact_email: string | null; name?: string | null }): { kind: 'whatsapp' | 'email' | null; href: string | null; label: string } {
   if (s.contact_whatsapp) return { kind: 'whatsapp', href: `https://wa.me/${s.contact_whatsapp}`, label: 'להעתיק ולפתוח וואטסאפ' };
-  if (s.contact_email) return { kind: 'email', href: `mailto:${s.contact_email}?subject=${encodeURIComponent(`תורן לוואטסאפ ${le(s.name || 'החנות')}`)}`, label: 'להעתיק ולפתוח מייל' };
+  if (s.contact_email) return { kind: 'email', href: `mailto:${s.contact_email}?subject=${encodeURIComponent(`תורן ${le(s.name || 'החנות')}`)}`, label: 'להעתיק ולפתוח מייל' };
   return { kind: null, href: null, label: 'להעתיק' };
 }

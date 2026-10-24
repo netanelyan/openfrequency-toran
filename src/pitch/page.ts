@@ -3,7 +3,7 @@ import { iconLinks, ofMark, toranMark } from '../brand.ts';
 import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
 import { esc } from '../web/ui.ts';
 import { money } from '../agent/tools.ts';
-import { getOffer, ofWhatsapp, type Offer } from '../offer.ts';
+import { getOffer, ofWhatsapp, PAGE_ABOUT, PAGE_DOWN, type Offer } from '../offer.ts';
 import { pitchUrl } from '../outreach.ts';
 import { shortTitle, type SampleChat } from './build.ts';
 import { autoApprove, isPublic, pitchGaps, type Gap } from './ready.ts';
@@ -139,8 +139,9 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
   const demo = waLink(env, d.store.demo_code, nameText);
   const of = ofWhatsapp(env);
   const url = pitchUrl(env, d.store.slug);
-  const ofLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`היי, לגבי העמוד שהכנתם ${le(nameText)}${nameText}`)}` : null;
-  const downLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`היי, אפשר להוריד את העמוד שהכנתם ${le(nameText)}${nameText}? ${url}`)}` : null;
+  // Both messages end with the page's link: on the demo number (when it is also ours) the router knows the store by it.
+  const ofLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`${PAGE_ABOUT} ${le(nameText)}${nameText}: ${url}`)}` : null;
+  const downLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`${PAGE_DOWN} ${le(nameText)}${nameText}? ${url}`)}` : null;
   const n = d.counts.products;
   const initial = (cls = 'initial') => `<span class="${cls}" aria-hidden="true">${esc(initialOf(d.name))}</span>`;
   const currency = d.store.config?.currency || 'ILS';
@@ -188,7 +189,7 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#f4f4f6">
 <meta name="robots" content="noindex, nofollow, noarchive">
-<title>בנינו ${esc(le(nameText))}${esc(nameText)} תורן לוואטסאפ</title>
+<title>בנינו ${esc(le(nameText))}${esc(nameText)} תורן שעונה ללקוחות שלכם</title>
 <meta name="description" content="${esc(read)}">
 <link rel="preload" href="/static/fonts/heebo-hebrew.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/brand.css">
@@ -207,7 +208,7 @@ ${iconLinks()}
   <div class="lead${d.shelf.length ? ' with-shelf' : ''}">
   <section class="hero">
     <div class="marks">${initial()}${toranMark(64, { label: 'תורן' })}</div>
-    <h1>בנינו ${leName} תורן לוואטסאפ</h1>
+    <h1>בנינו ${leName} תורן שעונה ללקוחות שלכם</h1>
     <p class="lede">${esc(read)} אפשר לכתוב לו עכשיו כמו לקוח ולראות מה הוא עונה.</p>
     ${readSec}
     <div class="read-cta">
