@@ -17,7 +17,7 @@ export type Template = { name: string; body: string; example: string[]; buttons?
 export const TEMPLATES: Record<string, Template> = {
   teder_posts_ready: {
     name: 'teder_posts_ready',
-    body: 'יש בטדר {{1}} לאישור שלכם. כתבו "הצג" ואשלח לכאן את מה שמחכה, עם מספרים.',
+    body: 'יש בתדר {{1}} לאישור שלכם. כתבו "הצג" ואשלח לכאן את מה שמחכה, עם מספרים.',
     example: ['3 מצגות חדשות'],
     buttons: ['הצג'],
   },
@@ -35,12 +35,12 @@ export const TEMPLATES: Record<string, Template> = {
   },
   teder_quota_low: {
     name: 'teder_quota_low',
-    body: 'בטדר נשארו לכם החודש {{1}}. בתחילת החודש הבא המונה מתחיל מחדש.',
+    body: 'בתדר נשארו לכם החודש {{1}}. בתחילת החודש הבא המונה מתחיל מחדש.',
     example: ['8 מתוך 40 הצעות לפוסטים'],
   },
   teder_weekly_summary: {
     name: 'teder_weekly_summary',
-    body: 'הסיכום השבועי מטדר, {{1}}: נוצרו {{2}} פוסטים, אישרתם {{3}} ועלו {{4}}. כתבו "סטטוס" ואשלח את כל הפרטים.',
+    body: 'הסיכום השבועי מתדר, {{1}}: נוצרו {{2}} פוסטים, אישרתם {{3}} ועלו {{4}}. כתבו "סטטוס" ואשלח את כל הפרטים.',
     example: ['18.10 עד 24.10', '9', '7', '6'],
     buttons: ['סטטוס'],
   },

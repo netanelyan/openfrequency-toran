@@ -114,7 +114,7 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
   const tbase = `removed_at IS NULL AND won_at IS NULL AND ${open()}`;
   for (const d of await db.query<any>(`SELECT * FROM teder_leads WHERE ${tbase} AND page_url IS NOT NULL AND sent_at IS NULL ORDER BY approved_at`)) {
     const name = d.name || d.domain;
-    items.push({ key: `teder:${d.id}`, product: 'teder', id: String(d.id), reason: 'asked_teder', rank: 85, name, domain: d.domain, why: 'ביקשו דמו של טדר באתר, המצגת מוכנה', message: tederFirst({ storeName: name, url: d.page_url }), target: waTarget(d.whatsapp), direct: false, mark: 'sent', page: d.page_url, at: d.approved_at });
+    items.push({ key: `teder:${d.id}`, product: 'teder', id: String(d.id), reason: 'asked_teder', rank: 85, name, domain: d.domain, why: 'ביקשו דמו של תדר באתר, המצגת מוכנה', message: tederFirst({ storeName: name, url: d.page_url }), target: waTarget(d.whatsapp), direct: false, mark: 'sent', page: d.page_url, at: d.approved_at });
   }
   for (const d of await db.query<any>(`SELECT * FROM teder_leads WHERE ${tbase} AND page_url IS NOT NULL AND sent_at IS NOT NULL AND reminded_at IS NULL AND reminder_due_at <= now() ORDER BY opens = 0, reminder_due_at`)) {
     const name = d.name || d.domain;

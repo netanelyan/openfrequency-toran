@@ -147,7 +147,7 @@ export async function fakeTeder() {
     posts,
     calls,
     refused,
-    add: (p: Omit<FakePost, 'status'> & { status?: string }) => posts.set(p.id, { status: 'queued', slides: [['כותרת', 'שורה'], ['שקופית שתיים', 'עוד שורה']], caption: `הכיתוב של ${p.id} #טדר`, ...p }),
+    add: (p: Omit<FakePost, 'status'> & { status?: string }) => posts.set(p.id, { status: 'queued', slides: [['כותרת', 'שורה'], ['שקופית שתיים', 'עוד שורה']], caption: `הכיתוב של ${p.id} #תדר`, ...p }),
     set quiet(q: { now: boolean; until: string | null; reason: string | null }) {
       quiet = q;
     },

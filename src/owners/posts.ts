@@ -36,7 +36,7 @@ export function numbered(posts: TederPost[], head: string, hint: string | null):
 
 export const HINT_MANY = 'אפשר לענות לי במילים שלכם, למשל: אשר את 1 ו-3, את 2 תעשה קצר יותר.';
 export const HINT_ONE = 'כדי לאשר כתבו "אשר", או כתבו לי מה לשנות.';
-export const UNREACHABLE = 'לא הצלחתי להגיע לטדר כרגע, אז לא שיניתי כלום. נסו שוב עוד כמה דקות.';
+export const UNREACHABLE = 'לא הצלחתי להגיע לתדר כרגע, אז לא שיניתי כלום. נסו שוב עוד כמה דקות.';
 
 /** The posts waiting for approval, now, numbered and kept as the owner's list. */
 export async function showPending(c: PostsCtx): Promise<Done & { posts: TederPost[] | null }> {
@@ -52,7 +52,7 @@ export async function showPending(c: PostsCtx): Promise<Done & { posts: TederPos
 /** One post's images and caption, the way it goes up: the images in order, then the caption alone to copy. */
 export async function sendBundle(c: PostsCtx, n: number, item: ListItem): Promise<Done> {
   const r = await c.teder.bundle(item.id);
-  if (!r.ok) return { lines: [r.status === 404 ? `את ${n} לא מצאתי בטדר.` : UNREACHABLE], parts: [] };
+  if (!r.ok) return { lines: [r.status === 404 ? `את ${n} לא מצאתי בתדר.` : UNREACHABLE], parts: [] };
   await audit(c.app.db, { actor: c.phone ? `wa:${c.phone}` : 'teder_event', action: 'teder_bundle', detail: { workspace: c.workspaceId, post: item.id } });
   const images = r.body.images || [];
   return {
@@ -67,7 +67,7 @@ export async function sendBundle(c: PostsCtx, n: number, item: ListItem): Promis
 
 /** The status in the owner's words, from Teder's numbers only. */
 export function statusLines(s: TederStatus): string[] {
-  const out = [s.pending ? (s.pending === 1 ? 'בטדר מחכה לאישור שלכם מצגת אחת.' : `בטדר מחכות לאישור שלכם ${s.pending} מצגות.`) : 'בטדר אין מצגות שמחכות לאישור.'];
+  const out = [s.pending ? (s.pending === 1 ? 'בתדר מחכה לאישור שלכם מצגת אחת.' : `בתדר מחכות לאישור שלכם ${s.pending} מצגות.`) : 'בתדר אין מצגות שמחכות לאישור.'];
   if (s.approvedThisWeek != null && s.publishedThisWeek != null) out.push(`השבוע אישרתם ${s.approvedThisWeek} ועלו ${s.publishedThisWeek}.`);
   if (s.quota) out.push(`החודש השתמשתם ב-${s.quota.suggested.used} מתוך ${s.quota.suggested.limit} הצעות לפוסטים, וב-${s.quota.redos.used} מתוך ${s.quota.redos.limit} כתיבות מחדש.`);
   return out;
@@ -75,7 +75,7 @@ export function statusLines(s: TederStatus): string[] {
 
 export async function status(c: PostsCtx): Promise<Done> {
   const r = await c.teder.status();
-  return { lines: r.ok ? statusLines(r.body) : ['לא הצלחתי להגיע לטדר כרגע. נסו שוב עוד כמה דקות.'], parts: [] };
+  return { lines: r.ok ? statusLines(r.body) : ['לא הצלחתי להגיע לתדר כרגע. נסו שוב עוד כמה דקות.'], parts: [] };
 }
 
 /**
@@ -102,17 +102,17 @@ export async function act(c: PostsCtx, items: ListItem[], intents: Intent[]): Pr
       const r = await c.teder.approve(item.id);
       await log('teder_approve', item, { ok: r.ok, status: r.status, error: r.ok ? null : r.error });
       if (r.ok) approved.push(it.n);
-      else lines.push(r.status === 409 ? `את ${it.n} כבר אי אפשר לאשר, היא לא מחכה לאישור.` : r.status === 404 ? `את ${it.n} לא מצאתי בטדר.` : `את ${it.n} לא אישרתי, כי לא הצלחתי להגיע לטדר. נסו שוב עוד כמה דקות.`);
+      else lines.push(r.status === 409 ? `את ${it.n} כבר אי אפשר לאשר, היא לא מחכה לאישור.` : r.status === 404 ? `את ${it.n} לא מצאתי בתדר.` : `את ${it.n} לא אישרתי, כי לא הצלחתי להגיע לתדר. נסו שוב עוד כמה דקות.`);
       continue;
     }
     if (it.kind === 'reject') {
       const r = await c.teder.reject(item.id, it.reason, it.note);
       await log('teder_reject', item, { ok: r.ok, reason: it.reason, note: it.note, status: r.status, error: r.ok ? null : r.error, replacement: r.ok ? r.body.replacement?.id ?? null : null });
-      if (!r.ok) lines.push(r.status === 409 ? `את ${it.n} כבר אי אפשר להחזיר, היא לא מחכה לאישור.` : r.status === 404 ? `את ${it.n} לא מצאתי בטדר.` : `את ${it.n} לא החזרתי, כי לא הצלחתי להגיע לטדר. נסו שוב עוד כמה דקות.`);
+      if (!r.ok) lines.push(r.status === 409 ? `את ${it.n} כבר אי אפשר להחזיר, היא לא מחכה לאישור.` : r.status === 404 ? `את ${it.n} לא מצאתי בתדר.` : `את ${it.n} לא החזרתי, כי לא הצלחתי להגיע לתדר. נסו שוב עוד כמה דקות.`);
       else if (r.body.replacement) lines.push(`את ${it.n} החזרתי לכתיבה מחדש${it.note ? ` עם ההערה "${it.note}"` : ''}. הגרסה החדשה תגיע לאישור כשתהיה מוכנה.`);
       // No replacement: the month's redos are used up, or Teder does not write one. Either way the owner hears that the
       // change they asked for will not come back as a new version.
-      else lines.push(`את ${it.n} דחיתי.${r.body.redosLeft === 0 ? ' הכתיבות מחדש של החודש נגמרו, אז לא תיכתב במקומה גרסה חדשה.' : it.note ? ' טדר לא כותב לה גרסה חדשה, אז את מה שביקשתם לשנות אפשר לתקן במצגת הבאה.' : ''}`);
+      else lines.push(`את ${it.n} דחיתי.${r.body.redosLeft === 0 ? ' הכתיבות מחדש של החודש נגמרו, אז לא תיכתב במקומה גרסה חדשה.' : it.note ? ' תדר לא כותב לה גרסה חדשה, אז את מה שביקשתם לשנות אפשר לתקן במצגת הבאה.' : ''}`);
       continue;
     }
     const r = await c.teder.edit(item.id, it.slide, it.line, it.text);
@@ -122,10 +122,10 @@ export async function act(c: PostsCtx, items: ListItem[], intents: Intent[]): Pr
       if (r.body.slide?.image?.url) parts.push({ media: r.body.slide.image.url, caption: `${it.n}, שקופית ${it.slide}` });
     } else if (r.status === 422) {
       const problems = Array.isArray(r.body?.problems) ? r.body.problems.map(String).slice(0, 4) : [];
-      lines.push(`השינוי ב-${it.n} לא עבר את הבדיקות של טדר, אז לא שיניתי כלום${problems.length ? `: ${problems.join('; ')}` : '.'}`);
+      lines.push(`השינוי ב-${it.n} לא עבר את הבדיקות של תדר, אז לא שיניתי כלום${problems.length ? `: ${problems.join('; ')}` : '.'}`);
     } else if (r.status === 400) lines.push(`ב-${it.n}, בשקופית ${it.slide}, אין שורה ${it.line}.`);
     else if (r.status === 409) lines.push(`את ${it.n} כבר אי אפשר לשנות, היא לא מחכה לאישור.`);
-    else lines.push(r.status === 404 ? `את ${it.n} לא מצאתי בטדר.` : UNREACHABLE);
+    else lines.push(r.status === 404 ? `את ${it.n} לא מצאתי בתדר.` : UNREACHABLE);
   }
   if (approved.length) lines.unshift(`אישרתי את ${andList(approved)}.`);
   return { lines, parts };

@@ -99,7 +99,7 @@ const FILLER = /^(?:תודה(?: רבה)?|בבקשה|היי|הי|אהלן|יאל�
 const NEGATION = /(?<![֐-׿])(?:אל|אף|אסור)\s/u;
 const QUESTION = /\?|^(?:למה|איך|כמה|מתי|איפה|האם|מי|מה)(?![֐-׿])/u;
 const SHOW = /^(?:הצג|תציג|תציגי|להציג|תראה לי|תראי לי|מה מחכה(?: לי)?(?: לאישור)?|מה ממתין(?: לאישור)?|מה יש לאישור|תשלח שוב(?: את המצגות| את הרשימה)?)[.!?\s]*$/u;
-const STATUS = /^(?:מה )?ה?סטטוס(?: בטדר| של טדר)?[.!?\s]*$/u;
+const STATUS = /^(?:מה )?ה?סטטוס(?: בתדר| של תדר)?[.!?\s]*$/u;
 
 type Act = 'approve' | 'reject' | 'bundle' | 'skip';
 type Clause = { text: string; act: Act | null; unclear: boolean; reason: Reason | null; t: Targets; note: string; bare: boolean };

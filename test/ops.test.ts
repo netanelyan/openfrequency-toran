@@ -80,7 +80,7 @@ test('who to write to today, in order: tried the demo, asked on the website, the
     assert.equal(askedItem.target.href, `https://wa.me/${PHONE}`);
     assert.match(askedItem.message!, /הדמו של תורן ל־asked מוכן/);
     assert.match(q.items[0].message!, /ראינו שניסיתם את הדמו/, 'tried the demo: the question takes the reminder\'s place');
-    assert.match(q.items[1].message!, /ביקשתם באתר דמו של טדר[^]*https:\/\/teder\.example\/s\/tb-x1/);
+    assert.match(q.items[1].message!, /ביקשתם באתר דמו של תדר[^]*https:\/\/teder\.example\/s\/tb-x1/);
     assert.equal(q.items[3].target.kind, 'email');
   } finally {
     await svc.close();
