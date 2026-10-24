@@ -635,3 +635,9 @@ body.ro form[method="post"] { display: none; }
 .assistant .pending p { display: flex; gap: 8px; align-items: flex-start; flex: 1 1 260px; }
 .assistant .starters { flex-wrap: wrap; gap: 6px; }
 .assistant .starters form { margin: 0; }
+
+/* The customer's pages (pages/customer.ts): the month's number inside a panel, the plan's bar, plain lists. */
+.kpi.lead.flat { background: none; box-shadow: none; padding: 0; }
+.vbar.wide { width: 160px; margin-inline-end: 8px; }
+.panel ul.m0 { padding-inline-start: 20px; font-size: 14px; line-height: 1.7; }
+.keys li .end { flex: none; }

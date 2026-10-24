@@ -21,32 +21,33 @@ async function twoWorkspaces() {
 }
 
 const notes = async (s: Awaited<ReturnType<typeof serve>>, id: number) => (await s.app.db.one<{ notes: string | null }>('SELECT notes FROM stores WHERE id = $1', [id]))!.notes;
+const answers = async (s: Awaited<ReturnType<typeof serve>>, id: number) => (await s.app.db.query<{ question: string; answer: string }>('SELECT question, answer FROM faqs WHERE store_id = $1 AND answer IS NOT NULL ORDER BY id', [id])).map((f) => `${f.question}=${f.answer}`);
 
 test('workspace A sees and changes nothing of workspace B, on every page and action', async () => {
   const { s, a, b, chatA, chatB } = await twoWorkspaces();
   try {
     s.as(s.accounts.session(customer(1)).cookie);
-    const leads = await (await s.get('/leads?all=1')).text();
-    assert.match(leads, /kli-cheres\.example/);
-    assert.ok(!/shaked-jewelry\.example/.test(leads), 'B is not in A\'s list');
-    assert.ok(!/ein-hakore\.example/.test(leads), 'the operator\'s own leads (no workspace) are not in A\'s list');
-    assert.equal((await s.get(`/lead/${a}`)).status, 200);
-    for (const p of [`/lead/${b}`, `/lead/${b}/review`, `/chat/${chatB}`]) assert.equal((await s.get(p)).status, 404, p);
+    // The operator's pages are not a customer's (pages/customer.ts is): each sends them to their own.
+    for (const p of ['/leads?all=1', '/review', '/followups']) assert.equal((await s.get(p)).headers.get('location'), '/', p);
+    assert.equal((await s.get(`/lead/${a}`)).headers.get('location'), `/lead/${a}/knowledge`);
+    const know = await (await s.get(`/lead/${a}/knowledge`)).text();
+    assert.match(know, /kli-cheres\.example/);
+    for (const p of [`/lead/${b}`, `/lead/${b}/review`, `/lead/${b}/knowledge`, `/chat/${chatB}`]) assert.equal((await s.get(p)).status, 404, p);
     assert.equal((await s.get(`/chat/${chatA}`)).status, 200);
-    assert.ok(!/שאלה של חנות ב/.test(await (await s.get('/chats')).text()), 'B\'s chat is not in A\'s chats');
+    for (const p of ['/', '/chats', '/plan', '/knowledge', '/settings']) assert.ok(!/שאלה של חנות ב|shaked|שקד|ein-hakore/.test(await (await s.get(p)).text()), `nothing of B or of the operator's leads on ${p}`);
     assert.ok(!/st-\d+/.test((await (await s.get('/static/stores.css')).text()).replace(new RegExp(`\\.st-${a}\\{`), '')), 'only A\'s colours');
-    assert.ok(!/shaked|שקד/.test(await (await s.get('/review')).text()), 'B\'s page is not in A\'s review queue');
-    const token = await s.csrf(`/lead/${a}`);
+    const token = await s.csrf(`/lead/${a}/knowledge`);
     assert.ok(token);
-    const r = await s.post(`/lead/${b}/notes`, { _csrf: token, notes: 'written by A' });
-    assert.equal(r.status, 404);
-    assert.equal(await notes(s, b), 'B notes', 'A changed nothing of B');
-    await s.post('/review/approve-all', { _csrf: token, ids: String(b) });
-    assert.equal((await s.app.db.one<any>('SELECT approved_at FROM stores WHERE id = $1', [b])).approved_at, null, 'approve-all skips B\'s ids');
-    assert.equal((await s.post('/settings/offer', { _csrf: token, monthly: '1' })).status, 403, 'the offer is the operator\'s');
+    const fb = (await s.app.db.one<{ id: number }>("INSERT INTO faqs (store_id, question, answer) VALUES ($1, 'של ב?', 'כן') RETURNING id", [b]))!.id;
+    assert.equal((await s.post(`/lead/${b}/faq/${fb}`, { _csrf: token, answer: 'written by A' })).status, 404);
+    assert.equal((await s.post(`/lead/${b}/faq`, { _csrf: token, question: 'written by A?', answer: 'x' })).status, 404);
+    assert.deepEqual(await answers(s, b), ['של ב?=כן'], 'A changed nothing of B');
+    // Selling to a store is the operator's, on A's own store too.
+    for (const p of [`/lead/${a}/notes`, `/lead/${a}/status`, `/lead/${a}/skip`, `/lead/${a}/approve`, `/lead/${a}/plan`, '/review/approve-all', '/settings/offer']) assert.equal((await s.post(p, { _csrf: token, notes: 'A notes', status: 'paid', plan: 'big', ids: String(a), monthly: '1' })).status, 403, p);
+    assert.equal(await notes(s, a), null);
     assert.ok(!/action="\/settings\/discover"/.test(await (await s.get('/settings')).text()), 'no lead discovery for a customer');
-    assert.equal((await s.post(`/lead/${a}/notes`, { _csrf: token, notes: 'A notes' })).status, 303);
-    assert.equal(await notes(s, a), 'A notes', 'A changes its own');
+    assert.equal((await s.post(`/lead/${a}/faq`, { _csrf: token, question: 'אפשר לאסוף?', answer: 'כן, מהמחסן באשדוד' })).status, 303);
+    assert.deepEqual(await answers(s, a), ['אפשר לאסוף?=כן, מהמחסן באשדוד'], 'A changes its own');
     // The owner's assistant (pages/assistant.ts): B's is not A's to read, to write to, or to give a number to.
     assert.equal((await s.get(`/lead/${a}/assistant`)).status, 200);
     assert.equal((await s.get(`/lead/${b}/assistant`)).status, 404);
@@ -71,15 +72,15 @@ test('a POST right after signing out is refused, even while pages may still use 
   try {
     const me = s.accounts.session(customer(1));
     s.as(me.cookie);
-    const token = await s.csrf(`/lead/${a}`);
+    const token = await s.csrf(`/lead/${a}/knowledge`);
     assert.ok(token);
     s.accounts.answer(me.sid, null); // signed out at accounts
-    const r = await s.post(`/lead/${a}/notes`, { _csrf: token, notes: 'after sign-out' });
+    const r = await s.post(`/lead/${a}/faq`, { _csrf: token, question: 'after sign-out?', answer: 'x' });
     assert.equal(r.status, 303);
     assert.match(String(r.headers.get('location')), /^https:\/\/accounts\.test\/login\?next=/);
-    const ajax = await s.post(`/lead/${a}/notes`, { _csrf: token, notes: 'after sign-out' }, { 'x-tn-ajax': '1' });
+    const ajax = await s.post(`/lead/${a}/faq`, { _csrf: token, question: 'after sign-out?', answer: 'x' }, { 'x-tn-ajax': '1' });
     assert.equal(ajax.status, 401);
-    assert.notEqual(await notes(s, a), 'after sign-out');
+    assert.deepEqual(await answers(s, a), []);
   } finally {
     await s.close();
   }
@@ -89,11 +90,16 @@ test('view-as is read-only: the pages open with the banner, every POST is refuse
   const { s, a } = await twoWorkspaces();
   try {
     s.as(s.accounts.session(viewingAs(1)).cookie);
-    const page = await (await s.get(`/lead/${a}`)).text();
-    assert.match(page, /class="viewas"/);
-    assert.match(page, /<body class="ro">/);
-    const token = await s.csrf(`/lead/${a}`);
-    for (const p of [`/lead/${a}/notes`, `/lead/${a}/skip`, `/lead/${a}/status`]) assert.equal((await s.post(p, { _csrf: token, notes: 'x', status: 'paid' })).status, 403, p);
+    for (const p of ['/', '/chats', `/lead/${a}/knowledge`, '/plan', '/settings']) {
+      const page = await (await s.get(p)).text();
+      assert.match(page, /class="viewas"/, p);
+      assert.match(page, /<body class="ro">/, p);
+      assert.match(page, /href="\/knowledge"/, `${p}: the customer's menu, as they see it`);
+      assert.ok(!/href="\/leads"/.test(page), `${p}: not the operator's menu`);
+    }
+    const token = await s.csrf('/');
+    for (const p of [`/lead/${a}/faq`, `/lead/${a}/notes`, `/lead/${a}/skip`, `/lead/${a}/status`]) assert.equal((await s.post(p, { _csrf: token, question: 'x?', answer: 'x', notes: 'x', status: 'paid' })).status, 403, p);
+    assert.deepEqual(await answers(s, a), []);
     assert.notEqual(await notes(s, a), 'x');
     assert.notEqual((await s.app.db.one<any>('SELECT status FROM stores WHERE id = $1', [a])).status, 'skipped');
   } finally {
