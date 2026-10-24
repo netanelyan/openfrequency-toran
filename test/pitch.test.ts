@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { seedDemo } from '../src/demoSeed.ts';
 import { getOffer, setOffer, priceSentence, OFFER_DEFAULT } from '../src/offer.ts';
 import { pitchGaps } from '../src/pitch/ready.ts';
-import { pitchData, pitchPage, shelfRows, themeCss, type PitchData } from '../src/pitch/page.ts';
+import { pitchData, pitchPage, priceFigure, shelfRows, themeCss, type PitchData } from '../src/pitch/page.ts';
 import { buildPitch } from '../src/pitch/build.ts';
 import { contrast, displayName } from '../src/ingest/brand.ts';
 import { testApp } from './helpers.ts';
@@ -87,7 +87,8 @@ test('the owner\'s preview of a held page shows each gap as a visible placeholde
     const html = pitchPage(d, { env: app.env, owner: true });
     assert.match(html, /class="held"/);
     assert.match(html, /המחיר עוד לא נקבע/);
-    assert.match(html, /<mark class="ph" dir="rtl">\[המחיר\] ₪<\/mark> לחודש, <mark class="ph" dir="rtl">\[כולל או לא כולל מע״מ\]<\/mark>/);
+    assert.match(html, /<p class="figure"><mark class="ph" dir="rtl">\[המחיר\]<\/mark><span class="per">לחודש<\/span><\/p>/);
+    assert.match(html, /<p class="price-notes"><mark class="ph" dir="rtl">\[כולל או לא כולל מע״מ\]<\/mark>/);
   } finally {
     await app.db.close();
   }
@@ -192,4 +193,11 @@ test('rebuilding never fills a gap with a guess: the page keeps waiting until th
   } finally {
     await app.db.close();
   }
+});
+
+test('the price card: the figure, VAT and the setup fee under it, and what the price includes beside it', () => {
+  const card = priceFigure({ monthly: 449, vat: 'excluded', setup: 990, city: 'אשדוד' }, null);
+  assert.match(card, /<span class="num">449<\/span><span class="cur">₪<\/span><span class="per">לחודש<\/span>/);
+  assert.match(card, /<p class="price-notes">לא כולל מע״מ\. בחודש הראשון יש גם 990 ₪ דמי הקמה, פעם אחת\.<\/p>/);
+  assert.match(priceFigure({ monthly: 449, vat: 'included', setup: 0, city: 'אשדוד' }, null), /כולל מע״מ\. אין דמי הקמה\./);
 });

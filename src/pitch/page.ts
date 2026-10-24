@@ -3,7 +3,7 @@ import { iconLinks, ofMark, toranMark } from '../brand.ts';
 import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
 import { esc } from '../web/ui.ts';
 import { money } from '../agent/tools.ts';
-import { getOffer, ofWhatsapp, priceSentence, type Offer } from '../offer.ts';
+import { getOffer, ofWhatsapp, type Offer } from '../offer.ts';
 import { pitchUrl } from '../outreach.ts';
 import { shortTitle, type SampleChat } from './build.ts';
 import { isPublic, pitchGaps, type Gap } from './ready.ts';
@@ -110,6 +110,19 @@ export function waLink(env: Record<string, string | undefined>, code: string, na
   return `https://wa.me/${num}?text=${encodeURIComponent(`${code} היי, באתי לנסות את תורן של ${name}`)}`;
 }
 
+/**
+ * The price on the page's price card, as openfrequency.co.il shows it: the monthly figure large, and under it VAT and
+ * the setup fee. A part not decided yet is a [placeholder] in the owner's view (`ph`); the public page is held back
+ * until all of it is set (pitch/ready.ts), so `ph` null never meets a gap.
+ */
+export function priceFigure(o: Offer, ph: ((label: string) => string) | null): string {
+  const gap = (label: string) => (ph ? ph(label) : '');
+  const figure = o.monthly != null && o.monthly > 0 ? `<span class="num">${esc(o.monthly.toLocaleString('he-IL'))}</span><span class="cur">₪</span>` : gap('[המחיר]');
+  const vat = o.vat === 'included' ? 'כולל מע״מ.' : o.vat === 'excluded' ? 'לא כולל מע״מ.' : gap('[כולל או לא כולל מע״מ]');
+  const setup = o.setup == null ? gap('[דמי הקמה, אם יש]') : o.setup > 0 ? `בחודש הראשון יש גם ${esc(`${o.setup.toLocaleString('he-IL')} ₪`)} דמי הקמה, פעם אחת.` : 'אין דמי הקמה.';
+  return `<p class="figure">${figure}<span class="per">לחודש</span></p>\n        <p class="price-notes">${vat} ${setup}</p>`;
+}
+
 function bubble(m: { role: string; text: string }) {
   const text = esc(m.text).replace(/(https?:\/\/[^\s<]+)/g, '<span class="lnk" dir="ltr">$1</span>').replace(/\n/g, '<br>');
   return `<div class="msg ${m.role === 'agent' ? 's' : 'c'}"><p>${text}</p></div>`;
@@ -212,22 +225,25 @@ ${iconLinks()}
   </section>
   <p class="caption">את השאלות כתבנו אנחנו. התשובות הן מה שתורן ענה באמת, ולא שינינו בהן מילה.</p>
 
-  <section class="if" data-depth="50">
-    <h2>אם תחברו אותו למספר של החנות</h2>
-    <ul>
-      <li>לקוחות יקבלו תשובות כאלה גם כשאתם באמצע יום עמוס, או כבר ישנים.</li>
-      <li>שאלה שהוא לא יודע לענות עליה מגיעה אליכם בוואטסאפ. עונים לו פעם אחת, ובפעם הבאה הוא כבר יודע.</li>
-      <li>מי שהסכים לקבל מכם הודעות יקבל תזכורת כשהוא משאיר מוצרים בעגלה, ואחרי שהוא מזמין, לינק למעקב אחרי המשלוח.</li>
-    </ul>
-  </section>
-
-  <section class="glass note" data-depth="75">
-    <p>את תורן בונים אצלנו ב־OpenFrequency. אם בא לכם להפעיל אותו על המספר האמיתי, ${priceSentence(d.offer, owner ? ph : (s) => esc(s), esc)} בשבועיים הראשונים אנחנו קוראים איתכם את השיחות ומתקנים מה שצריך.</p>
-    <p>ואם זה לא בשבילכם, תכתבו לנו ונוריד את העמוד.</p>
-    <div class="btns">
-      ${greenBtn('לכתוב לתורן')}
-      ${ofLink ? `<a class="grey" href="${esc(ofLink)}" rel="noopener">לכתוב לנו</a>` : `<span class="grey off">${owner ? ph('[המספר של OpenFrequency]') : 'לכתוב לנו'}</span>`}
+  <section class="price" data-depth="50" aria-labelledby="price-h">
+    <h2 id="price-h">אם תחברו אותו למספר של החנות</h2>
+    <div class="glass price-card">
+      <div class="price-main">
+        <p class="price-name">${toranMark(36, { label: null })}<b>תורן</b></p>
+        ${priceFigure(d.offer, owner ? ph : null)}
+        ${greenBtn('לכתוב לתורן')}
+      </div>
+      <div class="price-incl">
+        <h3>מה כלול במחיר</h3>
+        <ul class="checks">
+          <li>לקוחות יקבלו תשובות כאלה גם כשאתם באמצע יום עמוס, או כבר ישנים.</li>
+          <li>שאלה שהוא לא יודע לענות עליה מגיעה אליכם בוואטסאפ. עונים לו פעם אחת, ובפעם הבאה הוא כבר יודע.</li>
+          <li>מי שהסכים לקבל מכם הודעות יקבל תזכורת כשהוא משאיר מוצרים בעגלה, ואחרי שהוא מזמין, לינק למעקב אחרי המשלוח.</li>
+          <li>בשבועיים הראשונים אנחנו קוראים איתכם את השיחות ומתקנים מה שצריך.</li>
+        </ul>
+      </div>
     </div>
+    <p class="after">ואם זה לא בשבילכם, תכתבו לנו ונוריד את העמוד. ${ofLink ? `<a class="grey sm" href="${esc(ofLink)}" rel="noopener">לכתוב לנו</a>` : `<span class="grey sm off">${owner ? ph('[המספר של OpenFrequency]') : 'לכתוב לנו'}</span>`}</p>
   </section>
 
   <footer class="foot" data-depth="100">

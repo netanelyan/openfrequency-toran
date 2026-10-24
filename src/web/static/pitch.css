@@ -168,20 +168,30 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 .msgs .empty { margin: 0; text-align: center; color: var(--ink-3); }
 .caption { font-size: 13px; color: var(--ink-3); text-align: center; margin: 12px 8px 0; }
 
-/* if they connect it */
-.if { padding: 40px 4px 8px; }
-.if h2 { font-size: 24px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; margin: 0 0 14px; }
-.if ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+/* if they connect it: the price on one card, as openfrequency.co.il shows it. The figure, VAT and the setup fee and
+   the way in on a pale Toran green, and beside them what the price includes, each line after a check. */
+.price { padding: 40px 0 8px; }
+.price h2 { font-size: 24px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; margin: 0 0 14px; padding: 0 4px; }
+.price-card { display: grid; overflow: hidden; }
+.price-main { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 24px 22px; background: color-mix(in srgb, var(--green) 9%, rgba(255, 255, 255, 0.5)); }
+.price-name { display: inline-flex; align-items: center; gap: 10px; margin: 0; font-size: 20px; }
+.figure { display: flex; align-items: baseline; gap: 6px; margin: 4px 0 0; }
+.figure .num { font: 800 56px/1 var(--font); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.figure .cur { font-size: 26px; font-weight: 700; }
+.figure .per { font-size: 17px; color: var(--ink-2); }
+.price-notes { margin: 0; color: var(--ink-2); font-size: 15px; max-width: 30em; }
+.price-main .wa { margin-top: 8px; }
+.price-incl { padding: 24px 22px; }
+.price-incl h3 { margin: 0 0 12px; font-size: 17px; font-weight: 700; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 /* each line after a check in Toran green, on a pale green disc */
-.if li { position: relative; padding-inline-start: 32px; color: var(--ink-2); }
-.if li::before { content: ''; position: absolute; inset-inline-start: 0; top: 0.2em; width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--green) 14%, transparent); }
-.if li::after { content: ''; position: absolute; inset-inline-start: 8px; top: calc(0.2em + 5px); width: 5px; height: 10px; border-right: 2.4px solid var(--green); border-bottom: 2.4px solid var(--green); transform: rotate(45deg); }
-
-/* the note from OpenFrequency */
-.note { margin-top: 32px; padding: 24px 22px; }
-.note p { margin: 0 0 12px; color: var(--ink); }
-.note p + p { color: var(--ink-2); }
-.btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.checks li { position: relative; padding-inline-start: 32px; color: var(--ink-2); }
+.checks li::before { content: ''; position: absolute; inset-inline-start: 0; top: 0.2em; width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--green) 14%, transparent); }
+.checks li::after { content: ''; position: absolute; inset-inline-start: 8px; top: calc(0.2em + 5px); width: 5px; height: 10px; border-right: 2.4px solid var(--green); border-bottom: 2.4px solid var(--green); transform: rotate(45deg); }
+@media (min-width: 640px) { .price-card { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+/* under the card: taking the page down */
+.after { margin: 16px 4px 0; font-size: 15px; color: var(--ink-2); }
+.grey.sm { min-height: 36px; padding: 0 16px; font-size: 15px; margin-inline-start: 6px; vertical-align: middle; }
 
 /* the footer */
 .foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 36px; padding: 16px 4px 0; border-top: 1px solid rgba(0, 0, 0, 0.07); font-size: 13px; color: var(--ink-3); }
