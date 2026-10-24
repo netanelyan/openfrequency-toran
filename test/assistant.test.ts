@@ -159,18 +159,5 @@ test("a proposal for another store's conversation, or with no words to send, is 
   }
 });
 
-test("the owner's WhatsApp number reaches the assistant, not the demo", async () => {
-  const script: Script = (_req, call) => (call === 0 ? toolUse('store_overview', { days: 1 }) : say('היום הייתה שיחה אחת, ושאלה אחת מחכה לכם.'));
-  const { app, storeId } = await setup(script);
-  try {
-    await app.db.query("UPDATE stores SET owner_phones = '{972500000777}' WHERE id = $1", [storeId]);
-    const r = await handleInbound(app, { channel: 'whatsapp', from: '972500000777', text: 'מה קרה היום?', id: `w${seq++}` } as any);
-    assert.equal(r.action, 'assistant');
-    assert.equal(r.reply, 'היום הייתה שיחה אחת, ושאלה אחת מחכה לכם.');
-    assert.equal((await app.db.one<any>("SELECT via FROM assistant_messages WHERE role = 'owner'")).via, 'whatsapp');
-    const stranger = await handleInbound(app, { channel: 'whatsapp', from: '972500000778', text: 'מה קרה היום?', id: `w${seq++}` } as any);
-    assert.equal(stranger.action, 'no_binding', 'anyone else is not the owner');
-  } finally {
-    await app.db.close();
-  }
-});
+// The owner's own WhatsApp number reaching the assistant is the owner line's now (test/owners.test.ts): a number is an
+// owner's when accounts verified it, never because it was typed on the dashboard.

@@ -40,3 +40,32 @@ export async function reply(app: App, adapter: ChannelAdapter, to: Inbound, text
   }
   return { ok: true, ids };
 }
+
+/** One piece of an answer on the owner line: text, or an image with its caption. */
+export type Part = { text: string } | { media: string; caption?: string };
+
+/**
+ * An answer to the owner in parts (owners/line.ts): text the way reply() sends it, and images through push(), each
+ * after the same window check, in order. Images go on WhatsApp only; elsewhere they are left out.
+ */
+export async function replyParts(app: App, adapter: ChannelAdapter, to: Inbound, parts: Part[], storeId: number | null): Promise<Delivery> {
+  const ids: string[] = [];
+  for (const p of parts) {
+    if ('text' in p) {
+      if (!p.text.trim()) continue;
+      const d = await reply(app, adapter, to, p.text, storeId, null);
+      if (!d.ok) return d;
+      ids.push(...d.ids);
+      continue;
+    }
+    const wa = adapter as ChannelAdapter & { push?: (to: string, m: { text?: string; mediaUrl?: string; from?: string | null }) => Promise<{ id: string; usd: number }> };
+    if (adapter.channel !== 'whatsapp' || !wa.push) continue;
+    const blocked = await blockedFor(app, adapter, to);
+    if (blocked) return { ok: false, reason: blocked };
+    const sent = await wa.push(to.from, { text: p.caption || '', mediaUrl: p.media, from: to.to });
+    await usage(app.db, { storeId, kind: 'bsp', backend: adapter.kind, units: 1, usd: sent.usd, apiUsd: sent.usd, tag: 'wa_out' });
+    await event(app.db, storeId, 'wa_out', { id: sent.id, media: true });
+    ids.push(sent.id);
+  }
+  return { ok: true, ids };
+}

@@ -13,6 +13,7 @@ export type Inbound = {
   channel?: Channel; // absent: whatsapp (messages queued before the channel layer have none)
   at?: number; // when the webhook received it; the reply window is measured from here
   account?: string; // the store's own account it came to (an address); absent: the WhatsApp demo number
+  to?: string | null; // the WhatsApp number it was written to (international digits): the demo number or the owner line
   subject?: string;
   thread?: { messageId: string; inReplyTo: string | null; references: string[] }; // email's threading headers
   attachments?: { name: string; type: string; size: number }[];

@@ -51,11 +51,10 @@ test('workspace A sees and changes nothing of workspace B, on every page and act
     assert.equal((await s.get(`/lead/${a}/assistant`)).status, 200);
     assert.equal((await s.get(`/lead/${b}/assistant`)).status, 404);
     assert.equal((await s.post(`/lead/${b}/assistant`, { _csrf: token, text: 'מה קרה היום?' })).status, 404);
-    assert.equal((await s.post(`/lead/${b}/owner-phones`, { _csrf: token, phones: '0500000999' })).status, 404);
-    assert.deepEqual((await s.app.db.one<any>('SELECT owner_phones FROM stores WHERE id = $1', [b])).owner_phones, [], 'A gave B no owner number');
     assert.equal((await s.app.db.one<any>('SELECT COUNT(*)::int AS n FROM assistant_messages WHERE store_id = $1', [b])).n, 0, 'nothing reached B\'s assistant');
-    assert.equal((await s.post(`/lead/${a}/owner-phones`, { _csrf: token, phones: '050-0000999' })).status, 303);
-    assert.deepEqual((await s.app.db.one<any>('SELECT owner_phones FROM stores WHERE id = $1', [a])).owner_phones, ['972500000999'], 'an Israeli number, written the usual way, kept as digits');
+    // The owner's numbers are linked in accounts (src/owners/identity.ts): no form here makes a number an owner's.
+    assert.equal((await s.post(`/lead/${a}/owner-phones`, { _csrf: token, phones: '050-0000999' })).status, 404);
+    assert.match(await (await s.get(`/lead/${a}/assistant`)).text(), /לחבר מספר בחשבון/);
 
     s.login();
     const all = await (await s.get('/leads?all=1')).text();

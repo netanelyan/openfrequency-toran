@@ -10,6 +10,9 @@ import { sessionIdFrom, type AccountsClient, type Session } from './accounts.ts'
 import { ownsStore, scopeOf } from './workspace.ts';
 import { enabledChannels, publicChannels } from '../channels/config.ts';
 import type { Out, Req, Route } from './server.ts';
+import { J } from '../db/index.ts';
+import { secretOf, verify } from '../owners/teder.ts';
+import { EVENT_TYPES } from '../owners/events.ts';
 
 // The public routes, answered without a session:
 //
@@ -33,12 +36,18 @@ import type { Out, Req, Route } from './server.ts';
 //                              machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (so never through Caddy).
 //                              It is written down with its code (REQ-XXXXXX) and waits: only when the person writes
 //                              to the demo number with that code is the store added (channels/request.ts).
+//   POST /internal/teder/events Teder's news for an owner (docs/owner-line.md): from this machine only, no
+//                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET (owners/teder.ts). Kept once by its id
+//                              and handled by the worker (owners/events.ts).
 //
 // Pitch pages get their own CSP: the store's logo and product photo load from its CDN
 // (https), and the dashboard may frame the page for its preview.
 
 const PITCH_CSP = "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 const pitchHeaders = (extra: Record<string, string | string[]> = {}) => ({ 'content-security-policy': PITCH_CSP, 'x-robots-tag': 'noindex, nofollow, noarchive', 'x-frame-options': 'SAMEORIGIN', 'referrer-policy': 'strict-origin-when-cross-origin', ...extra });
+
+/** A socket on this machine, and a request that did not come through Caddy. */
+const local = (r: Req) => !r.req.headers['x-forwarded-for'] && /^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(r.req.socket.remoteAddress || '');
 
 /** The website's lead service on this machine: the shared token, and a request that did not come through Caddy. */
 function fromWebsite(env: Record<string, string | undefined>, r: Req): boolean {
@@ -145,6 +154,26 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       return { text: ack.body, type: ack.type };
     }],
     ['GET', /^\/channels\.json$/, async () => ({ json: await publicChannels(app.db), headers: { 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' } })],
+    ['POST', /^\/internal\/teder\/events$/, async (r) => {
+      if (!local(r)) return { status: 403, json: { ok: false, error: 'not_local' } };
+      const refused = verify(secretOf(app.env), r.req.headers, 'POST', r.req.url || r.url.pathname, r.raw || '');
+      if (refused) {
+        app.log(`[teder] event refused: ${refused}`);
+        return { status: refused === 'not_configured' ? 503 : 401, json: { ok: false, error: refused } };
+      }
+      let ev: any;
+      try {
+        ev = JSON.parse(r.raw || '{}');
+      } catch {
+        return { status: 400, json: { ok: false, error: 'bad' } };
+      }
+      const id = String(ev?.id || '');
+      if (!/^[\w.:-]{6,100}$/.test(id) || !(EVENT_TYPES as readonly string[]).includes(ev?.type) || !Number.isInteger(ev?.workspace) || ev.workspace <= 0 || typeof ev?.data !== 'object' || !ev.data) return { status: 400, json: { ok: false, error: 'bad' } };
+      const at = ev.at && !Number.isNaN(Date.parse(ev.at)) ? new Date(ev.at).toISOString() : null;
+      const fresh = await app.db.one('INSERT INTO teder_events (id, type, workspace_id, at, data) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT (id) DO NOTHING RETURNING id', [id, ev.type, ev.workspace, at, J(ev.data)]);
+      if (fresh) await enqueue(app.db, 'teder_event', { id }, { dedupeKey: `teder:${id}`, maxAttempts: 8 });
+      return { json: { ok: true } };
+    }],
     ['POST', /^\/internal\/lead$/, async (r) => {
       if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
       let body: any = {};

@@ -104,10 +104,28 @@ test('a bad code, a duplicate delivery, and the owner\'s own phone are each hand
 
 test('Twilio webhooks are accepted only with a valid signature', () => {
   const p = twilioProvider({ accountSid: 'AC0', authToken: 'secret-token', from: '+972500000999', webhookUrl: 'https://toran.example/wa/twilio' });
-  const form = { From: 'whatsapp:+972500000101', Body: 'DEMO-ABCD', MessageSid: 'SM1', ProfileName: 'x' };
+  const form = { From: 'whatsapp:+972500000101', To: 'whatsapp:+972500000999', Body: 'DEMO-ABCD', MessageSid: 'SM1', ProfileName: 'x' };
   const sig = twilioSignature('secret-token', 'https://toran.example/wa/twilio', form);
-  assert.deepEqual(p.parse({ raw: '', form, headers: { 'x-twilio-signature': sig }, url: '' }), [{ from: '972500000101', text: 'DEMO-ABCD', id: 'SM1', profileName: 'x' }]);
+  assert.deepEqual(p.parse({ raw: '', form, headers: { 'x-twilio-signature': sig }, url: '' }), [{ from: '972500000101', text: 'DEMO-ABCD', id: 'SM1', profileName: 'x', to: '972500000999' }]);
   assert.equal(p.parse({ raw: '', form, headers: { 'x-twilio-signature': 'forged' }, url: '' }), null);
   assert.equal(p.parse({ raw: '', form: { ...form, Body: 'changed' }, headers: { 'x-twilio-signature': sig }, url: '' }), null);
   assert.equal(simProvider().kind, 'sim');
+});
+
+test('a message goes out from the number it answers: the demo number, or the owner line', async () => {
+  const sent: URLSearchParams[] = [];
+  const fetchImpl = (async (_url: string, init: any) => {
+    sent.push(init.body);
+    return new Response(JSON.stringify({ sid: `SM${sent.length}` }), { status: 201 });
+  }) as typeof fetch;
+  const p = twilioProvider({ accountSid: 'AC0', authToken: 't', from: '+972500000999', webhookUrl: 'https://toran.example/wa/twilio', fetchImpl });
+  await p.send('972500000101', 'שלום', { from: '972500000101', text: 'x', id: 'SM0' });
+  await p.send('972500000101', 'שלום', { from: '972500000101', text: 'x', id: 'SM0', to: '972500000888' });
+  await p.push('972500000101', { template: { name: 'teder_quota_low', sid: `HX${'0'.repeat(32)}`, vars: ['8 מתוך 40'] }, from: '972500000888' });
+  await p.push('972500000101', { text: '1. כותרת', mediaUrl: 'https://teder.example/m/x.jpg', from: '972500000888' });
+  assert.deepEqual(sent.map((b) => b.get('From')), ['whatsapp:+972500000999', 'whatsapp:+972500000888', 'whatsapp:+972500000888', 'whatsapp:+972500000888']);
+  assert.equal(sent[2].get('ContentSid'), `HX${'0'.repeat(32)}`);
+  assert.deepEqual(JSON.parse(sent[2].get('ContentVariables')!), { 1: '8 מתוך 40' });
+  assert.equal(sent[2].get('Body'), null, 'a template carries no free text');
+  assert.equal(sent[3].get('MediaUrl'), 'https://teder.example/m/x.jpg');
 });

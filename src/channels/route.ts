@@ -2,6 +2,7 @@ import type { App } from '../app.ts';
 import { event, usage } from '../db/log.ts';
 import { adapterFor } from './adapters.ts';
 import { demoNumber, type RouteResult } from './demo.ts';
+import { ownerLine } from '../owners/line.ts';
 import { LEDGER } from './send.ts';
 import { accountFor, storeChannel } from './store.ts';
 import type { Inbound } from './types.ts';
@@ -11,12 +12,19 @@ import type { Inbound } from './types.ts';
 // left it out, its cost is recorded, and it goes to the store it belongs to. Two ways lead to a store:
 //
 //   a store's own account (its email address): the account's store answers (store.ts)
+//   the owner line (TORAN_ASSISTANT_WA): business owners talking to their assistant (owners/line.ts)
 //   the shared WhatsApp demo number, whose codes bind a phone to a store (demo.ts)
 //
 // Anything else (mail to an address no store has connected) is recorded and not answered.
 
 export type { RouteResult };
 export { adapterFor };
+
+/** Was this written to the owner line? Only when its number is set and is not the demo number too. */
+export function isOwnerLine(env: Record<string, string | undefined>, to: string | null | undefined): boolean {
+  const line = String(env.TORAN_ASSISTANT_WA || '').replace(/\D/g, '');
+  return Boolean(line && to && to === line && line !== String(env.TWILIO_WHATSAPP_FROM || '').replace(/\D/g, ''));
+}
 
 export async function handleInbound(app: App, inbound: Inbound): Promise<RouteResult> {
   const adapter = adapterFor(app, inbound.channel);
@@ -31,6 +39,10 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
   await usage(app.db, { kind, backend: adapter.kind, units: 1, usd: adapter.inboundUsd, apiUsd: adapter.inboundUsd, tag: `${tag}_in` });
   const account = msg.account ? await accountFor(app, adapter.channel, msg.account) : null;
   if (account) return storeChannel(app, adapter, msg, account);
+  if (adapter.channel === 'whatsapp' && isOwnerLine(app.env, msg.to)) {
+    const r = await ownerLine(app, adapter, msg);
+    return { action: r.action === 'assistant' || r.action === 'duplicate' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
+  }
   if (adapter.channel === 'whatsapp') return demoNumber(app, adapter, msg);
   await event(app.db, null, `${tag}_unknown_account`, { account: msg.account || null });
   return { action: 'unknown_account' };

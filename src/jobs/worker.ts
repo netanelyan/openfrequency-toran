@@ -8,6 +8,7 @@ import { discover } from '../leads/discover.ts';
 import { canonicalDomain } from '../core/urls.ts';
 import { event } from '../db/log.ts';
 import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
+import { handleTederEvent } from '../owners/events.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -17,6 +18,8 @@ import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
 //                the page
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
 //   rescrape     the daily refresh of a store whose demo is open
+//   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts); put off to the end of
+//                Teder's quiet time by queueing itself again
 //
 // Scheduled each minute: a rescrape for every store with a built page that is not
 // skipped and was last ingested over 20 hours ago; expired WhatsApp bindings cleaned up.
@@ -57,6 +60,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       const r = await discover(app.db, gen, { fetcher: app.fetcher, render: app.render, limit: 40, log: (m) => void say(m.trim().slice(0, 150)) }, src);
       return r.stats;
     }
+    case 'teder_event':
+      return handleTederEvent(app, String(p.id || ''));
     case 'ingest':
     case 'rescrape':
       return { storeId: p.storeId, ...(await ingestAndBuild(app, Number(p.storeId), say, job.kind === 'rescrape')) };

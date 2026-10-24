@@ -56,6 +56,7 @@ copy the message, mark it sent, see the chats.
 | `src/agent` | the one agent loop, its six tools, the prompt, the reply guard, the model backends |
 | `src/pitch` | the pitch page, its sample chat, its tracking |
 | `src/wa` | the WhatsApp demo router and the BSP providers (Twilio, a simulator) |
+| `src/owners` | the owner line: one WhatsApp number for business owners, about Toran and Teder (docs/owner-line.md) |
 | `src/web` | the dashboard (Teder's look), auth, the public routes |
 | `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape) |
 | `src/brand.ts` | the family's marks and tokens; `assets/brand/` holds the files |

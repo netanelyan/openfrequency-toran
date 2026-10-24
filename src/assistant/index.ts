@@ -7,6 +7,9 @@ import { runTool } from '../agent/tools.ts';
 import { displayName } from '../ingest/brand.ts';
 import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../channels/owner.ts';
 import { asked, conversation, outOfStock, overview, waiting, who } from './data.ts';
+import type { Part } from '../channels/send.ts';
+import { mentioned, normalize, type Intent, type Reason } from '../owners/intents.ts';
+import { act, lastList, sendBundle, showPending, statusLines, type ListItem, type PostsCtx } from '../owners/posts.ts';
 
 // The owner's assistant: the store's owner writes to Toran (on the dashboard, or from their own WhatsApp number) and
 // Toran answers about the store from what it holds: the conversations, the questions waiting for them, what customers
@@ -19,6 +22,12 @@ import { asked, conversation, outOfStock, overview, waiting, who } from './data.
 //
 // Every number in an answer must be in a tool result, the owner's words or the chat so far; an answer with any other
 // number is asked again once, then replaced with a plain "not found".
+//
+// On the owner line (src/owners/) the same assistant also serves Teder, for an owner whose workspace has it: the
+// teder_ tools below see the posts waiting and act on them by the number the owner saw. Those act at once, on the
+// owner's own words (docs/owner-line.md), and only on a number the owner's message names (mentioned()), so the model
+// cannot approve what the owner did not ask for. The covers, images and captions go to the owner from Teder's answer,
+// by code, beside the model's words.
 
 const MAX_ROUNDS = 5;
 const HISTORY = 12;
@@ -73,8 +82,59 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
   },
 ];
 
-function system(store: { name: string; domain: string }): string {
-  return `You are Toran's assistant for the owner of the online store ${store.name} (${store.domain}). Toran is the AI that answers this store's customers on WhatsApp, Instagram, Messenger and email. Here the store's owner is talking to you, not a customer.
+export const TEDER_TOOLS: ToolDef[] = [
+  {
+    name: 'teder_status',
+    description: "Teder's numbers now: the posts waiting for the owner's approval, approved and published this week, and the month's quota of suggested posts and redos.",
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'teder_pending',
+    description: "The posts waiting for the owner's approval, now. The app sends the owner their covers with your answer, numbered 1, 2, 3 in this order; from the owner's next message on, those numbers mean this list.",
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'teder_post',
+    description: 'One post from the list the owner saw: each slide line by line, and the caption, as Teder wrote them.',
+    input_schema: { type: 'object', properties: { number: { type: 'integer', description: 'its number in the list the owner saw, 1 is the first' } }, required: ['number'] },
+  },
+  {
+    name: 'teder_approve',
+    description: 'Approve the posts the owner asked to approve in this message, by their numbers in the list the owner saw. Done at once.',
+    input_schema: { type: 'object', properties: { numbers: { type: 'array', items: { type: 'integer' } } }, required: ['numbers'] },
+  },
+  {
+    name: 'teder_reject',
+    description: "Send one post back, as the owner asked in this message: Teder writes it again while the month's redos last. reason: topic, shorter, tone, photo or other; note: what the owner said to change, in their words.",
+    input_schema: { type: 'object', properties: { number: { type: 'integer' }, reason: { type: 'string', enum: ['topic', 'shorter', 'tone', 'photo', 'other'] }, note: { type: 'string' } }, required: ['number', 'reason'] },
+  },
+  {
+    name: 'teder_edit',
+    description: "Change one line of one slide to the owner's exact words from this message. Line 1 is the slide's title, line 2 the first line under it.",
+    input_schema: { type: 'object', properties: { number: { type: 'integer' }, slide: { type: 'integer' }, line: { type: 'integer' }, text: { type: 'string' } }, required: ['number', 'slide', 'line', 'text'] },
+  },
+  {
+    name: 'teder_bundle',
+    description: 'One post ready to upload, sent to the owner by the app with your answer: its images in order, then its caption to copy.',
+    input_schema: { type: 'object', properties: { number: { type: 'integer' } }, required: ['number'] },
+  },
+];
+
+const TEDER_RULES = `Teder writes this business's social posts (carousels of slides) and waits for the owner's approval. Through the teder_ tools you see the posts waiting, Teder's numbers, a post's slides and caption, and you can approve, send a post back to be written again, change one line of a slide, and send a ready post's images and caption.
+- A post is named by its number in the list the owner last saw (1 is the first). Act only on numbers the owner's message names; when it is not clear which post they mean, ask.
+- Approve, send back or change a post only when the owner asked for it in this message, then say what was done, from the tool's result.
+- Never write post content yourself. Hooks, slide lines and captions come from tool results only, and a new line for a slide is the owner's own words.
+- The app sends the covers and images with your answer. You don't see them; don't describe them.`;
+
+function system(store: { name: string; domain: string } | null, teder: boolean): string {
+  if (!store) {
+    return `You are the assistant of a business owner who uses Teder, OpenFrequency's social posts service. They write to you on WhatsApp.
+
+${TEDER_RULES}
+
+Write in Hebrew, short, like a WhatsApp message to the business's owner: plain sentences, the owner addressed in the plural (אתם), no exclamation marks, no emoji, no headings. A short list is fine.`;
+  }
+  return `You are Toran's assistant for the owner of the online store ${store.name} (${store.domain}). Toran is the AI that answers this store's customers on WhatsApp, Instagram, Messenger and email. Here the store's owner is talking to you, not a customer.${teder ? `\n\nThe owner also uses Teder. ${TEDER_RULES}` : ''}
 
 What you can see, through your tools only: the store's conversations with customers (how many, on which channel, what was asked), the questions waiting for the owner, any one conversation, what customers asked about most, the products out of stock, and the catalogue.
 
@@ -181,8 +241,82 @@ async function execute(app: App, action: any, author: string): Promise<string> {
   return line;
 }
 
-async function runAssistantTool(app: App, store: any, name: string, input: any): Promise<{ ok: boolean; content: string }> {
+export type TederTurn = { ctx: PostsCtx; list: { items: ListItem[]; source: string; at: string } | null; text: string; parts: Part[] };
+
+const TEDER_DOWN = 'Teder did not answer. Tell the owner to try again in a few minutes.';
+
+/** A teder_ tool: what it did, for the model. The covers and images it sends go in turn.parts. */
+async function runTederTool(t: TederTurn, name: string, input: any): Promise<{ ok: boolean; content: string }> {
+  // The list the owner saw before this message: a list shown in this same turn is not what their numbers meant.
+  const items = t.list?.items || [];
+  const named = mentioned(t.text, items.length);
+  const pick = (n: unknown): ListItem | string => {
+    const k = Number(n);
+    if (!items.length) return 'The owner has not been shown a list of posts yet. Call teder_pending to show them the posts waiting.';
+    if (!Number.isInteger(k) || k < 1 || k > items.length) return `There is no post ${n} in the list the owner saw (it has ${items.length}).`;
+    return items[k - 1];
+  };
+  if (name === 'teder_status') {
+    const r = await t.ctx.teder.status();
+    return r.ok ? { ok: true, content: statusLines(r.body).join('\n') } : { ok: false, content: TEDER_DOWN };
+  }
+  if (name === 'teder_pending') {
+    const r = await showPending(t.ctx);
+    if (!r.posts) return { ok: false, content: TEDER_DOWN };
+    t.parts.push(...r.parts);
+    return { ok: true, content: r.posts.length ? `Sent to the owner with your answer, numbered: ${r.posts.map((p, i) => `${i + 1}. ${p.hook}`).join(' | ')}. The app already wrote the line above the covers and how to answer, so say nothing more about the list unless they asked something else.` : 'No posts are waiting for approval.' };
+  }
+  if (name === 'teder_post') {
+    const it = pick(input?.number);
+    if (typeof it === 'string') return { ok: false, content: it };
+    const r = await t.ctx.teder.post(it.id);
+    if (!r.ok) return { ok: false, content: r.status === 404 ? 'Teder has no such post any more.' : TEDER_DOWN };
+    const p = r.body.post;
+    return { ok: true, content: [`Post ${input.number}: "${p.hook}" (${p.status}).`, ...(p.slideList || []).map((s) => `- slide ${s.idx}: ${s.lines.map((l, i) => `[line ${i + 1}] ${l}`).join(' ')}`), p.caption ? `Caption: ${p.caption}` : ''].filter(Boolean).join('\n') };
+  }
+  if (name === 'teder_bundle') {
+    const it = pick(input?.number);
+    if (typeof it === 'string') return { ok: false, content: it };
+    const b = await sendBundle(t.ctx, Number(input.number), it);
+    t.parts.push(...b.parts);
+    return b.parts.length ? { ok: true, content: 'The images and the caption are sent to the owner with your answer. Say nothing more about them.' } : { ok: false, content: b.lines.join(' ') };
+  }
+  // The actions: only on numbers the owner's message names (on a list of one, "it" is that one).
+  const mayAct = (k: number) => named.has(k);
+  const intents: Intent[] = [];
+  if (name === 'teder_approve') {
+    const ns = [...new Set((Array.isArray(input?.numbers) ? input.numbers : [input?.numbers]).map(Number))] as number[];
+    for (const n of ns) {
+      const it = pick(n);
+      if (typeof it === 'string') return { ok: false, content: it };
+      if (!mayAct(n)) return { ok: false, content: `The owner's message does not name post ${n}. Ask them which posts they mean; nothing was approved.` };
+      intents.push({ kind: 'approve', n });
+    }
+  } else if (name === 'teder_reject' || name === 'teder_edit') {
+    const n = Number(input?.number);
+    const it = pick(n);
+    if (typeof it === 'string') return { ok: false, content: it };
+    if (!mayAct(n)) return { ok: false, content: `The owner's message does not name post ${n}. Ask them which post they mean; nothing was changed.` };
+    if (name === 'teder_reject') {
+      const reason = (['topic', 'shorter', 'tone', 'photo', 'other'].includes(input?.reason) ? input.reason : 'other') as Reason;
+      intents.push({ kind: 'reject', n, reason, note: String(input?.note || '').trim().slice(0, 300) });
+    } else {
+      const text = String(input?.text || '').trim();
+      if (!text || !normalize(t.text).includes(normalize(text))) return { ok: false, content: "The new line must be the owner's exact words from their message. Ask them what the line should say; nothing was changed." };
+      intents.push({ kind: 'edit', n, slide: Number(input?.slide), line: Number(input?.line), text });
+    }
+  } else {
+    return { ok: false, content: `No tool "${name}".` };
+  }
+  const done = await act(t.ctx, items, intents);
+  t.parts.push(...done.parts);
+  return { ok: true, content: `Done. Teder's answer, as the owner should hear it: ${done.lines.join(' ')}` };
+}
+
+async function runAssistantTool(app: App, store: any, name: string, input: any, teder: TederTurn | null): Promise<{ ok: boolean; content: string }> {
   const db = app.db;
+  if (name.startsWith('teder_')) return teder ? runTederTool(teder, name, input) : { ok: false, content: `No tool "${name}".` };
+  if (!store) return { ok: false, content: `No tool "${name}".` };
   switch (name) {
     case 'store_overview':
       return { ok: true, content: await overview(db, store.id, Number(input?.days) || 1) };
@@ -207,33 +341,56 @@ async function runAssistantTool(app: App, store: any, name: string, input: any):
   }
 }
 
-export type AssistantInput = { storeId: number; text: string; via: 'dashboard' | 'whatsapp'; author: string };
+export type AssistantInput = {
+  storeId: number | null; // the store whose owner this is; null for an owner with Teder only
+  text: string;
+  via: 'dashboard' | 'whatsapp';
+  author: string;
+  phone?: string | null; // on the owner line: their number
+  workspaceId?: number | null;
+  teder?: PostsCtx | null; // their workspace has Teder
+};
+export type AssistantReply = { text: string; parts: Part[] };
+
+/** One line of the owner's chat with the assistant, kept. */
+export async function keep(app: App, input: Pick<AssistantInput, 'storeId' | 'via' | 'phone' | 'workspaceId'>, role: 'owner' | 'assistant', text: string, author: string, tools: unknown[] = []) {
+  await app.db.query('INSERT INTO assistant_messages (store_id, role, text, via, author, tools, workspace_id, phone) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)', [input.storeId, role, text, input.via, author, J(tools), input.workspaceId ?? null, input.phone ?? null]);
+}
 
 /** The owner's message in, the assistant's answer out (both kept). */
 export async function ask(app: App, input: AssistantInput): Promise<string> {
+  return (await askOwner(app, input)).text;
+}
+
+/** The same, with the covers and images the teder_ tools send (the owner line). */
+export async function askOwner(app: App, input: AssistantInput): Promise<AssistantReply> {
   const { db } = app;
   const text = String(input.text || '').trim().slice(0, 2000);
-  if (!text) return '';
-  const store = await storeOf(app, input.storeId);
-  const past = await db.query<{ role: string; text: string }>('SELECT role, text FROM assistant_messages WHERE store_id = $1 ORDER BY id DESC LIMIT $2', [store.id, HISTORY]);
-  await db.query('INSERT INTO assistant_messages (store_id, role, text, via, author) VALUES ($1, $2, $3, $4, $5)', [store.id, 'owner', text, input.via, input.author]);
+  if (!text) return { text: '', parts: [] };
+  const store = input.storeId ? await storeOf(app, input.storeId) : null;
+  if (!store && !input.teder) throw new Error('the assistant needs a store or Teder');
+  const past = store
+    ? await db.query<{ role: string; text: string }>('SELECT role, text FROM assistant_messages WHERE store_id = $1 ORDER BY id DESC LIMIT $2', [store.id, HISTORY])
+    : await db.query<{ role: string; text: string }>('SELECT role, text FROM assistant_messages WHERE phone = $1 AND store_id IS NULL ORDER BY id DESC LIMIT $2', [input.phone, HISTORY]);
+  await keep(app, input, 'owner', text, input.author);
+  const teder: TederTurn | null = input.teder ? { ctx: input.teder, list: await lastList(app, input.teder.phone, input.teder.workspaceId), text, parts: [] } : null;
 
   const answer = async (reply: string, tools: unknown[] = []) => {
-    await db.query('INSERT INTO assistant_messages (store_id, role, text, via, author, tools) VALUES ($1, $2, $3, $4, $5, $6::jsonb)', [store.id, 'assistant', reply, input.via, 'toran', J(tools)]);
-    return reply;
+    await keep(app, input, 'assistant', reply, 'toran', tools);
+    return { text: reply, parts: teder?.parts || [] };
   };
 
   // "כן" and "לא" to the one thing waiting: the code does it or drops it; the model is not asked.
-  const pending = await pendingAction(app, store.id);
+  const pending = store ? await pendingAction(app, store.id) : null;
   if (pending && YES.test(text)) return answer(await execute(app, pending, input.author));
   if (pending && NO.test(text)) {
     await db.query("UPDATE assistant_actions SET status = 'cancelled', decided_at = now(), decided_by = $2 WHERE id = $1", [pending.id, input.author]);
     return answer('בסדר, ביטלתי. לא נשלח ולא השתנה כלום.');
   }
-  if (!pending && (YES.test(text) || NO.test(text)) && past.length === 0) return answer('אין כרגע משהו שמחכה לאישור שלכם. אפשר לשאול אותי מה קורה בחנות, אילו שאלות מחכות לכם, או על מה לקוחות שואלים.');
+  if (store && !pending && (YES.test(text) || NO.test(text)) && past.length === 0) return answer('אין כרגע משהו שמחכה לאישור שלכם. אפשר לשאול אותי מה קורה בחנות, אילו שאלות מחכות לכם, או על מה לקוחות שואלים.');
 
   const day = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
-  const context = `SERVER CONTEXT (written by the app, not by the owner): ${day}, Israel time.${pending ? ` Waiting for the owner's "כן": ${pending.summary}.` : ''}`;
+  const context = `SERVER CONTEXT (written by the app, not by the owner): ${day}, Israel time.${pending ? ` Waiting for the owner's "כן": ${pending.summary}.` : ''}${teder ? (teder.list?.items.length ? ` The Teder posts the owner last saw, by number: ${teder.list.items.map((p, i) => `${i + 1}. ${p.hook}`).join(' | ')}.` : ' The owner has not been shown a list of Teder posts yet.') : ''}`;
   const messages: Msg[] = [];
   for (const m of past.reverse()) {
     const role = m.role === 'owner' ? 'user' : 'assistant';
@@ -247,14 +404,15 @@ export async function ask(app: App, input: AssistantInput): Promise<string> {
   if (prev && prev.role === 'user') prev.content = `${prev.content}\n\n${now}`;
   else messages.push({ role: 'user', content: now });
 
-  const sys = [{ text: system(store), cache: '5m' as const }];
+  const sys = [{ text: system(store, Boolean(teder)), cache: '5m' as const }];
+  const toolset = [...(store ? ASSISTANT_TOOLS : []), ...(teder ? TEDER_TOOLS : [])];
   const tools: { name: string; input: unknown; ok: boolean; result: string }[] = [];
   const sources = [text, ...past.map((m) => m.text)];
   let reply = '';
   let retried = false;
   for (let round = 0; round < MAX_ROUNDS + 1; round++) {
-    const res = await app.llm.turn({ system: sys, messages, tools: ASSISTANT_TOOLS, model: agentModel(app.env), maxTokens: 1200, effort: 'low', tag: `assistant store ${store.id}` });
-    await recordUsage(db, { storeId: store.id, conversationId: null, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag: 'assistant' });
+    const res = await app.llm.turn({ system: sys, messages, tools: toolset, model: agentModel(app.env), maxTokens: 1200, effort: 'low', tag: store ? `assistant store ${store.id}` : `assistant workspace ${input.workspaceId}` });
+    await recordUsage(db, { storeId: store?.id ?? null, conversationId: null, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag: 'assistant' });
     const calls = res.content.filter(isToolUse) as ToolUseBlock[];
     if (!calls.length) {
       reply = res.content.filter(isText).map((b) => b.text).join('\n').trim();
@@ -271,7 +429,7 @@ export async function ask(app: App, input: AssistantInput): Promise<string> {
     messages.push({ role: 'assistant', content: res.content });
     const results = [];
     for (const c of calls) {
-      const r = await runAssistantTool(app, store, c.name, c.input);
+      const r = await runAssistantTool(app, store, c.name, c.input, teder);
       tools.push({ name: c.name, input: c.input, ok: r.ok, result: r.content.slice(0, 6000) });
       results.push({ type: 'tool_result', tool_use_id: c.id, content: r.content, ...(r.ok ? {} : { is_error: true }) } as Block);
     }
@@ -279,12 +437,4 @@ export async function ask(app: App, input: AssistantInput): Promise<string> {
   }
   if (!reply) reply = 'לא הצלחתי לענות על זה כרגע. נסו לשאול שוב, קצת אחרת.';
   return answer(reply, tools);
-}
-
-/** The store whose owner a WhatsApp number is, or null. */
-export async function storeOfOwner(app: App, phone: string): Promise<number | null> {
-  const digits = String(phone || '').replace(/\D/g, '');
-  if (!digits) return null;
-  const s = await app.db.one<{ id: number }>('SELECT id FROM stores WHERE $1 = ANY(owner_phones) ORDER BY updated_at DESC LIMIT 1', [digits]);
-  return s?.id ?? null;
 }

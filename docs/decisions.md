@@ -231,3 +231,44 @@ the website those states and nothing about any store.
 
 **Not done here:** an address on the store's own domain (it needs DNS on their side), sending attachments, and
 merging one customer across channels.
+
+## 2026-10-24: the owner line, one WhatsApp number for Toran and Teder
+
+**The change:** a business owner writes to one number (`TORAN_ASSISTANT_WA`, a second Twilio sender) and talks to
+their assistant about their Toran store, their Teder posts, or both, whichever their workspace has. Teder's news
+reaches them on the same number. The contracts with accounts and Teder are in docs/owner-line.md, and the code is
+in `src/owners/`.
+
+**Who a number is comes from accounts, asked live.** A number is an owner's once it has sent accounts' link code
+(`LINK-XXXXXX`) to the line: the number that wrote is the proof, as with the website's demo requests. Accounts
+links and verifies it, and keeps the opt-in from the link form with its time. A number typed on the dashboard
+(`stores.owner_phones`, from the day before) is no longer read: it proved nothing. A number nobody vouched for gets
+one line saying it is not linked, at most once an hour. If accounts does not answer, nobody is an owner.
+
+**The rule that Toran writes only to someone who just wrote has one exception, in one file.** `owners/notify.ts`
+may start a message to a business owner's verified number, about their own Teder account. Each message is checked
+first:
+- the opt-in is the latest word, in accounts and here
+- Teder's quiet time is over (Shabbat and the owner's quiet hours, Teder's settings, asked of Teder each time)
+- the number has had fewer than 8 such messages in 24 hours
+- inside the 24 hours after the owner's last message it may hold text and images; outside them it is an approved
+  utility template, or nothing at all.
+
+Every attempt is a row in `owner_notifications`. "הפסק" stops all of it, kept here as well as in accounts, and
+"התחל" brings it back. The first message to each number says it comes from a digital assistant, and every
+template's footer says it again.
+
+**The owner's reply acts at once.** "אשר את 1 ו-3, את 2 תעשה קצר יותר" approves two posts and sends one back
+with the owner's words as its note, and the answer says what Teder did. The owner is giving instructions about
+their own posts, the way one click does on Teder's dashboard, so there is no "כן" step. Toran's offer to write to a
+customer still waits for "כן".
+
+**Read in code first, the model second.** `owners/intents.ts` reads replies about posts: numbers, ordinals, "all",
+"the rest", "all but", "not yet", reasons to rewrite, an edit to one line, show, send, status. It answers only when
+it understood the whole message. Anything else (a question, a "don't", a verb it cannot place) goes to the model,
+which has Teder's tools next to Toran's. Those tools act only on a number the owner's message names (`mentioned()`),
+and an edit only with words that appear in the owner's message. The model cannot approve what the owner did not ask
+for. Covers, images and captions go to the owner from Teder's answer by code, never through the model.
+
+**Not done here:** the live-model check of the same twenty phrases (`test/intents.test.ts` checks the reader in
+code), and Meta's approval of the templates (docs/whatsapp-templates.md is the sheet to submit).

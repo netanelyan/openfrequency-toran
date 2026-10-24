@@ -8,7 +8,8 @@ import { claimRequest } from './request.ts';
 import { hold, isPaused } from './owner.ts';
 import { reply } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
-import { ask, storeOfOwner } from '../assistant/index.ts';
+import { LINK_CODE, ownerByPhone } from '../owners/identity.ts';
+import { ownerLine } from '../owners/line.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
@@ -41,7 +42,7 @@ const msg = {
   noText: 'בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?',
 };
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant'; storeId?: number; reply?: string };
+export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 
@@ -101,16 +102,17 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
     return { action: 'bound', storeId: store.id, reply: o.reply };
   }
 
-  // A store's owner, from a number they gave us (stores.owner_phones): they are talking to their assistant
-  // (src/assistant), not asking as a customer. A code still binds them to a demo above; to try the demo as a customer,
-  // they write from another number.
-  const ownStore = await storeOfOwner(app, phone);
-  if (ownStore) {
-    if (!text) return { action: 'no_text', storeId: ownStore };
-    const answer = await ask(app, { storeId: ownStore, text, via: 'whatsapp', author: phone });
-    await reply(app, adapter, inbound, answer, ownStore, null);
-    await event(db, ownStore, 'assistant_whatsapp', {});
-    return { action: 'assistant', storeId: ownStore, reply: answer };
+  // A business owner, from a number accounts verified (src/owners/): they are talking to their assistant, not asking
+  // as a customer, here as on the owner line. A link code from accounts is theirs too. A demo code still binds them to
+  // a demo above; to try the demo as a customer, they write from another number.
+  if (LINK_CODE.test(text)) {
+    const r = await ownerLine(app, adapter, inbound);
+    return { action: 'owner_line', reply: r.reply };
+  }
+  const own = await ownerByPhone(app, phone);
+  if (own.ok) {
+    const r = await ownerLine(app, adapter, inbound, own.owner);
+    return { action: r.action === 'assistant' ? 'assistant' : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
   }
 
   const binding = await db.one<{ store_id: number; expired: boolean }>('SELECT store_id, expires_at < now() AS expired FROM wa_users WHERE phone = $1', [phone]);

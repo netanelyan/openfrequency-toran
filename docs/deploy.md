@@ -30,6 +30,8 @@ and Teder use) is in front of it, and nothing of Toran's listens on 80, 443 or 0
    | `TORAN_OWNER_NAME`, `TORAN_OWNER_WHATSAPP`, `TORAN_OWNER_EMAIL` | your contact on pitch pages |
    | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, `TWILIO_WEBHOOK_URL` | the demo number (see below) |
    | `DEMO_WA_NUMBER` | the demo number in digits, for the pitch page buttons |
+   | `TORAN_ASSISTANT_WA`, `TWILIO_TEMPLATES` | the owner line and its approved templates (see below) |
+   | `OF_ASSISTANT_SECRET`, `TEDER_INTERNAL` | Teder on the owner line: the same secret in Teder's `.env` |
    | `BRAVE_API_KEY` | optional, for discovery by search |
 
 3. **Start the database.** Postgres with pgvector, on 127.0.0.1:5433 (`TORAN_DB_PORT` changes it).
@@ -82,8 +84,25 @@ Toran has no login of its own. A browser without a session goes to
    `https://<pitch host>/wa/twilio` (POST). Set the same URL as `TWILIO_WEBHOOK_URL`: the signature is checked
    against it.
 3. **Know what it costs.** Twilio charges $0.005 a message each way. Meta charges nothing for the replies, because
-   every demo conversation is started by the store owner (a service conversation). Toran never starts a
-   conversation.
+   every demo conversation is started by the store owner (a service conversation). On the demo number Toran never
+   starts a conversation.
+
+## The owner line (Twilio, a second number)
+
+The number business owners write to, about Toran and Teder (docs/owner-line.md).
+
+1. **A second WhatsApp sender** on the same Twilio account, with its "A message comes in" webhook pointing at the
+   same `https://<pitch host>/wa/twilio`. Toran tells the two numbers apart by the number each message was written
+   to. Put its digits in `TORAN_ASSISTANT_WA`, and the same value in openfrequency-accounts' `OF_ASSISTANT_WA`, so the
+   link button there opens it.
+2. **The templates.** Submit the five in docs/whatsapp-templates.md, as Utility, in Hebrew. As each one is approved,
+   add `name=HX...` to `TWILIO_TEMPLATES`. Until a template is approved, its message is not sent outside the 24
+   hours, and owner_notifications records it as `no_template`.
+3. **Teder.** Set `OF_ASSISTANT_SECRET` (32+ random characters) here and in Teder's `.env`. Teder's internal API is
+   on 127.0.0.1:4701 (`TEDER_INTERNAL` if not), and Teder posts its events to Toran's own port on 127.0.0.1.
+4. **Know what it costs.** Twilio charges $0.005 a message here too. Meta charges for each template it delivers
+   (the utility rate), on Twilio's bill. An answer to the owner, and anything inside the 24 hours, costs Meta
+   nothing.
 
 ## Email (Resend)
 
