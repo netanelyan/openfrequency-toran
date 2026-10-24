@@ -1,6 +1,6 @@
 # The operator's dashboard
 
-The operator is the superadmin outside view-as. Their dashboard is Toran's home page: who to write to today about
+The operator is the superadmin outside view-as. Their dashboard is on accounts' `/admin` (section 4): who to write to today about
 Toran or Teder, with what message; who is already in a conversation; the funnel of each product; and the customers
 and the money. The leads live in Toran, which finds stores, builds their pitch pages, tracks the opens and keeps
 the outreach. Teder's store demos and the accounts customers are read from those services, which are on the same
@@ -86,24 +86,62 @@ number with the request's code (`src/channels/request.ts`). The website's part:
    code. The form's success state shows that button.
 4. Toran does the rest: one demo per number, and the reply on WhatsApp.
 
-## 4. Toran: the dashboard
+## 4. Where the dashboard lives: accounts' /admin
 
-These are operator-only sections on the home page. A customer's session sees today's page as before.
+The operator's dashboard is on accounts' `/admin`, the superadmin's console, behind its password and authenticator
+code. toran.openfrequency.co.il shows Toran only. Toran keeps the work behind the dashboard:
+- the list of who to write to, and the outreach on each lead
+- the copies of Teder's demos
+- sending a demo asked for on the website by itself
 
-- **לפנות היום** (who to write to today) is one list across both products, most urgent first:
-  - Toran stores that tried the demo and have not been talked to.
-  - Next steps that are due, for anyone already in a conversation.
-  - Reminders that are due, the ones whose page was opened first.
-  - Teder demos that are ready to send (the person asked on the website).
-  - Toran pages that are ready to send, the ones asked for on the website first, then by score.
+It gives all of that to `/admin` through two internal routes, under the same checks as `/internal/lead` (OF_INTERNAL_TOKEN,
+loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (default `http://127.0.0.1:4710`).
 
-  Each entry has its message (editable), a WhatsApp or email button that copies the message and opens the chat,
-  and these buttons: שלחתי (sent), ענו לי (they replied), לא מעוניינים (not interested, with a reason), and
-  מחר / בעוד שבוע (later). Pages that are ready but have no way to reach the store are listed apart, to find a
-  contact for.
-- **בשיחה** (in conversation): everyone who replied, with their next step and its date.
-- **המשפך** (the funnel): each product's stages, the last 30 days and all time, and the rate from each stage to
-  the next.
-- **לקוחות וכסף** (customers and money): paying customers per product, the monthly revenue before VAT, payments
-  that are late or still to come, and renewals in the next 7 days. Each line links to the workspace on
-  accounts' `/admin`.
+### `GET /internal/ops`
+
+```json
+{
+  "teder": { "ok": true },
+  "items": [
+    { "key": "toran:12", "product": "toran", "id": "12", "reason": "tried_demo", "rank": 100, "name": "...",
+      "domain": "...", "why": "ניסו את הדמו", "message": "...", "target": { "kind": "whatsapp", "href": "https://wa.me/...",
+      "label": "להעתיק ולפתוח וואטסאפ" }, "direct": false, "mark": "reminded", "page": "https://...", "at": "...",
+      "leadUrl": "https://toran.openfrequency.co.il/lead/12" }
+  ],
+  "noContact": [{ "id": 31, "name": "...", "domain": "...", "score": 71, "leadUrl": "..." }],
+  "stuck": [{ "domain": "...", "phone": "9725...", "at": "...", "why": "...", "storeId": 7, "leadUrl": "..." }],
+  "conversations": [{ "key": "teder:7", "product": "teder", "id": "7", "name": "...", "domain": "...", "replied_at": "...",
+    "next_step": "...", "next_step_at": "...", "target": { ... }, "page": "...", "status": "...", "leadUrl": null }],
+  "funnels": { "toran": [{ "key": "found", "label": "נמצאו", "all": 12, "month": 3 }], "teder": [ ... ] }
+}
+```
+
+- `items` is already in its order (src/ops/queue.ts says why).
+- `reason` is one of tried_demo, next_step, asked_toran, asked_teder, reminder, teder_reminder, first_send.
+- `mark` says what "שלחתי" records: sent, reminded, or next (a next step: no message; its card offers the next-step
+  form).
+- `direct` means the message can go out now from the demo number (the `direct` action).
+- `leadUrl` is the lead's page on Toran's dashboard, and null for a Teder lead.
+- The funnels' last stage, `customers`, comes with `all` and `month` as null: accounts fills it from its
+  subscriptions.
+
+### `POST /internal/ops/<toran|teder>/<id>/<action>`
+
+The body is JSON `{ "by": "<the operator, for the audit>", "text": "...", "days": 1, "reason": "price" }`, with only
+what the action takes.
+
+| action | does |
+|---|---|
+| sent | the first message went out |
+| reminded | the one reminder (or the question after a demo) went out |
+| direct | Toran only: sends the demo link on the demo number now, then records sent |
+| replied | they answered |
+| next | `text` and `days`: the next step |
+| later | `days` 1 or 7 |
+| lost | `reason`: not_interested, price, has_solution, no_answer, not_fit or other |
+| reopen | undoes lost and later |
+| pilot, paid | Toran only |
+| won | Teder only |
+
+It answers `200 { "ok": true, "message": "<Hebrew line for the operator>" }`, or `400 { "ok": false, "error":
+"<Hebrew line>" }` for an action the rules refuse (a second reminder, a link past its 24 hours).
