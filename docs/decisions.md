@@ -272,3 +272,37 @@ for. Covers, images and captions go to the owner from Teder's answer by code, ne
 
 **Not done here:** the live-model check of the same twenty phrases (`test/intents.test.ts` checks the reader in
 code), and Meta's approval of the templates (docs/whatsapp-templates.md is the sheet to submit).
+
+## 2026-10-24: the operator's dashboard
+
+**The change:** the operator's Today opens on their dashboard (docs/operator.md, `src/ops/`, `pages/ops.ts`).
+- One list of who to write to today, across Toran and Teder, each entry with its message and the button that copies
+  it and opens the chat.
+- Who is in a conversation, with their next step.
+- Each product's funnel.
+- The customers and the money, read from accounts.
+
+Teder's store demos are copied in from Teder at each load, so that Toran keeps their outreach as it keeps its own
+stores'.
+
+**Why in Toran:** Toran is where the leads are found, the pages are built, the opens are counted and the outreach is
+kept. Accounts and Teder each needed one read-only route (`GET /internal/ops/customers`, `GET /internal/demos`), and
+nothing on this dashboard writes to them.
+
+**The order:** first, stores that tried the demo. Then next steps that are due, then people who asked on the website
+(they are waiting), then the reminders that are due (an opened page first), and last, new pages by their score.
+
+**The line stays:** one approach and one reminder (outreach.ts). For a store that tried the demo, the question of
+how it went takes the reminder's place and is not a third message. After the reminder the list never offers them
+again, unless they answer.
+
+**The one thing it sends:** the link to a Toran demo someone asked for on the website. It goes on the demo number
+where they asked, inside the 24 hours after their message, as request.ts promised them ("נשלח לכם לכאן את הלינק").
+After the 24 hours, the operator sends it from their own WhatsApp.
+
+**Customers are accounts' word.** The funnel's last stage, and the money, come from accounts' subscriptions (paid or
+ending). They are never taken from a status typed here.
+
+**Found on the way:** the website's Toran demo form never sent the `REQ-` code that Toran has asked for since
+2026-10-23, so every Toran request from openfrequency.co.il failed and was retried. It is fixed in
+openfrequency-web (branch `toran-request-code`).

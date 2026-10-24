@@ -1,0 +1,131 @@
+import type { App } from '../app.ts';
+import { DAY, HOUR, notOnShabbat, now } from '../core/clock.ts';
+import { audit, event } from '../db/log.ts';
+import { displayName } from '../ingest/brand.ts';
+import { followupDue, pitchUrl } from '../outreach.ts';
+import { reply } from '../channels/send.ts';
+import { LOST_REASONS, requestedLink } from './messages.ts';
+
+// What the operator's buttons record, for a Toran store (stores) or a Teder demo (teder_leads), every one in the audit
+// log with the operator as its actor:
+//
+//   sent       the first message went out: the one reminder comes due four days later, never on Shabbat
+//   reminded   the reminder (or, for a store that tried the demo, the question in its place) went out: the last one
+//   direct     the link to a demo someone asked for, sent now on the demo number where they asked (inside its 24
+//              hours), then recorded as sent
+//   replied    they answered: they leave the list for "in conversation"
+//   next       the next step in a conversation, and when
+//   later      off the list for a day or a week
+//   lost       they said no, with a reason
+//   won        a Toran pilot or a paying customer; a Teder customer
+
+export type Kind = 'toran' | 'teder';
+export class OpsError extends Error {}
+
+const ISO = (t: number) => new Date(t).toISOString();
+
+async function row(app: App, kind: Kind, id: string) {
+  const r = kind === 'toran'
+    ? await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [Number(id) || 0])
+    : await app.db.one<any>('SELECT * FROM teder_leads WHERE id = $1', [id]);
+  if (!r) throw new OpsError('לא מצאתי את הליד');
+  return r;
+}
+
+async function set(app: App, kind: Kind, id: string, sql: string, params: unknown[] = []) {
+  const table = kind === 'toran' ? 'stores' : 'teder_leads';
+  const key = kind === 'toran' ? Number(id) : id;
+  await app.db.query(`UPDATE ${table} SET ${sql}${kind === 'toran' ? ', updated_at = now()' : ''} WHERE id = $1`, [key, ...params]);
+}
+
+async function log(app: App, kind: Kind, id: string, action: string, by: string, detail: Record<string, unknown> = {}) {
+  const storeId = kind === 'toran' ? Number(id) : null;
+  await audit(app.db, { actor: by, action: `ops_${action}`, storeId, detail: { kind, id, ...detail } });
+  if (storeId) await event(app.db, storeId, action === 'sent' ? 'sent' : `ops_${action}`, { by, ...detail });
+}
+
+export async function markSent(app: App, kind: Kind, id: string, by: string) {
+  const r = await row(app, kind, id);
+  if (r.sent_at) throw new OpsError('כבר סומן שנשלח');
+  const t = now();
+  if (kind === 'toran') {
+    if (!r.approved_at) throw new OpsError('צריך לאשר את הדף לפני ששולחים');
+    await set(app, kind, id, "sent_at = $2, followup_due_at = $3, status = CASE WHEN status IN ('new', 'page_ready') THEN 'sent' ELSE status END", [ISO(t), ISO(followupDue(t))]);
+  } else {
+    await set(app, kind, id, 'sent_at = $2, reminder_due_at = $3', [ISO(t), ISO(followupDue(t))]);
+  }
+  await log(app, kind, id, 'sent', by);
+}
+
+export async function markReminded(app: App, kind: Kind, id: string, by: string) {
+  const r = await row(app, kind, id);
+  if (kind === 'toran') {
+    if (r.followup_sent_at) throw new OpsError('כבר נשלחה להם הודעה שנייה. מכאן לא כותבים להם יותר, אלא אם יכתבו.');
+    await set(app, kind, id, 'followup_sent_at = now(), sent_at = COALESCE(sent_at, now())');
+  } else {
+    if (!r.sent_at) throw new OpsError('עוד לא נשלחה הודעה ראשונה');
+    if (r.reminded_at) throw new OpsError('כבר נשלחה תזכורת אחת. מכאן לא כותבים להם יותר.');
+    await set(app, kind, id, 'reminded_at = now()');
+  }
+  await log(app, kind, id, 'reminded', by);
+}
+
+/**
+ * A Toran demo someone asked for on the website: the link, on the demo number where they asked, as request.ts promised
+ * them. Only inside the 24 hours after their message (send.ts checks it again); after that the operator sends it by hand.
+ */
+export async function sendDirect(app: App, id: string, by: string): Promise<void> {
+  const s = await row(app, 'toran', id);
+  if (s.sent_at) throw new OpsError('כבר סומן שנשלח');
+  if (!s.approved_at || !s.page_built_at) throw new OpsError('הדף עוד לא מוכן');
+  const req = await app.db.one<{ code: string; phone: string; claimed_at: string }>('SELECT code, phone, claimed_at FROM demo_requests WHERE domain = $1 AND claimed_at IS NOT NULL ORDER BY claimed_at DESC LIMIT 1', [s.domain]);
+  if (!req) throw new OpsError('לא ביקשו את הדמו הזה באתר');
+  if (now() - new Date(req.claimed_at).getTime() >= 24 * HOUR) throw new OpsError('עברו 24 שעות מההודעה שלהם, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.');
+  const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
+  const d = await reply(app, app.wa, { from: req.phone, text: '', id: `req-${req.code}`, at: new Date(req.claimed_at).getTime(), channel: 'whatsapp' }, requestedLink({ storeName: name, url: pitchUrl(app.env, s.slug) }), s.id, null);
+  if (!d.ok) throw new OpsError('ההודעה לא יצאה: עברו 24 שעות מההודעה שלהם. אפשר לשלוח מהוואטסאפ שלך.');
+  await markSent(app, 'toran', id, by);
+  await log(app, 'toran', id, 'direct', by, { code: req.code });
+}
+
+export async function markReplied(app: App, kind: Kind, id: string, by: string) {
+  await row(app, kind, id);
+  await set(app, kind, id, 'replied_at = COALESCE(replied_at, now()), snoozed_until = NULL, next_step_at = COALESCE(next_step_at, $2)', [ISO(notOnShabbat(now() + DAY))]);
+  await log(app, kind, id, 'replied', by);
+}
+
+export async function setNext(app: App, kind: Kind, id: string, text: string, days: number, by: string) {
+  await row(app, kind, id);
+  const d = Math.max(0, Math.min(90, Math.round(days) || 0));
+  await set(app, kind, id, 'next_step = $2, next_step_at = $3, replied_at = COALESCE(replied_at, now())', [text.trim().slice(0, 300) || null, ISO(notOnShabbat(now() + d * DAY))]);
+  await log(app, kind, id, 'next', by, { days: d });
+}
+
+export async function later(app: App, kind: Kind, id: string, days: number, by: string) {
+  await row(app, kind, id);
+  const d = days >= 7 ? 7 : 1;
+  await set(app, kind, id, 'snoozed_until = $2', [ISO(notOnShabbat(now() + d * DAY))]);
+  await log(app, kind, id, 'later', by, { days: d });
+}
+
+export async function markLost(app: App, kind: Kind, id: string, reason: string, by: string) {
+  await row(app, kind, id);
+  const why = LOST_REASONS[reason] ? reason : 'other';
+  await set(app, kind, id, 'lost_at = now(), lost_reason = $2', [why]);
+  await log(app, kind, id, 'lost', by, { reason: why });
+}
+
+/** Back on the list: undoes "not interested" and "later". */
+export async function reopen(app: App, kind: Kind, id: string, by: string) {
+  await row(app, kind, id);
+  await set(app, kind, id, 'lost_at = NULL, lost_reason = NULL, snoozed_until = NULL');
+  await log(app, kind, id, 'reopen', by);
+}
+
+/** A Toran store starts a pilot or pays; a Teder demo's store becomes a customer. */
+export async function markWon(app: App, kind: Kind, id: string, stage: 'pilot' | 'paid', by: string) {
+  const r = await row(app, kind, id);
+  if (kind === 'toran') await set(app, kind, id, 'status = $2, replied_at = COALESCE(replied_at, now())', [stage]);
+  else await set(app, kind, id, 'won_at = COALESCE(won_at, now()), replied_at = COALESCE(replied_at, now())');
+  await log(app, kind, id, 'won', by, { stage, from: r.status });
+}

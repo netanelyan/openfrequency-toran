@@ -635,3 +635,25 @@ body.ro form[method="post"] { display: none; }
 .assistant .pending p { display: flex; gap: 8px; align-items: flex-start; flex: 1 1 260px; }
 .assistant .starters { flex-wrap: wrap; gap: 6px; }
 .assistant .starters form { margin: 0; }
+
+/* The operator's dashboard (pages/ops.ts): the cards to write from, the funnels, the money. */
+.rcard.ops .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 14px 20px 20px; }
+.rcard.ops .actions form { margin: 0; }
+.rcard.ops .actions form.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rcard.ops .actions input { min-width: 0; flex: 1 1 200px; }
+.rcard.ops .who h3 .chip { margin-inline-start: 6px; vertical-align: middle; }
+.ops-funnels { display: grid; gap: 20px; }
+@media (min-width: 1000px) { .ops-funnels { grid-template-columns: 1fr 1fr; align-items: start; } }
+table.funnel { width: 100%; border-collapse: collapse; font-size: 15px; }
+table.funnel th, table.funnel td { padding: 8px 6px; text-align: start; border-bottom: 1px solid var(--line); }
+table.funnel thead th { color: var(--ink-3); font-size: 13px; font-weight: 500; }
+table.funnel tbody th { font-weight: 600; }
+table.funnel td small { margin-inline-start: 4px; }
+.kpis.ops-money { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 700px) { .kpis.ops-money { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.kpis.ops-money .kpi { gap: 2px; padding: 16px 20px; }
+.kpis.ops-money .l { color: var(--ink-2); font-size: 14px; font-weight: 600; }
+.kpis.ops-money .v { font: 700 32px/1.1 var(--display); margin: 4px 0 2px; }
+.kpis.ops-money .s { color: var(--ink-3); font-size: 13px; }
+ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 15px; }
+#money .panel { margin-bottom: 16px; }

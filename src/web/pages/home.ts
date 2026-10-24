@@ -9,11 +9,12 @@ import { getOffer, offerReady, priceSentence, setOffer, type Offer } from '../..
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { ago, csrfField, esc, icon, layout, postButton, stamp, storeBadge, tokenNum, usd } from '../ui.ts';
 import { addForm, leadRow } from './leads.ts';
+import { opsSections } from './ops.ts';
 import { storeIdIn, storesOf } from '../workspace.ts';
 import { ALL_CHANNELS, CHANNEL_HE, channelStates, enabledChannels, MESSAGING, messagingSql, setChannelState, type ChannelState } from '../../channels/config.ts';
 import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../../channels/owner.ts';
 
-// Today, the inbox (every channel's conversations, and the owner's reply in each), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
+// Today (for the operator, their dashboard on top: pages/ops.ts), the inbox (every channel's conversations, and the owner's reply in each), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
 // the offer, lead discovery, the keys and developer mode are the whole server's, so only the operator sees them.
 
 async function today(app: App, r: DashReq) {
@@ -30,7 +31,10 @@ async function today(app: App, r: DashReq) {
   const down = await app.db.query<any>(`SELECT * FROM stores WHERE takedown_asked_at IS NOT NULL AND taken_down_at IS NULL AND ${w} ORDER BY takedown_asked_at DESC`);
   const hand = await app.db.query<any>(`SELECT c.id, c.handoffs, c.misses, c.last_at, s.id AS store_id, s.name, s.domain, s.brand, (SELECT handoff->>'summary' FROM messages WHERE conversation_id = c.id AND handoff IS NOT NULL ORDER BY id DESC LIMIT 1) AS summary FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${messagingSql('c.channel')} AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storesOf(r.scope, 's')} ORDER BY c.last_at DESC LIMIT 6`);
   const lead = c.review ? { n: c.review, l: c.review === 1 ? 'דף מחכה לבדיקה' : 'דפים מחכים לבדיקה', href: '/review', s: 'דף שמאשרים עובר לשליחה' } : c.ready ? { n: c.ready, l: c.ready === 1 ? 'מוכן לשליחה' : 'מוכנים לשליחה', href: '#ready', s: 'שולחים ידנית ומסמנים שנשלח' } : { n: c.fresh, l: c.fresh === 1 ? 'ליד חדש שמתאים' : 'לידים חדשים שמתאימים', href: '/leads?status=new', s: 'אפשר לבנות להם דף' };
+  // The operator's dashboard holds who to write to (its list takes the place of "ready to send" below).
+  const ops = r.scope.operator ? await opsSections(app, r) : '';
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(now())))}</p></div>
+${ops}
 <div class="kpis">
   <a class="kpi lead" href="${lead.href}"><span class="l">${lead.l}</span><span class="v">${lead.n}</span><span class="s">${lead.s}</span></a>
   <div class="kpi side">
@@ -43,7 +47,7 @@ async function today(app: App, r: DashReq) {
 ${addForm(r)}
 ${down.length ? `<section class="group mt24"><header><h2>ביקשו להוריד את העמוד</h2></header><div class="panel">${down.map((s) => leadRow(s, postButton(r.ctx, `/lead/${s.id}/takedown`, 'להוריד', { cls: 'btn sm danger', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' }))).join('')}</div><p class="small muted mt8 m0">מישהו לחץ על "להוריד את העמוד הזה". כשההודעה שלהם מגיעה בוואטסאפ, מורידים את העמוד מכאן.</p></section>` : ''}
 ${hand.length ? `<section class="group mt24"><header><h2>העברות אליך</h2><a class="end small" href="/chats?filter=handoff">כל השיחות</a></header><div class="list">${hand.map((h) => `<a href="/chat/${h.id}"><span class="ico bad">${icon('hand')}</span><span class="t"><b>${esc(h.brand?.name || h.name || h.domain)}: ${esc(h.summary || 'תורן העביר שיחה')}</b><small>${esc(ago(h.last_at))}</small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div></section>` : ''}
-<section class="group mt24" id="ready"><header><h2>מוכנים לשליחה</h2></header>${ready.length ? `<div class="panel">${ready.map((s) => leadRow(s, `<a class="btn sm" href="/lead/${s.id}">${icon('send')}לשליחה</a>`)).join('')}</div>` : `<div class="empty">${icon('send')}<b>אין דפים שמחכים לשליחה</b>דף נכנס לכאן אחרי שמאשרים אותו.</div>`}</section>
+${ops ? '' : `<section class="group mt24" id="ready"><header><h2>מוכנים לשליחה</h2></header>${ready.length ? `<div class="panel">${ready.map((s) => leadRow(s, `<a class="btn sm" href="/lead/${s.id}">${icon('send')}לשליחה</a>`)).join('')}</div>` : `<div class="empty">${icon('send')}<b>אין דפים שמחכים לשליחה</b>דף נכנס לכאן אחרי שמאשרים אותו.</div>`}</section>`}
 <section class="group"><header><h2>לידים חדשים שמתאימים</h2><a class="end small" href="/leads?status=new">כולם</a></header>${fresh.length ? `<div class="panel">${fresh.map((s) => leadRow(s, s.platform === 'shopify' ? postButton(r.ctx, `/lead/${s.id}/build`, 'לבנות דף', { cls: 'btn sm' }) : '')).join('')}</div>` : `<div class="empty">${icon('leads')}<b>אין לידים חדשים</b>אפשר להריץ חיפוש בהגדרות.</div>`}</section>`;
   return layout({ ...r.ctx, title: 'היום', active: 'today' }, body);
 }
