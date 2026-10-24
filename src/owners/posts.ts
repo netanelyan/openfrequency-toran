@@ -3,7 +3,7 @@ import { audit } from '../db/log.ts';
 import type { Part } from '../channels/send.ts';
 import type { Intent } from './intents.ts';
 import { keepList } from './notify.ts';
-import type { TederClient, TederPost, TederStatus } from './teder.ts';
+import type { PostId, TederClient, TederPost, TederStatus } from './teder.ts';
 
 // What the owner line does with Teder's posts, for the reader in code (line.ts) and for the model's tools
 // (assistant/index.ts) alike: show the posts waiting, act on numbered ones, send one ready to post, say the status.
@@ -11,7 +11,7 @@ import type { TederClient, TederPost, TederStatus } from './teder.ts';
 // with an edit. Every action is in the audit, with the owner's number as the actor.
 
 export type PostsCtx = { app: App; teder: TederClient; workspaceId: number; phone: string };
-export type ListItem = { id: number; hook: string };
+export type ListItem = { id: PostId; hook: string };
 export type Done = { lines: string[]; parts: Part[] };
 
 /** The list the owner last saw (the last 7 days), or null. */
@@ -110,7 +110,9 @@ export async function act(c: PostsCtx, items: ListItem[], intents: Intent[]): Pr
       await log('teder_reject', item, { ok: r.ok, reason: it.reason, note: it.note, status: r.status, error: r.ok ? null : r.error, replacement: r.ok ? r.body.replacement?.id ?? null : null });
       if (!r.ok) lines.push(r.status === 409 ? `את ${it.n} כבר אי אפשר להחזיר, היא לא מחכה לאישור.` : r.status === 404 ? `את ${it.n} לא מצאתי בטדר.` : `את ${it.n} לא החזרתי, כי לא הצלחתי להגיע לטדר. נסו שוב עוד כמה דקות.`);
       else if (r.body.replacement) lines.push(`את ${it.n} החזרתי לכתיבה מחדש${it.note ? ` עם ההערה "${it.note}"` : ''}. הגרסה החדשה תגיע לאישור כשתהיה מוכנה.`);
-      else lines.push(`את ${it.n} דחיתי.${r.body.redosLeft === 0 ? ' הכתיבות מחדש של החודש נגמרו, אז לא תיכתב במקומה גרסה חדשה.' : ''}`);
+      // No replacement: the month's redos are used up, or Teder does not write one. Either way the owner hears that the
+      // change they asked for will not come back as a new version.
+      else lines.push(`את ${it.n} דחיתי.${r.body.redosLeft === 0 ? ' הכתיבות מחדש של החודש נגמרו, אז לא תיכתב במקומה גרסה חדשה.' : it.note ? ' טדר לא כותב לה גרסה חדשה, אז את מה שביקשתם לשנות אפשר לתקן במצגת הבאה.' : ''}`);
       continue;
     }
     const r = await c.teder.edit(item.id, it.slide, it.line, it.text);

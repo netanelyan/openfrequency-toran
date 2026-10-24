@@ -6,6 +6,7 @@ import type { Part } from '../channels/send.ts';
 import type { WaOut } from '../channels/whatsapp.ts';
 import { mayNotify, type Owner } from './identity.ts';
 import { filled, templateSid, TEMPLATES } from './templates.ts';
+import type { PostId } from './teder.ts';
 
 // The one place Toran writes to someone who did not just write: a business owner's own number, about their own Teder
 // account. Every rule is checked here, in code, before anything goes out, and every attempt is a row in
@@ -35,7 +36,7 @@ export type Push = {
   workspaceId: number;
   session: Part[]; // inside the window
   template: { name: string; vars: string[] } | null; // outside it
-  list?: { items: { id: number; hook: string }[]; source: string }; // the posts it shows, numbered from 1
+  list?: { items: { id: PostId; hook: string }[]; source: string }; // the posts it shows, numbered from 1
 };
 export type Outcome = 'sent' | 'skipped' | 'failed';
 
@@ -51,7 +52,7 @@ export async function rememberOwner(app: App, o: Owner, { inboundAt = null }: { 
 }
 
 /** Keep the posts an owner was shown, in order: "1" in their next message is the first. */
-export async function keepList(app: App, phone: string, workspaceId: number, items: { id: number; hook: string }[], source: string) {
+export async function keepList(app: App, phone: string, workspaceId: number, items: { id: PostId; hook: string }[], source: string) {
   await app.db.query('INSERT INTO owner_lists (phone, workspace_id, items, source) VALUES ($1, $2, $3::jsonb, $4)', [phone, workspaceId, J(items), source]);
 }
 

@@ -4,7 +4,7 @@ import type { Part } from '../channels/send.ts';
 import { ownersOf } from './identity.ts';
 import { pushToOwner, recordDeferred, type Push } from './notify.ts';
 import { HINT_MANY, HINT_ONE, numbered, platformHe, sendBundle } from './posts.ts';
-import { tederClient, type TederPost } from './teder.ts';
+import { isPostId, tederClient, type TederPost } from './teder.ts';
 
 // Teder's events (docs/owner-line.md section 2) as messages to the workspace's owner numbers. The webhook
 // (web/public.ts) checks the signature, keeps the event once in teder_events and queues a teder_event job; the job
@@ -31,7 +31,7 @@ const postsHe = (n: number) => (n === 1 ? 'מצגת חדשה אחת' : `${n} מ�
 async function messageFor(app: App, ev: TederEvent): Promise<Omit<Push, 'eventId' | 'workspaceId' | 'kind'> | null> {
   const d = ev.data || {};
   if (ev.type === 'post.ready') {
-    const posts: TederPost[] = (Array.isArray(d.posts) ? d.posts : []).filter((p: any) => Number.isInteger(p?.id) && typeof p?.hook === 'string');
+    const posts: TederPost[] = (Array.isArray(d.posts) ? d.posts : []).filter((p: any) => isPostId(p?.id) && typeof p?.hook === 'string');
     if (!posts.length) return null;
     const head = posts.length === 1 ? 'מצגת חדשה אחת מוכנה לאישור:' : `${posts.length} מצגות חדשות מוכנות לאישור:`;
     return {
@@ -42,7 +42,7 @@ async function messageFor(app: App, ev: TederEvent): Promise<Omit<Push, 'eventId
   }
   if (ev.type === 'post.reminder' || ev.type === 'post.unposted') {
     const p: TederPost | undefined = d.post;
-    if (!p || !Number.isInteger(p.id) || typeof p.hook !== 'string') return null;
+    if (!p || !isPostId(p.id) || typeof p.hook !== 'string') return null;
     const where = platformHe(String(d.platform || 'instagram'));
     const list = { items: [{ id: p.id, hook: p.hook }], source: ev.type };
     if (ev.type === 'post.reminder') {

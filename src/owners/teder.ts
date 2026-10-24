@@ -40,9 +40,12 @@ export function verify(secret: string | null, headers: Record<string, string | s
   return got.length === want.length && timingSafeEqual(got, want) ? null : 'bad_signature';
 }
 
-// ---- the shapes Teder answers with
+// ---- the shapes Teder answers with. A post's id is Teder's own, a string (a number is taken too).
 
-export type TederPost = { id: number; account?: { id: string; name: string }; status: string; hook: string; slotAt?: string | null; slides?: number; cover?: { url: string } | null };
+export type PostId = string | number;
+export const isPostId = (v: unknown): v is PostId => (typeof v === 'string' && /^[\w.:-]{1,80}$/.test(v)) || (Number.isInteger(v) && (v as number) > 0);
+
+export type TederPost = { id: PostId; account?: { id: string; name: string }; status: string; hook: string; slotAt?: string | null; slides?: number; cover?: { url: string } | null };
 export type TederSlide = { idx: number; kind?: string; lines: string[]; image?: { url: string } | null };
 export type TederStatus = {
   workspace: number;
@@ -92,14 +95,15 @@ export function tederClient(app: App, workspaceId: number, actor: string) {
   }
 
   const P = '/internal/assistant';
+  const enc = (id: PostId) => encodeURIComponent(String(id));
   return {
     status: () => call<TederStatus>('GET', `${P}/status`),
     pending: () => call<{ posts: TederPost[] }>('GET', `${P}/posts?status=queued`),
-    post: (id: number) => call<{ post: TederPost & { caption?: string; hashtags?: string[]; slideList?: TederSlide[] } }>('GET', `${P}/posts/${id}`),
-    approve: (id: number) => call<{ post: { id: number; status: string } }>('POST', `${P}/posts/${id}/approve`),
-    reject: (id: number, reason: string, note: string) => call<{ post: { id: number; status: string }; replacement: { id: number; status: string } | null; redosLeft?: number }>('POST', `${P}/posts/${id}/reject`, { reason, note }),
-    edit: (id: number, slide: number, line: number, text: string) => call<{ post: TederPost; slide: TederSlide }>('POST', `${P}/posts/${id}/edit`, { slide, line, text }),
-    bundle: (id: number) => call<{ post: { id: number; hook: string }; images: { url: string }[]; caption: string }>('GET', `${P}/posts/${id}/bundle`),
+    post: (id: PostId) => call<{ post: TederPost & { caption?: string; hashtags?: string[]; slideList?: TederSlide[] } }>('GET', `${P}/posts/${enc(id)}`),
+    approve: (id: PostId) => call<{ post: { id: PostId; status: string } }>('POST', `${P}/posts/${enc(id)}/approve`),
+    reject: (id: PostId, reason: string, note: string) => call<{ post: { id: PostId; status: string }; replacement: { id: PostId; status: string } | null; redosLeft?: number | null }>('POST', `${P}/posts/${enc(id)}/reject`, { reason, note }),
+    edit: (id: PostId, slide: number, line: number, text: string) => call<{ post: TederPost; slide: TederSlide }>('POST', `${P}/posts/${enc(id)}/edit`, { slide, line, text }),
+    bundle: (id: PostId) => call<{ post: { id: PostId; hook: string }; images: { url: string }[]; caption: string }>('GET', `${P}/posts/${enc(id)}/bundle`),
   };
 }
 export type TederClient = ReturnType<typeof tederClient>;

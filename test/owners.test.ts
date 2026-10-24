@@ -170,6 +170,12 @@ test('post.ready inside the 24 hours: the covers numbered, then "אשר את 1 �
     // Approving again: Teder says it is no longer waiting, and the owner hears that.
     await s.write('אשר את 1');
     assert.match(s.outbox.at(-1)!.text, /את 1 כבר אי אפשר לאשר/);
+    // Rejected with no replacement (no redos left): the owner hears there is no new version coming.
+    s.teder.redos = 0;
+    s.teder.add({ id: 14, workspace: WS, hook: 'עוד אחת' });
+    await s.event('post.ready', { posts: [{ id: 14, hook: 'עוד אחת', cover: null }] });
+    await s.write('דחה');
+    assert.match(s.outbox.at(-1)!.text, /^את 1 דחיתי\. הכתיבות מחדש של החודש נגמרו/);
   } finally {
     await s.close();
   }
