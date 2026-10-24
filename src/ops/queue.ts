@@ -1,6 +1,7 @@
 import type { App } from '../app.ts';
 import { HOUR, now } from '../core/clock.ts';
 import { displayName } from '../ingest/brand.ts';
+import { PLATFORM_HE } from '../web/ui.ts';
 import { contactTarget, firstMessage, pitchUrl, reminderMessage } from '../outreach.ts';
 import { requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo } from './messages.ts';
 
@@ -43,6 +44,30 @@ const live = (t = '') => `${t}status NOT IN ('skipped', 'pilot', 'paid') AND ${t
 const storeName = (s: any) => displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
 const waTarget = (phone: string | null) => (phone ? { kind: 'whatsapp' as const, href: `https://wa.me/${phone}`, label: 'להעתיק ולפתוח וואטסאפ' } : { kind: null, href: null, label: 'להעתיק' });
 const DIRECT_HOURS = 23;
+
+/** A demo asked for on the website (the number proven) that has no page to send yet, and why: the operator answers them. */
+export type Stuck = { domain: string; phone: string; at: string; why: string; storeId: number | null };
+
+export async function stuckRequests(app: App): Promise<Stuck[]> {
+  const rows = await app.db.query<any>(
+    `SELECT r.domain, r.phone, r.claimed_at, s.id, s.platform, s.page_built_at, s.approved_at, s.sent_at, s.status,
+            (SELECT status FROM jobs WHERE dedupe_key = 'add:' || r.domain ORDER BY id DESC LIMIT 1) AS job
+       FROM demo_requests r LEFT JOIN stores s ON s.domain = r.domain
+      WHERE r.claimed_at > now() - interval '14 days' AND (s.id IS NULL OR (s.sent_at IS NULL AND (s.approved_at IS NULL OR s.page_built_at IS NULL)))
+      ORDER BY r.claimed_at`,
+  );
+  return rows.map((r) => ({
+    domain: r.domain,
+    phone: r.phone,
+    at: r.claimed_at,
+    storeId: r.id ?? null,
+    why: r.job === 'queued' || r.job === 'running' ? 'הדף בבנייה'
+      : r.id && r.platform && r.platform !== 'shopify' ? `האתר על ${PLATFORM_HE[r.platform] || r.platform}, ותורן בונה דמו רק לחנויות Shopify`
+      : !r.id ? 'לא הצלחנו לקרוא את האתר'
+      : !r.page_built_at ? 'הדף לא נבנה'
+      : 'הדף מחכה לבדיקה, חסר בו משהו',
+  }));
+}
 
 export async function queue(app: App): Promise<{ items: Item[]; noContact: any[] }> {
   const { db } = app;

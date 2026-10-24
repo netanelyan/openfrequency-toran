@@ -9,8 +9,9 @@ import { J, type Db } from './db/index.ts';
 // set, every pitch page is held back (pitch/ready.ts) rather than shown with a guess.
 //
 // OpenFrequency's own WhatsApp number (TORAN_OWNER_WHATSAPP) is the "write to us" button
-// and where "take this page down" goes. It must not be the demo number, or a takedown
-// request would land in the demo router.
+// and where "take this page down" goes. It may be the demo number too (one number for
+// support and the demos): the demo router knows the page's two messages by their words
+// and the page's link, and hands them to the operator (channels/demo.ts, pageMessage).
 
 export type Offer = {
   monthly: number | null; // ₪ a month
@@ -46,9 +47,12 @@ export function priceSentence(o: Offer, missing: (label: string) => string, esc:
   return `זה ${monthly} לחודש, ${vat}${setup}.`;
 }
 
-/** OpenFrequency's WhatsApp number, in digits, or null when it is not set (or is the demo number by mistake). */
+/** How the page's two messages to us begin: "write to us" and "take this page down". Each ends with the page's link. */
+export const PAGE_ABOUT = 'היי, לגבי העמוד שהכנתם';
+export const PAGE_DOWN = 'היי, אפשר להוריד את העמוד שהכנתם';
+
+/** OpenFrequency's WhatsApp number, in digits, or null when it is not set. */
 export function ofWhatsapp(env: Record<string, string | undefined>): string | null {
   const n = String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/)[0].replace(/\D/g, '');
-  const demo = String(env.DEMO_WA_NUMBER || '').replace(/\D/g, '');
-  return n && n !== demo ? n : null;
+  return n || null;
 }

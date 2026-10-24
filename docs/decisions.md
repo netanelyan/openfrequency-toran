@@ -306,3 +306,29 @@ ending). They are never taken from a status typed here.
 **Found on the way:** the website's Toran demo form never sent the `REQ-` code that Toran has asked for since
 2026-10-23, so every Toran request from openfrequency.co.il failed and was retried. It is fixed in
 openfrequency-web (branch `toran-request-code`).
+
+## 2026-10-24: one number for support and the demos; the demo goes out by itself
+
+**One number.** OpenFrequency's WhatsApp (in TORAN_OWNER_WHATSAPP and DEMO_WA_NUMBER, both the same) is the support number, the "write to us" button and the demo
+number. Until now a page counted "our number is the demo number" as missing, so that a takedown would not land in the
+demo router; that rule is gone. The page's two messages to us ("take this page down", "about the page") start with
+fixed words and end with the page's link. The demo router knows them by those (`pageMessage` in `channels/demo.ts`):
+- A takedown becomes the store's takedown request, and Today lists it.
+- The other message is kept in the store's chat, handed to the operator.
+- Each gets one short reply, and neither reaches the agent.
+
+**The demo goes out by itself.** Each minute the worker sends the link to every demo asked for on the website whose
+page is now public (`deliverRequested`). It goes on the demo number, inside the 23 hours after the person wrote with
+the code. A page that is held back waits. One past the 23 hours stays on the operator's list, to send by hand.
+
+**What the website promises: "within an hour".** After the code arrives:
+- Detecting and reading a store takes 30 to 340 seconds (docs/milestones.md).
+- The pitch page and its sample chat take about a minute on the model.
+- The worker checks every minute.
+- A new store can wait behind the daily re-reads, two at a time.
+
+An hour covers all of it, with room to spare.
+
+**Requests with nothing to send:** a store that is not on Shopify (Toran reads Shopify only), a site that could not
+be read, or a page that is held back. The dashboard lists them under "ביקשו דמו באתר, ועוד אין מה לשלוח", so the
+operator answers them in person.

@@ -129,3 +129,29 @@ export async function markWon(app: App, kind: Kind, id: string, stage: 'pilot' |
   else await set(app, kind, id, 'won_at = COALESCE(won_at, now()), replied_at = COALESCE(replied_at, now())');
   await log(app, kind, id, 'won', by, { stage, from: r.status });
 }
+
+/**
+ * The link to every Toran demo asked for on the website, sent by itself once its page is ready: the worker runs this
+ * each minute. A request counts from the moment the person wrote with its code (their number is then proven), and
+ * the link goes on the demo number inside the 23 hours after that (send.ts holds the 24-hour line). A page that is not
+ * public yet (something missing, held back) waits; one past the 23 hours stays on the operator's list, to send by hand.
+ */
+export async function deliverRequested(app: App): Promise<number> {
+  const { pitchGaps, isPublic } = await import('../pitch/ready.ts');
+  const due = await app.db.query<any>(
+    `SELECT DISTINCT s.* FROM demo_requests r JOIN stores s ON s.domain = r.domain
+      WHERE r.claimed_at > now() - interval '23 hours' AND s.approved_at IS NOT NULL AND s.page_built_at IS NOT NULL AND s.sent_at IS NULL
+        AND s.taken_down_at IS NULL AND s.status <> 'skipped' AND s.lost_at IS NULL`,
+  );
+  let n = 0;
+  for (const s of due) {
+    if (!isPublic(s, await pitchGaps(app, s))) continue;
+    try {
+      await sendDirect(app, String(s.id), 'auto');
+      n++;
+    } catch (e: any) {
+      app.log(`[ops] the requested demo for store ${s.id} was not sent: ${e?.message || e}`);
+    }
+  }
+  return n;
+}

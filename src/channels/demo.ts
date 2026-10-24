@@ -9,6 +9,8 @@ import { hold, isPaused } from './owner.ts';
 import { reply } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 import { LINK_CODE, ownerByPhone } from '../owners/identity.ts';
+import { PAGE_ABOUT, PAGE_DOWN } from '../offer.ts';
+import { J } from '../db/index.ts';
 import { ownerLine } from '../owners/line.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
@@ -40,9 +42,11 @@ const msg = {
   expired: `עברו ${BINDING_DAYS} ימים מאז שהדמו הזה התחיל, אז סגרנו אותו. כדי להתחיל מחדש לוחצים שוב על הכפתור בעמוד.`,
   limit: `בדמו אפשר לשאול עד ${DAILY_TURNS} שאלות ביום, והן נגמרו להיום. אפשר להמשיך מחר.`,
   noText: 'בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?',
+  takedown: 'קיבלנו, ונוריד את העמוד. לא נכתוב לכם שוב.',
+  contact: 'קיבלנו את ההודעה, ונחזור אליכם כאן.',
 };
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line'; storeId?: number; reply?: string };
+export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 
@@ -102,6 +106,10 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
     return { action: 'bound', storeId: store.id, reply: o.reply };
   }
 
+  // A pitch page's message to us ("take this page down", "about the page"), when our number is the demo number too.
+  const page = await pageMessage(app, adapter, inbound);
+  if (page) return page;
+
   // A business owner, from a number accounts verified (src/owners/): they are talking to their assistant, not asking
   // as a customer, here as on the owner line. A link code from accounts is theirs too. A demo code still binds them to
   // a demo above; to try the demo as a customer, they write from another number.
@@ -143,6 +151,33 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
   const o = await runTurn(app, { storeId: binding.store_id, conversationId: conv, text, extId: inbound.id });
   await reply(app, adapter, inbound, o.reply, binding.store_id, conv);
   return { action: 'answered', storeId: binding.store_id, reply: o.reply };
+}
+
+const PAGE_LINK = /\/s\/([\w-]{3,40})(?![\w-])/;
+
+/**
+ * A pitch page's own message to OpenFrequency, which arrives here when our number is the demo number too (offer.ts):
+ * it starts with the page's words and holds the page's link, so the store is known. "Take this page down" is recorded
+ * as the store's takedown request (Today lists it; the operator takes the page down). "About the page" is kept in the
+ * store's chat, handed to the operator. Either way one short reply, and nothing goes to the agent.
+ */
+async function pageMessage(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult | null> {
+  const text = String(inbound.text || '').trim();
+  const down = text.startsWith(PAGE_DOWN);
+  if (!down && !text.startsWith(PAGE_ABOUT)) return null;
+  const slug = PAGE_LINK.exec(text)?.[1];
+  const store = slug ? await app.db.one<{ id: number }>('SELECT id FROM stores WHERE slug = $1', [slug]) : null;
+  if (!store) return null;
+  const conv = await conversationFor(app.db, store.id, 'whatsapp', inbound.from);
+  await hold(app, conv, inbound);
+  const handoff = down ? { reason: 'takedown', summary: 'ביקשו להוריד את העמוד' } : { reason: 'contact', summary: 'כתבו לנו מהעמוד' };
+  await app.db.query("INSERT INTO messages (conversation_id, role, text, handoff) VALUES ($1, 'system', $2, $3::jsonb)", [conv, handoff.summary, J(handoff)]);
+  await app.db.query('UPDATE conversations SET handoffs = handoffs + 1, last_at = now() WHERE id = $1', [conv]);
+  if (down) await app.db.query('UPDATE stores SET takedown_asked_at = COALESCE(takedown_asked_at, now()), updated_at = now() WHERE id = $1', [store.id]);
+  await event(app.db, store.id, down ? 'takedown_message' : 'contact_message', { conversationId: conv });
+  const line = down ? msg.takedown : msg.contact;
+  await reply(app, adapter, inbound, line, store.id, conv);
+  return { action: down ? 'takedown' : 'contact', storeId: store.id, reply: line };
 }
 
 export const bindingExpiresIn = (boundAt: number) => boundAt + BINDING_DAYS * DAY - now();

@@ -9,6 +9,7 @@ import { canonicalDomain } from '../core/urls.ts';
 import { event } from '../db/log.ts';
 import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
 import { handleTederEvent } from '../owners/events.ts';
+import { deliverRequested } from '../ops/actions.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -22,7 +23,8 @@ import { handleTederEvent } from '../owners/events.ts';
 //                Teder's quiet time by queueing itself again
 //
 // Scheduled each minute: a rescrape for every store with a built page that is not
-// skipped and was last ingested over 20 hours ago; expired WhatsApp bindings cleaned up.
+// skipped and was last ingested over 20 hours ago; expired WhatsApp bindings cleaned up; the link to each demo asked
+// for on the website whose page is now ready, sent on the demo number.
 
 export async function runJob(app: App, job: Job): Promise<unknown> {
   const p = job.payload || {};
@@ -89,6 +91,8 @@ export async function schedule(app: App) {
   );
   for (const s of due) await enqueue(app.db, 'rescrape', { storeId: s.id }, { dedupeKey: `ingest:${s.id}` });
   await app.db.query("DELETE FROM wa_users WHERE expires_at < now() - interval '1 day'");
+  // A demo asked for on the website whose page is ready: its link, on the demo number (ops/actions.ts).
+  await deliverRequested(app);
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */

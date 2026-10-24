@@ -63,7 +63,7 @@ test('a page is held for each missing field: price, the two numbers, the colour,
     await setOffer(app.db, OFFER);
     assert.deepEqual(await keys(), []);
     app.env.TORAN_OWNER_WHATSAPP = app.env.DEMO_WA_NUMBER;
-    assert.deepEqual(await keys(), ['of_number'], 'our number may not be the demo number');
+    assert.deepEqual(await keys(), [], 'our number may be the demo number too: one number for support and the demos');
     app.env.TORAN_OWNER_WHATSAPP = ENV.TORAN_OWNER_WHATSAPP;
     delete app.env.DEMO_WA_NUMBER;
     assert.deepEqual(await keys(), ['demo_number']);
