@@ -1,6 +1,7 @@
 import type { App } from '../app.ts';
 import { event, usage } from '../db/log.ts';
-import { adapterFor } from './adapters.ts';
+import { adapterFor, adapterOf } from './adapters.ts';
+import { markLive } from './waStore.ts';
 import { demoNumber, type RouteResult } from './demo.ts';
 import { ownerLine } from '../owners/line.ts';
 import { LEDGER } from './send.ts';
@@ -27,7 +28,13 @@ export function isOwnerLine(env: Record<string, string | undefined>, to: string 
 }
 
 export async function handleInbound(app: App, inbound: Inbound): Promise<RouteResult> {
-  const adapter = adapterFor(app, inbound.channel);
+  // A message to a store's own WhatsApp number (Meta) carries the number's id, and goes through that number's adapter.
+  const own = inbound.channel === 'whatsapp' && inbound.account ? await accountFor(app, 'whatsapp', inbound.account) : null;
+  if (inbound.channel === 'whatsapp' && inbound.account && !own) {
+    await event(app.db, null, 'wa_unknown_account', { account: inbound.account });
+    return { action: 'unknown_account' };
+  }
+  const adapter = own ? adapterOf(app, 'whatsapp', own) : adapterFor(app, inbound.channel);
   if (inbound.report) {
     await app.db.query('INSERT INTO mail_suppressed (address, reason) VALUES ($1, $2) ON CONFLICT (address) DO UPDATE SET reason = EXCLUDED.reason, at = now()', [inbound.from, inbound.report]);
     await event(app.db, null, `mail_${inbound.report}`, { address: inbound.from });
@@ -37,8 +44,11 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
   const msg = adapter.complete && inbound.pending ? await adapter.complete(inbound) : inbound;
   const { tag, kind } = LEDGER[adapter.channel];
   await usage(app.db, { kind, backend: adapter.kind, units: 1, usd: adapter.inboundUsd, apiUsd: adapter.inboundUsd, tag: `${tag}_in` });
-  const account = msg.account ? await accountFor(app, adapter.channel, msg.account) : null;
-  if (account) return storeChannel(app, adapter, msg, account);
+  const account = own || (msg.account ? await accountFor(app, adapter.channel, msg.account) : null);
+  if (account) {
+    if (account.status === 'pending') await markLive(app, account.id, account.store_id);
+    return storeChannel(app, adapter, msg, account);
+  }
   if (adapter.channel === 'whatsapp' && isOwnerLine(app.env, msg.to)) {
     const r = await ownerLine(app, adapter, msg);
     return { action: r.action === 'assistant' || r.action === 'duplicate' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };

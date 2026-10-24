@@ -10,11 +10,15 @@ import { event } from '../db/log.ts';
 import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
 import { handleTederEvent } from '../owners/events.ts';
 import { deliverRequested } from '../ops/actions.ts';
+import { checkAccount, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
 //   wa_inbound   a WhatsApp message: route it, answer it (channels/route.ts)
 //   mail_inbound an email to a store's address, or Resend's report of a bounce: the same
+//   wa_echo      the owner wrote to a customer from the WhatsApp Business app on their phone (channels/waStore.ts)
+//   wa_status    Meta's delivery report on a message from a store's own number: a failure is kept
+//   wa_check     a store's own WhatsApp number's state at Meta, read again (pending ones every ten minutes)
 //   add_store    "add by URL" from the dashboard, or a demo asked for on the website: detect and score, ingest, build
 //                the page
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
@@ -34,6 +38,12 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return handleInbound(app, p);
     case 'mail_inbound':
       return handleInbound(app, { ...p, channel: 'email' });
+    case 'wa_echo':
+      return ownerEcho(app, p);
+    case 'wa_status':
+      return deliveryStatus(app, p);
+    case 'wa_check':
+      return checkAccount(app, Number(p.accountId));
     case 'add_store': {
       await say('בודק את האתר');
       const domain = canonicalDomain(p.url);
@@ -93,6 +103,9 @@ export async function schedule(app: App) {
   await app.db.query("DELETE FROM wa_users WHERE expires_at < now() - interval '1 day'");
   // A demo asked for on the website whose page is ready: its link, on the demo number (ops/actions.ts).
   await deliverRequested(app);
+  // A store's own WhatsApp number waiting at Meta: read again every ten minutes, so it turns on by itself.
+  const pending = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status = 'pending' AND COALESCE((meta->>'checked_at')::timestamptz, 'epoch') < now() - interval '10 minutes'");
+  for (const a of pending) await enqueue(app.db, 'wa_check', { accountId: a.id }, { dedupeKey: `wa_check:${a.id}`, maxAttempts: 1 });
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */
@@ -126,7 +139,7 @@ export function startWorker(app: App, { idleMs = 1000, concurrency = 2 }: { idle
           lastSchedule = Date.now();
           await schedule(app);
         }
-        const job = (await claim(app.db, ['wa_inbound', 'mail_inbound'])) || (await claim(app.db));
+        const job = (await claim(app.db, ['wa_inbound', 'mail_inbound', 'wa_echo'])) || (await claim(app.db));
         if (job) await runOne(app, job);
         else await new Promise((r) => setTimeout(r, idleMs));
       } catch (e: any) {

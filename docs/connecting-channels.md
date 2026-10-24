@@ -1,20 +1,21 @@
 # Connecting Toran's channels
 
-How to turn on each channel in production, in the order it makes sense to do it. It is written against the code as
-of 2026-10-24 (main d607c68). The general deploy notes are in docs/deploy.md; this file is the checklist.
+How to turn on each channel in production, in the order it makes sense to do it. The general deploy notes are in
+docs/deploy.md; this file is the checklist.
+
+**The providers (decided 2026-10-24):** Meta directly for every WhatsApp number, the stores' and our own, and for
+Instagram and Messenger, through one Meta app. A store connects the number it already has on the WhatsApp Business
+app (coexistence), so WhatsApp keeps working on the owner's phone. Resend for email. Twilio's code stays in the
+repository, unused.
 
 ## Where things stand
 
 | Channel | Code | Production (checked from outside, 2026-10-24) |
 | --- | --- | --- |
 | Email | Built: Resend, signed webhook, threads, bounces, owner replies | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
-| WhatsApp, the demo number | Built: Twilio, one shared number | On the simulator. `/wa/twilio` answers 404 |
-| WhatsApp, a store's own number | **Not built** | - |
-| Instagram | **Not built** | Shown as "בקרוב" on the website |
-| Messenger | **Not built** | Shown as "בקרוב" on the website |
-
-Steps 0 to 3 are accounts and settings only. Steps 4 and 5 need code first, but the Meta side takes weeks, so it is
-worth starting it now.
+| WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox | Waits for the Meta app and its settings (step 2) |
+| WhatsApp, our demo number and owner line | Built on Twilio's code; moving them to Meta is a later item | On the simulator |
+| Instagram, Messenger | **Not built.** Next, behind a flag | Shown as "בקרוב" on the website |
 
 ## How to change a setting on the server
 
@@ -33,7 +34,7 @@ journalctl -u toran -n 30 --no-pager    # if it is not active
 To see which settings are present without printing any value:
 
 ```
-ssh tiyul-vps 'cd /opt/toran; for k in ANTHROPIC_API_KEY TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_WHATSAPP_FROM TWILIO_WEBHOOK_URL DEMO_WA_NUMBER TORAN_ASSISTANT_WA TWILIO_TEMPLATES RESEND_API_KEY RESEND_WEBHOOK_SECRET TORAN_MAIL_DOMAIN TORAN_CHANNELS; do grep -qE "^$k=.+" private/.env && echo "$k: set" || echo "$k: MISSING"; done'
+ssh tiyul-vps 'cd /opt/toran; for k in ANTHROPIC_API_KEY META_APP_ID META_APP_SECRET META_WA_CONFIG_ID META_WEBHOOK_VERIFY_TOKEN TORAN_SECRETS_KEY RESEND_API_KEY RESEND_WEBHOOK_SECRET TORAN_MAIL_DOMAIN TORAN_CHANNELS; do grep -qE "^$k=.+" private/.env && echo "$k: set" || echo "$k: MISSING"; done'
 ```
 
 ## Step 0. The model: check this first
@@ -99,97 +100,80 @@ from that address in the store's name. Using a subdomain keeps openfrequency.co.
 Cost: Resend has a free plan with a daily and a monthly sending limit, and paid plans above it. Check
 resend.com/pricing against the number of stores you expect.
 
-## Step 2. WhatsApp, the demo number (Twilio): built
+## Step 2. A store's own WhatsApp number (Meta, coexistence): built
 
-This is the one number every pitch page's "try it" button opens. Prospects write the store's DEMO code to it.
+The store opens Settings, "לחבר את הוואטסאפ של החנות", reads what to check first, and presses the button. Meta's
+window opens; the store logs into Facebook, picks or creates its business, chooses to connect its existing WhatsApp
+Business app number, and approves on the phone with the code Meta shows. Toran turns the code into the store's token
+(sealed with `TORAN_SECRETS_KEY`), asks Meta to send the number's messages to `/meta/webhook`, and reads the number's
+state. Connected: Toran answers from then on. Not yet: the dashboard says "ממתין לאישור של Meta", the worker asks Meta
+again every ten minutes, and the store turns on by itself. When the owner answers a customer from the phone, the
+answer shows in the inbox and Toran stops answering in that conversation for 12 hours.
 
-> **Read this before registering a number.** `DEMO_WA_NUMBER` is set to OpenFrequency's own number, the same as
-> `TORAN_OWNER_WHATSAPP`: the support number, and the number on your phone. A number registered on the WhatsApp Business Platform (which is what
-> Twilio uses) normally stops working in the WhatsApp app on the phone. Before you register it, ask Twilio whether
-> it supports keeping the app on that number ("coexistence"). If it doesn't, use a separate number for the demo,
-> keep OpenFrequency's number for support (`TORAN_OWNER_WHATSAPP`), and update the demo number on the website
-> (`TORAN_DEMO_WA` in /etc/openfrequency-web/lead.env, and `whatsapp` in site.config.json).
-
-1. **Twilio account.** Sign up at twilio.com and upgrade it from trial (add a payment method).
-2. **Meta business.** Twilio's WhatsApp self sign-up connects a Meta Business portfolio. Use OpenFrequency's, and
-   start Meta's **business verification** on it (Business Settings, Security Center). It asks for company
-   documents and takes days, and the same verification is needed for steps 3 to 5.
-3. **The sender.** In Twilio, Messaging, Senders, WhatsApp senders, create one with self sign-up and register the
-   number (an Israeli number that can get the SMS or voice code). The display name should be "OpenFrequency".
-   While Meta reviews it, Twilio's WhatsApp sandbox works for testing.
-4. **The webhook.** On the sender, set "A message comes in" to `https://toran.openfrequency.co.il/wa/twilio`,
-   method POST.
-5. **`.env`**, then restart. The Account SID and Auth Token are on the Twilio console's front page:
+**What you set up once, at Meta:**
+1. **Business verification** of OpenFrequency's Meta Business portfolio (Business Settings, Security Center). It asks
+   for company documents and takes days.
+2. **A Meta app.** At developers.facebook.com, create an app of type Business, owned by that portfolio, and add the
+   **WhatsApp** product.
+3. **Become a Tech Provider.** In the app's WhatsApp settings, follow Meta's Tech Provider onboarding. That is what
+   lets other businesses (the stores) connect their numbers to our app.
+4. **The Embedded Signup configuration.** In the app, Facebook Login for Business, Configurations, create one for
+   WhatsApp Embedded Signup, with onboarding of **WhatsApp Business app** numbers (coexistence) turned on. Its id is
+   `META_WA_CONFIG_ID`. Add `toran.openfrequency.co.il` to the app's allowed domains for the JavaScript SDK.
+5. **The webhook.** In the app's WhatsApp, Configuration: callback URL `https://toran.openfrequency.co.il/meta/webhook`,
+   verify token the string you put in `META_WEBHOOK_VERIFY_TOKEN`. Subscribe the fields `messages`,
+   `smb_message_echoes` and `account_update`.
+6. **App Review.** For stores outside our own business, Meta must approve `whatsapp_business_messaging` and
+   `whatsapp_business_management` with advanced access. You submit it; Claude never does. Until then the flow works
+   for people with a role on the app, so try it with our own number first.
+7. **`.env`**, then restart:
    ```
-   TWILIO_ACCOUNT_SID=AC...
-   TWILIO_AUTH_TOKEN=...
-   TWILIO_WHATSAPP_FROM=+972...                     # the sender's number
-   TWILIO_WEBHOOK_URL=https://toran.openfrequency.co.il/wa/twilio   # exactly as in step 4: the signature is checked against it
-   DEMO_WA_NUMBER=972...                            # the same number, digits only
+   META_APP_ID=<the app id>
+   META_APP_SECRET=<the app secret, App settings, Basic>
+   META_WA_CONFIG_ID=<the configuration id from item 4>
+   META_WEBHOOK_VERIFY_TOKEN=<any string you choose, the same as in item 5>
+   META_GRAPH_VERSION=v23.0
+   TORAN_SECRETS_KEY=<32 or more random characters, e.g. from: openssl rand -base64 33>
    ```
-6. **Check it is wired:**
+   Keep `TORAN_SECRETS_KEY` safe and unchanged: it seals every store's token, and a new key means every store
+   connects again.
+8. **Check it is wired:**
    ```
-   curl -s -o /dev/null -w "%{http_code}\n" -X POST https://toran.openfrequency.co.il/wa/twilio
+   curl -s "https://toran.openfrequency.co.il/meta/webhook?hub.mode=subscribe&hub.verify_token=<your token>&hub.challenge=ok"
    ```
-   `403` means it is on. `404` means it is still on the simulator (one of the four Twilio settings is missing, or
-   `TORAN_WA=sim` is set).
-7. **Try it.** Open a pitch page, press its WhatsApp button, send the code, and ask about a product. The conversation
-   appears in the inbox with the "דמו" tag.
+   It answers `ok`. Meta runs the same check when you save the webhook in item 5.
 
-Cost: Twilio charges $0.005 a message each way. Meta charges nothing for replies within 24 hours of the customer's
-message, which covers every demo conversation.
+**What a store needs** (the connect page lists it): the WhatsApp Business app, not the regular WhatsApp (switching is
+free and keeps the chats), updated, in use on that number for at least a week, a Facebook account, and the phone at
+hand.
 
-## Step 3. The owner line (a second Twilio number): built
+**Cost:** Meta charges nothing for replies within 24 hours of the customer's message, which is everything Toran
+sends today. Messages a store starts (the cart and shipping templates, a later item) are billed by Meta to the store's
+own WhatsApp account, so each store adds a payment method in its WhatsApp Manager before those are turned on.
 
-The number store owners write to about their store (Toran's assistant) and their Teder posts. It has to be a
-different number from the demo number. Full details are in docs/owner-line.md and docs/deploy.md.
+## Step 3. Our demo number and owner line: Meta next
 
-1. A second WhatsApp sender on the same Twilio account, with the same webhook URL as in step 2.
-2. `.env` here: `TORAN_ASSISTANT_WA=972...` (digits). In openfrequency-accounts' `.env`: `OF_ASSISTANT_WA` with the
-   same value. Then `OF_ASSISTANT_SECRET` (32 or more random characters) here and in Teder's `.env`.
-3. Submit the five templates in docs/whatsapp-templates.md on Twilio (Content Template Builder, category Utility,
-   Hebrew). As Meta approves each one, add it to `TWILIO_TEMPLATES` as `name=HX...`, comma-separated.
+Both run on Twilio's code today, and in production on the simulator. The plan is to move them to Meta's Cloud API
+too, with coexistence, so OpenFrequency's own number (`TORAN_OWNER_WHATSAPP`, the support number and the number on
+your phone) stays in the WhatsApp Business app on the phone. That is a separate item. The owner line's five
+templates (docs/whatsapp-templates.md) are then submitted to Meta directly.
 
-## Step 4. A store's own WhatsApp number: needs code first
+## Step 4. Instagram and Messenger: next, behind a flag
 
-Today every WhatsApp message goes to the demo number or the owner line. Nothing routes a store's own number to
-that store. The website already promises that "the store's number stays yours", so this is the step that makes
-WhatsApp a live channel for a paying store.
-
-**The code (for Claude to build):** a WhatsApp channel account per store, in the same `channel_accounts` table email
-uses. Twilio sends every number's messages to the one webhook, so the number a message was sent to says which store
-it belongs to. It also needs the "connect your number" step in the store's Settings, and the 24-hour window and
-templates per store.
+Both go through the same Meta app. The code is next: a "connect your Facebook page or Instagram" button (Meta
+login, then picking the page or account), the token sealed like WhatsApp's, the same `/meta/webhook`, and replies
+inside the 24-hour window. Past it, only with a tag Meta allows. They stay behind a flag, off in production.
 
 **What you can do now:**
-- Ask Twilio how to register numbers for your customers' businesses under your account. Twilio's term is
-  **Independent Software Vendor (ISV)**, done with **Senders API / Tech Provider** onboarding. Each store's number
-  is registered under the store's own Meta business, which the owner approves once.
-- The same warning as in step 2: a store's number that moves to the platform leaves the WhatsApp app on the
-  owner's phone unless coexistence is supported. Each customer needs to hear that before connecting. The website's
-  FAQ should say it too.
+1. In the same app, add the products **Messenger** and **Instagram** (the Instagram API with Instagram Login).
+2. **The app's public details:** privacy policy URL `https://openfrequency.co.il/privacy`, terms URL
+   `https://openfrequency.co.il/terms`, an icon, and a data deletion instructions URL.
+3. **A test Page and Instagram account:** a Facebook Page and an Instagram professional account of our own, to try
+   it end to end in development mode.
 
-## Step 5. Instagram and Messenger: need code first
-
-Both go through one Meta app. The code is new: a "connect your Facebook Page and Instagram" button in the store's
-Settings (Facebook Login), the page's access token kept encrypted (`channel_accounts.secret` is ready for it), Meta's
-webhook for incoming messages, and sending replies through Meta's API inside its 24-hour window.
-
-**What you can do now, because Meta's review is the slow part:**
-1. **Business verification** of OpenFrequency's Meta Business portfolio (the same one as step 2).
-2. **A Meta app.** At developers.facebook.com, create an app of type Business, owned by that portfolio. Add the
-   products **Messenger** and **Instagram**.
-3. **The app's public details:** privacy policy URL `https://openfrequency.co.il/privacy`, terms URL
-   `https://openfrequency.co.il/terms`, an icon, and a data deletion instructions URL. Meta's review checks they
-   exist.
-4. **The permissions to request in App Review** (check the exact names in the App Review screen, Meta renames them):
-   for Messenger `pages_messaging`, `pages_manage_metadata` and `pages_show_list`; for Instagram
-   `instagram_manage_messages` (or `instagram_business_manage_messages` with Instagram Login) and
-   `instagram_basic`; and `business_management`. Review asks for a screen recording of the feature working, so it
-   is submitted after the code exists. Until then, you and test users added to the app can use it in development
-   mode.
-5. **A test Page and Instagram account.** A Facebook Page and an Instagram professional account connected to it.
-   Use a test store's, so the code can be tried end to end before review.
+App Review for `pages_messaging`, `pages_manage_metadata`, `pages_show_list`, `instagram_business_basic` and
+`instagram_business_manage_messages` (check the exact names in the App Review screen) is yours to submit, after the
+code exists. Claude never submits it.
 
 ## When a channel is live
 

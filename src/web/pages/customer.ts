@@ -13,6 +13,8 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, dayHe, esc, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
 import { storesOf, type Scope } from '../workspace.ts';
 import { conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
+import { waAccountOf, waLine } from './whatsapp.ts';
+import { waConnectReady } from '../../channels/meta.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -48,10 +50,10 @@ async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel; on: boo
   const has = (ch: string) => accounts.find((a) => a.channel === ch);
   const code = enabledChannels(app.env);
   const states = await channelStates(app.db);
-  const wa = has('whatsapp');
+  const wa = await waAccountOf(app, s.id);
   const mail = has('email');
   return [
-    { ch: 'whatsapp', on: Boolean(wa), text: wa ? `מחובר, <bdi class="ltr">+${esc(wa.external_id)}</bdi>` : s.demo_code && !s.taken_down_at ? `עונה על מספר הדמו שלנו, עם הקוד <bdi class="ltr">${esc(s.demo_code)}</bdi>. את המספר של החנות מחברים דרך Meta, וזה עוד לא פתוח.` : 'עוד לא מחובר' },
+    { ch: 'whatsapp', on: wa?.status === 'active', text: waLine(wa && wa.status !== 'off' ? wa : null, s, waConnectReady(app.env)) },
     { ch: 'email', on: Boolean(mail), text: mail ? `מחובר, <bdi class="ltr">${esc(mail.external_id)}</bdi>` : code.has('email') && app.mail ? 'לא מחובר. מחברים בהגדרות.' : 'בקרוב' },
     ...(['instagram', 'messenger'] as const).map((ch) => ({ ch, on: Boolean(has(ch)), text: has(ch) ? 'מחובר' : states[ch] === 'live' && code.has(ch) ? 'עוד לא מחובר' : 'בקרוב' })),
   ];

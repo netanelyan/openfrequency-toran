@@ -12,6 +12,7 @@ import { messagingSql } from '../channels/config.ts';
 import { counted, planOf, usageOf } from '../plans.ts';
 import { WAITING_SQL } from './inbox.ts';
 import { customerRoutes } from './pages/customer.ts';
+import { whatsappRoutes } from './pages/whatsapp.ts';
 
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
@@ -45,6 +46,7 @@ export async function storesCss(app: App, sc: Scope): Promise<string> {
 export function dashboardRoutes(app: App): Route<DashReq>[] {
   return [
     ...customerRoutes(app),
+    ...whatsappRoutes(app),
     ...homeRoutes(app),
     ...leadRoutes(app),
     ...reviewRoutes(app),

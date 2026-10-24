@@ -68,5 +68,11 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'RESEND_API_KEY', group: 'channels', he: 'Resend: שליחת תשובות במייל וקריאת המיילים שמגיעים' },
   { name: 'RESEND_WEBHOOK_SECRET', group: 'channels', he: 'Resend: הסוד (whsec_...) שבודק את החתימה על ה־webhook' },
   { name: 'TORAN_MAIL_DOMAIN', group: 'channels', he: 'הדומיין שמקבל את המייל של החנויות, למשל in.openfrequency.co.il' },
+  { name: 'META_APP_ID', group: 'channels', he: 'Meta: מזהה האפליקציה, לחיבור הוואטסאפ של החנויות (ובהמשך אינסטגרם ומסנג׳ר)' },
+  { name: 'META_APP_SECRET', group: 'channels', he: 'Meta: הסוד של האפליקציה. בודק את החתימה על ה-webhook ומחליף את הקוד של החיבור במפתח' },
+  { name: 'META_WA_CONFIG_ID', group: 'channels', he: 'Meta: מזהה ההגדרה של Embedded Signup לוואטסאפ, עם חיבור של WhatsApp Business קיים' },
+  { name: 'META_WEBHOOK_VERIFY_TOKEN', group: 'channels', he: 'Meta: מחרוזת שבוחרים, אותה אחת כאן ובהגדרת ה-webhook באפליקציה' },
+  { name: 'META_GRAPH_VERSION', group: 'channels', he: 'Meta: גרסת ה-Graph API, למשל v23.0' },
+  { name: 'TORAN_SECRETS_KEY', group: 'channels', he: 'המפתח שמצפין את המפתחות של החנויות במסד הנתונים, לפחות 32 תווים. בלעדיו אי אפשר לחבר' },
   { name: 'DATABASE_URL', group: 'database', he: 'Postgres בפרודקשן. בלעדיו: PGlite בתוך התיקייה הפרטית' },
 ];

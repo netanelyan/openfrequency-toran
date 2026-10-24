@@ -9,6 +9,7 @@ import { cookies } from './auth.ts';
 import { sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
 import { ownsStore, scopeOf } from './workspace.ts';
 import { enabledChannels, publicChannels } from '../channels/config.ts';
+import { metaSettings, parseWebhook, signatureOk } from '../channels/meta.ts';
 import type { Out, Req, Route } from './server.ts';
 import { J } from '../db/index.ts';
 import { secretOf, verify } from '../owners/teder.ts';
@@ -30,6 +31,10 @@ import { EVENT_TYPES } from '../owners/events.ts';
 //                              checked, acknowledged at once, handled by the worker. 404 while TORAN_CHANNELS has
 //                              no email
 //   POST /mail/sim             the email simulator's webhook (development only)
+//   GET  /meta/webhook         Meta's check of the webhook (hub.verify_token = META_WEBHOOK_VERIFY_TOKEN)
+//   POST /meta/webhook         Meta's webhook for every store's own WhatsApp number: X-Hub-Signature-256 checked,
+//                              acknowledged at once; messages, the owner's own messages from the phone, delivery
+//                              failures and account changes handled by the worker (channels/meta.ts, waStore.ts)
 //   GET  /channels.json        each channel's state (off, demo, live) for the website's "בקרוב" tags; nothing about
 //                              any store
 //   POST /internal/lead        a demo asked for on openfrequency.co.il (openfrequency-web/server/lead.mjs): from this
@@ -152,6 +157,37 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       for (const msg of inbound) await enqueue(app.db, 'mail_inbound', { ...msg, at: Date.now() }, { dedupeKey: `mail:${msg.id}` });
       const ack = mail.ack();
       return { text: ack.body, type: ack.type };
+    }],
+    ['GET', /^\/meta\/webhook$/, async (r) => {
+      const m = metaSettings(app.env);
+      const q = r.url.searchParams;
+      if (!m.verifyToken || q.get('hub.mode') !== 'subscribe' || q.get('hub.verify_token') !== m.verifyToken) return { status: 403, text: '' };
+      return { text: String(q.get('hub.challenge') || '') };
+    }],
+    ['POST', /^\/meta\/webhook$/, async (r) => {
+      if (!hookOk(r.ip)) return { status: 429, text: '' };
+      const m = metaSettings(app.env);
+      if (!m.appSecret) return { status: 404, text: '' };
+      if (!signatureOk(m.appSecret, r.raw || '', r.req.headers['x-hub-signature-256'])) {
+        app.log(`[meta] webhook signature failed from ${r.ip}`);
+        return { status: 403, text: 'bad signature' };
+      }
+      let body: unknown;
+      try {
+        body = JSON.parse(r.raw || '');
+      } catch {
+        return { status: 400, text: '' };
+      }
+      const w = parseWebhook(body);
+      // Stamped on arrival, as on Twilio's: the reply window is measured from here.
+      for (const msg of w.messages) await enqueue(app.db, 'wa_inbound', { ...msg, at: Date.now() }, { dedupeKey: `wa:${msg.id}` });
+      for (const e of w.echoes) await enqueue(app.db, 'wa_echo', e, { dedupeKey: `wa_echo:${e.id}` });
+      for (const s of w.statuses.filter((x) => x.status === 'failed')) await enqueue(app.db, 'wa_status', s, { dedupeKey: `wa_status:${s.id}`, maxAttempts: 1 });
+      for (const waba of w.accounts) {
+        const rows = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status <> 'off' AND meta->>'waba_id' = $1", [waba]);
+        for (const a of rows) await enqueue(app.db, 'wa_check', { accountId: a.id }, { dedupeKey: `wa_check:${a.id}`, maxAttempts: 1 });
+      }
+      return { text: 'ok' };
     }],
     ['GET', /^\/channels\.json$/, async () => ({ json: await publicChannels(app.db), headers: { 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' } })],
     ['POST', /^\/internal\/teder\/events$/, async (r) => {

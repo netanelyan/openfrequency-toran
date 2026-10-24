@@ -3,7 +3,7 @@ import { HOUR, now } from '../core/clock.ts';
 import { J } from '../db/index.ts';
 import { audit, event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
-import { adapterFor } from './adapters.ts';
+import { adapterOf } from './adapters.ts';
 import { blockedFor, reply, type Blocked, type Delivery } from './send.ts';
 import type { Channel, ChannelAdapter, Inbound } from './types.ts';
 
@@ -31,11 +31,11 @@ type Target = { adapter: ChannelAdapter; to: Inbound; storeId: number; storeName
 
 /** Who a reply in this conversation goes to, rebuilt from what the conversation kept; null when the customer never wrote. */
 export async function replyTarget(app: App, conversationId: number): Promise<Target | null> {
-  const c = await app.db.one<any>('SELECT c.id, c.channel, c.peer, c.meta, c.agent_paused_until, s.id AS store_id, s.name, s.domain, s.brand, s.brand_override, a.external_id AS account FROM conversations c JOIN stores s ON s.id = c.store_id LEFT JOIN channel_accounts a ON a.id = c.account_id WHERE c.id = $1', [conversationId]);
+  const c = await app.db.one<any>('SELECT c.id, c.channel, c.peer, c.meta, c.agent_paused_until, s.id AS store_id, s.name, s.domain, s.brand, s.brand_override, a.id AS account_id, a.external_id AS account, a.kind AS account_kind, a.secret AS account_secret, a.meta AS account_meta FROM conversations c JOIN stores s ON s.id = c.store_id LEFT JOIN channel_accounts a ON a.id = c.account_id WHERE c.id = $1', [conversationId]);
   if (!c?.peer) return null;
   const last = await app.db.one<{ ext_id: string | null; at: string }>("SELECT ext_id, at FROM messages WHERE conversation_id = $1 AND role = 'customer' ORDER BY id DESC LIMIT 1", [conversationId]);
   if (!last) return null;
-  const adapter = adapterFor(app, c.channel as Channel);
+  const adapter = adapterOf(app, c.channel as Channel, c.account_id ? { id: c.account_id, external_id: c.account, kind: c.account_kind, secret: c.account_secret, meta: c.account_meta } : null);
   const id = last.ext_id || `conversation-${conversationId}`;
   const to: Inbound = {
     channel: c.channel,

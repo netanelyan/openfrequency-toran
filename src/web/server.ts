@@ -101,6 +101,7 @@ const STATIC_FILES: Record<string, { file: string; type: string; cache: string }
   '/static/app.js': { file: path.join(STATIC, 'app.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.css': { file: path.join(STATIC, 'pitch.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.js': { file: path.join(STATIC, 'pitch.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
+  '/static/wa-connect.js': { file: path.join(STATIC, 'wa-connect.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   // Heebo (OFL, fonts/HEEBO-LICENSE.txt), served from here so a pitch page never calls Google Fonts.
   '/static/fonts/heebo-hebrew.woff2': { file: path.join(STATIC, 'fonts/heebo-hebrew.woff2'), type: 'font/woff2', cache: 'public, max-age=31536000, immutable' },
   '/static/fonts/heebo-latin.woff2': { file: path.join(STATIC, 'fonts/heebo-latin.woff2'), type: 'font/woff2', cache: 'public, max-age=31536000, immutable' },
@@ -158,7 +159,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
         if (m !== method) continue;
         const mm = re.exec(p);
         if (!mm) continue;
-        const raw = method === 'POST' ? await readBody(req, 64_000) : '';
+        const raw = method === 'POST' ? await readBody(req, 256_000) : '';
         const form = /application\/x-www-form-urlencoded/.test(String(req.headers['content-type'] || '')) ? Object.fromEntries(new URLSearchParams(raw)) : {};
         return reply(req, res, await fn({ req, url, path: p, form, ip: clientIp(req), secure, raw }, mm));
       }

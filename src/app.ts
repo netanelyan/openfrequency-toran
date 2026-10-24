@@ -10,6 +10,7 @@ import { type Llm, makeLlm } from './agent/llm/index.ts';
 import { type WaProvider, makeWaProvider } from './channels/whatsapp.ts';
 import { type EmailAdapter, makeEmailAdapter } from './channels/email.ts';
 import { enabledChannels } from './channels/config.ts';
+import type { GraphFetch } from './channels/meta.ts';
 
 // The one object every part of the engine is handed: the database, the settings, a
 // log, the fetcher, the model and the channels' adapters (WhatsApp always; email when TORAN_CHANNELS turns it on).
@@ -26,6 +27,8 @@ export type App = {
   llm: Llm;
   wa: WaProvider;
   mail?: EmailAdapter;
+  /** Meta's Graph API (channels/meta.ts): fetch, or the tests' stand-in. */
+  graph: GraphFetch;
 };
 
 /** A log line to the console and to private/logs/toran.log, one line each (no forged entries). */
@@ -49,7 +52,7 @@ export function makeLog(env: Env = process.env, { quiet = false } = {}): (m: str
   };
 }
 
-export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; llm?: Llm; wa?: WaProvider; mail?: EmailAdapter; quiet?: boolean } = {}): Promise<App> {
+export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, graph, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; llm?: Llm; wa?: WaProvider; mail?: EmailAdapter; graph?: GraphFetch; quiet?: boolean } = {}): Promise<App> {
   if (env === process.env) loadEnv(env);
   const log = makeLog(env, { quiet });
   const theDb = db || (await openDb({ env }));
@@ -62,5 +65,6 @@ export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, q
     llm: llm || makeLlm(env, { log }),
     wa: wa || makeWaProvider(env, { log }),
     mail: mail || (enabledChannels(env).has('email') ? makeEmailAdapter(env) : undefined),
+    graph: graph || ((input, init) => fetch(input, init)),
   };
 }

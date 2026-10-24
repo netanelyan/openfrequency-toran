@@ -16,16 +16,23 @@ import type { ChannelAdapter, Inbound } from './types.ts';
 
 const DAILY_REPLIES = 20; // the agent's answers to one customer of one account in a day; past it, the owner's turn
 
-export type Account = { id: number; store_id: number; channel: string; external_id: string };
+export type Account = { id: number; store_id: number; channel: string; external_id: string; kind: string; secret: string | null; meta: any; status: string };
 
+/** The store's account a message came to. A WhatsApp number still pending at Meta counts: a message on it means it is on. */
 export async function accountFor(app: App, channel: string, externalId: string): Promise<Account | null> {
-  return app.db.one<Account>("SELECT id, store_id, channel, external_id FROM channel_accounts WHERE channel = $1 AND external_id = $2 AND status = 'active'", [channel, externalId.toLowerCase()]);
+  return app.db.one<Account>("SELECT id, store_id, channel, external_id, kind, secret, meta, status FROM channel_accounts WHERE channel = $1 AND external_id = $2 AND (status = 'active' OR (channel = 'whatsapp' AND status = 'pending'))", [channel, externalId.toLowerCase()]);
 }
 
 const bareSubject = (s: string | undefined) => String(s || '').replace(/^\s*((re|fwd?|תשובה|השב|הועבר)\s*:\s*)+/i, '').trim().toLowerCase();
 
 /** The conversation an email belongs to: one this sender's thread already holds an id of, else the same subject within 30 days, else a new one. */
 async function threadFor(app: App, account: Account, inbound: Inbound): Promise<number> {
+  // WhatsApp has no threads: one customer is one conversation until a week of silence, as on the demo number.
+  if (account.channel === 'whatsapp') {
+    const c = await app.db.one<{ id: number }>("SELECT id FROM conversations WHERE account_id = $1 AND peer = $2 AND last_at > now() - interval '7 days' AND closed_at IS NULL ORDER BY last_at DESC LIMIT 1", [account.id, inbound.from]);
+    if (c) return c.id;
+    return (await app.db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer, account_id) VALUES ($1, 'whatsapp', $2, $3) RETURNING id", [account.store_id, inbound.from, account.id]))!.id;
+  }
   const refs = [inbound.thread?.inReplyTo, ...(inbound.thread?.references || [])].filter(Boolean) as string[];
   if (refs.length) {
     const c = await app.db.one<{ id: number }>("SELECT id FROM conversations WHERE account_id = $1 AND peer = $2 AND meta->'ids' ?| $3::text[] ORDER BY last_at DESC LIMIT 1", [account.id, inbound.from, refs]);
