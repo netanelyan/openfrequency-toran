@@ -7,8 +7,9 @@ import { event } from '../db/log.ts';
 import { readHome } from '../leads/signals.ts';
 import { readBrand } from './brand.ts';
 import { embed } from './embed.ts';
-import { chunk, readPolicies } from './pages.ts';
-import { fetchCatalogue, productJs, shopMeta } from './shopify.ts';
+import { chunk, readPolicies, standardPaths } from './pages.ts';
+import { canIngest, livePrice, readCatalogue } from './catalogue.ts';
+import { pageLinks } from './sitemap.ts';
 
 // Ingest: a store's URL in, its knowledge pack out. One normalized format for every
 // store, in the database:
@@ -25,8 +26,9 @@ import { fetchCatalogue, productJs, shopMeta } from './shopify.ts';
 // that left the feed as gone, replaces policies and chunks, and keeps every override
 // and every FAQ answer the owner wrote.
 //
-// Phase 1 ingests Shopify only. Other platforms are detected, scored and listed, and
-// stop here with a clear reason.
+// Shopify, WooCommerce and Wix are read (catalogue.ts says how each one's products are
+// read; the policies are found the same way on all three). Other platforms are detected,
+// scored and listed, and stop here with a clear reason.
 
 export type IngestSummary = { storeId: number; domain: string; products: number; available: number; gone: number; policies: { kind: string; title: string; chars: number }[]; chunks: number; faqs: number; brand: { colors: string[]; logo: boolean; tone: boolean }; currency: string; warnings: string[] };
 
@@ -42,26 +44,25 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
   const { db, fetcher } = app;
   const store = await db.one<any>('SELECT * FROM stores WHERE id = $1', [storeId]);
   if (!store) throw new IngestError('no such store', 'missing');
-  if (store.platform !== 'shopify') throw new IngestError(`ingest for ${store.platform} is not built yet: phase 1 ingests Shopify stores only`, 'platform');
+  if (!canIngest(store.platform)) throw new IngestError(`ingest for ${store.platform} is not built yet: Toran reads Shopify, WooCommerce and Wix stores`, 'platform');
   const origin = new URL(store.url).origin;
-  const warnings: string[] = [];
 
-  progress('קורא את פרטי החנות');
-  const meta = await shopMeta(fetcher, origin);
-  const currency = meta.currency || 'ILS';
+  const cat = await readCatalogue(fetcher, store.platform, origin, progress);
+  const warnings: string[] = [...cat.warnings];
+  const rows = cat.rows;
+  const currency = cat.currency || 'ILS';
   if (currency !== 'ILS') warnings.push(`the store's currency is ${currency}, not ILS`);
-
-  progress('קורא את המוצרים');
-  const rows = await fetchCatalogue(fetcher, origin, currency, { onPage: (p, n) => progress(`קורא את המוצרים: ${n}`) });
   if (!rows.length) throw new IngestError('the product feed is empty', 'empty');
 
   progress('קורא את דף הבית');
   const home = await fetcher(store.url, { accept: 'text/html' });
   const hs = readHome(home.text, home.url);
-  const brand = readBrand(home.text, home.url, { name: meta.name || store.name, logo: hs.logo });
+  const brand = readBrand(home.text, home.url, { name: cat.name || store.name, logo: hs.logo });
 
   progress('קורא את המדיניות: משלוחים, החזרות, תשלום');
-  const { pages, faqs, errors } = await readPolicies(fetcher, origin, hs.policyLinks.length ? hs.policyLinks : store.signals?.policyLinks || []);
+  // The home page's links first (their words name the page), then, off Shopify, the pages the sitemap lists.
+  const links = [...(hs.policyLinks.length ? hs.policyLinks : store.signals?.policyLinks || []), ...(store.platform === 'shopify' ? [] : await pageLinks(fetcher, origin))];
+  const { pages, faqs, errors } = await readPolicies(fetcher, origin, links, { standard: standardPaths(store.platform) });
   if (!pages.some((p) => p.kind === 'shipping')) warnings.push('no shipping policy page found');
   if (!pages.some((p) => p.kind === 'returns')) warnings.push('no returns policy page found');
   for (const e of errors) warnings.push(`policy page ${e}`);
@@ -112,7 +113,7 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
 
     await t.query(
       `UPDATE stores SET brand = $2::jsonb, name = COALESCE(NULLIF($3, ''), name), ingested_at = now(), updated_at = now(), config = config || $4::jsonb WHERE id = $1`,
-      [storeId, J(brand), meta.name || '', J({ currency, moneyFormat: meta.money_format || null })],
+      [storeId, J(brand), cat.name || '', J({ currency, moneyFormat: cat.moneyFormat })],
     );
   });
   const available = rows.filter((r) => r.available).length;
@@ -129,27 +130,28 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
     currency,
     warnings,
   };
-  await event(db, storeId, 'ingest', { products: rows.length, available, gone, policies: pages.length, chunks: pieces.length, faqs: faqs.length, warnings });
+  await event(db, storeId, 'ingest', { source: cat.source, products: rows.length, available, gone, policies: pages.length, chunks: pieces.length, faqs: faqs.length, warnings });
   return summary;
 }
 
 /**
- * The check behind "correct prices": for a sample of products, each product's own
- * JSON (/products/<handle>.js, prices in agorot, a different endpoint from the feed
- * ingest read) against what is stored. A difference is a failed check.
+ * The check behind "correct prices": for a sample of products, the price the store
+ * shows now, from a different source than the one ingest read (catalogue.ts livePrice:
+ * Shopify's /products/<handle>.js in agorot, WooCommerce's single-product route, a
+ * product page's JSON-LD), against what is stored. A difference is a failed check.
  */
 export async function verifyPrices(app: App, storeId: number, sample = 12): Promise<{ checked: number; ok: number; mismatches: { title: string; stored: number | null; live: number | null }[] }> {
-  const store = await app.db.one<any>('SELECT url FROM stores WHERE id = $1', [storeId]);
+  const store = await app.db.one<any>('SELECT url, platform FROM stores WHERE id = $1', [storeId]);
   const origin = new URL(store.url).origin;
-  const rows = await app.db.query<any>('SELECT title, handle, price_min::float AS price_min, variants FROM products WHERE store_id = $1 AND gone_at IS NULL ORDER BY random() LIMIT $2', [storeId, sample]);
+  const rows = await app.db.query<any>('SELECT ext_id, title, handle, url, price_min::float AS price_min, variants FROM products WHERE store_id = $1 AND gone_at IS NULL ORDER BY random() LIMIT $2', [storeId, sample]);
   const mismatches: { title: string; stored: number | null; live: number | null }[] = [];
   let checked = 0;
   for (const r of rows) {
-    const live = await productJs(app.fetcher, origin, r.handle);
+    const live = await livePrice(app.fetcher, store.platform, origin, r);
     if (!live) continue;
     checked++;
     const storedVariants = new Map((r.variants as any[]).map((v) => [String(v.id), v.price]));
-    const variantOk = live.variants.every((v) => !storedVariants.has(v.id) || Math.abs(Number(storedVariants.get(v.id)) - v.price) < 0.005);
+    const variantOk = (live.variants || []).every((v) => !storedVariants.has(v.id) || Math.abs(Number(storedVariants.get(v.id)) - v.price) < 0.005);
     if (Math.abs(Number(r.price_min) - Number(live.price_min)) >= 0.005 || !variantOk) mismatches.push({ title: r.title, stored: r.price_min, live: live.price_min });
   }
   return { checked, ok: checked - mismatches.length, mismatches };

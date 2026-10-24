@@ -6,23 +6,33 @@ import { hebrewRatio } from '../core/hebrew.ts';
 // terms. Read as the store wrote them; the agent quotes them through get_policy and
 // nowhere else.
 //
-// Where they are: Shopify's standard policy URLs (/policies/shipping-policy, ...), the
-// usual help pages (/pages/faq, /pages/contact, ...), and every link on the home page
-// whose text or address says shipping, returns, payment, terms, FAQ or contact.
+// Where they are: every link on the home page whose text or address says shipping,
+// returns, payment, terms, FAQ or contact; the platform's standard addresses (Shopify's
+// /policies/shipping-policy and /pages/faq, WooCommerce's /refund_returns/); and, off
+// Shopify, the pages the store's sitemap lists whose address says the same (Wix and
+// WordPress have no standard policy paths, and their slugs are often Hebrew).
 
 export type PolicyPage = { kind: string; title: string; url: string; text: string };
 export type Faq = { question: string; site_answer: string | null; source_url: string };
 
-const STANDARD = ['/policies/shipping-policy', '/policies/refund-policy', '/policies/terms-of-service', '/pages/faq', '/pages/contact', '/pages/shipping', '/pages/returns', '/pages/about', '/pages/about-us'];
+const STANDARD: Record<string, string[]> = {
+  shopify: ['/policies/shipping-policy', '/policies/refund-policy', '/policies/terms-of-service', '/pages/faq', '/pages/contact', '/pages/shipping', '/pages/returns', '/pages/about', '/pages/about-us'],
+  // WooCommerce creates /refund_returns/ on install; the rest are the slugs Israeli WordPress themes ship with.
+  woocommerce: ['/refund_returns/', '/shipping/', '/faq/', '/contact/', '/about/'],
+  wix: [], // the sitemap names them
+};
+
+/** The standard policy addresses on a platform. */
+export const standardPaths = (platform: string | null | undefined): string[] => STANDARD[String(platform || '')] ?? STANDARD.shopify;
 
 const KINDS: [string, RegExp][] = [
   ['shipping', /משלוח|אספק|איסוף עצמי|shipping|delivery/i],
   ['returns', /החזר|החלפ|ביטול עסקה|refund|return|exchange/i],
   ['payment', /תשלום|תשלומים|payment/i],
   ['faq', /שאלות|faq|questions/i],
-  ['contact', /צור[\s-]*קשר|יצירת קשר|contact/i],
+  ['contact', /צור[\s-]*קשר|צרו[\s-]*קשר|יצירת קשר|שירות לקוחות|contact|customer-service/i],
   ['about', /אודות|עלינו|הסיפור שלנו|about/i],
-  ['terms', /תקנון|תנאי|terms|policy|מדיניות/i],
+  ['terms', /תקנון|תנאי|terms|policy|מדיניות|regulations|takanon/i],
 ];
 
 export function kindOf(title: string, url: string): string {
@@ -35,8 +45,8 @@ export function kindOf(title: string, url: string): string {
 /** The page's own text: the policy body or the main column, without the header, the footer and the menus. */
 export function mainText(html: string): { title: string; text: string } {
   const $ = cheerio.load(html);
-  const title = ($('h1').first().text() || $('title').text()).replace(/\s+/g, ' ').trim().split(/\s[|–-]\s/)[0];
-  $('script, style, noscript, template, svg, header, footer, nav, form, [role="navigation"], .header, .footer, #shopify-section-header, #shopify-section-footer, .announcement-bar, .cart-drawer, [id*="cookie"], [class*="cookie"]').remove();
+  const title = ($('h1').first().text() || $('meta[property="og:title"]').attr('content') || $('title').text()).replace(/\s+/g, ' ').trim().split(/\s[|–-]\s/)[0];
+  $('script, style, noscript, template, svg, header, footer, nav, form, [role="navigation"], .header, .footer, #shopify-section-header, #shopify-section-footer, #SITE_HEADER, #SITE_FOOTER, .skip-link, .screen-reader-text, .announcement-bar, .cart-drawer, [id*="cookie"], [class*="cookie"]').remove();
   const main = $('.shopify-policy__body, main .rte, #MainContent .rte, main, #MainContent, [role="main"], article').first();
   const root = main.length ? main : $('body');
   root.find('br').replaceWith('\n');
@@ -89,22 +99,25 @@ export function chunk(text: string, size = 700): string[] {
   return out.filter((c) => c.length >= 25);
 }
 
-export async function readPolicies(fetcher: Fetcher, origin: string, links: { url: string; text: string }[], { max = 10 }: { max?: number } = {}): Promise<{ pages: PolicyPage[]; faqs: Faq[]; errors: string[] }> {
+export async function readPolicies(fetcher: Fetcher, origin: string, links: { url: string; text: string }[], { max = 10, standard = STANDARD.shopify }: { max?: number; standard?: string[] } = {}): Promise<{ pages: PolicyPage[]; faqs: Faq[]; errors: string[] }> {
   const urls = new Map<string, string>();
+  const host = (h: string) => h.replace(/^www\./, '');
   for (const l of links) {
     try {
       const u = new URL(l.url);
-      if (u.origin === origin && kindOf(l.text, u.pathname) !== 'skip' && kindOf(l.text, u.pathname) !== 'other') urls.set(u.toString().split('#')[0], l.text);
+      const key = u.toString().split('#')[0];
+      // The first link to a page names it: the home page's words come before a sitemap's empty text.
+      if (host(u.hostname) === host(new URL(origin).hostname) && !urls.has(key) && kindOf(l.text, u.pathname) !== 'skip' && kindOf(l.text, u.pathname) !== 'other') urls.set(key, l.text);
     } catch {
       /* a broken link */
     }
   }
-  for (const p of STANDARD) if (!urls.has(`${origin}${p}`)) urls.set(`${origin}${p}`, '');
+  for (const p of standard) if (!urls.has(`${origin}${p}`)) urls.set(`${origin}${p}`, '');
   const pages: PolicyPage[] = [];
   const faqs: Faq[] = [];
   const errors: string[] = [];
   const seenText = new Set<string>();
-  for (const [url, linkText] of [...urls].slice(0, max + STANDARD.length)) {
+  for (const [url, linkText] of [...urls].slice(0, max + standard.length)) {
     if (pages.length >= max) break;
     try {
       const r = await fetcher(url, { accept: 'text/html' });
@@ -112,8 +125,9 @@ export async function readPolicies(fetcher: Fetcher, origin: string, links: { ur
       const { title, text } = mainText(r.text);
       const kind = kindOf(`${linkText} ${title}`, new URL(r.url).pathname);
       if (kind === 'skip' || text.length < 80) continue;
-      const key = text.slice(0, 300);
-      if (seenText.has(key)) continue; // /pages/shipping redirecting to the same page as the policy
+      // /pages/shipping redirecting to the same page as the policy; the length too, since Wix pages can open with the same block.
+      const key = `${text.length}:${text.slice(0, 300)}`;
+      if (seenText.has(key)) continue;
       seenText.add(key);
       pages.push({ kind, title: title || linkText || kind, url: r.url, text });
       if (kind === 'faq' || /\?/.test(text)) faqs.push(...readFaqs(r.text, r.url));

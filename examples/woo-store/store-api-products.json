@@ -1,0 +1,735 @@
+[
+ {
+  "id": 310,
+  "name": "זעתר &quot;של סבתא&quot;",
+  "slug": "%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90",
+  "parent": 0,
+  "type": "variable",
+  "variation": "",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90/",
+  "sku": "TB-310",
+  "short_description": "<p>זעתר בר מהגליל, קלוי עם שומשום ושמן זית.</p>",
+  "description": "<p>הזעתר נקטף בעבודת יד וטוחנים אותו אצלנו בכל שבוע. <strong>בלי חומרים משמרים.</strong></p>",
+  "on_sale": false,
+  "prices": {
+   "price": "2400",
+   "regular_price": "2400",
+   "sale_price": "2400",
+   "price_range": {
+    "min_amount": "2400",
+    "max_amount": "4900"
+   },
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\">24.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span> <span aria-hidden=\"true\">–</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\">49.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span><span class=\"screen-reader-text\">טווח מחירים: ⁦24.00&#8362;⁩ עד ⁦49.00&#8362;⁩</span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [
+   {
+    "id": 1310,
+    "src": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/310.jpg",
+    "thumbnail": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/310-300x300.jpg",
+    "srcset": "",
+    "sizes": "(max-width: 2081px) 100vw, 2081px",
+    "thumbnail_srcset": "",
+    "thumbnail_sizes": "(max-width: 2081px) 100vw, 2081px",
+    "name": "310",
+    "alt": "זעתר \"של סבתא\""
+   }
+  ],
+  "categories": [
+   {
+    "id": 40,
+    "name": "תערובות",
+    "slug": "%d7%aa%d7%a2%d7%a8%d7%95%d7%91%d7%95%d7%aa",
+    "link": "https://tavlinim-ba-shuk.example/product-category/%d7%aa%d7%a2%d7%a8%d7%95%d7%91%d7%95%d7%aa/"
+   }
+  ],
+  "tags": [],
+  "brands": [],
+  "attributes": [
+   {
+    "id": 0,
+    "name": "משקל",
+    "taxonomy": null,
+    "has_variations": true,
+    "terms": [
+     {
+      "id": 0,
+      "name": "100 גרם",
+      "slug": "100 גרם"
+     },
+     {
+      "id": 0,
+      "name": "250 גרם",
+      "slug": "250 גרם"
+     }
+    ]
+   }
+  ],
+  "variations": [
+   {
+    "id": 311,
+    "attributes": [
+     {
+      "name": "משקל",
+      "value": "100 גרם"
+     }
+    ]
+   },
+   {
+    "id": 312,
+    "attributes": [
+     {
+      "name": "משקל",
+      "value": "250 גרם"
+     }
+    ]
+   }
+  ],
+  "grouped_products": [],
+  "has_options": true,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "בחר אפשרויות",
+   "description": "הוספה לעגלת הקניות: &quot;זעתר &quot;של סבתא&quot;&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90/",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/310",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ]
+  }
+ },
+ {
+  "id": 320,
+  "name": "פפריקה מעושנת",
+  "slug": "%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa",
+  "parent": 0,
+  "type": "variable",
+  "variation": "",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa/",
+  "sku": "TB-320",
+  "short_description": "",
+  "description": "<p>פפריקה ספרדית מעושנת על עץ אלון.</p>",
+  "on_sale": false,
+  "prices": {
+   "price": "2200",
+   "regular_price": "2200",
+   "sale_price": "2200",
+   "price_range": {
+    "min_amount": "2200",
+    "max_amount": "4500"
+   },
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\">22.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span> <span aria-hidden=\"true\">–</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\">45.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span><span class=\"screen-reader-text\">טווח מחירים: ⁦22.00&#8362;⁩ עד ⁦45.00&#8362;⁩</span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [
+   {
+    "id": 1320,
+    "src": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/320.jpg",
+    "thumbnail": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/320-300x300.jpg",
+    "srcset": "",
+    "sizes": "(max-width: 2081px) 100vw, 2081px",
+    "thumbnail_srcset": "",
+    "thumbnail_sizes": "(max-width: 2081px) 100vw, 2081px",
+    "name": "320",
+    "alt": "פפריקה מעושנת"
+   }
+  ],
+  "categories": [
+   {
+    "id": 40,
+    "name": "פלפלים",
+    "slug": "%d7%a4%d7%9c%d7%a4%d7%9c%d7%99%d7%9d",
+    "link": "https://tavlinim-ba-shuk.example/product-category/%d7%a4%d7%9c%d7%a4%d7%9c%d7%99%d7%9d/"
+   }
+  ],
+  "tags": [],
+  "brands": [],
+  "attributes": [
+   {
+    "id": 0,
+    "name": "משקל",
+    "taxonomy": null,
+    "has_variations": true,
+    "terms": [
+     {
+      "id": 0,
+      "name": "100 גרם",
+      "slug": "100 גרם"
+     },
+     {
+      "id": 0,
+      "name": "250 גרם",
+      "slug": "250 גרם"
+     }
+    ]
+   },
+   {
+    "id": 0,
+    "name": "חריפות",
+    "taxonomy": null,
+    "has_variations": true,
+    "terms": [
+     {
+      "id": 0,
+      "name": "מתוקה",
+      "slug": "מתוקה"
+     },
+     {
+      "id": 0,
+      "name": "חריפה",
+      "slug": "חריפה"
+     }
+    ]
+   }
+  ],
+  "variations": [
+   {
+    "id": 321,
+    "attributes": [
+     {
+      "name": "משקל",
+      "value": "100 גרם"
+     },
+     {
+      "name": "חריפות",
+      "value": "מתוקה"
+     }
+    ]
+   },
+   {
+    "id": 322,
+    "attributes": [
+     {
+      "name": "משקל",
+      "value": "250 גרם"
+     },
+     {
+      "name": "חריפות",
+      "value": "מתוקה"
+     }
+    ]
+   },
+   {
+    "id": 323,
+    "attributes": [
+     {
+      "name": "משקל",
+      "value": "100 גרם"
+     },
+     {
+      "name": "חריפות",
+      "value": "חריפה"
+     }
+    ]
+   }
+  ],
+  "grouped_products": [],
+  "has_options": true,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "בחר אפשרויות",
+   "description": "הוספה לעגלת הקניות: &quot;פפריקה מעושנת&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa/",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/320",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ]
+  }
+ },
+ {
+  "id": 330,
+  "name": "ראס אל חנות",
+  "slug": "%d7%a8%d7%90%d7%a1-%d7%90%d7%9c-%d7%97%d7%a0%d7%95%d7%aa",
+  "parent": 0,
+  "type": "simple",
+  "variation": "",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%a8%d7%90%d7%a1-%d7%90%d7%9c-%d7%97%d7%a0%d7%95%d7%aa/",
+  "sku": "TB-330",
+  "short_description": "",
+  "description": "<p>תערובת מרוקאית של 14 תבלינים, לקוסקוס ולתבשילים.</p>",
+  "on_sale": false,
+  "prices": {
+   "price": "3200",
+   "regular_price": "3200",
+   "sale_price": "3200",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">32.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [
+   {
+    "id": 1330,
+    "src": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/330.jpg",
+    "thumbnail": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/330-300x300.jpg",
+    "srcset": "",
+    "sizes": "(max-width: 2560px) 100vw, 2560px",
+    "thumbnail_srcset": "",
+    "thumbnail_sizes": "(max-width: 2560px) 100vw, 2560px",
+    "name": "330",
+    "alt": "ראס אל חנות"
+   }
+  ],
+  "categories": [
+   {
+    "id": 40,
+    "name": "תערובות",
+    "slug": "%d7%aa%d7%a2%d7%a8%d7%95%d7%91%d7%95%d7%aa",
+    "link": "https://tavlinim-ba-shuk.example/product-category/%d7%aa%d7%a2%d7%a8%d7%95%d7%91%d7%95%d7%aa/"
+   }
+  ],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "הוספה לסל",
+   "description": "הוספה לעגלת הקניות: &quot;ראס אל חנות&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%a8%d7%90%d7%a1-%d7%90%d7%9c-%d7%97%d7%a0%d7%95%d7%aa/",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/330",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ]
+  }
+ },
+ {
+  "id": 340,
+  "name": "בהרט",
+  "slug": "%d7%91%d7%94%d7%a8%d7%98",
+  "parent": 0,
+  "type": "simple",
+  "variation": "",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%91%d7%94%d7%a8%d7%98/",
+  "sku": "TB-340",
+  "short_description": "",
+  "description": "<p>בהרט עיראקי, 200 גרם.</p>",
+  "on_sale": true,
+  "prices": {
+   "price": "2900",
+   "regular_price": "3900",
+   "sale_price": "2900",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">29.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [
+   {
+    "id": 1340,
+    "src": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/340.jpg",
+    "thumbnail": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/340-300x300.jpg",
+    "srcset": "",
+    "sizes": "(max-width: 2560px) 100vw, 2560px",
+    "thumbnail_srcset": "",
+    "thumbnail_sizes": "(max-width: 2560px) 100vw, 2560px",
+    "name": "340",
+    "alt": "בהרט"
+   }
+  ],
+  "categories": [
+   {
+    "id": 40,
+    "name": "תערובות",
+    "slug": "%d7%aa%d7%a2%d7%a8%d7%95%d7%91%d7%95%d7%aa",
+    "link": "https://tavlinim-ba-shuk.example/product-category/%d7%aa%d7%a2%d7%a8%d7%95%d7%91%d7%95%d7%aa/"
+   }
+  ],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "הוספה לסל",
+   "description": "הוספה לעגלת הקניות: &quot;בהרט&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%91%d7%94%d7%a8%d7%98/",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/340",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ]
+  }
+ },
+ {
+  "id": 350,
+  "name": "סומק",
+  "slug": "%d7%a1%d7%95%d7%9e%d7%a7",
+  "parent": 0,
+  "type": "simple",
+  "variation": "",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%a1%d7%95%d7%9e%d7%a7/",
+  "sku": "TB-350",
+  "short_description": "",
+  "description": "<p>סומק טורקי חמצמץ, 150 גרם.</p>",
+  "on_sale": false,
+  "prices": {
+   "price": "2800",
+   "regular_price": "2800",
+   "sale_price": "2800",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">28.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [
+   {
+    "id": 1350,
+    "src": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/350.jpg",
+    "thumbnail": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/350-300x300.jpg",
+    "srcset": "",
+    "sizes": "(max-width: 2560px) 100vw, 2560px",
+    "thumbnail_srcset": "",
+    "thumbnail_sizes": "(max-width: 2560px) 100vw, 2560px",
+    "name": "350",
+    "alt": "סומק"
+   }
+  ],
+  "categories": [
+   {
+    "id": 40,
+    "name": "תבלינים",
+    "slug": "%d7%aa%d7%91%d7%9c%d7%99%d7%a0%d7%99%d7%9d",
+    "link": "https://tavlinim-ba-shuk.example/product-category/%d7%aa%d7%91%d7%9c%d7%99%d7%a0%d7%99%d7%9d/"
+   }
+  ],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": false,
+  "is_on_backorder": false,
+  "low_stock_remaining": 0,
+  "stock_availability": {
+   "text": "המלאי אזל",
+   "class": "out-of-stock"
+  },
+  "sold_individually": true,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "מידע נוסף",
+   "description": "הוספה לעגלת הקניות: &quot;סומק&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%a1%d7%95%d7%9e%d7%a7/",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 1,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/350",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ]
+  }
+ },
+ {
+  "id": 360,
+  "name": "מארז &quot;מטבח מזרחי&quot;",
+  "slug": "%d7%9e%d7%90%d7%a8%d7%96-%d7%9e%d7%98%d7%91%d7%97-%d7%9e%d7%96%d7%a8%d7%97%d7%99",
+  "parent": 0,
+  "type": "simple",
+  "variation": "",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%9e%d7%90%d7%a8%d7%96-%d7%9e%d7%98%d7%91%d7%97-%d7%9e%d7%96%d7%a8%d7%97%d7%99/",
+  "sku": "TB-360",
+  "short_description": "<p>חמישה תבלינים בצנצנות זכוכית, בקופסת עץ.</p>",
+  "description": "",
+  "on_sale": false,
+  "prices": {
+   "price": "12000",
+   "regular_price": "12000",
+   "sale_price": "12000",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">120.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [
+   {
+    "id": 1360,
+    "src": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/360.jpg",
+    "thumbnail": "https://tavlinim-ba-shuk.example/wp-content/uploads/2026/05/360-300x300.jpg",
+    "srcset": "",
+    "sizes": "(max-width: 2560px) 100vw, 2560px",
+    "thumbnail_srcset": "",
+    "thumbnail_sizes": "(max-width: 2560px) 100vw, 2560px",
+    "name": "360",
+    "alt": "מארז \"מטבח מזרחי\""
+   }
+  ],
+  "categories": [
+   {
+    "id": 40,
+    "name": "מארזים",
+    "slug": "%d7%9e%d7%90%d7%a8%d7%96%d7%99%d7%9d",
+    "link": "https://tavlinim-ba-shuk.example/product-category/%d7%9e%d7%90%d7%a8%d7%96%d7%99%d7%9d/"
+   },
+   {
+    "id": 41,
+    "name": "מתנות",
+    "slug": "%d7%9e%d7%aa%d7%a0%d7%95%d7%aa",
+    "link": "https://tavlinim-ba-shuk.example/product-category/%d7%9e%d7%aa%d7%a0%d7%95%d7%aa/"
+   }
+  ],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "הוספה לסל",
+   "description": "הוספה לעגלת הקניות: &quot;מארז &quot;מטבח מזרחי&quot;&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%9e%d7%90%d7%a8%d7%96-%d7%9e%d7%98%d7%91%d7%97-%d7%9e%d7%96%d7%a8%d7%97%d7%99/",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/360",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ]
+  }
+ }
+]

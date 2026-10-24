@@ -1,6 +1,7 @@
 import type { App } from '../app.ts';
 import { cleanLine } from '../core/hebrew.ts';
 import { ingestStore } from '../ingest/pack.ts';
+import { INGESTIBLE, canIngest } from '../ingest/catalogue.ts';
 import { buildPitch } from '../pitch/build.ts';
 import { forgetStorePrompt } from '../agent/loop.ts';
 import { handleInbound } from '../channels/route.ts';
@@ -69,7 +70,7 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       }
       // Asked for on the website: the number that asked is the one to send the page to.
       if (/^9725\d{8}$/.test(String(p.whatsapp || ''))) await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [store.id, p.whatsapp]);
-      if (store.platform !== 'shopify') return { storeId: store.id, stats: r.stats, ingested: false, why: `the platform is ${store.platform}: phase 1 ingests Shopify only` };
+      if (!canIngest(store.platform)) return { storeId: store.id, stats: r.stats, ingested: false, why: `the platform is ${store.platform}: Toran reads Shopify, WooCommerce and Wix stores` };
       return { storeId: store.id, ...(await ingestAndBuild(app, store.id, say)) };
     }
     case 'discover': {
@@ -110,7 +111,8 @@ async function ingestAndBuild(app: App, storeId: number, say: (l: string) => Pro
 
 export async function schedule(app: App) {
   const due = await app.db.query<{ id: number }>(
-    "SELECT id FROM stores WHERE page_built_at IS NOT NULL AND status <> 'skipped' AND platform = 'shopify' AND (ingested_at IS NULL OR ingested_at < now() - interval '20 hours')",
+    "SELECT id FROM stores WHERE page_built_at IS NOT NULL AND status <> 'skipped' AND platform = ANY($1::text[]) AND (ingested_at IS NULL OR ingested_at < now() - interval '20 hours')",
+    [[...INGESTIBLE]],
   );
   for (const s of due) await enqueue(app.db, 'rescrape', { storeId: s.id }, { dedupeKey: `ingest:${s.id}` });
   await app.db.query("DELETE FROM wa_users WHERE expires_at < now() - interval '1 day'");

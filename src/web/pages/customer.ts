@@ -17,6 +17,7 @@ import { waAccountOf, waLine } from './whatsapp.ts';
 import { waConnectReady } from '../../channels/meta.ts';
 import { socialReady } from '../../channels/social.ts';
 import { socialAccountOf, socialLine } from './social.ts';
+import { canIngest } from '../../ingest/catalogue.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -164,7 +165,7 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
   <div class="grid12">
     <section class="panel"><header><h2>מה נקרא מהאתר</h2></header>
       <dl class="kv"><dt>אתר</dt><dd><bdi class="ltr">${esc(s.domain)}</bdi></dd><dt>מוצרים</dt><dd>${num(pack?.products)}${pack?.products ? `, ${num(pack.available)} מהם במלאי` : ''}</dd><dt>דפי מדיניות</dt><dd>${policies.length}</dd><dt>התשובות שלכם</dt><dd>${mine.length}</dd></dl>
-      ${ro || s.platform !== 'shopify' ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/reread`, 'לקרוא את האתר שוב עכשיו', { cls: 'btn sm', iconName: 'refresh' })}</div><p class="small muted mt8 m0">שיניתם מחיר, מלאי או מדיניות באתר? תורן קורא את האתר כל יום, ואפשר גם עכשיו.</p>`}
+      ${ro || !canIngest(s.platform) ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/reread`, 'לקרוא את האתר שוב עכשיו', { cls: 'btn sm', iconName: 'refresh' })}</div><p class="small muted mt8 m0">שיניתם מחיר, מלאי או מדיניות באתר? תורן קורא את האתר כל יום, ואפשר גם עכשיו.</p>`}
     </section>
     <section class="panel"><header><h2>דפי המדיניות שתורן קורא</h2></header>
       ${policies.length ? policies.map((p) => `<details class="mt8"><summary><b>${esc(p.title)}</b> <span class="chip">${esc(POLICY_HE[p.kind] || p.kind)}</span>${p.override_text ? ' <span class="chip sig">הטקסט שלכם</span>' : ''}</summary>
@@ -307,7 +308,7 @@ export function customerRoutes(app: App): Route<DashReq>[] {
     ['POST', /^\/lead\/(\d+)\/reread$/, async (r, m) => {
       const id = Number(m[1]);
       const s = await app.db.one<{ platform: string }>('SELECT platform FROM stores WHERE id = $1', [id]);
-      if (s?.platform !== 'shopify') throw new ActionError('כרגע תורן קורא רק חנויות Shopify.');
+      if (!canIngest(s?.platform)) throw new ActionError('כרגע תורן קורא רק חנויות Shopify, WooCommerce ו־Wix.');
       // A rescrape: the store's knowledge again, and the demo page the operator approved left as it is.
       await enqueue(app.db, 'rescrape', { storeId: id }, { dedupeKey: `ingest:${id}` });
       await audit(app.db, { actor: r.user.name, action: 'reread', storeId: id });

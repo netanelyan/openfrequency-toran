@@ -306,10 +306,10 @@ test('a demo asked for on the website with nothing to send is listed, with why',
   const { stuckRequests } = await import('../src/ops/queue.ts');
   const app = await testApp();
   try {
-    await store(app, 'wix-shop.example', { platform: 'wix' });
-    await app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-EEEEEE', 'https://wix-shop.example/', 'wix-shop.example', $1, now()), ('REQ-FFFFFF', 'https://gone.example/', 'gone.example', '972500000331', now())", [PHONE]);
+    await store(app, 'konimbo-shop.example', { platform: 'konimbo' });
+    await app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-EEEEEE', 'https://konimbo-shop.example/', 'konimbo-shop.example', $1, now()), ('REQ-FFFFFF', 'https://gone.example/', 'gone.example', '972500000331', now())", [PHONE]);
     const s = await stuckRequests(app);
-    assert.deepEqual(s.map((x) => [x.domain, x.why]), [['wix-shop.example', 'האתר על Wix, ותורן בונה דמו רק לחנויות Shopify'], ['gone.example', 'לא הצלחנו לקרוא את האתר']]);
+    assert.deepEqual(s.map((x) => [x.domain, x.why]), [['konimbo-shop.example', 'האתר על Konimbo, ותורן בונה דמו רק לחנויות Shopify, WooCommerce ו־Wix'], ['gone.example', 'לא הצלחנו לקרוא את האתר']]);
   } finally {
     await app.db.close();
   }

@@ -348,3 +348,63 @@ Teder holds its own events through the owner's quiet hours and Shabbat, so Toran
 quiet. post.ready names one post, so Toran gathers them for 90 seconds and sends the whole list of posts waiting as
 one numbered message. That keeps "1" meaning what the owner sees. post.published is sent inside the 24 hours only,
 since it has no template. Teder's branch `owner-line` is not merged.
+
+## 2026-10-24: WooCommerce and Wix stores are read, each from its own public source
+
+**The change:** ingest reads WooCommerce and Wix stores into the same rows as Shopify's (`src/ingest/catalogue.ts`), so
+the agent's tools, the pitch page, the dashboard and the daily re-read never ask which platform a store is on. A lead
+on either platform gets a page, a "לבנות דף" button and its daily re-read, and scores 18 (WooCommerce) or 14 (Wix) for
+its platform instead of 14 and 8. Konimbo, Cashcow and the rest still stop at ingest with the reason.
+
+**WooCommerce: the Store API.** `/wp-json/wc/store/v1/products` is public (the store's own cart blocks call it), needs
+no key, and gives every product with its price in the currency's minor unit, its stock, categories and permalink.
+`?type=variation` lists every variation of every variable product with its parent, its own price and its own stock,
+so a store of 260 products and 324 variations is read in 7 requests.
+- **Alternatives:** the REST API (`/wc/v3`), which needs the owner's key; scraping product pages, one request each
+  and slower by two orders of magnitude.
+- **When it is off:** some stores put it behind a firewall (one answered with a 200 and a "Request Rejected" page) or
+  answer it with no products. Ingest then reads the store as it reads Wix, from the sitemap, and the warnings say so.
+
+**Wix: the products sitemap and each product page.** Wix publishes no product feed. `store-products-sitemap.xml`
+lists the product pages, and each page carries the product twice: schema.org JSON-LD (name, price, stock) and Wix's
+own `wix-warmup-data` JSON, which also has the options, every variant's price and stock, and the sale. The reader
+takes Wix's data when it is there and the JSON-LD when it is not.
+- **The cost:** a Wix product page is 1.5 to 2 MB and one request, a second apart. Ingest reads the 150 newest by
+  the sitemap's lastmod and reports the rest ("the sitemap lists 1,126 products: read the 150 newest"). A store of
+  150 products takes about eight minutes.
+- **Stock:** Wix often reports a tracked variant as "in_stock" with quantity 0. When the product's other variants have
+  counts, that 0 is read as sold out; when every count is 0, the counts mean nothing and Wix's status stands.
+
+**Policies:** the home page's links first, then the platform's standard addresses (Shopify's `/policies/…`,
+WooCommerce's `/refund_returns/`), then, off Shopify, the pages the sitemap lists whose address says shipping,
+returns, terms, FAQ, contact or about. Wix and WordPress have no standard policy paths and their slugs are often
+Hebrew.
+
+**The price check** (`--verify`) reads each sampled product from a second source: WooCommerce's single-product
+route, or the product page's JSON-LD.
+
+**Tested on real stores (2026-10-24),** in a scratch database, prices checked with `verifyPrices`:
+
+| Store | Platform | Products read | In stock | Policy pages | Prices checked | Match | Time |
+|---|---|---|---|---|---|---|---|
+| A | WooCommerce | 41 of 41 | 35 | 0 (the site has none) | 10 | 10 | 50 s |
+| B | WooCommerce | 260 of 260 | 230 | 6 | 10 | 10 | 71 s |
+| C | Wix | 148 of 196 (150 read) | 118 | 4 | 10 | 10 | 473 s |
+| D | Wix | 149 of 1,126 (150 read) | 134 | 3 | 10 | 10 | 518 s |
+
+A product C marks out of stock was checked by hand against its page ("OutOfStock", "אזל"). A fifth site, on
+WooCommerce behind a firewall, fell back to its sitemap and had no products to read: it is a pickup-point service,
+not a store, and ingest stopped with "the product feed is empty".
+
+**Fixtures:** the repository is public, so the recorded responses keep their shapes (every key the Store API sends,
+Wix's JSON-LD and warmup objects, WooCommerce's JSON-LD and a firewall's page) and nothing else: three fictional
+stores in `examples/` (`tavlinim-ba-shuk.example`, `beit-hasabon.example`, `quiet-candles.example`), served offline by
+`exampleFetcher`.
+
+**Not done here:**
+- `create_cart_link` still answers with product pages in the demo, on every platform. The live cart link differs:
+  Shopify's `/cart/<variant>:<qty>`, WooCommerce's `?add-to-cart=<id>&quantity=<n>`, and none on Wix (the product
+  page).
+- `get_order_status` reads no platform's orders: that needs the owner's key (WooCommerce's REST API, Wix's API), which
+  the demo does not have.
+- A Wix site on `<user>.wixsite.com/<site>` lives under a path, and ingest reads from the host's root: not handled.

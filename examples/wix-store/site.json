@@ -1,0 +1,52 @@
+{
+  "about": "נרות שקטים, a fictional Wix store. Its sitemaps, product pages (the JSON-LD block and the wix-warmup-data product object) and help pages are in the shapes recorded from real Israeli Wix stores (2026-10-24), trimmed to what ingest reads, with the fictional store's names, prices and stock.",
+  "host": "www.quiet-candles.example",
+  "routes": {
+    "/": {
+      "file": "home.html",
+      "headers": {
+        "x-wix-request-id": "0000000000.000000000000000000000"
+      }
+    },
+    "/robots.txt": {
+      "type": "text/plain; charset=utf-8",
+      "text": "User-agent: *\nAllow: /\nDisallow: *?lightbox=\n\nSitemap: https://www.quiet-candles.example/sitemap.xml\n"
+    },
+    "/sitemap.xml": {
+      "type": "text/xml; charset=utf-8",
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" generatedBy=\"WIX\">\n<sitemap>\n<loc>https://www.quiet-candles.example/store-products-sitemap.xml</loc>\n<lastmod>2026-10-21</lastmod>\n</sitemap>\n<sitemap>\n<loc>https://www.quiet-candles.example/pages-sitemap.xml</loc>\n<lastmod>2026-10-21</lastmod>\n</sitemap>\n</sitemapindex>\n"
+    },
+    "/store-products-sitemap.xml": {
+      "type": "text/xml; charset=utf-8",
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"\nxmlns:image=\"http://www.google.com/schemas/sitemap-image/1.1\" generatedBy=\"WIX\">\n<url>\n<loc>https://www.quiet-candles.example/product-page/נר-סויה-בצנצנת</loc>\n<lastmod>2026-10-18</lastmod>\n<image:image>\n<image:loc>https://static.wixstatic.com/media/0a0a0a_00000000000000000000000000000001~mv2.jpg/v1/fit/w_500,h_500,q_90/file.jpg</image:loc>\n</image:image>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/product-page/מארז-שלושה-נרות</loc>\n<lastmod>2026-10-21</lastmod>\n<image:image>\n<image:loc>https://static.wixstatic.com/media/0a0a0a_00000000000000000000000000000003~mv2.jpg/v1/fit/w_500,h_500,q_90/file.jpg</image:loc>\n</image:image>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/product-page/נר-עמוד-לבן</loc>\n<lastmod>2026-09-02</lastmod>\n<image:image>\n<image:loc>https://static.wixstatic.com/media/0a0a0a_00000000000000000000000000000005~mv2.jpg/v1/fit/w_500,h_500,q_90/file.jpg</image:loc>\n</image:image>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/product-page/גפרורים-ארוכים</loc>\n<lastmod>2025-12-01</lastmod>\n</url>\n</urlset>\n"
+    },
+    "/pages-sitemap.xml": {
+      "type": "text/xml; charset=utf-8",
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" generatedBy=\"WIX\">\n<url>\n<loc>https://www.quiet-candles.example</loc>\n<lastmod>2026-10-21</lastmod>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/shop</loc>\n<lastmod>2026-10-21</lastmod>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/shipping-returns</loc>\n<lastmod>2026-10-21</lastmod>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/regulations</loc>\n<lastmod>2026-10-21</lastmod>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/contact</loc>\n<lastmod>2026-10-21</lastmod>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/about</loc>\n<lastmod>2026-10-21</lastmod>\n</url>\n<url>\n<loc>https://www.quiet-candles.example/gallery</loc>\n<lastmod>2026-10-21</lastmod>\n</url>\n</urlset>\n"
+    },
+    "/shipping-returns": {
+      "file": "shipping-returns.html"
+    },
+    "/regulations": {
+      "file": "regulations.html"
+    },
+    "/contact": {
+      "file": "contact.html"
+    },
+    "/about": {
+      "file": "about.html"
+    },
+    "/product-page/נר-סויה-בצנצנת": {
+      "file": "product-soy-jar.html"
+    },
+    "/product-page/מארז-שלושה-נרות": {
+      "file": "product-gift-box.html"
+    },
+    "/product-page/נר-עמוד-לבן": {
+      "file": "product-pillar.html"
+    },
+    "/product-page/גפרורים-ארוכים": {
+      "file": "product-matches.html"
+    }
+  }
+}

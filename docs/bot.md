@@ -7,6 +7,7 @@ you saw `ToranBot/0.1` in your logs, here is what it did and how to stop it.
 
 - your home page and a contact page
 - your public product feed (`/products.json` on Shopify, the public Store API on WooCommerce)
+- on Wix, or when there is no feed: your sitemap and up to 150 of the product pages it lists, newest first
 - your shipping, returns and payment policy pages
 
 **How it behaves**

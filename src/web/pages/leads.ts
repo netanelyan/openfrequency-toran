@@ -16,6 +16,7 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { storesOf } from '../workspace.ts';
 import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../channels/config.ts';
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
+import { canIngest } from '../../ingest/catalogue.ts';
 
 // Leads: the list (by status, with the score and what was found), adding one by URL,
 // and one lead's page: its score's parts, its contacts, its pitch page and what the
@@ -107,7 +108,7 @@ async function leadPage(app: App, r: DashReq, id: number) {
 
   const sendBox = () => {
     if (s.taken_down_at) return '<p class="muted m0">העמוד הוסר, ולא כותבים להם יותר.</p>';
-    if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${s.platform === 'shopify' ? 'אפשר לבנות אותו מכאן.' : `עם ${esc(PLATFORM_HE[s.platform] || s.platform)} זה עוד לא עובד, רק עם Shopify.`}</p>`;
+    if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${canIngest(s.platform) ? 'אפשר לבנות אותו מכאן.' : `עם ${esc(PLATFORM_HE[s.platform] || s.platform)} זה עוד לא עובד, רק עם Shopify, WooCommerce ו־Wix.`}</p>`;
     if (!s.approved_at) return `<p class="muted m0">הדף מחכה לבדיקה שלך לפני שאפשר לשלוח אותו. <a href="/lead/${id}/review">לבדיקה</a></p>`;
     if (!s.sent_at) {
       const text = firstMessage({ storeName: name, url: url! });
@@ -146,7 +147,7 @@ ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד 
   <div class="grid12">
     <section class="panel"><header><h2>הדף</h2></header>
       ${s.page_built_at ? `<dl class="kv"><dt>כתובת</dt><dd><a href="${esc(url!)}?preview=1" target="_blank" rel="noopener"><bdi class="ltr">${esc(url!)}</bdi></a></dd><dt>קוד דמו</dt><dd class="ltr">${esc(s.demo_code)}</dd><dt>נפתח</dt><dd>${stats?.opens ? `${stats.opens} פעמים, ${stats.visitors} אנשים, אחרון ${esc(ago(stats.last))}` : 'עוד לא'}</dd><dt>גלילה</dt><dd>${stats?.depth ? `עד ${stats.depth}%` : '-'}</dd><dt>לחיצות על הדמו</dt><dd>${stats?.clicks || 0}</dd><dt>הדמו התחיל</dt><dd>${s.demo_started_at ? esc(stamp(s.demo_started_at)) : 'עוד לא'}</dd></dl>` : '<p class="muted m0">עוד לא נבנה.</p>'}
-      <div class="row mt16">${s.platform === 'shopify' ? postButton(r.ctx, `/lead/${id}/build`, s.page_built_at ? 'לקרוא את האתר מחדש' : 'לבנות דף', { cls: s.page_built_at ? 'btn sm' : 'btn primary sm', iconName: 'refresh' }) : ''}${s.status !== 'skipped' ? postButton(r.ctx, `/lead/${id}/skip`, 'לדלג', { cls: 'btn sm danger', confirm: 'לדלג על החנות?' }) : ''}${s.page_built_at && !s.taken_down_at ? postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' }) : ''}</div>
+      <div class="row mt16">${canIngest(s.platform) ? postButton(r.ctx, `/lead/${id}/build`, s.page_built_at ? 'לקרוא את האתר מחדש' : 'לבנות דף', { cls: s.page_built_at ? 'btn sm' : 'btn primary sm', iconName: 'refresh' }) : ''}${s.status !== 'skipped' ? postButton(r.ctx, `/lead/${id}/skip`, 'לדלג', { cls: 'btn sm danger', confirm: 'לדלג על החנות?' }) : ''}${s.page_built_at && !s.taken_down_at ? postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' }) : ''}</div>
     </section>
     <section class="panel"><header><h2>מה נמצא באתר</h2></header>
       <dl class="kv">
@@ -226,7 +227,7 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
     }],
     ['POST', /^\/lead\/(\d+)\/build$/, async (r, m) => {
       const s = await store(m[1]);
-      if (s.platform !== 'shopify') throw new ActionError('כרגע זה עובד רק עם חנויות Shopify');
+      if (!canIngest(s.platform)) throw new ActionError('כרגע זה עובד רק עם חנויות Shopify, WooCommerce ו־Wix');
       await enqueue(app.db, 'ingest', { storeId: s.id }, { dedupeKey: `ingest:${s.id}` });
       await audit(app.db, { actor: r.user.name, action: 'ingest', storeId: s.id });
       return { redirect: `/lead/${s.id}`, message: 'קורא את האתר ובונה את הדף. העמוד יתעדכן לבד.' };

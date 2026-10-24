@@ -1,0 +1,437 @@
+[
+ {
+  "id": 311,
+  "name": "זעתר &quot;של סבתא&quot;",
+  "slug": "%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90-1",
+  "parent": 310,
+  "type": "variation",
+  "variation": "משקל: 100 גרם",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90/?attribute_%25d7%259e%25d7%25a9%25d7%25a7%25d7%259c=100%20%D7%92%D7%A8%D7%9D",
+  "sku": "TB-311",
+  "short_description": "",
+  "description": "",
+  "on_sale": false,
+  "prices": {
+   "price": "2400",
+   "regular_price": "2400",
+   "sale_price": "2400",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">24.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [],
+  "categories": [],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "הוספה לסל",
+   "description": "הוספה לעגלת הקניות: &quot;זעתר &quot;של סבתא&quot; – 100 גרם&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90/?variation_id=311&#038;add-to-cart=310",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/311",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ],
+   "up": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/310"
+    }
+   ]
+  }
+ },
+ {
+  "id": 312,
+  "name": "זעתר &quot;של סבתא&quot;",
+  "slug": "%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90-2",
+  "parent": 310,
+  "type": "variation",
+  "variation": "משקל: 250 גרם",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90/?attribute_%25d7%259e%25d7%25a9%25d7%25a7%25d7%259c=250%20%D7%92%D7%A8%D7%9D",
+  "sku": "TB-312",
+  "short_description": "",
+  "description": "",
+  "on_sale": false,
+  "prices": {
+   "price": "4900",
+   "regular_price": "4900",
+   "sale_price": "4900",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">49.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [],
+  "categories": [],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "הוספה לסל",
+   "description": "הוספה לעגלת הקניות: &quot;זעתר &quot;של סבתא&quot; – 250 גרם&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%96%d7%a2%d7%aa%d7%a8-%d7%a9%d7%9c-%d7%a1%d7%91%d7%aa%d7%90/?variation_id=312&#038;add-to-cart=310",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/312",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ],
+   "up": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/310"
+    }
+   ]
+  }
+ },
+ {
+  "id": 321,
+  "name": "פפריקה מעושנת",
+  "slug": "%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa-1",
+  "parent": 320,
+  "type": "variation",
+  "variation": "משקל: 100 גרם, חריפות: מתוקה",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa/?attribute_%25d7%259e%25d7%25a9%25d7%25a7%25d7%259c=100%20%D7%92%D7%A8%D7%9D&attribute_%25d7%2597%25d7%25a8%25d7%2599%25d7%25a4%25d7%2595%25d7%25aa=%D7%9E%D7%AA%D7%95%D7%A7%D7%94",
+  "sku": "TB-321",
+  "short_description": "",
+  "description": "",
+  "on_sale": false,
+  "prices": {
+   "price": "2200",
+   "regular_price": "2200",
+   "sale_price": "2200",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">22.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [],
+  "categories": [],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "הוספה לסל",
+   "description": "הוספה לעגלת הקניות: &quot;פפריקה מעושנת – 100 גרם, מתוקה&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa/?variation_id=321&#038;add-to-cart=320",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/321",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ],
+   "up": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/320"
+    }
+   ]
+  }
+ },
+ {
+  "id": 322,
+  "name": "פפריקה מעושנת",
+  "slug": "%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa-2",
+  "parent": 320,
+  "type": "variation",
+  "variation": "משקל: 250 גרם, חריפות: מתוקה",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa/?attribute_%25d7%259e%25d7%25a9%25d7%25a7%25d7%259c=250%20%D7%92%D7%A8%D7%9D&attribute_%25d7%2597%25d7%25a8%25d7%2599%25d7%25a4%25d7%2595%25d7%25aa=%D7%9E%D7%AA%D7%95%D7%A7%D7%94",
+  "sku": "TB-322",
+  "short_description": "",
+  "description": "",
+  "on_sale": false,
+  "prices": {
+   "price": "4500",
+   "regular_price": "4500",
+   "sale_price": "4500",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">45.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [],
+  "categories": [],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": true,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "",
+   "class": "in-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "הוספה לסל",
+   "description": "הוספה לעגלת הקניות: &quot;פפריקה מעושנת – 250 גרם, מתוקה&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa/?variation_id=322&#038;add-to-cart=320",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/322",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ],
+   "up": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/320"
+    }
+   ]
+  }
+ },
+ {
+  "id": 323,
+  "name": "פפריקה מעושנת",
+  "slug": "%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa-3",
+  "parent": 320,
+  "type": "variation",
+  "variation": "משקל: 100 גרם, חריפות: חריפה",
+  "permalink": "https://tavlinim-ba-shuk.example/product/%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa/?attribute_%25d7%259e%25d7%25a9%25d7%25a7%25d7%259c=100%20%D7%92%D7%A8%D7%9D&attribute_%25d7%2597%25d7%25a8%25d7%2599%25d7%25a4%25d7%2595%25d7%25aa=%D7%97%D7%A8%D7%99%D7%A4%D7%94",
+  "sku": "TB-323",
+  "short_description": "",
+  "description": "",
+  "on_sale": false,
+  "prices": {
+   "price": "2400",
+   "regular_price": "2400",
+   "sale_price": "2400",
+   "price_range": null,
+   "currency_code": "ILS",
+   "currency_symbol": "₪",
+   "currency_minor_unit": 2,
+   "currency_decimal_separator": ".",
+   "currency_thousand_separator": ",",
+   "currency_prefix": "",
+   "currency_suffix": "₪"
+  },
+  "price_html": "<span class=\"woocommerce-Price-amount amount\">24.00<span class=\"woocommerce-Price-currencySymbol\" dir=\"auto\">&#8362;</span></span>",
+  "average_rating": "0",
+  "review_count": 0,
+  "images": [],
+  "categories": [],
+  "tags": [],
+  "brands": [],
+  "attributes": [],
+  "variations": [],
+  "grouped_products": [],
+  "has_options": false,
+  "is_purchasable": true,
+  "is_in_stock": false,
+  "is_on_backorder": false,
+  "low_stock_remaining": null,
+  "stock_availability": {
+   "text": "המלאי אזל",
+   "class": "out-of-stock"
+  },
+  "sold_individually": false,
+  "weight": "",
+  "dimensions": {
+   "length": "",
+   "width": "",
+   "height": ""
+  },
+  "formatted_weight": "אין מידע",
+  "formatted_dimensions": "אין מידע",
+  "add_to_cart": {
+   "text": "הוספה לסל",
+   "description": "הוספה לעגלת הקניות: &quot;פפריקה מעושנת – 100 גרם, חריפה&quot;",
+   "url": "https://tavlinim-ba-shuk.example/product/%d7%a4%d7%a4%d7%a8%d7%99%d7%a7%d7%94-%d7%9e%d7%a2%d7%95%d7%a9%d7%a0%d7%aa/?variation_id=323&#038;add-to-cart=320",
+   "single_text": "הוספה לסל",
+   "minimum": 1,
+   "maximum": 9999,
+   "multiple_of": 1
+  },
+  "is_password_protected": false,
+  "extensions": {},
+  "_links": {
+   "self": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/323",
+     "targetHints": {
+      "allow": [
+       "GET"
+      ]
+     }
+    }
+   ],
+   "collection": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products"
+    }
+   ],
+   "up": [
+    {
+     "href": "https://tavlinim-ba-shuk.example/wp-json/wc/store/v1/products/320"
+    }
+   ]
+  }
+ }
+]
