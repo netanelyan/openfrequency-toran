@@ -189,7 +189,7 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#f4f4f6">
 <meta name="robots" content="noindex, nofollow, noarchive">
-<title>בנינו ${esc(le(nameText))}${esc(nameText)} תורן לוואטסאפ</title>
+<title>בנינו ${esc(le(nameText))}${esc(nameText)} תורן שעונה ללקוחות שלכם</title>
 <meta name="description" content="${esc(read)}">
 <link rel="preload" href="/static/fonts/heebo-hebrew.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/brand.css">
@@ -208,7 +208,7 @@ ${iconLinks()}
   <div class="lead${d.shelf.length ? ' with-shelf' : ''}">
   <section class="hero">
     <div class="marks">${initial()}${toranMark(64, { label: 'תורן' })}</div>
-    <h1>בנינו ${leName} תורן לוואטסאפ</h1>
+    <h1>בנינו ${leName} תורן שעונה ללקוחות שלכם</h1>
     <p class="lede">${esc(read)} אפשר לכתוב לו עכשיו כמו לקוח ולראות מה הוא עונה.</p>
     ${readSec}
     <div class="read-cta">

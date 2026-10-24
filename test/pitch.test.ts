@@ -130,7 +130,7 @@ test('the hero says only what was really read: the product count in any size, an
   assert.match(page(fake({ counts: counts(2431), pages: { shipping: true, returns: false, titles: [] } })), /על 2,431 המוצרים ועל עמוד המשלוחים\./);
   assert.match(page(fake({ counts: counts(3), pages: { shipping: false, returns: true, titles: [] } })), /על 3 המוצרים ועל עמוד ההחזרות\./);
   assert.match(page(fake({ counts: counts(1), pages: { shipping: false, returns: false, titles: [] } })), /עברנו על האתר שלכם ועל המוצר שבו\./);
-  assert.match(page(fake({}, 'Nike Store')), /<h1>בנינו ל־<span class="hl"><bdi>Nike Store<\/bdi><\/span> תורן לוואטסאפ<\/h1>/, 'the name under its marker stroke');
+  assert.match(page(fake({}, 'Nike Store')), /<h1>בנינו ל־<span class="hl"><bdi>Nike Store<\/bdi><\/span> תורן שעונה ללקוחות שלכם<\/h1>/, 'the name under its marker stroke');
   const all = page(fake());
   assert.ok(!/[—–]/.test(all.replace(/<title>[\s\S]*?<\/title>/, '')), 'no em or en dashes');
   assert.ok(!/בניתי|אני נתנאל|לכתוב לי/.test(all), 'OpenFrequency speaks as "we"');
