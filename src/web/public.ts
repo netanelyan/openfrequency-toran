@@ -39,9 +39,9 @@ import { opsRoutes } from '../ops/api.ts';
 //                              to the demo number with that code is the store added (channels/request.ts).
 //   GET  /internal/ops         the operator's dashboard as data, for accounts' /admin (ops/api.ts); its POSTs are
 //                              the dashboard's buttons. From this machine only, with OF_INTERNAL_TOKEN
-//   POST /internal/teder/events Teder's news for an owner (docs/owner-line.md): from this machine only, no
-//                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET (owners/teder.ts). Kept once by its id
-//                              and handled by the worker (owners/events.ts).
+//   POST /internal/teder/events Teder's news for an owner (Teder's docs/assistant-api.md): from this machine only, no
+//                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET in the direction teder->toran
+//                              (owners/teder.ts). Kept once by its id and handled by the worker (owners/events.ts).
 //
 // Pitch pages get their own CSP: the store's logo and product photo load from its CDN
 // (https), and the dashboard may frame the page for its preview.
@@ -171,9 +171,11 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
         return { status: 400, json: { ok: false, error: 'bad' } };
       }
       const id = String(ev?.id || '');
-      if (!/^[\w.:-]{6,100}$/.test(id) || !(EVENT_TYPES as readonly string[]).includes(ev?.type) || !Number.isInteger(ev?.workspace) || ev.workspace <= 0 || typeof ev?.data !== 'object' || !ev.data) return { status: 400, json: { ok: false, error: 'bad' } };
+      // Teder names the workspace "customer" (its docs/assistant-api.md).
+      const workspace = Number(ev?.customer);
+      if (!/^[\w.:-]{6,100}$/.test(id) || !(EVENT_TYPES as readonly string[]).includes(ev?.type) || !Number.isInteger(workspace) || workspace <= 0 || typeof ev?.data !== 'object' || !ev.data) return { status: 400, json: { ok: false, error: 'bad' } };
       const at = ev.at && !Number.isNaN(Date.parse(ev.at)) ? new Date(ev.at).toISOString() : null;
-      const fresh = await app.db.one('INSERT INTO teder_events (id, type, workspace_id, at, data) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT (id) DO NOTHING RETURNING id', [id, ev.type, ev.workspace, at, J(ev.data)]);
+      const fresh = await app.db.one('INSERT INTO teder_events (id, type, workspace_id, at, data) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT (id) DO NOTHING RETURNING id', [id, ev.type, workspace, at, J(ev.data)]);
       if (fresh) await enqueue(app.db, 'teder_event', { id }, { dedupeKey: `teder:${id}`, maxAttempts: 8 });
       return { json: { ok: true } };
     }],

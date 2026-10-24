@@ -153,7 +153,7 @@ export async function ownerLine(app: App, adapter: ChannelAdapter, inbound: Inbo
     return answer([{ text: line }], stop ? 'opt_out' : 'opt_in');
   }
 
-  const posts: PostsCtx | null = hasTeder ? { app, teder: tederClient(app, owner.workspace.id, `wa:${phone}`), workspaceId: owner.workspace.id, phone } : null;
+  const posts: PostsCtx | null = hasTeder ? { app, teder: tederClient(app, owner.workspace.id, { name: owner.user.name || `וואטסאפ …${phone.slice(-4)}`, userId: owner.user.id }), workspaceId: owner.workspace.id, phone } : null;
 
   // 5 and 6. Teder's posts, read in code, unless Toran's own offer is the newer thing the owner is answering.
   if (posts) {

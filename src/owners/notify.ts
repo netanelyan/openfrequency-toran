@@ -14,7 +14,8 @@ import type { PostId } from './teder.ts';
 //
 //   the number         accounts vouched for it a moment ago (the caller asked), and its workspace has Teder
 //   consent            the latest word is an opt-in (accounts, and a "הפסק" kept here), else skipped
-//   quiet time         Teder's (Shabbat, the owner's quiet hours): the caller defers the whole event to its end
+//   quiet time         Teder's own: it holds its events through the owner's quiet hours and Shabbat before it
+//                      sends them (its docs/assistant-api.md), so what reaches here may go out
 //   the limit          at most PUSHES_PER_DAY messages started to one number in 24 hours, else skipped
 //   the window         inside 24 hours of the owner's last message: text and images; outside: the approved
 //                      template only, or nothing ('no_template') while its SID is not set
@@ -62,11 +63,6 @@ async function record(app: App, p: Push, phone: string, status: Outcome | 'defer
     [p.eventId, p.workspaceId, phone, p.kind, status, f.mode ?? null, f.template ?? null, f.reason ?? null, f.dueAt ?? null, J(f.detail || {})],
   );
   await event(app.db, null, `owner_push_${status}`, { kind: p.kind, eventId: p.eventId, workspace: p.workspaceId, reason: f.reason ?? null, mode: f.mode ?? null });
-}
-
-/** The event is put off to the end of Teder's quiet time: one row per number, so the record says why it waited. */
-export async function recordDeferred(app: App, p: Push, phone: string, until: string, reason: string) {
-  await record(app, p, phone, 'deferred', { reason, dueAt: until });
 }
 
 /** One message (in parts) Toran starts to one owner, under every rule above. */

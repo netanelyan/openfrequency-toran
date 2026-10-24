@@ -8,7 +8,7 @@ import { discover } from '../leads/discover.ts';
 import { canonicalDomain } from '../core/urls.ts';
 import { event } from '../db/log.ts';
 import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
-import { handleTederEvent } from '../owners/events.ts';
+import { handleTederEvent, handleTederReady } from '../owners/events.ts';
 import { deliverRequested } from '../ops/actions.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
@@ -19,8 +19,9 @@ import { deliverRequested } from '../ops/actions.ts';
 //                the page
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
 //   rescrape     the daily refresh of a store whose demo is open
-//   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts); put off to the end of
-//                Teder's quiet time by queueing itself again
+//   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts)
+//   teder_ready  the posts waiting for a workspace's approval, as one numbered list, a moment after Teder's post.ready
+//                events stop coming
 //
 // Scheduled each minute: a rescrape for every store with a built page that is not
 // skipped and was last ingested over 20 hours ago; expired WhatsApp bindings cleaned up; the link to each demo asked
@@ -64,6 +65,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
     }
     case 'teder_event':
       return handleTederEvent(app, String(p.id || ''));
+    case 'teder_ready':
+      return handleTederReady(app, Number(p.workspace));
     case 'ingest':
     case 'rescrape':
       return { storeId: p.storeId, ...(await ingestAndBuild(app, Number(p.storeId), say, job.kind === 'rescrape')) };
