@@ -168,7 +168,7 @@ async function pendingAction(app: App, storeId: number) {
 }
 
 /** The customer's latest question in words in a conversation: what an answer the owner keeps is the answer to. */
-async function questionOf(app: App, conversationId: number): Promise<string | null> {
+export async function questionOf(app: App, conversationId: number): Promise<string | null> {
   const q = await app.db.one<{ text: string }>(
     "SELECT text FROM messages WHERE conversation_id = $1 AND role = 'customer' AND text <> '' ORDER BY id DESC LIMIT 1",
     [conversationId],
@@ -223,7 +223,7 @@ async function execute(app: App, action: any, author: string): Promise<string> {
       if (action.params.remember) {
         const question = await questionOf(app, id);
         if (question) {
-          await app.db.query('INSERT INTO faqs (store_id, question, answer) VALUES ($1, $2, $3)', [action.store_id, question.slice(0, 300), String(action.params.text).slice(0, 2000)]);
+          await app.db.query('INSERT INTO faqs (store_id, question, answer, conversation_id) VALUES ($1, $2, $3, $4)', [action.store_id, question.slice(0, 300), String(action.params.text).slice(0, 2000), id]);
           line += ' שמרתי את התשובה, ובפעם הבאה ששואלים את זה תורן יענה בעצמו.';
         }
       }

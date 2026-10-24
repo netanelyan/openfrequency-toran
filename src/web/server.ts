@@ -35,8 +35,14 @@ export type Out = { status?: number; message?: string; html?: string; json?: unk
 export type Req = { req: IncomingMessage; url: URL; path: string; form: Record<string, string>; ip: string; secure: boolean; raw?: string };
 export type DashReq = Req & { user: { id: number; name: string; role: string }; scope: Scope; ctx: PageCtx; ajax: boolean };
 
-/** The whole server's settings and adding stores: the operator's alone (the superadmin outside view-as). */
-const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add)$/;
+/**
+ * The operator's alone (the superadmin outside view-as): the whole server's settings, adding stores, and selling to
+ * them (a lead's page, its pitch and its outreach, the review queue, the follow-ups, the plan a store is on). A
+ * customer's dashboard is pages/customer.ts; their own store's answers, policies, channels and chats stay theirs.
+ */
+const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add|review\/approve-all|ops\/.*|lead\/\d+\/(build|approve|unapprove|takedown|sent|followup-sent|skip|status|notes|sample|brand|plan))$/;
+/** The operator's pages. A customer who reaches one goes to their own: a store's page to what Toran knows about it. */
+const OPERATOR_PAGES = /^\/(leads|review|followups|brand|job\/\d+|lead\/\d+(\/review)?)$/;
 export type Route<R> = [method: 'GET' | 'POST', re: RegExp, fn: (r: R, m: RegExpExecArray) => Promise<Out> | Out];
 
 export class ActionError extends Error {
@@ -195,6 +201,8 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       if (chatId && !(await ownsConversation(app.db, scope, chatId))) return notFound();
       const jobId = idOf(/^\/jobs?\/(\d+)(?:\.json)?$/);
       if (jobId && !(await ownsJob(app.db, scope, jobId))) return notFound();
+
+      if (method === 'GET' && !scope.operator && OPERATOR_PAGES.test(p)) return reply(req, res, { redirect: leadId && /^\/lead\/\d+$/.test(p) ? `/lead/${leadId}/knowledge` : '/' });
 
       let form: Record<string, string> = {};
       if (method === 'POST') {

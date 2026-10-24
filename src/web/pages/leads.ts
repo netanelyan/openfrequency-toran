@@ -7,6 +7,7 @@ import { now } from '../../core/clock.ts';
 import { pageStats } from '../../pitch/track.ts';
 import { pitchGaps } from '../../pitch/ready.ts';
 import { contactTarget, firstMessage, followupDue, pitchUrl, reminderMessage } from '../../outreach.ts';
+import { PLANS, planOf, type PlanKey } from '../../plans.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { storesOf } from '../workspace.ts';
 import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../channels/config.ts';
@@ -150,6 +151,10 @@ ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד 
     <section class="panel"><header><h2>סטטוס</h2></header>${statusForm}
       <form class="mt12" method="post" action="/lead/${id}/notes">${csrfField(r.ctx)}<label class="f">הערות<textarea name="notes" rows="3" dir="auto">${esc(s.notes || '')}</textarea></label><button class="btn sm mt8" type="submit">לשמור</button></form>
     </section>
+    ${s.workspace_id ? `<section class="panel" id="plan"><header><h2>החבילה של הלקוח</h2></header>
+      <form class="row" method="post" action="/lead/${id}/plan">${csrfField(r.ctx)}<select name="plan" aria-label="חבילה">${(Object.keys(PLANS) as PlanKey[]).map((k) => `<option value="${k}"${planOf(s.config) === k ? ' selected' : ''}>${esc(PLANS[k].he)}, עד ${PLANS[k].conversations.toLocaleString('en-US')} שיחות</option>`).join('')}</select><button class="btn sm" type="submit">לשמור</button></form>
+      <p class="small muted mt8 m0">הלקוח רואה את החבילה ואת השיחות של החודש בעמוד "החבילה". המחיר והחשבוניות נשארים ב-accounts.</p>
+    </section>` : ''}
     <section class="panel"><header><h2>מה קרה</h2></header><ol class="trace">${events.map((e) => `<li class="ok"><b>${esc(EVENT_HE[e.kind] || e.kind)}</b> <span class="d">${esc(stamp(e.at))}</span></li>`).join('') || '<li>עוד כלום</li>'}</ol></section>
   </div>
 </div>${ready ? '' : ''}`;
@@ -207,7 +212,7 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
         await app.db.query("UPDATE channel_accounts SET status = 'off' WHERE store_id = $1 AND channel = 'email'", [s.id]);
       }
       await audit(app.db, { actor: r.user.name, action: r.form.on === '1' ? 'email_connect' : 'email_disconnect', storeId: s.id, detail: { address } });
-      return { redirect: `/lead/${s.id}#channels`, message: r.form.on === '1' ? `המייל מחובר. מעבירים אליו את המייל של החנות: ${address}` : 'המייל נותק. תורן לא עונה יותר על מיילים לכתובת הזו.' };
+      return { redirect: r.scope.operator ? `/lead/${s.id}#channels` : '/settings#channels', message: r.form.on === '1' ? `המייל מחובר. מעבירים אליו את המייל של החנות: ${address}` : 'המייל נותק. תורן לא עונה יותר על מיילים לכתובת הזו.' };
     }],
     ['POST', /^\/lead\/(\d+)\/build$/, async (r, m) => {
       const s = await store(m[1]);

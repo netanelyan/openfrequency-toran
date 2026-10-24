@@ -13,11 +13,17 @@ import { opsSections } from './ops.ts';
 import { storeIdIn, storesOf } from '../workspace.ts';
 import { ALL_CHANNELS, CHANNEL_HE, channelStates, enabledChannels, MESSAGING, messagingSql, setChannelState, type ChannelState } from '../../channels/config.ts';
 import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../../channels/owner.ts';
+import { questionOf } from '../../assistant/index.ts';
+import { forgetStorePrompt } from '../../agent/loop.ts';
+import { conversationRow, maskPeer, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, type InboxState } from '../inbox.ts';
+import { customerSettings, customerToday } from './customer.ts';
 
 // Today (for the operator, their dashboard on top: pages/ops.ts), the inbox (every channel's conversations, and the owner's reply in each), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
 // the offer, lead discovery, the keys and developer mode are the whole server's, so only the operator sees them.
 
 async function today(app: App, r: DashReq) {
+  // A customer's Today is what openfrequency.co.il sells them (pages/customer.ts); this one is the operator's.
+  if (!r.scope.operator) return customerToday(app, r);
   const w = storesOf(r.scope);
   const c = await app.db.one<any>(`SELECT
     (SELECT COUNT(*)::int FROM stores WHERE status = 'page_ready' AND approved_at IS NULL AND ${w}) AS review,
@@ -63,35 +69,41 @@ async function chats(app: App, r: DashReq) {
     params.push(channel);
     where.push(`c.channel = $${params.length}`);
   }
-  if (filter === 'handoff') where.push('c.handoffs > 0');
-  if (filter === 'miss') where.push('c.misses > 0');
+  const op = r.scope.operator;
+  const state = (Object.keys(STATE_HE) as InboxState[]).includes(r.url.searchParams.get('state') as InboxState) ? (r.url.searchParams.get('state') as InboxState) : '';
+  if (state === 'waiting') where.push(WAITING_SQL);
+  else if (state) where.push(`${STATE_SQL} = '${state}'`);
+  if (op && filter === 'handoff') where.push('c.handoffs > 0');
+  if (op && filter === 'miss') where.push('c.misses > 0');
   if (storeId) {
     params.push(storeId);
     where.push(`c.store_id = $${params.length}`);
   }
-  const rows = await app.db.query<any>(`SELECT c.*, s.name, s.domain, s.brand, s.id AS sid, (SELECT COUNT(*)::int FROM messages WHERE conversation_id = c.id) AS n, (SELECT text FROM messages WHERE conversation_id = c.id AND role = 'customer' ORDER BY id DESC LIMIT 1) AS last_q FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
-  const link = (o: Record<string, string>) => `/chats?${new URLSearchParams(Object.entries({ filter, channel, store: storeId ? String(storeId) : '', ...o }).filter(([, v]) => v))}`;
-  const tab = (f: string, label: string) => `<a href="${link({ filter: f })}"${filter === f ? ' aria-current="true"' : ''}>${label}</a>`;
+  const link = (o: Record<string, string>) => `/chats?${new URLSearchParams(Object.entries({ filter, state, channel, store: storeId ? String(storeId) : '', ...o }).filter(([, v]) => v))}`;
+  const tab = (f: string, label: string) => `<a href="${link({ filter: f, state: '' })}"${filter === f && !state ? ' aria-current="true"' : ''}>${label}</a>`;
   const chTab = (ch: string, label: string) => `<a href="${link({ channel: ch })}"${channel === ch ? ' aria-current="true"' : ''}>${label}</a>`;
+  const stTab = (st: InboxState) => `<a href="${link({ state: st, filter: '' })}"${state === st ? ' aria-current="true"' : ''}>${STATE_HE[st][0]}</a>`;
+  if (!op) {
+    // A customer's inbox: the website's one list, each conversation with its channel and where it stands.
+    const list = await app.db.query<any>(`SELECT ${ROW_SQL}, c.store_id, s.name, s.domain, s.brand, s.brand_override FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
+    const stores = (await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM stores WHERE ${storesOf(r.scope)}`))?.n || 0;
+    const body = `<div class="head"><h1>שיחות</h1><p class="sub">מה שלקוחות כותבים ${shown.length > 1 ? `ב${shown.map((ch) => CHANNEL_HE[ch]).join(', ב')}` : 'בוואטסאפ'} מגיע לכאן. ליד כל שיחה רואים מאיפה היא הגיעה ומה קרה איתה: תורן ענה לבד, היא מחכה לכם, או שעניתם בה בעצמכם.</p></div>
+<nav class="tabs">${tab('', 'הכול')}${stTab('waiting')}${stTab('alone')}${stTab('fixed')}</nav>
+${shown.length > 1 ? `<nav class="tabs mt8">${chTab('', 'כל הערוצים')}${shown.map((ch) => chTab(ch, CHANNEL_HE[ch])).join('')}</nav>` : ''}
+${list.length ? `<div class="list">${list.map((c) => conversationRow({ ...c, store: stores > 1 ? displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain : null })).join('')}</div>` : `<div class="empty">${icon('chat')}<b>${state === 'waiting' ? 'אין שאלות שמחכות לכם' : 'אין כאן שיחות'}</b>${state === 'waiting' ? 'כשתורן לא מוצא תשובה באתר, השאלה מגיעה לכאן.' : 'שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.'}</div>`}`;
+    return layout({ ...r.ctx, title: 'שיחות', active: 'chats' }, body);
+  }
+  const rows = await app.db.query<any>(`SELECT c.*, ${STATE_SQL} AS state, s.name, s.domain, s.brand, s.id AS sid, (SELECT COUNT(*)::int FROM messages WHERE conversation_id = c.id) AS n, (SELECT text FROM messages WHERE conversation_id = c.id AND role = 'customer' ORDER BY id DESC LIMIT 1) AS last_q FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
   const paused = (c: any) => c.agent_paused_until && new Date(c.agent_paused_until).getTime() > now();
   const body = `<div class="head"><h1>שיחות</h1><p class="sub">כל השיחות, מכל הערוצים. באדום שיחות שתורן העביר אליך. בכתום שיחות שבהן נמחק משפט לפני השליחה, כי היה בו מחיר או הבטחה שלא הגיעו מהאתר.</p></div>
-<nav class="tabs">${tab('', 'הכול')}${tab('handoff', 'עם העברה')}${tab('miss', 'עם פספוס')}</nav>
+<nav class="tabs">${tab('', 'הכול')}${tab('handoff', 'עם העברה')}${tab('miss', 'עם פספוס')}${stTab('waiting')}${stTab('fixed')}</nav>
 ${shown.length > 1 ? `<nav class="tabs mt8">${chTab('', 'כל הערוצים')}${shown.map((ch) => chTab(ch, CHANNEL_HE[ch])).join('')}</nav>` : ''}
-${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : 'ok'}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc(c.brand?.name || c.name || c.domain)} · ${esc((c.last_q || c.meta?.subject || '').replace(/\n/g, ' ').slice(0, 70))}</b><small><span class="chip">${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)}</span> · ${c.n} הודעות · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}${paused(c) ? ' · <span class="chip sig">אצלך</span>' : ''} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer))}</bdi></small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר, או כותב למייל של חנות שמחוברת.</div>`}`;
+${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : 'ok'}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc(c.brand?.name || c.name || c.domain)} · ${esc((c.last_q || c.meta?.subject || '').replace(/\n/g, ' ').slice(0, 70))}</b><small><span class="chip">${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)}</span> · ${c.n} הודעות · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}${paused(c) ? ' · <span class="chip sig">אצלך</span>' : ''} · ${stateChip(c.state)} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer))}</bdi></small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר, או כותב למייל של חנות שמחוברת.</div>`}`;
   return layout({ ...r.ctx, title: 'שיחות', active: 'chats' }, body);
 }
 
 /** WhatsApp's own markup, as the phone shows it: _italic_ and *bold* (applied to already escaped text). */
 const waMarkup = (html: string) => html.replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1<i>$2</i>').replace(/(^|\s)\*([^*\n]+)\*(?=\s|$)/g, '$1<b>$2</b>');
-
-const maskPhone = (p: string | null) => (p ? `+${p.slice(0, 5)}•••${p.slice(-3)}` : '');
-/** The customer, as the inbox shows them: a phone or an address, partly hidden. */
-const maskPeer = (channel: string, p: string | null) => {
-  if (!p) return '';
-  if (channel !== 'email') return maskPhone(p);
-  const [user, domain] = p.split('@');
-  return `${user.slice(0, 2)}•••@${domain || ''}`;
-};
 
 const BLOCKED_HE: Record<string, string> = {
   window_closed: 'עברו יותר מ־24 שעות מההודעה האחרונה של הלקוח. בוואטסאפ אפשר לענות אחרי זה רק בתבנית שמטא אישרה, ולתורן עוד אין תבניות, אז מכאן אי אפשר לענות בשיחה הזו.',
@@ -103,17 +115,19 @@ const BLOCKED_HE: Record<string, string> = {
 const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', continuation: 'המשך של משפט שנחתך' };
 
 async function chat(app: App, r: DashReq, id: number) {
-  const c = await app.db.one<any>('SELECT c.*, s.name, s.domain, s.brand, s.id AS sid FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.id = $1', [id]);
+  const c = await app.db.one<any>(`SELECT c.*, ${STATE_SQL} AS state, s.name, s.domain, s.brand, s.id AS sid FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.id = $1`, [id]);
   if (!c) return null;
+  // The operator reads the agent's workings (its tool calls, the cost); a customer reads the conversation and where it stands.
+  const op = r.scope.operator;
   const msgs = await app.db.query<any>('SELECT * FROM messages WHERE conversation_id = $1 ORDER BY id', [id]);
   const cost = await app.db.one<any>('SELECT COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE conversation_id = $1', [id]);
   const markup = (t: string) => (c.channel === 'whatsapp' ? waMarkup(esc(t)) : esc(t));
   const out = msgs.map((m) => {
     const cls = m.role === 'agent' ? `agent${m.handoff ? ' hand' : m.guard?.length ? ' flag' : ''}` : m.role === 'owner' ? 'owner' : m.role === 'system' ? `system${m.handoff ? ' hand' : ''}` : 'customer';
     const notes = m.role === 'agent' ? [
-      ...(m.tools || []).map((t: any) => `<span>${icon('search')} ${esc(t.name)} ${esc(JSON.stringify(t.input)).slice(0, 120)}</span>`),
+      ...(op ? m.tools || [] : []).map((t: any) => `<span>${icon('search')} ${esc(t.name)} ${esc(JSON.stringify(t.input)).slice(0, 120)}</span>`),
       ...(m.guard || []).filter((g: any) => g.rule !== 'continuation').map((g: any) => `<span class="warn">${icon('alert')} נמחק לפני השליחה (${esc(RULE_HE[g.rule] || g.rule)}): "${esc(g.sentence)}"</span>`),
-      ...(m.handoff ? [`<span class="bad">${icon('hand')} הועבר אליך (${esc(m.handoff.reason)}): ${esc(m.handoff.summary)}</span>`] : []),
+      ...(m.handoff ? [op ? `<span class="bad">${icon('hand')} הועבר אליך (${esc(m.handoff.reason)}): ${esc(m.handoff.summary)}</span>` : `<span class="bad">${icon('hand')} תורן העביר את זה אליכם${/[\u0590-\u05FF]/.test(m.handoff.summary || '') ? `: ${esc(m.handoff.summary)}` : ''}</span>`] : []),
     ] : m.role === 'owner' ? [`<span>${icon('send')} נשלח מכאן${m.author ? ` (${esc(m.author)})` : ''}</span>`]
     : m.role === 'customer' ? [
       ...(m.automated ? [`<span class="warn">${icon('alert')} הודעה אוטומטית (${esc(m.automated)}), ותורן לא ענה עליה</span>`] : []),
@@ -123,16 +137,25 @@ async function chat(app: App, r: DashReq, id: number) {
   });
   const st = await replyState(app, id);
   const ch = CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel;
-  const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">ענית בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה לך כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm' })}</div>` : '';
+  const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">${op ? 'ענית' : 'עניתם'} בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה ${op ? 'לך' : 'לכם'} כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm' })}</div>` : '';
   const windowNote = st.windowEnds ? `אפשר לענות עד ${esc(stamp(st.windowEnds))}, 24 שעות מההודעה האחרונה של הלקוח. ` : '';
+  // A question Toran handed over: the owner's answer can stay with Toran for next time ("מה שתענו הוא יזכור לפעם הבאה").
+  const waiting = c.state === 'waiting';
+  const asked = waiting ? await questionOf(app, id) : null;
+  const learned = await app.db.query<{ question: string }>('SELECT question FROM faqs WHERE conversation_id = $1 ORDER BY id', [id]);
+  const learn = waiting && asked ? `<label class="row small mt8"><input type="checkbox" name="learn" value="1" checked> לשמור את התשובה, ותורן יענה ככה בפעם הבאה ששואלים את זה</label>
+<label class="f mt8">השאלה, כמו שתורן ישמור אותה<input type="text" name="question" value="${esc(asked.slice(0, 300))}" maxlength="300" dir="auto"></label>` : '';
+  const settle = waiting && !r.ctx.readOnly ? `<div class="row mt12">${postButton(r.ctx, `/chat/${id}/settle`, 'טיפלתי בזה בלי לענות מכאן', { cls: 'btn sm ghost', iconName: 'check' })}</div>` : '';
   const replyBox = (MESSAGING as string[]).includes(c.channel) ? `<section class="panel mt16" id="reply"><header><h2>לענות ללקוח</h2><span class="end chip">${esc(ch)}</span></header>
   ${pausedNote}
-  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto" required maxlength="4000" class="wide" aria-label="התשובה שלך"></textarea><div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
-  <p class="small muted mt8 m0">${windowNote}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה שלך.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc(BLOCKED_HE[st.reason || ''] || '')}</p>`}
+  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto" required maxlength="4000" class="wide" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>${learn}<div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
+  <p class="small muted mt8 m0">${windowNote}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc(BLOCKED_HE[st.reason || ''] || '')}</p>`}
+  ${settle}
+  ${learned.length ? `<p class="small mt12 m0">${icon('book')} תורן שמר מהשיחה הזו את התשובה ל"${esc(learned.map((x) => x.question).join('", "'))}". <a href="/lead/${c.sid}/knowledge#answers">${op ? 'לתשובות של החנות' : 'לתשובות שלכם'}</a></p>` : ''}
 </section>` : '';
   const subject = c.channel === 'email' && c.meta?.subject ? ` · "${esc(c.meta.subject)}"` : '';
   const body = `<a class="back" href="/chats">${icon('chev')}שיחות</a>
-<div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub">${esc(ch)} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer) || c.channel)}</bdi>${subject} · התחילה ${esc(stamp(c.started_at))} · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}</p><div class="end"><a class="btn sm" href="/lead/${c.sid}">לליד</a></div></div>
+<div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub">${stateChip(c.state)} · ${esc(ch)}${c.channel === 'whatsapp' && !c.account_id ? ' (דמו)' : ''} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer) || c.channel)}</bdi>${subject} · התחילה ${esc(stamp(c.started_at))}${op ? ` · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}` : ''}</p><div class="end">${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}מה הוא יודע</a>`}</div></div>
 <section class="panel"><div class="chat">${out.join('')}</div></section>
 ${replyBox}`;
   return layout({ ...r.ctx, title: 'שיחה', active: 'chat' }, body);
@@ -159,6 +182,7 @@ ${done.length ? `<section class="group mt24"><header><h2>כבר קיבלו תז�
 }
 
 async function settings(app: App, r: DashReq) {
+  if (!r.scope.operator) return customerSettings(app, r);
   const costs = await app.db.query<any>(`SELECT s.id, s.name, s.domain, s.brand,
       COALESCE(SUM(u.api_usd) FILTER (WHERE u.kind = 'llm'), 0)::float AS llm_api, COALESCE(SUM(u.usd) FILTER (WHERE u.kind = 'llm'), 0)::float AS llm_paid,
       COALESCE(SUM(u.usd) FILTER (WHERE u.kind = 'bsp'), 0)::float AS bsp, COALESCE(SUM(u.units) FILTER (WHERE u.kind = 'bsp'), 0)::int AS msgs,
@@ -233,9 +257,20 @@ export function homeRoutes(app: App): Route<DashReq>[] {
     ['POST', /^\/chat\/(\d+)\/reply$/, async (r, m) => {
       const text = String(r.form.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 4000);
       if (!text) throw new ActionError('התשובה ריקה.');
-      const d = await ownerReply(app, Number(m[1]), text, r.user.name);
+      const id = Number(m[1]);
+      const d = await ownerReply(app, id, text, r.user.name);
       if (!d.ok) throw new ActionError(BLOCKED_HE[d.reason] || 'לא נשלח.');
-      return { redirect: `/chat/${m[1]}#reply`, message: `נשלח. תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות.` };
+      // Kept for next time: the question as the owner left it, and their answer (the agent prefers it to the site's).
+      const question = String(r.form.question || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+      if (r.form.learn === '1' && question.length >= 2) {
+        const c = await app.db.one<{ store_id: number }>('SELECT store_id FROM conversations WHERE id = $1', [id]);
+        await app.db.query('INSERT INTO faqs (store_id, question, answer, conversation_id) VALUES ($1, $2, $3, $4)', [c!.store_id, question, text.slice(0, 2000), id]);
+        await app.db.query('UPDATE stores SET updated_at = now() WHERE id = $1', [c!.store_id]);
+        forgetStorePrompt(c!.store_id);
+        await audit(app.db, { actor: r.user.name, action: 'learn', storeId: c!.store_id, detail: { conversationId: id } });
+        return { redirect: `/chat/${id}#reply`, message: `נשלח, ותורן שמר את התשובה לפעם הבאה. בשיחה הזו הוא לא עונה ${PAUSE_HOURS} שעות.` };
+      }
+      return { redirect: `/chat/${id}#reply`, message: `נשלח. תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות.` };
     }],
     ['POST', /^\/chat\/(\d+)\/resume$/, async (r, m) => {
       await resumeAgent(app, Number(m[1]), r.user.name);

@@ -71,10 +71,12 @@ const SPRITE = `<svg class="sr" width="0" height="0" aria-hidden="true"><defs>
 <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></symbol>
 <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></symbol>
 <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 11.5h5"/></symbol>
+<symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M7 15h4"/></symbol>
 <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.5L19.5 10l-5.6 1.6L12 17l-1.9-5.4L4.5 10l5.6-1.5z"/></symbol>
 </defs></svg>`;
 
-// Six sections, the same in the tab bar (phone) and the sidebar (desk).
+// The operator's sections, the same in the tab bar (phone) and the sidebar (desk).
 export const NAV: [string, string, string, string][] = [
   ['/', 'היום', 'today', 'today'],
   ['/leads', 'לידים', 'leads', 'leads'],
@@ -82,6 +84,16 @@ export const NAV: [string, string, string, string][] = [
   ['/chats', 'שיחות', 'chats', 'chat'],
   ['/assistant', 'העוזר', 'assistant', 'spark'],
   ['/followups', 'מעקב', 'followups', 'clock'],
+  ['/settings', 'הגדרות', 'settings', 'settings'],
+];
+// A customer's (a store owner's, and the operator viewing as one): what openfrequency.co.il/toran sells them. The
+// inbox, what Toran knows about the store, their assistant, the plan, and the store's channels.
+export const CUSTOMER_NAV: [string, string, string, string][] = [
+  ['/', 'היום', 'today', 'today'],
+  ['/chats', 'שיחות', 'chats', 'chat'],
+  ['/knowledge', 'מה הוא יודע', 'knowledge', 'book'],
+  ['/assistant', 'העוזר', 'assistant', 'spark'],
+  ['/plan', 'החבילה', 'plan', 'card'],
   ['/settings', 'הגדרות', 'settings', 'settings'],
 ];
 const SECTION_OF: Record<string, string> = { lead: 'leads', add: 'leads', chat: 'chats', brand: 'settings', discover: 'leads' };
@@ -105,19 +117,27 @@ export type PageCtx = {
   viewAs?: { name: string; admin: string } | null;
   /** Accounts' sign-out page. */
   logout?: string;
+  /** A customer's conversations this month against their plans (plans.ts), in the header where the operator sees tokens. */
+  plan?: { used: number; cap: number } | null;
 };
 
 export function layout(ctx: PageCtx, body: string): string {
   const section = SECTION_OF[ctx.active || ''] || ctx.active;
   const counts: Record<string, number | undefined> = { review: ctx.waiting?.review, followups: ctx.waiting?.followups, chats: ctx.waiting?.chats };
   const badge = (key: string) => (counts[key] ? `<b class="badge num" aria-label="${counts[key]} מחכים">${counts[key]}</b>` : '');
-  const nav = NAV.map(([href, label, key, ic]) => `<a href="${href}" title="${label}"${key === section ? ' aria-current="page"' : ''}>${icon(ic)}<span>${label}</span>${badge(key)}</a>`).join('');
-  const tabs = NAV.map(([href, label, key, ic]) => `<a href="${href}"${key === section ? ' aria-current="page"' : ''}>${icon(ic)}<span>${label}</span>${badge(key)}</a>`).join('');
+  const sections = ctx.operator ? NAV : CUSTOMER_NAV;
+  const nav = sections.map(([href, label, key, ic]) => `<a href="${href}" title="${label}"${key === section ? ' aria-current="page"' : ''}>${icon(ic)}<span>${label}</span>${badge(key)}</a>`).join('');
+  const tabs = sections.map(([href, label, key, ic]) => `<a href="${href}"${key === section ? ' aria-current="page"' : ''}>${icon(ic)}<span>${label}</span>${badge(key)}</a>`).join('');
   const s = ctx.spend || { usd: 0, cap: 0 };
   const cap = Number(s.cap) || 0;
   const spent = Number(s.usd) || 0;
-  const used = cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0;
-  const ring = `<svg class="ring${used >= 90 ? ' bad' : used >= 70 ? ' warn' : ''}" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle class="v" cx="10" cy="10" r="8" pathLength="100" stroke-dasharray="${used} 100"/></svg>`;
+  const ringOf = (used: number) => `<svg class="ring${used >= 90 ? ' bad' : used >= 70 ? ' warn' : ''}" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle class="v" cx="10" cy="10" r="8" pathLength="100" stroke-dasharray="${used} 100"/></svg>`;
+  const ring = ringOf(cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0);
+  // The operator reads the server's tokens; a customer reads their conversations against the plan, which is what they pay for.
+  const p = ctx.plan;
+  const meter = ctx.operator || !p
+    ? `<a class="spend" href="/settings#costs" title="טוקנים החודש: ${tokenNum(spent)}${cap ? ` מתוך ${tokenNum(cap)}` : ''}">${ring}<span class="lbl">טוקנים</span><span class="amt num ltr"><b>${tokenNum(spent)}</b>${cap ? `<span> / ${tokenNum(cap)}</span>` : ''}</span></a>`
+    : `<a class="spend" href="/plan" title="שיחות החודש: ${p.used.toLocaleString('en-US')} מתוך ${p.cap.toLocaleString('en-US')} בחבילה">${ringOf(p.cap ? Math.min(100, Math.round((p.used / p.cap) * 100)) : 0)}<span class="lbl">שיחות</span><span class="amt num ltr"><b>${p.used.toLocaleString('en-US')}</b><span> / ${p.cap.toLocaleString('en-US')}</span></span></a>`;
   const flash = ctx.flash ? ` data-flash="${esc(ctx.flash)}"` : '';
   return `<!doctype html>
 <html lang="he" dir="rtl"${ctx.side === 'mini' ? ' class="side-mini"' : ''}>
@@ -144,7 +164,7 @@ ${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צ�
   <button class="sidetoggle" type="button" data-side aria-label="${ctx.side === 'mini' ? 'הרחבת סרגל הצד' : 'כיווץ סרגל הצד'}" aria-expanded="${ctx.side === 'mini' ? 'false' : 'true'}">${icon('sidebar')}</button>
   <nav class="nav" aria-label="ראשי">${nav}</nav>
   <div class="tools">
-    <a class="spend" href="/settings#costs" title="טוקנים החודש: ${tokenNum(spent)}${cap ? ` מתוך ${tokenNum(cap)}` : ''}">${ring}<span class="lbl">טוקנים</span><span class="amt num ltr"><b>${tokenNum(spent)}</b>${cap ? `<span> / ${tokenNum(cap)}</span>` : ''}</span></a>
+    ${meter}
     ${ctx.logout ? `<a class="logout" href="${esc(ctx.logout)}" title="יציאה">${icon('logout')}<span class="lbl">יציאה</span></a>` : ''}
   </div>
 </div></header>
