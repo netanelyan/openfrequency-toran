@@ -1,11 +1,12 @@
 import type { App } from '../app.ts';
 import { brandColor, displayName } from '../ingest/brand.ts';
 import { getOffer, offerReady, ofWhatsapp } from '../offer.ts';
+import { event } from '../db/log.ts';
 
 // What a pitch page needs before anyone but the owner may see it. A page with a gap is
 // never shown with a guess (a grey colour, the domain for a name, a sample answer built
 // from a row, a made-up price): it waits in the review queue, which lists the gaps, and
-// its approve button stays off until they are filled.
+// it approves itself once they are filled (autoApprove below).
 //
 // Who may see a page: the owner always (a dashboard session, as a preview); anyone else
 // only when it is approved, complete, not skipped and not taken down.
@@ -44,3 +45,24 @@ export async function pitchGaps(app: App, s: PitchStore): Promise<Gap[]> {
 
 /** Whether a visitor without a dashboard session may open the page. */
 export const isPublic = (s: { approved_at: any; taken_down_at: any; status: string }, gaps: Gap[]) => Boolean(s.approved_at) && !s.taken_down_at && s.status !== 'skipped' && gaps.length === 0;
+
+/**
+ * Nobody approves a page by hand: a built page with nothing missing approves itself, when it is built and again when
+ * it is opened (a gap closed since: the price set, a number added). Never a page taken down or skipped, and never one
+ * the owner held back ("לבטל את האישור") since it was last built: that hold lasts until the page is built again.
+ * Returns whether the page is approved now.
+ */
+export async function autoApprove(app: App, s: { id: number; approved_at: any; taken_down_at: any; status: string }, gaps: Gap[]): Promise<boolean> {
+  if (s.approved_at) return true;
+  if (s.taken_down_at || s.status === 'skipped' || gaps.length) return false;
+  const held = await app.db.one<{ n: number }>(
+    "SELECT COUNT(*)::int AS n FROM events WHERE store_id = $1 AND kind = 'unapproved' AND at >= COALESCE((SELECT MAX(at) FROM events WHERE store_id = $1 AND kind = 'page_built'), '-infinity'::timestamptz)",
+    [s.id],
+  );
+  if (held?.n) return false;
+  const row = await app.db.one<{ approved_at: any }>('UPDATE stores SET approved_at = now(), updated_at = now() WHERE id = $1 AND approved_at IS NULL AND taken_down_at IS NULL RETURNING approved_at', [s.id]);
+  if (!row) return false;
+  s.approved_at = row.approved_at;
+  await event(app.db, s.id, 'approved', { by: 'auto' });
+  return true;
+}

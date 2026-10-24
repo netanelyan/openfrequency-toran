@@ -210,6 +210,8 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
     ['POST', /^\/lead\/(\d+)\/unapprove$/, async (r, m) => {
       const s = await store(m[1]);
       await app.db.query('UPDATE stores SET approved_at = NULL WHERE id = $1', [s.id]);
+      // A hold: the page does not approve itself again until it is built again (pitch/ready.ts autoApprove).
+      await event(app.db, s.id, 'unapproved', { by: r.user.name });
       await audit(app.db, { actor: r.user.name, action: 'unapprove', storeId: s.id });
       return { message: 'האישור בוטל' };
     }],

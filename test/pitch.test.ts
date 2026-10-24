@@ -201,3 +201,28 @@ test('the price card: the figure, VAT and the setup fee under it, and what the p
   assert.match(card, /<p class="price-notes">לא כולל מע״מ\. בחודש הראשון יש גם 990 ₪ דמי הקמה, פעם אחת\.<\/p>/);
   assert.match(priceFigure({ monthly: 449, vat: 'included', setup: 0, city: 'אשדוד' }, null), /כולל מע״מ\. אין דמי הקמה\./);
 });
+
+test('nobody approves a page by hand: it approves itself once nothing is missing, and a hold lasts until it is built again', async () => {
+  const { app, s, store } = await seeded();
+  try {
+    const approved = async () => Boolean((await app.db.one<any>('SELECT approved_at FROM stores WHERE id = $1', [store.id])).approved_at);
+    assert.equal(await approved(), false, 'built without a price: held');
+    assert.equal((await pitchData(app, s.slug))!.public, false);
+    await setOffer(app.db, OFFER);
+    const d = await pitchData(app, s.slug);
+    assert.equal(d!.public, true, 'the price set: the page is up the next time it is opened');
+    assert.equal(await approved(), true);
+    const ev = await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'approved' ORDER BY at DESC LIMIT 1", [store.id]);
+    assert.equal(ev.data.by, 'auto');
+    // The owner holds it back: opening it does not approve it again.
+    await app.db.query('UPDATE stores SET approved_at = NULL WHERE id = $1', [store.id]);
+    await app.db.query("INSERT INTO events (store_id, kind, data) VALUES ($1, 'unapproved', '{}'::jsonb)", [store.id]);
+    assert.equal((await pitchData(app, s.slug))!.public, false);
+    assert.equal(await approved(), false, 'held');
+    // Built again: the hold is over.
+    await buildPitch(app, store.id);
+    assert.equal(await approved(), true, 'rebuilt with nothing missing: approved by itself');
+  } finally {
+    await app.db.close();
+  }
+});

@@ -6,7 +6,7 @@ import { money } from '../agent/tools.ts';
 import { getOffer, ofWhatsapp, type Offer } from '../offer.ts';
 import { pitchUrl } from '../outreach.ts';
 import { shortTitle, type SampleChat } from './build.ts';
-import { isPublic, pitchGaps, type Gap } from './ready.ts';
+import { autoApprove, isPublic, pitchGaps, type Gap } from './ready.ts';
 
 // The pitch page: /s/<slug>, one per store, the page a shop owner opens from our
 // message. Hebrew, right to left, one column, phone first, light only, never indexed.
@@ -61,6 +61,7 @@ export async function pitchData(app: App, slug: string): Promise<PitchData | nul
     [store.id, SHELF_MAX],
   );
   const gaps = await pitchGaps(app, store);
+  await autoApprove(app, store, gaps);
   return {
     store,
     name: displayName(store.brand_override?.name, store.brand?.name, store.name),

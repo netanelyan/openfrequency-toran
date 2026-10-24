@@ -5,6 +5,7 @@ import { event } from '../db/log.ts';
 import { conversationFor, runTurn, type TurnOutput } from '../agent/loop.ts';
 import { isFee, loadProducts } from '../agent/tools.ts';
 import { makeSlug } from '../leads/store.ts';
+import { autoApprove, pitchGaps } from './ready.ts';
 
 // Building a store's pitch: its demo code, its slug, and the sample chat the page
 // shows, made by the real agent about one of the store's real products.
@@ -114,5 +115,8 @@ export async function buildPitch(app: App, storeId: number, { log = (_: string) 
     await t.query(`UPDATE stores SET demo_code = $2, slug = $3, page_built_at = now(), status = CASE WHEN status = 'new' THEN 'page_ready' ELSE status END, updated_at = now() WHERE id = $1`, [storeId, code, slug]);
     await event(t, storeId, 'page_built', { productId, second, turns, sample: chat.length ? 'agent' : 'none' });
   });
+  // A page with nothing missing goes up as soon as it is built: nobody approves pages by hand.
+  const built = await db.one<any>('SELECT id, name, brand, brand_override, approved_at, taken_down_at, status FROM stores WHERE id = $1', [storeId]);
+  if (built) await autoApprove(app, built, await pitchGaps(app, built));
   return { slug, code, productId, chat, second, turns };
 }
