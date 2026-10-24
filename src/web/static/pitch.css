@@ -209,3 +209,20 @@ body.preview .dock { display: none; }
 .gone { padding-top: 22vh; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* "מותאם לחנות שלכם. החיבורים עלינו.": the systems' marks on white tiles, a tile for anything else, and a note. */
+.links { padding: 40px 0 8px; }
+.links h2 { font-size: 24px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; margin: 0 0 10px; padding: 0 4px; }
+.links-lede { margin: 0 0 18px; padding: 0 4px; color: var(--ink-2); font-size: 16px; line-height: 1.6; max-width: 40em; }
+ul.logos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+ul.logos li { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 64px; height: 64px; padding: 0 15px; border-radius: 18px; background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 16px -10px rgba(0, 0, 0, 0.25), inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
+ul.logos li svg { width: 32px; height: 32px; flex: none; }
+ul.logos li.word { font-size: 15px; font-weight: 600; color: var(--ink-2); }
+ul.logos li.word svg { width: 26px; height: 26px; }
+ul.logos li.more { padding: 0 20px; font-size: 15px; font-weight: 700; flex: 1 1 260px; justify-content: flex-start; }
+ul.logos li.more .plus { font-size: 30px; font-weight: 300; line-height: 1; margin-inline-end: 4px; }
+.links-note { margin-top: 18px; padding: 18px 22px; border-inline-start: 3px solid var(--green); border-radius: 20px; }
+.links-note h3 { margin: 0 0 6px; font-size: 17px; font-weight: 700; }
+.links-note p { margin: 0; color: var(--ink-2); font-size: 15px; line-height: 1.65; }
+@media (max-width: 520px) { ul.logos { gap: 8px; } ul.logos li { min-width: 56px; height: 56px; padding: 0 12px; border-radius: 16px; } ul.logos li svg { width: 28px; height: 28px; } ul.logos li.more { flex-basis: 100%; } }
+ul.logos li[title='WooCommerce'] svg { width: 46px; }

@@ -226,3 +226,13 @@ test('nobody approves a page by hand: it approves itself once nothing is missing
     await app.db.close();
   }
 });
+
+test('every pitch page says the team connects Toran to the store\'s systems, with their marks, and builds what does not exist', async () => {
+  const { LOGOS } = await import('../src/pitch/logos.ts');
+  const html = pitchPage(fake(), { env: ENV });
+  assert.match(html, /<h2 id="links-h">מותאם לחנות שלכם\. החיבורים עלינו\.<\/h2>/);
+  for (const l of LOGOS) assert.match(html, new RegExp(`aria-label="${l.name}"`));
+  assert.match(html, /וכל חיבור נוסף שתרצו וקיים בעולם/);
+  assert.match(html, /וכשצריך משהו שעוד לא קיים, מפתחים אותו\./);
+  assert.doesNotMatch(html, / style="/, 'no inline style: the page\'s CSP allows none');
+});

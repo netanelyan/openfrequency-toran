@@ -4,6 +4,7 @@ import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.t
 import { esc } from '../web/ui.ts';
 import { money } from '../agent/tools.ts';
 import { getOffer, ofWhatsapp, PAGE_ABOUT, PAGE_DOWN, type Offer } from '../offer.ts';
+import { LOGOS } from './logos.ts';
 import { pitchUrl } from '../outreach.ts';
 import { shortTitle, type SampleChat } from './build.ts';
 import { autoApprove, isPublic, pitchGaps, type Gap } from './ready.ts';
@@ -227,6 +228,8 @@ ${iconLinks()}
   </section>
   <p class="caption">את השאלות כתבנו אנחנו. התשובות הן מה שתורן ענה באמת, ולא שינינו בהן מילה.</p>
 
+  ${linksSec}
+
   <section class="price" data-depth="50" aria-labelledby="price-h">
     <h2 id="price-h">אם תחברו אותו למספר של החנות</h2>
     <div class="glass price-card">
@@ -258,6 +261,23 @@ ${demo ? `<div class="dock">${greenBtn('לכתוב לו בוואטסאפ')}</div
 </body>
 </html>`;
 }
+
+// The systems the team connects Toran to, for every store: their marks, then a tile for anything else, and a note on
+// what is built when nothing exists yet. The same for every page; nothing in it is about the store.
+const TRUCK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7z"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/></svg>';
+const linksSec = `<section class="links" aria-labelledby="links-h">
+    <h2 id="links-h">מותאם לחנות שלכם. החיבורים עלינו.</h2>
+    <p class="links-lede">הצוות שלנו מגדיר את תורן לפי הנהלים שלכם ומחבר אותו למערכות שלכם: החנות, הסליקה, המשלוחים, היומן, ה־CRM וה־ERP. כל מערכת שיש לה API. ההתאמה והחיבורים הם חלק מהשירות, בלי תוספת תשלום.</p>
+    <ul class="logos" aria-label="חלק מהמערכות שתורן מתחבר אליהן">
+      ${LOGOS.map((l) => `<li title="${l.name}"><svg viewBox="0 0 24 24" role="img" aria-label="${l.name}"><path fill="${l.color}" d="${l.path}"/></svg></li>`).join('')}
+      <li class="word" title="חברות משלוחים">${TRUCK}<span>משלוחים</span></li>
+      <li class="more"><span class="plus" aria-hidden="true">+</span><span>וכל חיבור נוסף שתרצו וקיים בעולם</span></li>
+    </ul>
+    <div class="glass links-note">
+      <h3>וכשצריך משהו שעוד לא קיים, מפתחים אותו.</h3>
+      <p>אנחנו חברת פיתוח: אפליקציות, אוטומציות וסוכני AI. מערכת ניהול, חיבור שאין לו לוגו כאן, או זרימת עבודה שתפורה לחנות שלכם: הצוות שבנה את תורן בונה גם אותם, וגם זה כלול בשירות.</p>
+    </div>
+  </section>`;
 
 /** The page for a slug that is not (or no longer) there. */
 export function goneHtml(removed: boolean): string {
