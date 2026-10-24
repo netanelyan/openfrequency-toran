@@ -7,7 +7,7 @@ import { BRAND_DIR, brandCss, ICON_FILES, MANIFEST } from '../brand.ts';
 import type { App } from '../app.ts';
 import { audit } from '../db/log.ts';
 import { clientIp, cookies, csrfFor, csrfOk, isHttps, sessionSecret } from './auth.ts';
-import { accountsClient, accountsLinks, refusal, sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
+import { accountsClient, accountsLinks, ADMIN, refusal, sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
 import { ownsConversation, ownsJob, ownsStore, scopeOf, type Scope } from './workspace.ts';
 import type { PageCtx } from './ui.ts';
 import { notFoundPage, refusalPage } from './pages/basic.ts';
@@ -59,8 +59,41 @@ const STATIC = path.join(path.dirname(fileURLToPath(import.meta.url)), 'static')
 const V = Date.now().toString(36);
 export const DASH_CSP = "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
+// The operator's dashboard lives on accounts' /admin (docs/operator.md): accounts proxies /admin/toran/... here with
+// X-OF-Admin-Prefix, and Toran answers as if the prefix were its root, then puts it back on every path it hands the
+// browser (links, forms, redirects, its CSS's fonts, the script's base). Toran's own name shows the product only:
+// the operator is sent to /admin/toran there.
+const BASE = new WeakMap<IncomingMessage, string>();
+
+/** A body served under the admin prefix, its root-relative paths moved under it. */
+export function underBase(text: string, type: string, base: string): string {
+  if (/html/.test(type)) return text.replace(/(\s(?:href|action|src|formaction)=["'])\/(?!\/)/g, `$1${base}/`).replace(/<html(\s|>)/, `<html data-base="${base}"$1`);
+  if (/json/.test(type)) return text.replace(/("redirect":")\/(?!\/)/g, `$1${base}/`);
+  if (/css/.test(type)) return text.replace(/url\((['"]?)\/(?!\/)/g, `url($1${base}/`);
+  return text;
+}
+const atBase = (req: IncomingMessage, location: string) => {
+  const base = BASE.get(req);
+  return base && location.startsWith('/') && !location.startsWith('//') ? `${base}${location}` : location;
+};
+
+/** Where a plain form goes back to: the page it was posted from, when that page is ours (under /admin, without the prefix). */
+function refererPath(referer: string | undefined, origin: string | null, viaAdmin: boolean): string | null {
+  if (!referer || !origin) return null;
+  try {
+    const u = new URL(referer);
+    if (u.host !== new URL(origin).host) return null;
+    if (!viaAdmin) return u.pathname + u.search;
+    return u.pathname === ADMIN || u.pathname.startsWith(`${ADMIN}/`) ? (u.pathname.slice(ADMIN.length) || '/') + u.search : null;
+  } catch {
+    return null;
+  }
+}
+
 function send(req: IncomingMessage, res: ServerResponse, status: number, body: string | Buffer, type: string, extra: Record<string, string | string[]> = {}) {
   const headers: Record<string, string | string[]> = { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin', 'content-security-policy': DASH_CSP, 'x-frame-options': 'DENY', ...extra };
+  const base = BASE.get(req);
+  if (base && /html|json|css/.test(type)) body = underBase(Buffer.isBuffer(body) ? body.toString('utf8') : String(body ?? ''), type, base);
   let buf = Buffer.isBuffer(body) ? body : Buffer.from(String(body ?? ''));
   if (buf.length > 1024 && /gzip/.test(String(req.headers['accept-encoding'] || '')) && /text|json|javascript|svg/.test(type)) {
     buf = gzipSync(buf);
@@ -74,7 +107,7 @@ function send(req: IncomingMessage, res: ServerResponse, status: number, body: s
 function reply(req: IncomingMessage, res: ServerResponse, o: Out, extra: Record<string, string | string[]> = {}) {
   const headers = { ...extra, ...(o.headers || {}) };
   if (o.redirect) {
-    res.writeHead(o.status || 303, { location: o.redirect, 'cache-control': 'no-store', ...headers });
+    res.writeHead(o.status || 303, { location: atBase(req, o.redirect), 'cache-control': 'no-store', ...headers });
     return res.end();
   }
   if (o.json !== undefined) return send(req, res, o.status || 200, JSON.stringify(o.json), 'application/json; charset=utf-8', headers);
@@ -119,7 +152,15 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
     }
   })();
   const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, ...(publicHost ? [publicHost] : []), ...(pitchHost ? [pitchHost] : [])]);
-  const origins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(publicHost ? [`https://${publicHost}`] : []), ...(pitchHost ? [`https://${pitchHost}`] : [])]);
+  // accounts' own origin: its /admin/toran pages post from there.
+  const adminOrigin = (() => {
+    try {
+      return new URL(links.home).origin;
+    } catch {
+      return null;
+    }
+  })();
+  const origins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(publicHost ? [`https://${publicHost}`] : []), ...(pitchHost ? [`https://${pitchHost}`] : []), ...(adminOrigin ? [adminOrigin] : [])]);
   const dash = dashboardRoutes(app);
   const pub = publicRoutes(app, accounts);
 
@@ -129,7 +170,13 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       if (!hosts.has(host) && !(env.TORAN_ANY_HOST === '1')) return send(req, res, 421, 'wrong host', 'text/plain; charset=utf-8');
       const secure = isHttps(req);
       if ((host === publicHost || host === pitchHost) && !secure && env.TORAN_ENV === 'prod') return send(req, res, 403, 'HTTPS only', 'text/plain; charset=utf-8');
-      const url = new URL(req.url || '/', `http://${host}`);
+      let url = new URL(req.url || '/', `http://${host}`);
+      // Under accounts' /admin (its proxy, from this machine): the prefix comes off, and goes back on the way out.
+      const viaAdmin = req.headers['x-of-admin-prefix'] === ADMIN && (url.pathname === ADMIN || url.pathname.startsWith(`${ADMIN}/`)) && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(String(req.socket?.remoteAddress));
+      if (viaAdmin) {
+        BASE.set(req, ADMIN);
+        url = new URL(`${url.pathname.slice(ADMIN.length) || '/'}${url.search}`, url);
+      }
       let p: string;
       try {
         p = decodeURIComponent(url.pathname);
@@ -137,6 +184,8 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
         return send(req, res, 400, 'bad path', 'text/plain; charset=utf-8');
       }
       const method = req.method === 'HEAD' ? 'GET' : (req.method as 'GET' | 'POST');
+      // Never the machine-to-machine routes or the providers' webhooks under the admin prefix.
+      if (viaAdmin && /^\/(internal|wa|mail)\//.test(p)) return send(req, res, 404, 'not found', 'text/plain; charset=utf-8');
 
       // ---- static files and brand assets, no session
       if (method === 'GET') {
@@ -171,7 +220,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const who = await accounts.whoIs(sid, { live: method !== 'GET' });
       if (who.status !== 200 || !sid) {
         const kind = refusal(who.status, String(who.body?.error || ''));
-        const here = `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`;
+        const here = viaAdmin && adminOrigin ? `${adminOrigin}${method === 'GET' ? req.url || ADMIN : ADMIN}` : `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`;
         if (kind === 'login') {
           // A POST is refused, never carried out: the browser signs in again and comes back to the page.
           if (method !== 'GET') return ajax ? json(401, { ok: false, message: 'צריך להיכנס שוב.', redirect: links.login(here) }) : reply(req, res, { redirect: links.login(here) });
@@ -184,6 +233,13 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       }
       const session = who.body as Session;
       const scope = scopeOf(session);
+      // /admin/toran is the operator's alone; Toran's own name shows the product, so the operator is sent to /admin.
+      if (viaAdmin && !scope.operator) return send(req, res, 404, 'not found', 'text/plain; charset=utf-8');
+      if (!viaAdmin && scope.operator && publicHost && host === publicHost && adminOrigin) {
+        const there = `${adminOrigin}${ADMIN}${p === '/' ? '/' : p}${url.search}`;
+        if (method === 'GET') return reply(req, res, { redirect: there });
+        return ajax ? json(409, { ok: false, message: 'הניהול של תורן עבר ל־/admin.', redirect: there }) : send(req, res, 409, 'the operator manages Toran at /admin/toran', 'text/plain; charset=utf-8');
+      }
       const user = { id: session.user.id, name: String(session.user.name || session.user.email), role: session.role };
       const csrf = csrfFor(sid, secret);
       const setCookies: string[] = [];
@@ -232,7 +288,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
             // An action: JSON for the script, a redirect and a flash for a plain form.
             const msg = out.message;
             if (ajax) return reply(req, res, { json: { ok: true, message: msg, redirect: out.redirect } });
-            const back = out.redirect || (req.headers.referer && new URL(req.headers.referer).host === host ? new URL(req.headers.referer).pathname + new URL(req.headers.referer).search : '/');
+            const back = out.redirect || refererPath(req.headers.referer, viaAdmin ? adminOrigin : `http://${host}`, viaAdmin) || '/';
             return reply(req, res, { redirect: back }, { 'set-cookie': [...setCookies, ...(msg ? [flashCookie(msg)] : [])] });
           }
           return reply(req, res, out, setCookies.length ? { 'set-cookie': setCookies } : {});

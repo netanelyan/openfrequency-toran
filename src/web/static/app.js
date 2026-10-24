@@ -135,7 +135,7 @@
   if (wait) {
     const poll = async () => {
       try {
-        const r = await fetch(`/jobs/${wait.dataset.waitJob}.json`, { credentials: 'same-origin' });
+        const r = await fetch(`${document.documentElement.dataset.base || ''}/jobs/${wait.dataset.waitJob}.json`, { credentials: 'same-origin' });
         const j = await r.json();
         const line = wait.querySelector('[data-progress]');
         if (line && j.progress) line.textContent = j.progress;

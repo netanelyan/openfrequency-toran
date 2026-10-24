@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { App } from '../app.ts';
 import type { Out, Req, Route } from '../web/server.ts';
+import { accountsLinks, ADMIN } from '../web/accounts.ts';
 import { syncTeder } from './sources.ts';
 import { conversations, queue, stuckRequests } from './queue.ts';
 import { funnels } from './funnel.ts';
@@ -25,12 +26,8 @@ function local(app: App, r: Req): boolean {
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
-/** A lead's page on Toran's own dashboard. */
-const leadUrl = (app: App, id: number | string | null) => {
-  if (id == null) return null;
-  const host = String(app.env.PUBLIC_HOST || '').trim();
-  return `${host ? `https://${host}` : `http://127.0.0.1:${app.env.PORT || 4710}`}/lead/${id}`;
-};
+/** A lead's page, where the operator opens it: Toran's dashboard under accounts' /admin (web/server.ts, ADMIN). */
+const leadUrl = (app: App, id: number | string | null) => (id == null ? null : `${accountsLinks(app.env).home}${ADMIN}/lead/${id}`);
 
 const ACTIONS = ['sent', 'reminded', 'direct', 'replied', 'next', 'later', 'lost', 'reopen', 'pilot', 'paid', 'won'] as const;
 const SAID: Record<(typeof ACTIONS)[number], string> = {

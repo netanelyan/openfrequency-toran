@@ -18,6 +18,8 @@ import { createHash } from 'node:crypto';
 type Env = Record<string, string | undefined>;
 
 export const PRODUCT = 'toran';
+/** Where the operator's Toran dashboard lives: on accounts' site, which proxies it here (web/server.ts). */
+export const ADMIN = '/admin/toran';
 export const COOKIE = { https: '__Secure-of_session', http: 'of_session' };
 export const CACHE_MS = 60_000;
 const MAX_CACHED = 2000;
