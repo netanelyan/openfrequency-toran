@@ -2,16 +2,25 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { discover } from '../src/leads/discover.ts';
 import { ingestStore, verifyPrices } from '../src/ingest/pack.ts';
-import { chunk, kindOf, mainText, readFaqs } from '../src/ingest/pages.ts';
-import { normHex, readableShade, contrast, storeColor } from '../src/ingest/brand.ts';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { chunk, faqJsonLd, kindOf, mainText, plainPairs, readFaqs } from '../src/ingest/pages.ts';
+import { hsl, normHex, readBrand, readableShade, contrast, storeColor } from '../src/ingest/brand.ts';
 import { toRow, price } from '../src/ingest/shopify.ts';
 import { minor, wooRow } from '../src/ingest/woocommerce.ts';
-import { jsonLdProducts, ldRow, readSitemap } from '../src/ingest/sitemap.ts';
+import { jsonLdProducts, ldRow, pathUnder, readSitemap } from '../src/ingest/sitemap.ts';
+import { cashcowRow } from '../src/ingest/cashcow.ts';
+import { logoColors, readPng } from '../src/ingest/logo.ts';
 import { canIngest } from '../src/ingest/catalogue.ts';
+import { canonicalDomain, homeUrl, siteBase } from '../src/core/urls.ts';
+import { fixtureFetcher } from '../src/core/http.ts';
+import { detect } from '../src/leads/detect.ts';
+import { scoreStore } from '../src/leads/score.ts';
 import { runTool } from '../src/agent/tools.ts';
 import { buildPitch } from '../src/pitch/build.ts';
 import { pitchData, pitchPage } from '../src/pitch/page.ts';
-import { WIX_DOMAIN, WOO_DOMAIN, WOO_SITEMAP_DOMAIN } from '../src/demo.ts';
+import { CASHCOW_DOMAIN, WIX_DOMAIN, WIXSITE_URL, WOO_DOMAIN, WOO_SITEMAP_DOMAIN } from '../src/demo.ts';
+import { examplesDir, ROOT } from '../src/core/paths.ts';
 import { testApp } from './helpers.ts';
 import type { App } from '../src/app.ts';
 
@@ -105,9 +114,11 @@ test('a re-scrape keeps the owner\'s corrections and FAQ answers, and marks prod
 
 test('ingest stops with a clear reason for a platform it does not read', async () => {
   const { app, id } = await seeded();
+  await app.db.query("UPDATE stores SET platform = 'magento' WHERE id = $1", [id]);
+  await assert.rejects(ingestStore(app, id), /ingest for magento is not built yet: Toran reads Shopify, WooCommerce, Wix and Cashcow stores/);
   await app.db.query("UPDATE stores SET platform = 'konimbo' WHERE id = $1", [id]);
-  await assert.rejects(ingestStore(app, id), /Toran reads Shopify, WooCommerce and Wix stores/);
-  assert.deepEqual(['shopify', 'woocommerce', 'wix', 'konimbo', 'other'].map(canIngest), [true, true, true, false, false]);
+  await assert.rejects(ingestStore(app, id), /Konimbo answers a request with no referring page/);
+  assert.deepEqual(['shopify', 'woocommerce', 'wix', 'cashcow', 'konimbo', 'other'].map(canIngest), [true, true, true, true, false, false]);
   await app.db.close();
 });
 
@@ -231,4 +242,137 @@ test('from a WooCommerce or Wix lead to the demo: the agent\'s tools answer from
       await app.db.close();
     }
   }
+});
+
+// ---- Cashcow, a Wix site under a path, Konimbo's gate. The fictional stores keep the shapes recorded from real ones.
+
+const cashcowPage = (f: string) => readFileSync(path.join(examplesDir, 'cashcow-store', f), 'utf8');
+
+test('a Cashcow product page: the buy button\'s price, the regular price before a sale, the options\' surcharges as variants at the same discount, an add-on, stock', () => {
+  const train = cashcowRow(cashcowPage('product-train.html'), 'https://s.example/p/train')!;
+  assert.deepEqual([train.ext_id, train.title, train.product_type, train.price_min, train.compare_at_max], ['700101', 'רכבת עץ', 'צעצועי עץ', 162, 245]);
+  // 10% off: 162 of 180. "צבעוני" adds 20 and "5 קרונות" 45, before the sale.
+  assert.deepEqual(train.variants.map((v) => [v.title, v.price, v.compare_at]), [['טבעי / 3 קרונות', 162, 180], ['טבעי / 5 קרונות', 202.5, 225], ['צבעוני / 3 קרונות', 180, 200], ['צבעוני / 5 קרונות', 220.5, 245]]);
+  assert.ok(!train.tags.includes('דף בית'));
+  const puzzle = cashcowRow(cashcowPage('product-puzzle.html'), 'https://s.example/p/puzzle')!;
+  assert.deepEqual([puzzle.price_min, puzzle.compare_at_max, puzzle.variants.length, puzzle.variants[0].title], [119, null, 1, 'Default Title']);
+  assert.match(puzzle.body_text, /אפשר להוסיף: עטיפת מתנה: עטיפה בנייר חום \(תוספת 15 ₪\)/);
+  assert.equal(cashcowRow(cashcowPage('product-horse.html'), 'https://s.example/p/horse')!.available, false);
+  assert.equal(cashcowRow(cashcowPage('home.html'), 'https://s.example/'), null);
+});
+
+test('a big Cashcow store\'s sitemap is an index of pages of it: every page is read, its products told from its pages by their paths', async () => {
+  const b = 'https://www.big-shop.example';
+  const url = (l: string) => `<url><loc>${b}${l}</loc><changefreq>weekly</changefreq></url>`;
+  const fetcher = fixtureFetcher({
+    [`${b}/crowlers/sitemap`]: { text: `<?xml version="1.0"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>${b}/crowlers/sitemap?page=1</loc><lastmod>2026-10-25</lastmod></sitemap><sitemap><loc>${b}/crowlers/sitemap?page=2</loc><lastmod>2026-10-25</lastmod></sitemap></sitemapindex>`, contentType: 'text/xml' },
+    [`${b}/crowlers/sitemap?page=1`]: { text: `<?xml version="1.0"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[url(''), url('/page/%D7%AA%D7%A7%D7%A0%D7%95%D7%9F'), url('/c/a'), url('/p/one'), url('/p/two')].join('')}</urlset>`, contentType: 'text/xml' },
+    [`${b}/crowlers/sitemap?page=2`]: { text: `<?xml version="1.0"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${[url('/p/three')].join('')}</urlset>`, contentType: 'text/xml' },
+  });
+  const { productUrls, pageLinks } = await import('../src/ingest/sitemap.ts');
+  const p = await productUrls(fetcher, b, 'cashcow');
+  assert.deepEqual([p.entries.map((e) => e.loc.slice(b.length)), p.dated], [['/p/one', '/p/two', '/p/three'], false]);
+  assert.deepEqual((await pageLinks(fetcher, b, 'cashcow')).map((l) => decodeURIComponent(l.url.slice(b.length))), ['/page/תקנון']);
+});
+
+test('a Cashcow store: the products from its one sitemap, the policies under /page/, a missing page Cashcow answers with the home page left out, a plain-text FAQ, the colour from its logo', async () => {
+  const { app, id } = await seeded(`https://www.${CASHCOW_DOMAIN}/`);
+  try {
+    const store = await app.db.one<any>('SELECT platform, score_breakdown FROM stores WHERE id = $1', [id]);
+    assert.equal(store.platform, 'cashcow');
+    assert.equal(store.score_breakdown.find((f: any) => f.factor === 'platform').points, 14);
+    const s = await ingestStore(app, id);
+    assert.equal(s.products, 4, 'the category and the pages in the sitemap are not products');
+    assert.equal(s.available, 3);
+    assert.deepEqual(s.policies.map((p) => p.kind).sort(), ['about', 'contact', 'faq', 'returns', 'shipping', 'terms']);
+    assert.ok(!s.warnings.some((w) => /sitemap|product page|shipping|returns/.test(w)), s.warnings.join('; '));
+    const faqs = await app.db.query<any>('SELECT question, site_answer FROM faqs WHERE store_id = $1 ORDER BY id', [id]);
+    assert.deepEqual(faqs.map((f: any) => f.question), ['הצבעים בטוחים לילדים?', 'כמה זמן לוקח משלוח?', 'מאיזה גיל הצעצועים מתאימים?', 'אפשר לאסוף מהסדנה?']);
+    assert.equal(faqs[3].site_answer, 'כן, בתיאום מראש, בימים א׳ עד ה׳.');
+    assert.equal(faqs[2].site_answer, 'רוב הצעצועים מתאימים מגיל שלוש. ליד כל צעצוע כתוב מאיזה גיל הוא מתאים.');
+    // The site names no colour; its logo (the Organization's, not the share photo) is green.
+    const brand = (await app.db.one<any>('SELECT brand FROM stores WHERE id = $1', [id])).brand;
+    assert.equal(brand.colorsFrom, 'logo');
+    assert.match(brand.logo, /\/media\/logo\.png$/);
+    assert.ok(Math.abs(hsl(brand.colors[0]).h - hsl('#1d6b4f').h) < 10, brand.colors.join());
+    const train = await product(app, id, 'רכבת עץ');
+    assert.deepEqual([train.price_min, train.price_max, train.compare_at_max], [162, 220.5, 245]);
+    assert.equal((await product(app, id, 'סוס נדנדה')).available, false);
+    const v = await verifyPrices(app, id, 4);
+    assert.deepEqual([v.checked, v.mismatches.length], [4, 0]);
+    const ctx = { db: app.db, storeId: id, origin: `https://www.${CASHCOW_DOMAIN}`, currency: 'ILS' };
+    assert.match((await runTool(ctx, 'search_products', { query: 'רכבת' })).content, /רכבת עץ: 162 ₪ עד 220\.50 ₪ \(במבצע, במקום 245 ₪\), במלאי, 4 options/);
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('a Wix site under a path: its address keeps the path, everything is read from under it, another site on the same host is not the store\'s, the FAQ from FAQPage JSON-LD, the colour from an SVG logo', async () => {
+  assert.equal(homeUrl('noa-example.wixsite.com/shop/product-page/x'), 'https://noa-example.wixsite.com/shop/');
+  assert.equal(canonicalDomain('https://noa-example.wixsite.com/shop'), 'noa-example.wixsite.com');
+  assert.equal(siteBase('https://noa-example.wixsite.com/shop/'), 'https://noa-example.wixsite.com/shop');
+  assert.equal(siteBase('https://www.quiet-candles.example/product-page/x'), 'https://www.quiet-candles.example');
+  assert.equal(pathUnder('https://noa-example.wixsite.com/other-site/faq', 'https://noa-example.wixsite.com/shop'), null);
+  assert.equal(pathUnder('https://noa-example.wixsite.com/shop/faq', 'https://noa-example.wixsite.com/shop'), '/faq');
+  const { app, id } = await seeded(`${WIXSITE_URL}/`);
+  try {
+    const store = await app.db.one<any>('SELECT platform, url, signals FROM stores WHERE id = $1', [id]);
+    assert.deepEqual([store.platform, store.url, store.signals.productCount], ['wix', `${WIXSITE_URL}/`, 3]);
+    const s = await ingestStore(app, id);
+    assert.equal(s.products, 2);
+    assert.deepEqual(s.policies.map((p) => p.kind).sort(), ['contact', 'faq', 'shipping']);
+    assert.deepEqual(s.brand.colors, ['#2f6f8f']);
+    assert.equal(s.brand.colorsFrom, 'logo');
+    const urls = await app.db.query<any>('SELECT url FROM products WHERE store_id = $1', [id]);
+    assert.ok(urls.every((u: any) => u.url.startsWith(`${WIXSITE_URL}/product-page/`)), JSON.stringify(urls));
+    assert.ok((await app.db.query<any>('SELECT url FROM policies WHERE store_id = $1', [id])).every((p: any) => p.url.startsWith(WIXSITE_URL)));
+    const faqs = await app.db.query<any>('SELECT question, site_answer FROM faqs WHERE store_id = $1 ORDER BY id', [id]);
+    assert.deepEqual(faqs.map((f: any) => [f.question, f.site_answer]), [['הכלים מתאימים למדיח?', 'כן. כל הזיגוגים שלי עמידים במדיח ובמיקרוגל.'], ['כמה זמן לוקח להכין כלי בהזמנה אישית?', 'בערך שלושה שבועות, כי כל כלי מתייבש ונשרף פעמיים.']]);
+    assert.deepEqual([(await product(app, id, 'סט קערות')).price_min, (await product(app, id, 'סט קערות')).price_max], [160, 210]);
+    const v = await verifyPrices(app, id, 2);
+    assert.deepEqual([v.checked, v.mismatches.length], [2, 0]);
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('Konimbo: its "go to the requested page" screen and its server header make the lead Konimbo\'s, without rendering it or getting around it', async () => {
+  const gate = '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" id="page_no_referer">\n  <head>\n    <title>עבור לדף המבוקש</title>\n  </head>\n  <body style=\'text-align: center;\' class=\'limit_no_referer\'>\n    <a id=\'redirect_to_link\' href="javascript:window.location.reload(true)">עבור לדף המבוקש</a>\n  </body>\n</html>';
+  let rendered = 0;
+  const fetcher = fixtureFetcher({ 'https://konimbo-shop.example/': { text: gate, headers: { server: 'konimbo' } }, '*': () => gate });
+  const d = await detect('konimbo-shop.example', { fetcher, render: async () => (rendered++, null) });
+  assert.equal(d.platform, 'konimbo');
+  assert.match(d.platformEvidence, /go to the requested page/);
+  assert.equal(rendered, 0);
+  assert.equal(d.productCount, null);
+  assert.equal(scoreStore(d).breakdown.find((f) => f.factor === 'platform')!.points, 8);
+});
+
+test('FAQ: a FAQPage in JSON-LD, plain paragraphs that end with a question mark and the answer under them, "ש:" and "ת:", a bold question with its answer beside it', () => {
+  const ld = faqJsonLd('<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebPage"},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"יש משלוח לאילת?","acceptedAnswer":{"@type":"Answer","text":"<p>כן, תוך 5 ימי עסקים.</p>"}}]}]}</script>', 'https://s.example/faq');
+  assert.deepEqual(ld.map((f) => [f.question, f.site_answer]), [['יש משלוח לאילת?', 'כן, תוך 5 ימי עסקים.']]);
+  const pairs = plainPairs('שאלות נפוצות\nכמה עולה משלוח?\n30 ₪.\nובהזמנה מעל 300 ₪ בחינם.\nש: אפשר להחזיר?\nת: כן, תוך 14 יום.\nשאלה בלי תשובה?');
+  assert.deepEqual(pairs, [{ q: 'כמה עולה משלוח?', a: '30 ₪. ובהזמנה מעל 300 ₪ בחינם.' }, { q: 'ש: אפשר להחזיר?', a: 'ת: כן, תוך 14 יום.' }]);
+  // A question in plain paragraphs is read on the FAQ page, not on any page that asks something in passing.
+  const page = '<main><h1>שאלות ותשובות</h1><p>כמה זמן לוקח משלוח?</p><p>שלושה ימי עסקים.</p><p><b>אפשר לשלם בביט?</b> כן, ובאשראי.</p></main>';
+  assert.deepEqual(readFaqs(page, 'https://s.example/faq', { faqPage: true }).map((f) => [f.question, f.site_answer]), [['אפשר לשלם בביט?', 'כן, ובאשראי.'], ['כמה זמן לוקח משלוח?', 'שלושה ימי עסקים.']]);
+  assert.deepEqual(readFaqs('<main><p>רוצים מתנה מיוחדת?</p><p>כתבו לנו בוואטסאפ.</p></main>', 'https://s.example/about').map((f) => f.question), []);
+});
+
+test('the colour of a logo: an SVG\'s fills, a PNG\'s pixels and a baseline JPEG\'s blocks, the neutral ones left out', () => {
+  const site = JSON.parse(readFileSync(path.join(examplesDir, 'cashcow-store', 'site.json'), 'utf8'));
+  const png = new Uint8Array(Buffer.from(site.routes['/media/logo.png'].base64, 'base64'));
+  assert.equal(readPng(png)!.width, 120);
+  assert.deepEqual(logoColors(png), ['#1d6b4f']);
+  // The same drawing as a JPEG (a canvas's toDataURL): its 8x8 blocks blend the circle's edge, so the hue, not the exact shade.
+  const jpeg = new Uint8Array(Buffer.from(readFileSync(path.join(ROOT, 'test', 'fixtures', 'logo-jpeg.b64'), 'utf8').replace(/\s+/g, ''), 'base64'));
+  const [c] = logoColors(jpeg);
+  assert.ok(c && Math.abs(hsl(c).h - hsl('#1d6b4f').h) < 15, String(c));
+  assert.deepEqual(logoColors(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><path fill="#C2410C"/><path fill="#c2410c"/><text style="fill:#111111">x</text><rect fill="#ffffff"/></svg>')), ['#c2410c']);
+  assert.deepEqual(logoColors(new TextEncoder().encode('<svg><path fill="#222"/></svg>')), []);
+  assert.deepEqual(logoColors(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])), [], 'WebP is not read');
+  // Which logo is the store's mark: a share photo is not; a share image whose file says logo is (Cashcow shares the logo).
+  const og = (img: string) => readBrand(`<meta property="og:image" content="${img}"><p>x</p>`, 'https://s.example/', { logo: img });
+  assert.equal(og('https://s.example/media/summer-sale.jpg').logoIsMark, false);
+  assert.equal(og('https://cdn.s.example/media/My%20Logo.png').logoIsMark, true);
 });

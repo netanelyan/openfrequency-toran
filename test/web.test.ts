@@ -146,6 +146,33 @@ test('take this page down: the click flags it, the owner confirms, then the page
   }
 });
 
+test('the edit screen: 40 products a page past 40, the search kept from page to page, and on a phone the preview first, behind a tap', async () => {
+  const s = await serve();
+  try {
+    await s.login();
+    const id = s.seeded.storeId;
+    // 14 products from the fictional store, and 50 more: 64, two pages.
+    for (let i = 1; i <= 50; i++) await s.app.db.query("INSERT INTO products (store_id, ext_id, title, search_text, price_min, price_max) VALUES ($1, $2, $3, $3, 10, 10)", [id, `x-${i}`, `פריט לבדיקה ${String(i).padStart(2, '0')}`]);
+    const titles = (html: string) => [...html.matchAll(/<td data-k="מוצר"><a [^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
+    const one = await (await s.get(`/lead/${id}/review`)).text();
+    assert.equal(titles(one).length, 40);
+    assert.match(one, /עמוד 1 מתוך 2/);
+    assert.match(one, new RegExp(`href="/lead/${id}/review\\?page=2#products" rel="next"`));
+    const two = await (await s.get(`/lead/${id}/review?page=2`)).text();
+    assert.equal(titles(two).length, 24);
+    assert.equal(new Set([...titles(one), ...titles(two)]).size, 64, 'no product on both pages, none left out');
+    const q = new URLSearchParams({ q: 'פריט לבדיקה' }).toString();
+    const found = await (await s.get(`/lead/${id}/review?${q}&page=2`)).text();
+    assert.deepEqual([titles(found).length, /50 מתאימים לחיפוש/.test(found)], [10, true]);
+    assert.ok(found.includes(`href="/lead/${id}/review?${q}#products" rel="prev"`), 'the way back keeps the search');
+    assert.match(await (await s.get(`/lead/${id}/review?page=99`)).text(), /עמוד 2 מתוך 2/, 'past the last page: the last page');
+    assert.match(one, /<div class="cols edit">/);
+    assert.match(one, /class="btn pvtoggle" type="button" data-toggle="#pv" aria-expanded="false"/);
+  } finally {
+    await s.close();
+  }
+});
+
 test('the WhatsApp webhook answers the simulator in development and refuses another provider\'s path', async () => {
   const s = await serve();
   try {

@@ -9,7 +9,7 @@ import { chunk } from './ingest/pages.ts';
 // is the first one: Toran answers people who write to us about Toran and Teder, from what openfrequency.co.il says.
 //
 // A company store is never found, scored or ingested. Its platform is 'company' (so ingest, the daily re-read, the
-// pitch page and the build buttons, which take Shopify, WooCommerce and Wix only, all pass it by), its status is
+// pitch page and the build buttons, which take Shopify, WooCommerce, Wix and Cashcow only, all pass it by), its status is
 // 'company' (so the review queue, the outreach and the follow-ups never list it), and it is not qualified (so the
 // leads list shows it only under "everything"; the funnel leaves it out). It belongs to no workspace: the operator's.
 //

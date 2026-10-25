@@ -1,0 +1,47 @@
+{
+  "about": "הקרמיקה של נועה, a fictional free Wix site under a path (noa-example.wixsite.com/shop): every page, sitemap and product page hangs from /shop, the host's root is a 404, and the same host has another site (/other-site) that is not this store's. Shapes as in examples/wix-store; the FAQ page has its questions in FAQPage JSON-LD only, and the logo is an SVG with the store's one colour.",
+  "host": "noa-example.wixsite.com",
+  "routes": {
+    "/robots.txt": {
+      "type": "text/plain; charset=utf-8",
+      "text": "User-agent: *\nAllow: /\nDisallow: *?lightbox=\n"
+    },
+    "/shop": {
+      "file": "home.html",
+      "headers": {
+        "x-wix-request-id": "0000000000.000000000000000000000"
+      }
+    },
+    "/shop/sitemap.xml": {
+      "type": "text/xml; charset=utf-8",
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" generatedBy=\"WIX\">\n<sitemap>\n<loc>https://noa-example.wixsite.com/shop/store-products-sitemap.xml</loc>\n<lastmod>2026-10-20</lastmod>\n</sitemap>\n<sitemap>\n<loc>https://noa-example.wixsite.com/shop/pages-sitemap.xml</loc>\n<lastmod>2026-10-20</lastmod>\n</sitemap>\n</sitemapindex>\n"
+    },
+    "/shop/store-products-sitemap.xml": {
+      "type": "text/xml; charset=utf-8",
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" generatedBy=\"WIX\">\n<url>\n<loc>https://noa-example.wixsite.com/shop/product-page/%D7%A1%D7%A4%D7%9C-%D7%90%D7%A4%D7%95%D7%A8</loc>\n<lastmod>2026-10-10</lastmod>\n</url>\n<url>\n<loc>https://noa-example.wixsite.com/shop/product-page/%D7%A1%D7%98-%D7%A7%D7%A2%D7%A8%D7%95%D7%AA</loc>\n<lastmod>2026-10-11</lastmod>\n</url>\n<url>\n<loc>https://noa-example.wixsite.com/other-site/product-page/x</loc>\n<lastmod>2026-10-12</lastmod>\n</url>\n</urlset>\n"
+    },
+    "/shop/pages-sitemap.xml": {
+      "type": "text/xml; charset=utf-8",
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" generatedBy=\"WIX\">\n<url>\n<loc>https://noa-example.wixsite.com/shop</loc>\n<lastmod>2026-10-20</lastmod>\n</url>\n<url>\n<loc>https://noa-example.wixsite.com/shop/shop-all</loc>\n<lastmod>2026-10-20</lastmod>\n</url>\n<url>\n<loc>https://noa-example.wixsite.com/shop/shipping</loc>\n<lastmod>2026-10-20</lastmod>\n</url>\n<url>\n<loc>https://noa-example.wixsite.com/shop/faq</loc>\n<lastmod>2026-10-20</lastmod>\n</url>\n<url>\n<loc>https://noa-example.wixsite.com/shop/contact</loc>\n<lastmod>2026-10-20</lastmod>\n</url>\n<url>\n<loc>https://noa-example.wixsite.com/other-site/shipping</loc>\n<lastmod>2026-10-20</lastmod>\n</url>\n</urlset>\n"
+    },
+    "/shop/media/logo.svg": {
+      "type": "image/svg+xml",
+      "text": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 120 40\"><circle cx=\"20\" cy=\"20\" r=\"16\" fill=\"#2f6f8f\"/><path d=\"M12 22c4-8 12-8 16 0\" stroke=\"#2f6f8f\" fill=\"none\"/><text x=\"44\" y=\"26\" style=\"fill:#222222;font-size:14px\">נועה</text></svg>"
+    },
+    "/shop/shipping": {
+      "file": "shipping.html"
+    },
+    "/shop/faq": {
+      "file": "faq.html"
+    },
+    "/shop/contact": {
+      "file": "contact.html"
+    },
+    "/shop/product-page/ספל-אפור": {
+      "file": "product-mug.html"
+    },
+    "/shop/product-page/סט-קערות": {
+      "file": "product-bowls.html"
+    }
+  }
+}

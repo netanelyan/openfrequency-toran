@@ -1,0 +1,58 @@
+{
+  "about": "צעצועי עץ של יואב, a fictional Cashcow store. Its sitemap (/crowlers/sitemap), product pages (the productdetailscont markup, the buy button, the options with their surcharges, the meta tags and the dataLayer) and help pages are in the shapes recorded from a real Israeli Cashcow store (2026-10-25), trimmed to what ingest reads, with the fictional store's names, prices and stock. The logo is a drawn fictional mark.",
+  "host": "www.etz-tzaatzuim.example",
+  "routes": {
+    "/": {
+      "file": "home.html"
+    },
+    "/12455": {
+      "file": "home.html"
+    },
+    "/robots.txt": {
+      "type": "text/plain; charset=utf-8",
+      "text": "User-agent: MJ12bot\nDisallow: /\n User-agent: Libwww-perl\nDisallow: /\nUser-agent: Amazonbot\nDisallow: /\nSitemap: https://www.etz-tzaatzuim.example/crowlers/sitemap"
+    },
+    "/crowlers/sitemap": {
+      "type": "text/xml; charset=utf-8",
+      "text": "<?xml version=\"1.0\"?>\n<urlset xmlns:xhtml=\"http://www.w3.org/1999/xhtml\" xmlns:image=\"http://www.google.com/schemas/sitemap-image/1.1\" xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url>\n    <loc>https://www.etz-tzaatzuim.example</loc>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/page/%D7%A8%D7%90%D7%A9%D7%99</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/page/%D7%9E%D7%A9%D7%9C%D7%95%D7%97%D7%99%D7%9D</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/page/%D7%94%D7%97%D7%96%D7%A8%D7%95%D7%AA_%D7%95%D7%94%D7%97%D7%9C%D7%A4%D7%95%D7%AA</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/page/%D7%AA%D7%A7%D7%A0%D7%95%D7%9F</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/page/%D7%A6%D7%A8%D7%95_%D7%A7%D7%A9%D7%A8</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/page/%D7%90%D7%95%D7%93%D7%95%D7%AA</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/page/%D7%A9%D7%90%D7%9C%D7%95%D7%AA_%D7%A0%D7%A4%D7%95%D7%A6%D7%95%D7%AA</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.9</priority>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/c/%D7%A6%D7%A2%D7%A6%D7%95%D7%A2%D7%99_%D7%A2%D7%A5</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n    <image:image>\n      <image:loc>https://www.etz-tzaatzuim.example/media/category.jpg</image:loc>\n    </image:image>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/p/%D7%A8%D7%9B%D7%91%D7%AA_%D7%A2%D7%A5</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n    <image:image>\n      <image:loc>https://www.etz-tzaatzuim.example/media/700101.jpg</image:loc>\n    </image:image>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/p/%D7%A7%D7%95%D7%91%D7%99%D7%95%D7%AA_%D7%90%D7%95%D7%AA%D7%99%D7%95%D7%AA</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n    <image:image>\n      <image:loc>https://www.etz-tzaatzuim.example/media/700102.jpg</image:loc>\n    </image:image>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/p/%D7%A1%D7%95%D7%A1_%D7%A0%D7%93%D7%A0%D7%93%D7%94</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n    <image:image>\n      <image:loc>https://www.etz-tzaatzuim.example/media/700103.jpg</image:loc>\n    </image:image>\n  </url>\n  <url>\n    <loc>https://www.etz-tzaatzuim.example/p/%D7%A4%D7%90%D7%96%D7%9C_%D7%9E%D7%A4%D7%AA_%D7%99%D7%A9%D7%A8%D7%90%D7%9C</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n    <image:image>\n      <image:loc>https://www.etz-tzaatzuim.example/media/700104.jpg</image:loc>\n    </image:image>\n  </url>\n</urlset>\n"
+    },
+    "/media/logo.png": {
+      "type": "image/png",
+      "base64": "iVBORw0KGgoAAAANSUhEUgAAAHgAAAAwCAYAAADab77TAAAD2klEQVR4AexYSWgUQRT9mZMbiiIEg7gw4IaHoAgGERckoIggKsTtYAgIMSohihIQI0JQNAQ1BoQQD24BFUFEIYgLIhFEyUHcYHBBIgFRFLeTY17DkJCe6q50VXfV1PwhRXeq///v/feoqqZTWf45rUCK+Oe0Amyw0/YSscFssOMKON4er2A2WE6BTP8n6nxwi+rOt1Bl816av38rzdi93hu4xxyeIQaxclU5SlUB5RV89ck92tDaSCuO1lHTtQ66+ewRve77QD/+/KJ/2aw3cI85PEMMYpGDXNUGOD9YgcgG3+nt8VZqw8XT9DTzMhglz1PkIBcrG7XyhMQ5VTS1Ixl88Eo77ew47q1UVaWwslELNVVrcb5fgREZ3P/9q7cdX37c7a+kOIOa2LaBoViK04coIG0whN9+9kik7XgIXuAttm1gACswkB9KKyBtcG3nSS1bchgzbNnACovj53IKSBmM8xGrS66kehSwgKleiSuEGow3XJyPSUsFTGAnjesaXqjBrbe7jPVsEttY05qBAw3GhwiciZoxpcsBGxxkEtLpNBXTkNEEMcMMxtTg6Oq5O/iPoTsbOBhqXQus0GB8L8bLjhYUhSLgAC4KJYo6VWjww1e91ghjExdrRJEkIjT4+bs3kiXiD7OJS/zd6kUQGvz280e9SArVbOKi0IaRVKHBfd++GCGUD1SGSyaToWIa+XTKNyc0+Off3/nijczZxMWIAAqgQoMVanKqRQoIDR43aow1NOPnYk2r2okIDS6bOFk7WNSCNnGJ2oOpPKHBs6ZMM8XJh2sTFx85yyeEBi+YOdsa6jJcCu07dFLiCg1eNrc8KQ6hODZxCSVrWYDQ4HTpVFqUnmecLjiAi3EiBUpAaDD6qapYhYvRYQMHowIoggcavGnxSppTNl0RIno6sMEhegXODDQY8tSvqcLFyDCJbaThGECDDR4AXF1eQVuWVA7cJfsHTGDLohbad2jZvlTjQg0GwLHNtYm+cOHFCpjA5qGmgJTBgGiv3pfIeYxzF1jA5KGugLTBpRMm0YVdh2NdyVi5wACWemtcAQpIG4xgCH+9vjmWMxlnLmoDA1g89CgwIoNzkDgfz9Uc0LJlY0tGLdTM1eerPgUiGQx4vOF2N56ilm17Im3b2I6RixqohZo89CsQ2eAcFXyIwNZ6/1AbNW2soXULl3ore/zosZQqKfEG7rFS8QwxiEUOcol/sSqgbHCOHb4XVy9fS207Ggir8sWJS/T+zA1v4B5zeIYYxObyrLw6REqbwQ5p4lQrbLBTdvqbYYP9mjg1wwY7Zae/GTbYr4lTM/8BAAD//xHqLIcAAAAGSURBVAMABLUevZsEMCwAAAAASUVORK5CYII="
+    },
+    "/page/שאלות_נפוצות": {
+      "file": "faq.html"
+    },
+    "/page/שאלות_ותשובות": {
+      "file": "home.html",
+      "redirect": "/12455"
+    },
+    "/page/משלוחים": {
+      "file": "shipping.html"
+    },
+    "/page/החזרות_והחלפות": {
+      "file": "returns.html"
+    },
+    "/page/תקנון": {
+      "file": "terms.html"
+    },
+    "/page/צרו_קשר": {
+      "file": "contact.html"
+    },
+    "/page/אודות": {
+      "file": "about.html"
+    },
+    "/p/רכבת_עץ": {
+      "file": "product-train.html"
+    },
+    "/p/קוביות_אותיות": {
+      "file": "product-letters.html"
+    },
+    "/p/סוס_נדנדה": {
+      "file": "product-horse.html"
+    },
+    "/p/פאזל_מפת_ישראל": {
+      "file": "product-puzzle.html"
+    }
+  }
+}

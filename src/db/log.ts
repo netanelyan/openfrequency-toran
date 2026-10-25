@@ -50,8 +50,9 @@ export function rememberPrivateName(...names: (string | null | undefined)[]) {
   if (!existsSync(h)) return;
   const file = path.join(ensureDir(h), 'known-stores.txt');
   const have = new Set(existsSync(file) ? readFileSync(file, 'utf8').split(/\r?\n/) : []);
-  // The fictional store (*.example) is not private: it is the one store the repository may name.
-  if (names.some((n) => /\.example$/i.test(String(n || '')))) return;
+  // The fictional stores (*.example, and the free Wix site <name>-example.wixsite.com, which must live on Wix's host)
+  // are not private: they are the only stores the repository may name.
+  if (names.some((n) => /\.example$|^[a-z0-9-]+-example\.wixsite\.com$/i.test(String(n || '')))) return;
   const add = names.map((n) => String(n || '').trim()).filter((n) => n.length >= 4 && !have.has(n));
   if (add.length) appendFileSync(file, add.map((n) => `${n}\n`).join(''));
 }

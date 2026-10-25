@@ -14,8 +14,10 @@
 // The Fetcher type is the seam for tests: a fixture fetcher answers from files, so the
 // whole discovery and ingest pipeline runs offline.
 
-export type FetchResult = { url: string; status: number; contentType: string; text: string; headers: Record<string, string> };
-export type Fetcher = (url: string, opts?: { accept?: string; maxBytes?: number; timeoutMs?: number; robots?: boolean }) => Promise<FetchResult>;
+// An image (a store's logo, for its colour) is asked for with `binary`: its bytes come back as they were sent,
+// and `text` is empty.
+export type FetchResult = { url: string; status: number; contentType: string; text: string; headers: Record<string, string>; bytes?: Uint8Array };
+export type Fetcher = (url: string, opts?: { accept?: string; maxBytes?: number; timeoutMs?: number; robots?: boolean; binary?: boolean }) => Promise<FetchResult>;
 
 export class FetchError extends Error {
   code: string;
@@ -106,7 +108,7 @@ export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { g
     return run;
   }
 
-  async function raw(url: string, { accept = 'text/html,application/json;q=0.9,*/*;q=0.5', maxBytes = DEFAULT_MAX, timeoutMs = 20_000 } = {}): Promise<FetchResult> {
+  async function raw(url: string, { accept = 'text/html,application/json;q=0.9,*/*;q=0.5', maxBytes = DEFAULT_MAX, timeoutMs = 20_000, binary = false }: Parameters<Fetcher>[1] = {}): Promise<FetchResult> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let res: Response;
@@ -133,6 +135,9 @@ export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { g
       }
       const buf = Buffer.concat(chunks);
       const contentType = res.headers.get('content-type') || '';
+      const headers: Record<string, string> = {};
+      res.headers.forEach((v, k) => (headers[k] = v));
+      if (binary) return { url: res.url || url, status: res.status, contentType, text: '', headers, bytes: new Uint8Array(buf) };
       const charset = /charset=([\w-]+)/i.exec(contentType)?.[1]?.toLowerCase() || 'utf-8';
       let text: string;
       try {
@@ -140,8 +145,6 @@ export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { g
       } catch {
         text = buf.toString('utf8');
       }
-      const headers: Record<string, string> = {};
-      res.headers.forEach((v, k) => (headers[k] = v));
       return { url: res.url || url, status: res.status, contentType, text, headers };
     } catch (e: any) {
       if (e instanceof FetchError) throw e;

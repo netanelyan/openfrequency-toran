@@ -5,6 +5,31 @@ import { getDomain, getHostname } from 'tldts';
 // were two leads; here the key is the registrable domain (eTLD+1, which knows that
 // co.il is a suffix), and *.myshopify.com keeps its subdomain because there the
 // subdomain is the store.
+//
+// A free Wix site lives under a path on a shared host: <user>.wixsite.com/<site> (and
+// Wix Studio's <user>.wixstudio.com/<site>, Editor X's <user>.editorx.io/<site>). Its
+// domain is the user's host, its home URL keeps the site's path, and siteBase() is
+// where all its pages, sitemaps and product pages hang from: the host's own root is
+// a 404.
+
+/** The shared hosts where a site is a path: <user>.wixsite.com/<site>. */
+const PATH_HOSTS = /^[a-z0-9-]+\.(?:wixsite\.com|wixstudio\.com|wixstudio\.io|editorx\.io)$/;
+
+/** The site's first path segment on a shared host ("/shop" for user.wixsite.com/shop/product-page/x), else "". */
+function sitePath(u: URL): string {
+  if (!PATH_HOSTS.test(u.hostname.toLowerCase())) return '';
+  const first = u.pathname.split('/').filter(Boolean)[0];
+  return first ? `/${first}` : '';
+}
+
+/**
+ * Where a store's pages hang from, with no trailing slash: the origin, or the origin and the site's path on a
+ * shared host (https://user.wixsite.com/shop). Every address ingest reads is this and a path.
+ */
+export function siteBase(url: string): string {
+  const u = new URL(url);
+  return `${u.origin}${sitePath(u)}`;
+}
 
 /** The registrable domain of a URL or host, or null for an IP, localhost or garbage. */
 export function canonicalDomain(input: string): string | null {
@@ -13,19 +38,19 @@ export function canonicalDomain(input: string): string | null {
   const host = getHostname(/^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`);
   if (!host) return null;
   const h = host.toLowerCase().replace(/\.$/, '');
-  if (/\.myshopify\.com$/.test(h)) return h;
+  if (/\.myshopify\.com$/.test(h) || PATH_HOSTS.test(h)) return h;
   const d = getDomain(h, { allowPrivateDomains: false });
   return d ? d.toLowerCase() : null;
 }
 
-/** A homepage URL to start from: https, the host as given (www kept: some stores only answer on it). */
+/** A homepage URL to start from: https, the host as given (www kept: some stores only answer on it), the site's path on a shared host. */
 export function homeUrl(input: string): string | null {
   const raw = String(input || '').trim();
   if (!raw) return null;
   try {
     const u = new URL(/^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`);
     if (!/^https?:$/.test(u.protocol)) return null;
-    return `https://${u.hostname.toLowerCase()}/`;
+    return `https://${u.hostname.toLowerCase()}${sitePath(u)}/`;
   } catch {
     return null;
   }

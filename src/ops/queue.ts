@@ -1,7 +1,7 @@
 import type { App } from '../app.ts';
 import { HOUR, now } from '../core/clock.ts';
 import { displayName } from '../ingest/brand.ts';
-import { canIngest } from '../ingest/catalogue.ts';
+import { INGESTIBLE_HE, canIngest } from '../ingest/catalogue.ts';
 import { PLATFORM_HE } from '../web/ui.ts';
 import { contactTarget, firstMessage, pitchUrl, reminderMessage } from '../outreach.ts';
 import { requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo } from './messages.ts';
@@ -63,7 +63,7 @@ export async function stuckRequests(app: App): Promise<Stuck[]> {
     at: r.claimed_at,
     storeId: r.id ?? null,
     why: r.job === 'queued' || r.job === 'running' ? 'הדף בבנייה'
-      : r.id && r.platform && !canIngest(r.platform) ? `האתר על ${PLATFORM_HE[r.platform] || r.platform}, ותורן בונה דמו רק לחנויות Shopify, WooCommerce ו־Wix`
+      : r.id && r.platform && !canIngest(r.platform) ? `האתר על ${PLATFORM_HE[r.platform] || r.platform}, ותורן בונה דמו רק לחנויות ${INGESTIBLE_HE}`
       : !r.id ? 'לא הצלחנו לקרוא את האתר'
       : !r.page_built_at ? 'הדף לא נבנה'
       : 'הדף מחכה לבדיקה, חסר בו משהו',

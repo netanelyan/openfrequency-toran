@@ -5,10 +5,13 @@ import { ensureDir, home } from '../core/paths.ts';
 import { type Db, J, V } from '../db/index.ts';
 import { event } from '../db/log.ts';
 import { readHome } from '../leads/signals.ts';
+import type { Fetcher } from '../core/http.ts';
+import { siteBase } from '../core/urls.ts';
 import { readBrand } from './brand.ts';
 import { embed } from './embed.ts';
-import { chunk, readPolicies, standardPaths } from './pages.ts';
-import { canIngest, livePrice, readCatalogue } from './catalogue.ts';
+import { logoColors } from './logo.ts';
+import { chunk, faqJsonLd, readPolicies, standardPaths } from './pages.ts';
+import { INGESTIBLE_EN, canIngest, livePrice, readCatalogue } from './catalogue.ts';
 import { pageLinks } from './sitemap.ts';
 
 // Ingest: a store's URL in, its knowledge pack out. One normalized format for every
@@ -26,11 +29,14 @@ import { pageLinks } from './sitemap.ts';
 // that left the feed as gone, replaces policies and chunks, and keeps every override
 // and every FAQ answer the owner wrote.
 //
-// Shopify, WooCommerce and Wix are read (catalogue.ts says how each one's products are
-// read; the policies are found the same way on all three). Other platforms are detected,
-// scored and listed, and stop here with a clear reason.
+// Shopify, WooCommerce, Wix and Cashcow are read (catalogue.ts says how each one's
+// products are read; the policies are found the same way on all four). Other platforms
+// are detected, scored and listed, and stop here with a clear reason.
+//
+// A store whose site names no colour is given its logo's (logo.ts), when its logo is
+// its mark and not a share photo; the review screen says where the colour came from.
 
-export type IngestSummary = { storeId: number; domain: string; products: number; available: number; gone: number; policies: { kind: string; title: string; chars: number }[]; chunks: number; faqs: number; brand: { colors: string[]; logo: boolean; tone: boolean }; currency: string; warnings: string[] };
+export type IngestSummary = { storeId: number; domain: string; products: number; available: number; gone: number; policies: { kind: string; title: string; chars: number }[]; chunks: number; faqs: number; brand: { colors: string[]; logo: boolean; tone: boolean; colorsFrom: string | null }; currency: string; warnings: string[] };
 
 export class IngestError extends Error {
   code: string;
@@ -44,10 +50,11 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
   const { db, fetcher } = app;
   const store = await db.one<any>('SELECT * FROM stores WHERE id = $1', [storeId]);
   if (!store) throw new IngestError('no such store', 'missing');
-  if (!canIngest(store.platform)) throw new IngestError(`ingest for ${store.platform} is not built yet: Toran reads Shopify, WooCommerce and Wix stores`, 'platform');
-  const origin = new URL(store.url).origin;
+  if (store.platform === 'konimbo') throw new IngestError(`Konimbo answers a request with no referring page with a "go to the requested page" screen, so its stores cannot be read: Toran reads ${INGESTIBLE_EN} stores`, 'platform');
+  if (!canIngest(store.platform)) throw new IngestError(`ingest for ${store.platform} is not built yet: Toran reads ${INGESTIBLE_EN} stores`, 'platform');
+  const base = siteBase(store.url);
 
-  const cat = await readCatalogue(fetcher, store.platform, origin, progress);
+  const cat = await readCatalogue(fetcher, store.platform, base, progress);
   const warnings: string[] = [...cat.warnings];
   const rows = cat.rows;
   const currency = cat.currency || 'ILS';
@@ -58,11 +65,19 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
   const home = await fetcher(store.url, { accept: 'text/html' });
   const hs = readHome(home.text, home.url);
   const brand = readBrand(home.text, home.url, { name: cat.name || store.name, logo: hs.logo });
+  if (!brand.colors?.length && brand.logo && brand.logoIsMark) {
+    progress('קורא את הצבע מהלוגו');
+    const fromLogo = await logoColorsAt(fetcher, brand.logo);
+    if (fromLogo.length) Object.assign(brand, { colors: fromLogo, colorsFrom: 'logo' });
+  }
 
   progress('קורא את המדיניות: משלוחים, החזרות, תשלום');
   // The home page's links first (their words name the page), then, off Shopify, the pages the sitemap lists.
-  const links = [...(hs.policyLinks.length ? hs.policyLinks : store.signals?.policyLinks || []), ...(store.platform === 'shopify' ? [] : await pageLinks(fetcher, origin))];
-  const { pages, faqs, errors } = await readPolicies(fetcher, origin, links, { standard: standardPaths(store.platform) });
+  const links = [...(hs.policyLinks.length ? hs.policyLinks : store.signals?.policyLinks || []), ...(store.platform === 'shopify' ? [] : await pageLinks(fetcher, base, store.platform))];
+  const read = await readPolicies(fetcher, base, links, { standard: standardPaths(store.platform) });
+  const { pages, errors } = read;
+  // A FAQPage the home page publishes (some themes put the questions there) counts as the FAQ's.
+  const faqs = [...read.faqs, ...faqJsonLd(home.text, home.url).filter((f) => !read.faqs.some((x) => x.question === f.question))].slice(0, 40);
   if (!pages.some((p) => p.kind === 'shipping')) warnings.push('no shipping policy page found');
   if (!pages.some((p) => p.kind === 'returns')) warnings.push('no returns policy page found');
   for (const e of errors) warnings.push(`policy page ${e}`);
@@ -126,7 +141,7 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
     policies: pages.map((p) => ({ kind: p.kind, title: p.title, chars: p.text.length })),
     chunks: pieces.length,
     faqs: faqs.length,
-    brand: { colors: brand.colors || [], logo: Boolean(brand.logo), tone: Boolean(brand.tone) },
+    brand: { colors: brand.colors || [], logo: Boolean(brand.logo), tone: Boolean(brand.tone), colorsFrom: brand.colorsFrom || null },
     currency,
     warnings,
   };
@@ -134,15 +149,26 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
   return summary;
 }
 
+/** The colours of the logo at a URL (logo.ts); [] when it does not load or has none. One request, 3 MB at most. */
+async function logoColorsAt(fetcher: Fetcher, url: string): Promise<string[]> {
+  try {
+    const r = await fetcher(url, { accept: 'image/png,image/jpeg,image/svg+xml;q=0.9,image/*;q=0.5', binary: true, maxBytes: 3 * 1024 * 1024 });
+    return logoColors(r.bytes ?? new TextEncoder().encode(r.text));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * The check behind "correct prices": for a sample of products, the price the store
  * shows now, from a different source than the one ingest read (catalogue.ts livePrice:
  * Shopify's /products/<handle>.js in agorot, WooCommerce's single-product route, a
- * product page's JSON-LD), against what is stored. A difference is a failed check.
+ * Cashcow page's analytics price, a product page's JSON-LD), against what is stored. A
+ * difference is a failed check.
  */
 export async function verifyPrices(app: App, storeId: number, sample = 12): Promise<{ checked: number; ok: number; mismatches: { title: string; stored: number | null; live: number | null }[] }> {
   const store = await app.db.one<any>('SELECT url, platform FROM stores WHERE id = $1', [storeId]);
-  const origin = new URL(store.url).origin;
+  const origin = siteBase(store.url);
   const rows = await app.db.query<any>('SELECT ext_id, title, handle, url, price_min::float AS price_min, variants FROM products WHERE store_id = $1 AND gone_at IS NULL ORDER BY random() LIMIT $2', [storeId, sample]);
   const mismatches: { title: string; stored: number | null; live: number | null }[] = [];
   let checked = 0;
