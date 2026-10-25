@@ -41,6 +41,7 @@ npm run leads -- show <domain>         # one lead's score, factor by factor
 npm run ingest -- <domain> --verify    # its knowledge pack, prices checked against each product's own page
 npm run chat -- <domain>               # talk to its agent in the terminal (on the subscription in development)
 npm run eval -- <domain>               # 30 questions from its own data, graded in code
+npm run company -- sync <export.json>  # our own support store, from openfrequency-web's `npm run support` (docs/company.md)
 npm start                              # the dashboard, pitch pages, webhook and worker on :4710
 ```
 
@@ -58,6 +59,7 @@ copy the message, mark it sent, see the chats.
 | `src/wa` | the WhatsApp demo router and the BSP providers (Twilio, a simulator) |
 | `src/ops` | the operator's dashboard: who to write to today, the conversations, the funnels, the money (docs/operator.md) |
 | `src/owners` | the owner line: one WhatsApp number for business owners, about Toran and Teder (docs/owner-line.md) |
+| `src/company.ts` | a company store: Toran answering our own support from the site's export (docs/company.md) |
 | `src/web` | the dashboard (Teder's look), auth, the public routes |
 | `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape) |
 | `src/brand.ts` | the family's marks and tokens; `assets/brand/` holds the files |

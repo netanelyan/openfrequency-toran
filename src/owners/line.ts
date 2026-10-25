@@ -9,13 +9,16 @@ import { readReply } from './intents.ts';
 import { DISCLOSURE, rememberOwner } from './notify.ts';
 import { act, lastList, showPending, status, type PostsCtx } from './posts.ts';
 import { tederClient } from './teder.ts';
+import { supportAccount } from '../company.ts';
+import { storeChannel } from '../channels/store.ts';
 
 // One message on the owner line (TORAN_ASSISTANT_WA), or from a verified owner's number on the demo number, end to
 // end. In this order:
 //
 //   1. a link code (LINK-XXXXXX from accounts): the number that sent it becomes that user's, through accounts
-//   2. who the number is, asked of accounts now. Not linked: one short line saying so (at most once an hour);
-//      accounts not answering: a line saying to try again. Nobody unverified gets further
+//   2. who the number is, asked of accounts now. Not linked: our support agent answers when TORAN_SUPPORT_STORE names
+//      a company store (src/company.ts), else one short line saying so (at most once an hour); accounts not
+//      answering: a line saying to try again. Nobody unverified gets further than support
 //   3. the limit: OWNER_PER_10_MIN and OWNER_PER_DAY messages a number, then one line saying so, then silence
 //   4. "הפסק" and "התחל", read in code: Teder's messages stop or start again (accounts keeps the consent; Toran
 //      keeps the stop too, in case accounts could not be told)
@@ -52,7 +55,7 @@ const say = {
   noText: 'אני קורא כאן רק טקסט. אפשר לכתוב לי במילים?',
 };
 
-export type LineResult = { action: 'duplicate' | 'assistant' | 'linked' | 'link_refused' | 'not_linked' | 'unavailable' | 'limit' | 'opt_out' | 'opt_in' | 'no_text' | 'silent'; reply?: string; storeId?: number | null };
+export type LineResult = { action: 'duplicate' | 'assistant' | 'support' | 'linked' | 'link_refused' | 'not_linked' | 'unavailable' | 'limit' | 'opt_out' | 'opt_in' | 'no_text' | 'silent'; reply?: string; storeId?: number | null };
 
 const textOf = (parts: Part[]) => parts.map((p) => ('text' in p ? p.text : p.caption ? `[${p.caption}]` : '[תמונה]')).join('\n\n');
 
@@ -103,6 +106,12 @@ export async function ownerLine(app: App, adapter: ChannelAdapter, inbound: Inbo
       if (r.reason === 'unavailable' || r.reason === 'not_configured') {
         if (await onceAnHour(app, 'owner_line_down', phone)) await send([{ text: say.down }]);
         return { action: 'unavailable' };
+      }
+      // Someone who is not one of our customers' people: our own support answers, as a company store would.
+      const support = await supportAccount(app, adapter, app.env.TORAN_ASSISTANT_WA);
+      if (support) {
+        const r = await storeChannel(app, adapter, inbound, support);
+        return { action: 'support', reply: r.reply, storeId: support.store_id };
       }
       const line = say.notLinked(accountsLinks(app.env).home);
       if (await onceAnHour(app, 'owner_line_unlinked', phone)) await send([{ text: line }]);

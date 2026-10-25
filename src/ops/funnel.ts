@@ -10,7 +10,8 @@ export type Stage = { key: string; label: string; all: number; month: number };
 const count = async (app: App, sql: string) => (await app.db.one<{ all: number; month: number }>(sql))!;
 
 export async function funnels(app: App, customers: Customer[] | null): Promise<{ toran: Stage[]; teder: Stage[] }> {
-  const t = (col: string, where = 'TRUE') => `SELECT COUNT(*) FILTER (WHERE ${col} IS NOT NULL AND ${where})::int AS all, COUNT(*) FILTER (WHERE ${col} > now() - interval '30 days' AND ${where})::int AS month FROM stores`;
+  // A company store (our own support, src/company.ts) is not a lead, so it counts in no stage.
+  const t = (col: string, where = 'TRUE') => `SELECT COUNT(*) FILTER (WHERE ${col} IS NOT NULL AND ${where})::int AS all, COUNT(*) FILTER (WHERE ${col} > now() - interval '30 days' AND ${where})::int AS month FROM stores WHERE platform <> 'company'`;
   const d = (col: string, where = 'TRUE') => `SELECT COUNT(*) FILTER (WHERE ${col} IS NOT NULL AND ${where})::int AS all, COUNT(*) FILTER (WHERE ${col} > now() - interval '30 days' AND ${where})::int AS month FROM teder_leads`;
   const paying = (product: string) => {
     const list = (customers || []).filter((w) => w.subscriptions.some((s) => s.product === product && (s.state === 'paid' || s.state === 'ending')));

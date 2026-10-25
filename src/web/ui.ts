@@ -197,6 +197,7 @@ export const STATUS_HE: Record<string, [string, string]> = {
   pilot: ['בהקמה', 'ok'],
   paid: ['משלם', 'ok'],
   skipped: ['דילגתי', 'ghost'],
+  company: ['השירות שלנו', 'sig'], // a company store: OpenFrequency's own support (src/company.ts)
 };
 export const STATUS_ORDER = ['new', 'page_ready', 'sent', 'opened', 'demo_started', 'pilot', 'paid', 'skipped'];
 export const statusChip = (s: string, approved = false) => {
@@ -205,7 +206,7 @@ export const statusChip = (s: string, approved = false) => {
   return `<span class="chip ${cls}">${esc(he)}</span>`;
 };
 
-export const PLATFORM_HE: Record<string, string> = { shopify: 'Shopify', woocommerce: 'WooCommerce', wix: 'Wix', konimbo: 'Konimbo', cashcow: 'Cashcow', magento: 'Magento', bigcommerce: 'BigCommerce', other: 'פלטפורמה אחרת', unknown: 'לא זוהה' };
+export const PLATFORM_HE: Record<string, string> = { shopify: 'Shopify', woocommerce: 'WooCommerce', wix: 'Wix', konimbo: 'Konimbo', cashcow: 'Cashcow', magento: 'Magento', bigcommerce: 'BigCommerce', other: 'פלטפורמה אחרת', unknown: 'לא זוהה', company: 'השירות שלנו' };
 
 /** A store's initial in a circle, in the store's colour (stores.css sets --store per store id). */
 export function storeBadge(s: { id: number; name?: string | null; domain: string }, cls = 'initial') {

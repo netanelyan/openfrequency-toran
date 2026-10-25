@@ -45,6 +45,9 @@ export async function replyTarget(app: App, conversationId: number): Promise<Tar
     id,
     at: new Date(last.at).getTime(),
     ...(c.account ? { account: c.account } : {}),
+    // A number of ours that is not a Meta account (the owner line, answering for our support store, src/company.ts):
+    // the reply goes out from that number, as the agent's did, not from the demo number.
+    ...(c.channel === 'whatsapp' && c.account && c.account_kind !== 'meta' ? { to: c.account } : {}),
     ...(c.channel === 'email' ? { subject: c.meta?.subject || '', thread: { messageId: id, inReplyTo: null, references: c.meta?.ids || [] } } : {}),
   };
   const storeName = displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain;

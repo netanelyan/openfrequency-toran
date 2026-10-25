@@ -68,6 +68,33 @@ test('the store block computes the catalogue facts and carries the tone sample i
   await app.db.close();
 });
 
+test('only a demo turn is told it is a demo: the store block never says so, a store\'s own channel is live, and its cart and order tools stop mentioning a demo', async () => {
+  const seen: string[] = [];
+  const script: Script = (req) => {
+    const first = req.messages[0];
+    seen.push(`${req.system.map((p) => p.text).join('\n')}\n${typeof first.content === 'string' ? first.content : ''}`);
+    return [{ type: 'text', text: 'רגע, בודק.' }];
+  };
+  const { app, id, ctx } = await storeApp(script);
+  const demoConv = await conversationFor(app.db, id, 'whatsapp', '972500000101');
+  await runTurn(app, { storeId: id, conversationId: demoConv, text: 'היי' });
+  const liveConv = await conversationFor(app.db, id, 'email', 'customer@example.test');
+  await runTurn(app, { storeId: id, conversationId: liveConv, text: 'היי', channel: 'email', footer: false });
+  assert.match(seen[0], /This conversation is a demo on Toran's shared number/);
+  assert.doesNotMatch(seen[1], /demo/i, 'nothing in a live turn\'s prompt or context mentions a demo');
+
+  const pid = Number(/\[id (\d+)\]/.exec((await runTool(ctx, 'search_products', { query: 'ספל חול' })).content)![1]);
+  const demoCart = await runTool(ctx, 'create_cart_link', { items: [{ product_id: pid }] });
+  const liveCart = await runTool({ ...ctx, demo: false }, 'create_cart_link', { items: [{ product_id: pid }] });
+  assert.match(demoCart.content, /^DEMO:/);
+  assert.doesNotMatch(liveCart.content, /DEMO|live version/);
+  assert.ok(liveCart.content.includes('https://kli-cheres.example/products/'));
+  const liveOrder = await runTool({ ...ctx, demo: false }, 'get_order_status', { order_number: '1042' });
+  assert.match(liveOrder.content, /handoff with reason "order"/);
+  assert.doesNotMatch(liveOrder.content, /DEMO|live version/);
+  await app.db.close();
+});
+
 test('a turn: search, then a reply quoting the row; the footer is on; everything is recorded', async () => {
   const script: Script = (req) => {
     const res = lastToolResult(req);

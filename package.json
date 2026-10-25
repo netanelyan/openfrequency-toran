@@ -27,7 +27,8 @@
     "workspace:assign": "node scripts/workspace-assign.ts",
     "demo": "node scripts/demo.ts",
     "screenshots": "node scripts/screenshots.ts",
-    "costs": "node scripts/costs.ts"
+    "costs": "node scripts/costs.ts",
+    "company": "node scripts/company.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.0.0",

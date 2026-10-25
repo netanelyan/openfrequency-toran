@@ -43,7 +43,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'create_cart_link',
-    description: 'Prepare a link for the customer to buy specific products. Use when the customer wants to order. In this demo the link opens the product page.',
+    description: 'Prepare a link for the customer to buy specific products. Use when the customer wants to order. For now it gives the product pages to order from.',
     input_schema: {
       type: 'object',
       properties: { items: { type: 'array', items: { type: 'object', properties: { product_id: { type: 'integer' }, variant_id: { type: 'string' }, quantity: { type: 'integer' } }, required: ['product_id'] } } },
@@ -52,7 +52,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'get_order_status',
-    description: 'Look up an existing order by its number. In this demo there are no real orders.',
+    description: 'Look up an existing order by its number. The store\'s orders are not connected yet, so its result says how to hand the question to the store.',
     input_schema: { type: 'object', properties: { order_number: { type: 'string' } }, required: ['order_number'] },
   },
   {
@@ -69,7 +69,36 @@ export const TOOLS: ToolDef[] = [
   },
 ];
 
-export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined> };
+// demo: the turn is on our shared demo number or a pitch page (loop.ts isDemoTurn), where the cart and order tools say
+// they are demo versions; on the store's own channels they say what is not connected yet instead.
+// A company store (src/company.ts) sells plans, not products: three tools, the same grounding. get_plans reads the plan
+// rows, get_policy the same questions and pages as a store's, handoff the same record with reasons of its own.
+export const COMPANY_TOOLS: ToolDef[] = [
+  {
+    name: 'get_plans',
+    description: 'Every plan the company sells, each with its monthly price, VAT, what it covers and its setup fee, and the page that says so. Use it before saying anything about a price, a plan or what a plan includes.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_policy',
+    description: 'The company\'s own questions and answers and its pages on a topic: how the service works, which channels and platforms it works with, the demo, starting, cancelling, terms, privacy, security, accessibility. Returns the passages, or nothing when the company has not written about it.',
+    input_schema: { type: 'object', properties: { topic: { type: 'string', description: 'The question, in the person\'s words' } }, required: ['topic'] },
+  },
+  {
+    name: 'handoff',
+    description: 'Hand the conversation to a person at the company. Use it whenever: you do not have the answer from a tool; the person asks about their own account, a bill, an invoice, a cancellation or a problem; asks for a discount or anything outside what is written; wants a demo or to join; is upset or asks for a person.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', enum: ['unknown', 'demo', 'join', 'account', 'billing', 'cancel', 'discount', 'complaint', 'human_requested', 'other'] },
+        summary: { type: 'string', description: 'One line for the company: what the person needs, with their store\'s address when they gave it' },
+      },
+      required: ['reason', 'summary'],
+    },
+  },
+];
+
+export type ToolContext ={ db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean };
 export type ToolOutcome = { ok: boolean; content: string; handoff?: { reason: string; summary: string }; facts?: string[] };
 
 type P = { id: number; title: string; url: string; handle: string; image: string | null; price_min: number | null; price_max: number | null; compare_at_max: number | null; available: boolean; variants: any[]; body_text: string; search_text: string; product_type: string | null; override: any };
@@ -200,15 +229,25 @@ async function getPolicy(c: ToolContext, input: any): Promise<ToolOutcome> {
   // An owner's correction to a whole policy replaces its chunks.
   const overrides = await c.db.query<{ kind: string; title: string; override_text: string }>('SELECT kind, title, override_text FROM policies WHERE store_id = $1 AND override_text IS NOT NULL', [c.storeId]);
   const parts: string[] = [];
-  for (const { f } of faqHits) parts.push(`From the store's FAQ: "${f.question}"\n${f.answer || f.site_answer}`);
-  for (const o of overrides) if (chunks.some((ch) => ch.kind === o.kind) || matched(o.title) > 0) parts.push(`From the store's ${o.kind} policy (${o.title}):\n${o.override_text}`);
-  for (const ch of chunks) if (!overrides.some((o) => o.kind === ch.kind)) parts.push(`From the store's ${ch.kind} page (${ch.title}, ${ch.url}):\n${ch.text}`);
-  if (!parts.length) return { ok: true, content: `The store has not written anything about "${topic}".\nRule: you do not know the answer. Do not guess what is usual. Tell the customer you are checking with the store and call handoff with reason "unknown".` };
+  // A company store's passages are the company's, and its person is told someone from us answers, not "the store".
+  const biz = c.company ? 'company' : 'store';
+  const checking = c.company ? 'tell the person you are checking and someone from us will answer here' : 'tell the customer you are checking with the store';
+  for (const { f } of faqHits) parts.push(`From the ${biz}'s FAQ: "${f.question}"\n${f.answer || f.site_answer}`);
+  for (const o of overrides) if (chunks.some((ch) => ch.kind === o.kind) || matched(o.title) > 0) parts.push(`From the ${biz}'s ${o.kind} policy (${o.title}):\n${o.override_text}`);
+  for (const ch of chunks) if (!overrides.some((o) => o.kind === ch.kind)) parts.push(`From the ${biz}'s ${ch.kind} page (${ch.title}, ${ch.url}):\n${ch.text}`);
+  if (!parts.length) return { ok: true, content: `The ${biz} has not written anything about "${topic}".\nRule: you do not know the answer. Do not guess what is usual. ${checking[0].toUpperCase()}${checking.slice(1)}, and call handoff with reason "unknown".` };
   return {
     ok: true,
-    content: `${parts.join('\n\n')}\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the customer asked about installation and they are about shipping), say the store has not written about it, tell the customer you are checking with the store, and call handoff with reason "unknown" in this same answer.`,
+    content: `${parts.join('\n\n')}\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the ${c.company ? 'person' : 'customer'} asked about installation and they are about shipping), say the ${biz} has not written about it, ${checking}, and call handoff with reason "unknown" in this same answer.`,
     facts: parts,
   };
+}
+
+async function getPlans(c: ToolContext): Promise<ToolOutcome> {
+  const plans = await loadProducts(c.db, c.storeId);
+  if (!plans.length) return { ok: true, content: 'No plans are written down.\nRule: you do not know the prices. Say you are checking, and call handoff with reason "unknown".' };
+  const lines = plans.map((p) => `- ${p.title}: ${p.body_text} ${p.url}`);
+  return { ok: true, content: `${lines.join('\n')}\nRule: quote prices, VAT, setup fees and what a plan covers exactly as written above. A plan, a price, a discount or a condition that is not written here, you do not know.`, facts: lines };
 }
 
 async function cartLink(c: ToolContext, input: any): Promise<ToolOutcome> {
@@ -222,11 +261,14 @@ async function cartLink(c: ToolContext, input: any): Promise<ToolOutcome> {
     lines.push(`${p.title}: ${p.url}`);
   }
   if (!lines.length) return { ok: false, content: 'No items given.' };
+  if (c.demo === false) return { ok: true, content: `The product pages, where the customer adds the item to the cart:\n${lines.join('\n')}\nRule: give these links.` };
   return { ok: true, content: `DEMO: in the live version this is one link to a ready cart. For now, the product pages:\n${lines.join('\n')}\nRule: give these links and say plainly that in the full version the customer would get a ready cart.` };
 }
 
-async function orderStatus(_c: ToolContext, input: any): Promise<ToolOutcome> {
-  return { ok: true, content: `DEMO: this demo is not connected to the store's orders, so order ${String(input.order_number || '').slice(0, 30)} cannot be looked up.\nRule: say that in the live version order status is answered here automatically, and call handoff with reason "order" so the store can check it.` };
+async function orderStatus(c: ToolContext, input: any): Promise<ToolOutcome> {
+  const order = String(input.order_number || '').slice(0, 30);
+  if (c.demo === false) return { ok: true, content: `The store's orders are not connected here, so order ${order} cannot be looked up.\nRule: tell the customer you are passing it to the store, who will answer here, and call handoff with reason "order".` };
+  return { ok: true, content: `DEMO: this demo is not connected to the store's orders, so order ${order} cannot be looked up.\nRule: say that in the live version order status is answered here automatically, and call handoff with reason "order" so the store can check it.` };
 }
 
 export async function runTool(c: ToolContext, name: string, input: any): Promise<ToolOutcome> {
@@ -238,6 +280,8 @@ export async function runTool(c: ToolContext, name: string, input: any): Promise
         return await getProduct(c, input || {});
       case 'get_policy':
         return await getPolicy(c, input || {});
+      case 'get_plans':
+        return await getPlans(c);
       case 'create_cart_link':
         return await cartLink(c, input || {});
       case 'get_order_status':
@@ -245,7 +289,10 @@ export async function runTool(c: ToolContext, name: string, input: any): Promise
       case 'handoff': {
         const reason = String(input?.reason || 'other');
         const summary = String(input?.summary || '').slice(0, 300);
-        return { ok: true, content: 'Handed off: the store owner sees this conversation now.\nRule: tell the customer in one short sentence that someone from the store will get back to them here. No promises about what the store will decide or when.', handoff: { reason, summary } };
+        const content = c.company
+          ? 'Handed off: someone at the company sees this conversation now.\nRule: tell the person in one short sentence that someone from us will get back to them here. No promises about what we will decide or when.'
+          : 'Handed off: the store owner sees this conversation now.\nRule: tell the customer in one short sentence that someone from the store will get back to them here. No promises about what the store will decide or when.';
+        return { ok: true, content, handoff: { reason, summary } };
       }
       default:
         return { ok: false, content: `There is no tool called ${name}.` };

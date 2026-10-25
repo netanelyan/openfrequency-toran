@@ -56,6 +56,7 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'TWILIO_WHATSAPP_FROM', group: 'whatsapp', he: 'מספר הדמו בוואטסאפ, בפורמט +972...' },
   { name: 'TORAN_OWNER_WHATSAPP', group: 'whatsapp', he: 'המספר של OpenFrequency בוואטסאפ: הכפתור "לכתוב לנו" והבקשה להוריד עמוד. לא מספר הדמו' },
   { name: 'TORAN_ASSISTANT_WA', group: 'whatsapp', he: 'הקו של בעלי העסק: מספר הוואטסאפ שבו הם כותבים לעוזר ומקבלים הודעות מתדר. ספרות בלבד, לא מספר הדמו' },
+  { name: 'TORAN_SUPPORT_STORE', group: 'whatsapp', he: 'הדומיין של חנות השירות שלנו (npm run company): מי שכותב לקו של בעלי העסק ולא מחובר לחשבון, או למספר הדמו בלי דמו, מקבל ממנה תשובה. ריק: כמו קודם' },
   { name: 'TWILIO_TEMPLATES', group: 'whatsapp', he: 'התבניות שמטא אישרה, שם=Content SID, למשל teder_posts_ready=HX...' },
   { name: 'DEMO_WA_NUMBER', group: 'whatsapp', he: 'המספר שכפתור הדמו בדף פותח (wa.me), בספרות בלבד' },
   { name: 'PUBLIC_BASE_URL', group: 'website', he: 'הכתובת הציבורית של דפי הדמו, למשל https://toran.example' },

@@ -4,9 +4,9 @@ import { event, usage as recordUsage } from '../db/log.ts';
 import { cleanLine } from '../core/hebrew.ts';
 import { agentModel } from './llm/index.ts';
 import { type Block, type Msg, type ToolUseBlock, isText, isToolUse, LlmError } from './llm/types.ts';
-import { systemFor, type StoreForPrompt } from './prompt.ts';
-import { runTool, TOOLS, type ToolContext } from './tools.ts';
-import { buildAllow, guardReply, type Redaction } from './guard.ts';
+import { DEMO_NOTE, systemFor, type StoreForPrompt } from './prompt.ts';
+import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
+import { buildAllow, checkingLine, guardReply, type Redaction } from './guard.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
@@ -30,8 +30,9 @@ const HISTORY = 16; // messages replayed: 8 exchanges is a long WhatsApp chat
 export const DEMO_FOOTER = '_דמו של תורן_';
 
 // channel names where the reply goes (absent: the WhatsApp demo); context is a line from the app for this turn only
-// (the files an email carried), shown to the model and never stored as the customer's words.
-export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; channel?: string; context?: string };
+// (the files an email carried), shown to the model and never stored as the customer's words. demo overrides what the
+// channel implies (isDemoTurn).
+export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; channel?: string; context?: string; demo?: boolean };
 export type ToolRecord = { name: string; input: unknown; ok: boolean; result: string };
 export type TurnOutput = { reply: string; rawReply: string; tools: ToolRecord[]; redactions: Redaction[]; handoff: { reason: string; summary: string } | null; miss: boolean; rounds: number; usd: number; apiUsd: number; tokens: { in: number; out: number; cacheRead: number; cacheWrite: number }; agentMessageId: number | null };
 
@@ -49,7 +50,7 @@ function serialized<T>(key: number, fn: () => Promise<T>): Promise<T> {
 const systemCache = new Map<string, { key: string; parts: Awaited<ReturnType<typeof systemFor>> }>();
 
 async function loadStore(db: Db, id: number) {
-  const s = await db.one<StoreForPrompt & { url: string; updated_at: string; ingested_at: string | null }>('SELECT id, name, domain, url, brand, brand_override, config, contact_email, contact_phone, contact_whatsapp, updated_at, ingested_at FROM stores WHERE id = $1', [id]);
+  const s = await db.one<StoreForPrompt & { url: string; updated_at: string; ingested_at: string | null }>('SELECT id, platform, name, domain, url, brand, brand_override, config, contact_email, contact_phone, contact_whatsapp, updated_at, ingested_at FROM stores WHERE id = $1', [id]);
   if (!s) throw new Error(`no store ${id}`);
   return s;
 }
@@ -89,16 +90,19 @@ async function history(db: Db, conversationId: number): Promise<{ messages: Msg[
 }
 
 const CHANNEL_LINE: Record<string, string> = {
-  whatsapp: "Channel: the store's WhatsApp, demo.",
+  whatsapp: "Channel: the store's WhatsApp.",
   email: "Channel: the store's email. Your reply is the body of an email: plain text, no markdown, no subject line and no signature (the store's name is added).",
   messenger: "Channel: the store's Facebook Page, in Messenger. Plain text only: no markdown, no asterisks or underscores for emphasis. Keep it short, as a chat message.",
   instagram: "Channel: the store's Instagram, in direct messages. Plain text only: no markdown, no asterisks or underscores for emphasis. Keep it short: Instagram takes about 500 Hebrew letters in one message.",
 };
 
-function serverContext(now = new Date(), channel = 'whatsapp', context?: string): string {
+function serverContext(now = new Date(), channel = 'whatsapp', context?: string, demo = false): string {
   const day = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
-  return `SERVER CONTEXT (written by the app, not by the customer): ${day}, Israel time. ${CHANNEL_LINE[channel] || CHANNEL_LINE.whatsapp}${context ? ` ${context}` : ''}`;
+  return `SERVER CONTEXT (written by the app, not by the customer): ${day}, Israel time. ${CHANNEL_LINE[channel] || CHANNEL_LINE.whatsapp}${demo ? ` ${DEMO_NOTE}` : ''}${context ? ` ${context}` : ''}`;
 }
+
+/** A turn is a demo unless it came in on one of the store's own channels (those pass `channel`). */
+export const isDemoTurn = (input: Pick<TurnInput, 'channel' | 'demo'>) => input.demo ?? !input.channel;
 
 export function runTurn(app: App, input: TurnInput): Promise<TurnOutput> {
   return serialized(input.conversationId, () => turn(app, input));
@@ -110,12 +114,17 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const system = await systemOf(db, store);
   const past = await history(db, input.conversationId);
   const messages: Msg[] = [...past.messages];
-  const userText = `${serverContext(new Date(), input.channel, input.context)}\n\n${input.text}`;
+  // A company store (our own support, src/company.ts): its own prompt (systemOf), tools and honest lines, and never a
+  // demo, wherever the message came from.
+  const company = store.platform === 'company';
+  const demo = !company && isDemoTurn(input);
+  const userText = `${serverContext(new Date(), input.channel, input.context, demo)}\n\n${input.text}`;
   const prev = messages[messages.length - 1];
   if (prev && prev.role === 'user') prev.content = `${prev.content}\n\n${userText}`;
   else messages.push({ role: 'user', content: userText });
 
-  const ctx: ToolContext = { db, storeId: store.id, origin: new URL(store.url).origin, currency: store.config?.currency || 'ILS', env: app.env };
+  const ctx: ToolContext = { db, storeId: store.id, origin: new URL(store.url).origin, currency: store.config?.currency || 'ILS', env: app.env, demo, company };
+  const toolDefs = company ? COMPANY_TOOLS : TOOLS;
   const tools: ToolRecord[] = [];
   let handoff: { reason: string; summary: string } | null = null;
   let raw = '';
@@ -136,7 +145,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   try {
     for (; rounds < MAX_ROUNDS && !capped; ) {
       rounds++;
-      const res = await app.llm.turn({ system, messages, tools: TOOLS, model, maxTokens: 1500, effort: 'low', tag: `turn store ${store.id}` });
+      const res = await app.llm.turn({ system, messages, tools: toolDefs, model, maxTokens: 1500, effort: 'low', tag: `turn store ${store.id}` });
       usd += res.usd;
       apiUsd += res.apiUsd;
       tokens.in += res.usage.input_tokens;
@@ -173,12 +182,14 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
 
   const english = !/[א-ת]/.test(input.text) && /[a-z]{3}/i.test(input.text);
   if (!raw) {
-    raw = english ? "I'm checking this with the store and will update you here." : 'את זה אני בודק עם החנות, ואחזור אליך כאן.';
+    raw = checkingLine(english, company);
     handoff ??= { reason: 'unknown', summary: `no answer after ${rounds} rounds: ${cleanLine(input.text, 160)}` };
   }
 
   const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text] });
-  const g = guardReply(raw, allow);
+  // A service has no stock: "not available yet" is about a feature, never an invented stock level.
+  if (company) allow.stockKnown = true;
+  const g = guardReply(raw, allow, { company });
   if (g.needsHandoff && !handoff) handoff = { reason: g.handoffReason || 'unknown', summary: `the guard cut ${g.redactions.map((r) => r.rule).join(', ')}: ${cleanLine(input.text, 160)}` };
   const miss = g.redactions.length > 0 || handoff?.reason === 'unknown';
   const reply = input.footer === false ? g.text : `${g.text}\n\n${DEMO_FOOTER}`;

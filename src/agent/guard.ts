@@ -142,15 +142,34 @@ const REPLACE_EN: Record<string, string> = {
   superlative: '',
 };
 const HANDOFF_REASON: Record<string, string> = { price: 'unknown', stock: 'unknown', delivery: 'unknown', promise: 'discount' };
+// A company store (our own support, src/company.ts) is not a store: the honest line says someone from us answers.
+const REPLACE_COMPANY: Record<string, string> = {
+  price: 'את המחיר המדויק אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
+  stock: 'את זה אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
+  delivery: 'את הזמנים אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
+  promise: 'הנחה או הסדר מיוחד מאשרים רק אצלנו. העברתי את הבקשה, ויחזרו אליך כאן.',
+  superlative: '',
+};
+const REPLACE_COMPANY_EN: Record<string, string> = {
+  price: "I'm checking the exact price, and someone from our team will get back to you here.",
+  stock: "I'm checking this, and someone from our team will get back to you here.",
+  delivery: "I'm checking the timing, and someone from our team will get back to you here.",
+  promise: 'Discounts and exceptions are approved by our team. I passed your request on, and they will get back to you here.',
+  superlative: '',
+};
+/** The honest line when nothing is left to say, for a store or for a company. */
+export const checkingLine = (english: boolean, company = false) =>
+  company ? (english ? "I'm checking this, and someone from our team will get back to you here." : 'את זה אני בודק, ומישהו מאיתנו יחזור אליך כאן.')
+    : english ? "I'm checking this with the store and will update you here." : 'את זה אני בודק עם החנות, ואחזור אליך כאן.';
 
 /** The voice rules' punctuation: no em or en dashes as breaks. */
 // A dash between two numbers is a range ("1–3 ימי עסקים"), kept as a plain hyphen; anywhere else it is a sentence
 // break the voice guide does not allow, and becomes a comma.
 export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2').replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',');
 
-export function guardReply(text: string, allow: Allow): GuardResult {
+export function guardReply(text: string, allow: Allow, { company = false }: { company?: boolean } = {}): GuardResult {
   const english = !/[א-ת]/.test(text) && /[a-z]/i.test(text);
-  const lines = english ? REPLACE_EN : REPLACE;
+  const lines = company ? (english ? REPLACE_COMPANY_EN : REPLACE_COMPANY) : english ? REPLACE_EN : REPLACE;
   const out: string[] = [];
   const redactions: Redaction[] = [];
   const done = new Set<string>();
@@ -181,6 +200,6 @@ export function guardReply(text: string, allow: Allow): GuardResult {
     if (lines[rule]) out.push(`${lead}${lines[rule]}${sentence.endsWith('\n') ? '\n' : ' '}`);
   }
   let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
-  if (!result) result = english ? "I'm checking this with the store and will update you here." : 'את זה אני בודק עם החנות, ואחזור אליך כאן.';
+  if (!result) result = checkingLine(english, company);
   return { text: result, redactions, needsHandoff: Boolean(handoffReason), handoffReason };
 }

@@ -105,7 +105,8 @@ export function simProvider(): WaProvider {
       return [{ from: phone, text: String(data.text || ''), id: String(data.id || `sim-in-${Date.now()}-${n++}`), profileName: data.name || null, ...(data.to ? { to: toIntl(String(data.to)) } : {}) }];
     },
     async send(to, text, inReplyTo) {
-      outbox.push({ to, text, inReplyTo: inReplyTo.id, at: Date.now() });
+      // A reply goes out from the number it answers, as Twilio's does (twilioProvider).
+      outbox.push({ to, text, inReplyTo: inReplyTo.id, at: Date.now(), ...(inReplyTo.to ? { from: inReplyTo.to } : {}) });
       return { id: `sim-out-${Date.now()}-${n++}`, usd: 0 };
     },
     async push(to, msg) {

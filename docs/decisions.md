@@ -408,3 +408,32 @@ stores in `examples/` (`tavlinim-ba-shuk.example`, `beit-hasabon.example`, `quie
 - `get_order_status` reads no platform's orders: that needs the owner's key (WooCommerce's REST API, Wix's API), which
   the demo does not have.
 - A Wix site on `<user>.wixsite.com/<site>` lives under a path, and ingest reads from the host's root: not handled.
+
+## 2026-10-25: Toran answers our own support, as a company store; only a demo turn is told it is a demo
+
+**The demo line.** Every turn's prompt said "This conversation is a demo", and the WhatsApp channel line said "demo",
+so a paying store's real customers would have been answered as a demo. Whether a turn is a demo is now per turn
+(`isDemoTurn` in agent/loop.ts): a turn on one of the store's own channels (which pass `channel`) is live; the shared
+demo number, the pitch builder, the CLI and the eval are demos. The note rides in the SERVER CONTEXT line, never in
+the cached store block. On a live turn, `create_cart_link` gives the product pages without "in the live version",
+and `get_order_status` hands the question to the store.
+
+**A company store** (src/company.ts, docs/company.md): Toran answering for a business that sells a service. Ours
+first: people who write to OpenFrequency about Toran and Teder are answered from what openfrequency.co.il says.
+- **Not ingested.** Ingest needs a shop's catalogue, and our site has none. Its knowledge is one JSON file the website
+  repository makes from its own config and page modules (`npm run support`), synced by `npm run company -- sync`.
+  A price changed in site.config.json reaches the agent on the next export and sync.
+- **What is true today wins.** The site describes the product at launch (every channel, the store's own WhatsApp,
+  abandoned carts). `openfrequency-web/support.json` holds what is true today for the agent only, and its status
+  list sits in the prompt above every page. The site itself is not changed: it is published when it is done.
+- **Its own prompt and three tools** (get_plans, get_policy, handoff). Same voice and grounding. A person's account,
+  bill or cancellation is always handed off. The guard's honest lines speak for us, and "not available yet" is not a
+  stock claim.
+- **Out of the sales machine:** platform and status `company`, not qualified, no workspace, left out of the funnel.
+- **WhatsApp, behind TORAN_SUPPORT_STORE:** our demo number (also our public number) answers a phone with no demo as
+  support, and the owner line answers a number no workspace linked. The number is an account of the support store
+  with status `line`, which `accountFor` never matches, so demo codes and owners route as before. A reply from the
+  inbox goes out from the number the person wrote to (it went out from the demo number before).
+- **Alternatives:** a scraped "store" of openfrequency.co.il (ingest refuses a site with no products, and would have
+  read the launch-day claims as facts); FAQ rows typed in the dashboard (no plans, no pages, and drifting from the
+  site's prices).

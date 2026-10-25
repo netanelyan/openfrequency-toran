@@ -12,6 +12,8 @@ import { LINK_CODE, ownerByPhone } from '../owners/identity.ts';
 import { PAGE_ABOUT, PAGE_DOWN } from '../offer.ts';
 import { J } from '../db/index.ts';
 import { ownerLine } from '../owners/line.ts';
+import { supportAccount } from '../company.ts';
+import { storeChannel } from './store.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
@@ -125,6 +127,9 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
 
   const binding = await db.one<{ store_id: number; expired: boolean }>('SELECT store_id, expires_at < now() AS expired FROM wa_users WHERE phone = $1', [phone]);
   if (!binding) {
+    // Our demo number is our public number too: someone with no demo gets our own support, when it is set up.
+    const support = await supportAccount(app, adapter, inbound.to || app.env.DEMO_WA_NUMBER || app.env.TWILIO_WHATSAPP_FROM);
+    if (support) return storeChannel(app, adapter, inbound, support);
     await reply(app, adapter, inbound, msg.noBinding, null, null);
     await event(db, null, 'wa_unbound', {});
     return { action: 'no_binding', reply: msg.noBinding };

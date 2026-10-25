@@ -17,6 +17,9 @@ import { OWNER_PER_10_MIN } from '../src/owners/line.ts';
 import type { Block, TurnReq } from '../src/agent/llm/types.ts';
 import { scriptedClient, type Script } from '../src/agent/llm/scripted.ts';
 import { fakeOwnerAccounts, fakeTeder, SECRET } from './owner-fakes.ts';
+import { syncCompany } from '../src/company.ts';
+import { accountFor } from '../src/channels/store.ts';
+import { ownerReply } from '../src/channels/owner.ts';
 import { testApp } from './helpers.ts';
 
 // The owner line (src/owners/, docs/owner-line.md): who a number is, Teder's news as messages, the owner's replies
@@ -121,6 +124,46 @@ test('identity: an unknown number is told it is not linked (once an hour); a lin
     s.accounts.link({ phone: OWNER, workspace: WS, disabled: true });
     await s.write('מה המצב?');
     assert.match(s.outbox.at(-1)!.text, /לא מחובר/);
+  } finally {
+    await s.close();
+  }
+});
+
+test('with TORAN_SUPPORT_STORE, a number nobody linked gets our support agent on the owner line, and a reply from the inbox goes out from the line; owners still reach their assistant', async () => {
+  const script: Script = (req) => (lastResult(req) ? say('תורן עולה 250 ₪ לחודש, לא כולל מע״מ.') : toolUse('get_plans', {}));
+  const s = await setup(script);
+  try {
+    const { storeId } = await syncCompany(s.app, {
+      domain: 'shirut-li.example', url: 'https://shirut-li.example/', name: 'שירות לי', status: 'מה עובד היום:\n- עונה במייל.', tone: '', contact: {},
+      plans: [{ key: 'one', product: 'shirut', title: 'שירות', monthly: 250, text: '250 ₪ לחודש, לא כולל מע״מ.', url: 'https://shirut-li.example/#price' }],
+      faq: [], pages: [{ kind: 'about', title: 'מי אנחנו', url: 'https://shirut-li.example/', text: 'עסק קטן מחיפה.' }],
+    });
+    s.app.env.TORAN_SUPPORT_STORE = 'shirut-li.example';
+    const r = await s.write('כמה זה עולה?', OTHER);
+    assert.equal(r.storeId, storeId);
+    const out = s.outbox.filter((m) => m.to === OTHER);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].text, 'תורן עולה 250 ₪ לחודש, לא כולל מע״מ.');
+    assert.equal(out[0].from, LINE, 'the answer goes out from the owner line');
+    const conv = await s.app.db.one<any>('SELECT c.id, a.status, a.external_id FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE c.store_id = $1 AND c.peer = $2', [storeId, OTHER]);
+    assert.deepEqual([conv.status, conv.external_id], ['line', LINE]);
+    assert.equal(await accountFor(s.app, 'whatsapp', LINE), null, 'the line is never a store\'s own account, so owners are not answered as support');
+
+    const d = await ownerReply(s.app, conv.id, 'אני כאן, מה הכתובת של החנות?', 'operator');
+    assert.ok(d.ok);
+    assert.equal(s.outbox.at(-1)!.from, LINE, 'a reply from the inbox goes out from the owner line, not the demo number');
+
+    // An owner of a workspace still reaches the assistant, not support.
+    s.accounts.link({ phone: OWNER, workspace: WS });
+    s.teder.add({ id: 11, workspace: WS, hook: 'מה לאכול לפני מרתון' });
+    const owner = await s.write('הצג');
+    assert.equal(owner.action, 'assistant', 'the owner reached their assistant');
+    assert.ok(!(await s.app.db.one('SELECT 1 FROM conversations WHERE store_id = $1 AND peer = $2', [storeId, OWNER])), 'nothing of the owner\'s went to the support store');
+
+    // Without the setting, the line says "not linked" as before.
+    delete s.app.env.TORAN_SUPPORT_STORE;
+    await s.write('שוב אני', '972500000125');
+    assert.match(s.outbox.at(-1)!.text, /לא מחובר לחשבון/);
   } finally {
     await s.close();
   }
