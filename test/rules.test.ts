@@ -26,11 +26,15 @@ test('every setting the code reads is listed in .env.example', () => {
 // The channel adapters: the only files that talk to a messaging or mail provider.
 const ADAPTERS = ['src/channels/whatsapp.ts', 'src/channels/email.ts', 'src/channels/meta.ts', 'src/channels/social.ts'];
 
-test('nothing sends outreach: messages and mail go out only from send.ts, in answer to an inbound message; no SMS', () => {
+// The store's automatic messages (a cart, a payment, a shipment, a review) are the one place a store's customer gets a
+// message they did not just ask for, on the store's own number or email, with every rule in code before the send.
+const AUTO = 'src/auto/send.ts';
+
+test('nothing sends outreach: messages and mail go out only from send.ts, in answer to an inbound message, or from the store\'s automatic messages; no SMS', () => {
   for (const f of src) {
     const text = readFileSync(f, 'utf8');
     const r = rel(f);
-    if (/\b(wa|mail|adapter)\.send\(/.test(text)) assert.equal(r, 'src/channels/send.ts', `${r} sends messages`);
+    if (/\b(wa|mail|adapter)\.send\(/.test(text)) assert.ok(r === 'src/channels/send.ts' || r === AUTO, `${r} sends messages`);
     // A provider's API host, or a BSP's: only an adapter file names one. (Meta's own ids, such as a business account's
     // waba_id, appear wherever a connected number is kept; the calls are all in meta.ts, and Messenger's and
     // Instagram's in social.ts.)
@@ -42,6 +46,11 @@ test('nothing sends outreach: messages and mail go out only from send.ts, in ans
   assert.equal((send.match(/\.send\(/g) || []).length, 1);
   assert.match(send, /adapter\.send\(to\.from, part, to, sendCtx\)/);
   assert.ok(send.indexOf('sendPlan(') < send.indexOf('adapter.send('), 'the window is checked before the send');
+  // The automatic messages: the kind is on, it is not quiet, the customer allows it, before either send.
+  const auto = readFileSync(path.join(ROOT, AUTO), 'utf8');
+  const sends = [auto.indexOf('cloudSend('), auto.indexOf('mail!.send(')];
+  for (const rule of ['isOn(st)', 'customerQuiet(', "consentOf(app.db, ev.store_id, 'whatsapp'", "consentOf(app.db, ev.store_id, 'email'"]) assert.ok(auto.indexOf(rule) > 0 && auto.indexOf(rule) < Math.max(...sends), `${rule} is checked before the send`);
+  assert.ok(auto.indexOf('approvedFor(') < sends[0], 'a WhatsApp template is approved before it is sent');
 });
 
 test('no file in the repository names a real store (the pre-commit check, run as a test)', async () => {

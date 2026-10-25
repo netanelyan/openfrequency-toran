@@ -11,13 +11,18 @@ import { keepInbound, setAttachments } from './files.ts';
 import { mailDomainOf, ownAddress, ownAddresses } from './mailDomain.ts';
 import { noteCustomer } from './customers.ts';
 import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
+import { customerWrote, OPT_OUT, optOut, optOutReply } from '../auto/consent.ts';
+import { lastAuto } from '../auto/send.ts';
 
 // A message to a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the
 // store is the account's, so there is no code and no binding. The agent answers as the store, with no demo footer, unless the mail
 // was automated, the owner has taken the conversation (owner.ts), or the customer reached today's limit; then the
 // message is kept for the owner and nothing is sent. Before any of that, its files are kept for the owner (files.ts),
 // and the addresses and numbers it gives join this customer's other conversations (customers.ts). An email answer
-// goes out from the store's own address once its domain is verified (mailDomain.ts).
+// goes out from the store's own address once its domain is verified (mailDomain.ts). On WhatsApp and email, "הסר" or
+// "STOP" stops the store's automatic messages to the customer (auto/consent.ts) and is answered with one line, any
+// other message drops a cart reminder or review request still waiting for them, and an answer to an automatic message
+// reaches the agent with what the store sent.
 
 const DAILY_REPLIES = 20; // the agent's answers to one customer of one account in a day; past it, the owner's turn
 
@@ -104,6 +109,20 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   const files = await keepInbound(app, adapter, inbound, conv);
   inbound = { ...inbound, attachments: files };
   if (text) await noteCustomer(app, store.id, conv, { channel: account.channel, value: inbound.from }, text);
+  const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
+  const own = adapter.channel === 'email' ? await ownAddress(app, store.id) : null;
+  const ch = adapter.channel === 'whatsapp' || adapter.channel === 'email' ? adapter.channel : null;
+  // "הסר" or "STOP": no more automatic messages to this customer here (auto/consent.ts), said back in one line, and
+  // nothing for the agent to answer. Any other message drops a cart reminder or a review request still waiting.
+  if (ch && OPT_OUT.test(text)) {
+    await hold(app, conv, inbound);
+    await optOut(app, store.id, ch, inbound.from, text, conv);
+    const line = optOutReply(storeName);
+    const d = await reply(app, adapter, inbound, line, store.id, conv, { who: 'agent', storeName, ...(own || {}) });
+    await db.query("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'agent', $2, 'אוטומטי', 'opt_out', $3::jsonb)", [conv, line, J(d.ok ? d.ids : [])]);
+    return { action: 'opt_out', storeId: store.id, reply: line };
+  }
+  if (ch) await customerWrote(app, store.id, ch, inbound.from);
   if (await isPaused(app, conv)) {
     await hold(app, conv, inbound);
     await event(db, store.id, 'held', { conversationId: conv });
@@ -122,10 +141,10 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   }
 
   await event(db, store.id, `${tag}_in`, { conversationId: conv, chars: text.length, preview: cleanLine(text, 60) });
-  const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context: filesContext(files) });
+  // An answer to an automatic message (auto/send.ts): the agent is told what the store sent.
+  const context = [filesContext(files), await lastAuto(app, conv)].filter(Boolean).join('\n') || undefined;
+  const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context });
   await setAttachments(app, inbound.id, files);
-  const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
-  const own = adapter.channel === 'email' ? await ownAddress(app, store.id) : null;
   const d = await reply(app, adapter, inbound, o.reply, store.id, conv, { who: 'agent', storeName, ...(own || {}) });
   if (d.ok && o.agentMessageId) await db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [o.agentMessageId, J(d.ids)]);
   return { action: 'answered', storeId: store.id, reply: o.reply };

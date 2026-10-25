@@ -750,3 +750,92 @@ left alone: it is our own account's, and our number needs it.
 the connection, which already names the number); a router of its own for the one number (the demo router already
 held all three roles, and two copies would drift); the owner before the codes (every owner who tries a demo or asks
 for one from their own phone would lose it).
+
+## 2026-10-25: a store's automatic messages: the cart, the payment, the shipping, a review
+
+**The change:** what the plan page called "עוד לא פעיל" is built (`src/auto/`, migration `017_auto_messages.sql`,
+`pages/auto.ts`). Four kinds, each off until the account's owner turns it on in Settings, with the exact text shown:
+an abandoned-cart reminder (marketing), the payment arrived, is waiting or failed (utility), the order left with its
+tracking link and arrived (utility), and a review request days after the delivery (marketing). This is the second
+place Toran writes to someone who did not just write, after the owner line's notices (2026-10-24), and the rule test
+names it: `src/auto/send.ts`, with every rule checked in code before its two sends.
+
+**Where the events come from: the store's own platform, with the key the owner already connected for orders.**
+- **Webhooks where the key can register them.** Shopify registers them for any token with `read_orders`, but signs
+  them with the custom app's API secret key, which the access token is not, so the owner pastes it (optional) and
+  Toran checks `X-Shopify-Hmac-Sha256`. WooCommerce registers them only for a Read/Write key; Toran makes the secret
+  and checks `X-WC-Webhook-Signature`. Wix lets only a Wix app subscribe to events, never an API key.
+- **A reading either way:** the orders and checkouts updated since the last one, every 15 minutes without working
+  webhooks and every hour beside them, for anything a webhook missed. The first reading goes an hour back.
+- **Both end in one row** of `auto_events` per thing to tell, keyed by the platform's own id and the message
+  (`shopify:fulfillment:41:shipped`), so a retried webhook, a webhook and a reading, or two sends are one message.
+- The settings page says which of these the store has, and why, in plain words: "המפתח ... לקריאה בלבד", "ב-Wix מפתח
+  API לא יכול", "המפתח לא יכול לקרוא עגלות נטושות".
+- **Alternatives:** a Shopify or Wix app with OAuth (a review at each platform before the first store, for what the
+  owner's key already reads); webhooks only (a store whose key cannot register them would get nothing).
+
+**Abandoned carts per platform.** Shopify's abandoned checkouts (`checkouts.json`, `abandoned_checkout_url`). Wix's
+Abandoned Checkouts API (`checkoutUrl`), when the key may read it. WooCommerce has none in its core: an order left at
+the payment page ("pending", its own `payment_url`) or a block checkout's draft (its first item back in a cart) is
+one. An order placed drops the reminder of its checkout and any earlier one of the same phone or email.
+
+**Which channel.** WhatsApp first, only from the store's own number on Meta, never one of ours (lines.ts), and only
+with Meta's approved template, since a message the business starts is a template or nothing. Else email from the
+store's email channel (its own domain once verified), as a new thread with its own subject, `Auto-Submitted:
+auto-generated`, and `List-Unsubscribe` on the marketing ones. The phone or email is the one on the order.
+
+**The templates are the store's.** A template belongs to one WhatsApp Business Account, so Toran submits its seven
+(`toran_cart_reminder`, `toran_order_paid`, `toran_payment_pending`, `toran_payment_failed`, `toran_order_shipped`,
+`toran_order_delivered`, `toran_review_request`) to each store's WABA with the store's token, with the store's name
+in the body, and keeps Meta's answer in `wa_templates`. Meta's webhook (`message_template_status_update`,
+`template_category_update`) records approvals; the worker reads the pending ones hourly as well. A kind turns on for
+WhatsApp only once all of its templates are approved. Every body has words on both sides of each variable (Meta
+refuses one that starts or ends with a variable); a missing first name reads "שלום לכם". Meta bills each template to
+the store's own account, and the page says a payment method must be on it.
+- **Alternatives:** one set of templates on our WABA (it cannot send from a store's number); asking each owner to
+  create them in WhatsApp Manager (seven forms, and the variables in the right order).
+
+**The rules, in code, each "no" kept with why (`auto_events.why`, shown on the page):**
+- **Consent:** the cart and the review only with the customer's "yes" from the checkout, kept in `auto_consent` with
+  its source and the platform's time of it: Shopify's email and SMS marketing consent (the SMS one for WhatsApp),
+  WooCommerce's from consent plugins that keep it on the order, Wix's contact subscriptions. Payment and shipping go to
+  the phone or email the customer gave on that order, and the sending row keeps which (`basis`).
+- **"הסר" and "STOP"** (or the marketing template's "הסר" button) stop every automatic message to that address on that
+  channel, answered with one line and never sent to the agent. A later "yes" at a checkout counts again; the rows are
+  read in time order.
+- **Quiet time:** never 21:00 to 09:00 in Israel, on Shabbat, on a holiday, or from 13:00 on the eve of either
+  (`customerQuiet` in core/clock.ts). Candle lighting is never before 13:00 and nightfall never after 21:00, so fixed
+  hours hold all of Shabbat without working out sunset; the holidays come from Intl's Hebrew calendar (the days of
+  rest, one day each as in Israel). A message waits for the next hour that is not quiet, and is dropped two days late
+  (a cart) or four (the rest).
+- **Once:** one cart reminder a checkout; nothing twice for the same order and message to the same person; no cart or
+  review to the same person twice in a day; a payment drops the "waiting" and "failed" of its order, a delivery the
+  "shipped" not sent yet. A message from the customer drops a cart or review still waiting.
+- **Only what is new:** nothing that happened before the kind was turned on (`auto_settings.on_since`), and nothing
+  over a week old, whatever a reading brings back.
+
+**In the conversation.** What goes out is a message in the customer's conversation on that channel (role agent,
+`messages.auto`), marked "הודעה אוטומטית" in the inbox; the customer's answer lands beside it, and the agent is told
+what the store sent. It is the store's side of the conversation, so the plan counts it only once the customer
+answers (plans.ts counts the customers' messages).
+
+**Tested:** `test/auto.test.ts`, eleven tests against stand-ins for Shopify's Admin API, a WooCommerce store's REST API
+and Meta's Graph API: quiet time and the holidays, the words, the templates' submission and approval gating, Shopify's
+webhooks (registered, signed, refused unsigned), the cart with and without consent, an order placed and a reply
+dropping it, a payment on the store's WhatsApp and the plan count, "הסר" and "STOP", Friday afternoon to Sunday
+morning, WooCommerce read-only (read every 15 minutes, by email) and Read/Write (its own webhooks), the shipment, the
+delivery and the review's time, and Wix's readers. Nothing reaches a platform, Meta or Resend.
+
+**Not done here:**
+- None of the platforms, nor Meta's template API, was tried live: the shapes come from their docs. Wix's Abandoned
+  Checkouts and Contacts calls in particular (`/ecom/v1/abandoned-checkout/query`, `/contacts/v4/contacts/<id>`) need
+  checking against a real site.
+- Shopify's `fulfillments/*` topics need `read_fulfillments`; with only `read_orders` they are refused and the readings
+  cover shipments. Shopify has no "payment failed" for an order (a failed payment leaves no order), and WooCommerce and
+  Wix never say delivered, so their review counts from the shipping plus two days.
+- WooCommerce's "completed" is taken as shipped; a store that completes orders for pickup sends "יצאה אליכם" for them.
+  Its draft checkouts have one product back in the cart, not the whole cart.
+- Whether a cart reminder is a "דבר פרסומת" under section 30A of the Communications Law (which would also ask for the
+  word "פרסומת" at its start) is a lawyer's question. Toran sends it only with consent, names the store, and says how
+  to stop, and the text does not start with "פרסומת".
+- SMS consent at a Shopify checkout is taken as consent for WhatsApp; the docs ask the store to word its checkbox so.

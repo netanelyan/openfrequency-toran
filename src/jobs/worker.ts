@@ -14,6 +14,8 @@ import { deliverRequested } from '../ops/actions.ts';
 import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
 import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialStore.ts';
 import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
+import { handleHook, pollStore, scheduleAuto, sendDue, setupSource } from '../auto/jobs.ts';
+import { checkTemplates, templateStatus } from '../auto/templates.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -35,10 +37,14 @@ import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 //   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts)
 //   teder_ready  the posts waiting for a workspace's approval, as one numbered list, a moment after Teder's post.ready
 //                events stop coming
+//   auto_setup, auto_hook, auto_poll, auto_send   the automatic messages (cart, payment, shipping, review): a
+//                store's webhooks registered, one webhook, a reading of its orders and checkouts, the messages due
+//                (auto/jobs.ts)
+//   wa_templates, wa_template_status   a store's WhatsApp templates at Meta, read again or as the webhook says
 //
 // Scheduled each minute: a rescrape for every store with a built page that is not
 // skipped and was last ingested over 20 hours ago; expired WhatsApp bindings cleaned up; the link to each demo asked
-// for on the website whose page is now ready, sent on the demo number.
+// for on the website whose page is now ready, sent on the demo number; the automatic messages' readings and sends.
 
 export async function runJob(app: App, job: Job): Promise<unknown> {
   const p = job.payload || {};
@@ -94,6 +100,18 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       const r = await discover(app.db, gen, { fetcher: app.fetcher, render: app.render, limit: 40, log: (m) => void say(m.trim().slice(0, 150)) }, src);
       return r.stats;
     }
+    case 'auto_setup':
+      return setupSource(app, Number(p.storeId));
+    case 'auto_hook':
+      return handleHook(app, p);
+    case 'auto_poll':
+      return pollStore(app, Number(p.storeId));
+    case 'auto_send':
+      return sendDue(app);
+    case 'wa_templates':
+      return checkTemplates(app, Number(p.accountId));
+    case 'wa_template_status':
+      return templateStatus(app, p);
     case 'teder_event':
       return handleTederEvent(app, String(p.id || ''));
     case 'teder_ready':
@@ -139,6 +157,8 @@ export async function schedule(app: App) {
   for (const a of ending) await enqueue(app.db, 'ig_refresh', { accountId: a.id }, { dedupeKey: `ig_refresh:${a.id}`, maxAttempts: 3 });
   // A store's own mail domain whose DNS records are not verified yet: read again every ten minutes, for three days.
   if (app.mail) for (const storeId of await domainsToCheck(app)) await enqueue(app.db, 'mail_domain_check', { storeId }, { dedupeKey: `mail_domain:${storeId}`, maxAttempts: 1 });
+  // The automatic messages: each store's reading of its platform when due, the messages whose time has come.
+  await scheduleAuto(app);
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */

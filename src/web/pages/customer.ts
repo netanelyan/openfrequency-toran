@@ -21,6 +21,9 @@ import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
 import { mailDomainPanel } from './mailDomain.ts';
 import { orderAccessOf } from '../../orders.ts';
 import { ordersOn, ordersPanel } from './orders.ts';
+import { autoPanel } from './auto.ts';
+import { KIND_KEYS, KINDS } from '../../auto/messages.ts';
+import { settingsOf } from '../../auto/send.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -193,10 +196,24 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
 
 // ---- The plan
 
-const INCLUDED = (app: App, live: string[], weeks: number | null) => [
+/** Which channels each automatic message is on, across the account's stores (auto/send.ts): "בוואטסאפ ובמייל". */
+async function autoOn(app: App, stores: Store[]): Promise<Record<string, string[]>> {
+  const on: Record<string, Set<string>> = Object.fromEntries(KIND_KEYS.map((k) => [k, new Set<string>()]));
+  for (const s of stores) {
+    const st = await settingsOf(app, s.id);
+    for (const k of KIND_KEYS) {
+      if (st[k].whatsapp) on[k].add('וואטסאפ');
+      if (st[k].email) on[k].add('מייל');
+    }
+  }
+  return Object.fromEntries(KIND_KEYS.map((k) => [k, [...on[k]]]));
+}
+
+const INCLUDED = (app: App, live: string[], weeks: number | null, auto: Record<string, string[]>) => [
   { text: 'עונה ללקוחות 24/7 בערוצים הפעילים, מתוך מה שכתוב באתר שלכם', state: live.length ? `<span class="chip ok">פעיל ב${esc(live.join(' וב'))}</span>` : '<span class="chip ghost">מחכה לחיבור של ערוץ</span>' },
   { text: 'כל השיחות בתיבה אחת, ושאלה שאין עליה תשובה באתר מגיעה אליכם', state: '<a class="chip ok" href="/chats">פעיל</a>' },
-  { text: 'תזכורות על עגלה נטושה, למי שהסכים לקבל מכם הודעות', state: '<span class="chip ghost">עוד לא פעיל</span>' },
+  { text: 'תזכורות על עגלה נטושה, למי שהסכים לקבל מכם הודעות', state: auto.cart.length ? `<a class="chip ok" href="/settings#auto">פעיל ב${esc(auto.cart.join(' וב'))}</a>` : '<a class="chip ghost" href="/settings#auto">כבוי, מפעילים בהגדרות</a>' },
+  { text: 'הודעות על תשלום ומשלוח, ובקשה לביקורת אחרי שההזמנה הגיעה', state: (['payment', 'shipping', 'review'] as const).some((k) => auto[k].length) ? `<a class="chip ok" href="/settings#auto">פעיל: ${esc((['payment', 'shipping', 'review'] as const).filter((k) => auto[k].length).map((k) => KINDS[k].he).join(', '))}</a>` : '<a class="chip ghost" href="/settings#auto">כבוי, מפעילים בהגדרות</a>' },
   { text: 'בשבועיים הראשונים אנחנו עוברים איתכם על השיחות ומתקנים מה שצריך', state: weeks ? `<span class="chip ok">עד ${esc(shortDate(weeks))}</span>` : '<span class="chip ghost">מתחיל כשהערוץ הראשון מתחבר</span>' },
 ];
 
@@ -227,7 +244,7 @@ async function plan(app: App, r: DashReq) {
   <div class="grid12">
     ${list.map(storePanel).join('')}
     <section class="panel"><header><h2>מה יש בחבילה</h2></header>
-      <ul class="keys">${INCLUDED(app, [...live], firstWeeks(stores)).map((x) => `<li><span>${esc(x.text)}</span><span class="end">${x.state}</span></li>`).join('')}</ul>
+      <ul class="keys">${INCLUDED(app, [...live], firstWeeks(stores), await autoOn(app, stores)).map((x) => `<li><span>${esc(x.text)}</span><span class="end">${x.state}</span></li>`).join('')}</ul>
     </section>
   </div>
   <div class="grid12">
@@ -261,7 +278,7 @@ export async function customerSettings(app: App, r: DashReq) {
       ? `<h3 class="small mt16">המייל</h3><p class="small m0">מעבירים לכתובת <bdi class="ltr">${esc(mail.external_id)}</bdi> את המייל של החנות, למשל ב-Gmail: הגדרות, "העברה ו-POP/IMAP", "הוספת כתובת להעברה". Gmail שולח לשם קוד אישור, והוא מופיע אצלכם בשיחות. תורן עונה משם בשם החנות.</p>${r.ctx.readOnly ? '' : `<div class="row mt8">${postButton(r.ctx, `/lead/${s.id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>`}${await mailDomainPanel(app, r, s.id, mail.external_id)}`
       : `<h3 class="small mt16">המייל</h3><p class="small m0">החנות מקבלת כתובת משלה, <bdi class="ltr">${esc(address)}</bdi>, ומעבירה אליה את המייל שלה. תורן עונה משם בשם החנות, ומה שהוא לא יודע מגיע אליכם.</p>${r.ctx.readOnly ? '' : `<div class="row mt8">${postButton(r.ctx, `/lead/${s.id}/channels/email`, 'לחבר את המייל', { cls: 'btn sm primary', fields: { on: '1' } })}</div>`}`;
     return `<section class="panel" id="channels"><header><h2>הערוצים של ${esc(s.name)}</h2></header>${channelList(await channelsOf(app, s))}${email}
-  <p class="small muted mt12 m0">רוצים לעצור את תורן בערוץ אחד, או בכולם? ${support(app) ? `<a href="${esc(support(app)!)}" target="_blank" rel="noopener">כתבו לנו בוואטסאפ</a>` : 'כתבו לנו'}, ואנחנו מכבים אותו. בשיחה אחת עוצרים אותו מכאן, כשעונים בה בעצמכם.</p></section>`;
+  <p class="small muted mt12 m0">רוצים לעצור את תורן בערוץ אחד, או בכולם? ${support(app) ? `<a href="${esc(support(app)!)}" target="_blank" rel="noopener">כתבו לנו בוואטסאפ</a>` : 'כתבו לנו'}, ואנחנו מכבים אותו. בשיחה אחת עוצרים אותו מכאן, כשעונים בה בעצמכם.</p></section>${await autoPanel(app, r, s)}`;
   }));
   const body = `<div class="head"><h1>הגדרות</h1></div>
 <div class="cols">

@@ -102,7 +102,7 @@ test('the plan: this month\'s conversations on the store\'s own channels, the de
     assert.match(plan, /חבילת חנות/);
     assert.match(plan, /<span class="v num">2<\/span>/);
     assert.match(plan, /מתוך 300/);
-    assert.match(plan, /תזכורות על עגלה נטושה.*עוד לא פעיל/s, 'what is not built yet says so');
+    assert.match(plan, /תזכורות על עגלה נטושה.*כבוי, מפעילים בהגדרות/s, 'a message the owner has not turned on says where to turn it on');
     assert.match(plan, /href="\/export\/conversations\.csv"/);
     assert.match(plan, /href="https:\/\/accounts\.test"/, 'the price and the invoices are in accounts');
 

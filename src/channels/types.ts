@@ -41,9 +41,10 @@ export type Sent = { id: string; usd: number };
  * Who a send speaks for: the agent (an automatic reply) or the store's owner, from the inbox. tag is the message tag
  * Meta needs on Messenger and Instagram past the 24 hours (HUMAN_AGENT: a person answering, up to 7 days). On email,
  * from and replyTo are the store's own address once its domain is verified (mailDomain.ts), and files the owner's
- * attachments, on the first part only.
+ * attachments, on the first part only. subject and headers are an automatic message's (auto/send.ts): a new email
+ * with its own subject, not a reply, with its own headers (Auto-Submitted, List-Unsubscribe).
  */
-export type SendCtx = { who: 'agent' | 'owner'; storeName?: string; tag?: 'HUMAN_AGENT'; from?: string; replyTo?: string; files?: OutFile[] };
+export type SendCtx = { who: 'agent' | 'owner'; storeName?: string; tag?: 'HUMAN_AGENT'; from?: string; replyTo?: string; files?: OutFile[]; subject?: string; headers?: Record<string, string> };
 
 /** What a channel allows, checked in code before every send (policy.ts), never left to the prompt. */
 export type ChannelLimits = {
