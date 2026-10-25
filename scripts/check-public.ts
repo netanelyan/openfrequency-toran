@@ -6,7 +6,8 @@
 //
 //   - any file under private/, however it got there
 //   - a .env file other than .env.example, or a key-shaped string anywhere (Anthropic,
-//     Twilio, Brave, Meta, GitHub, AWS, Google, PEM), or a known key name given a value
+//     Twilio, Brave, Meta, GitHub, Shopify, WooCommerce, AWS, Google, PEM), or a known key
+//     name given a value
 //   - a database file
 //   - media outside docs/screenshots/ and src/web/static/
 //   - a phone number that is not one of the fictional ones (an Israeli mobile, local or
@@ -70,6 +71,8 @@ const KEY_SHAPES: [RegExp, string][] = [
   [/\bEAA[A-Za-z0-9]{60,}\b/, 'a Meta access token'],
   [/\bsk-[A-Za-z0-9]{32,}\b/, 'an API key'],
   [/\bghp_[A-Za-z0-9]{30,}\b/, 'a GitHub token'],
+  [/\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}\b/, 'a Shopify access token'],
+  [/\b(?:ck|cs)_[a-f0-9]{40}\b/, 'a WooCommerce REST key'],
   [/\bAKIA[0-9A-Z]{16}\b/, 'an AWS key'],
   [/\bAIza[0-9A-Za-z_-]{35}\b/, 'a Google API key'],
   [/-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/, 'a private key'],

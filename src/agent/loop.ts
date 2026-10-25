@@ -123,7 +123,9 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   if (prev && prev.role === 'user') prev.content = `${prev.content}\n\n${userText}`;
   else messages.push({ role: 'user', content: userText });
 
-  const ctx: ToolContext = { db, storeId: store.id, origin: new URL(store.url).origin, currency: store.config?.currency || 'ILS', env: app.env, demo, company };
+  // On the store's own WhatsApp the customer's number is Meta's, not their word: an order placed with it is theirs.
+  const waPhone = !demo && input.channel === 'whatsapp' ? (await db.one<{ peer: string | null }>('SELECT peer FROM conversations WHERE id = $1', [input.conversationId]))?.peer || null : null;
+  const ctx: ToolContext = { db, storeId: store.id, origin: new URL(store.url).origin, currency: store.config?.currency || 'ILS', env: app.env, demo, company, api: app.api, conversationId: input.conversationId, said: [...past.customerTexts, input.text], waPhone };
   const toolDefs = company ? COMPANY_TOOLS : TOOLS;
   const tools: ToolRecord[] = [];
   let handoff: { reason: string; summary: string } | null = null;
