@@ -9,13 +9,17 @@ import { hebrewRatio } from '../core/hebrew.ts';
 //   2. Shopify themes' colour settings (--color-button, --color-accent, --color-base-
 //      accent-1 in the inline :root CSS, "colors_accent_1" in the settings JSON)
 //   3. the most used saturated colour in the page's inline CSS
+//   4. none of those: the logo's dominant colour (logo.ts, read by ingest, which fetches the logo)
 // Near-white, near-black and greys are not a brand colour: they are skipped.
 //
 // The tone sample is the store's own copy, never ours: the home page's description
 // and the longest Hebrew paragraphs from the page (the "about" voice), cut to a few
 // sentences. It shows the agent how this store talks to its customers.
 
-export type Brand = { name?: string | null; logo?: string | null; colors?: string[]; tone?: string | null; description?: string | null; themeColor?: string | null };
+// `logoIsMark` says the logo is the store's mark (an <img> that says logo, the Organization's logo), not the
+// share image a page falls back to (og:image, often a product photo), whose colours are not the brand's.
+// `colorsFrom` is "logo" when the colours were taken from the logo.
+export type Brand = { name?: string | null; logo?: string | null; colors?: string[]; tone?: string | null; description?: string | null; themeColor?: string | null; logoIsMark?: boolean; colorsFrom?: 'logo' | null };
 
 const HEX = /#([0-9a-f]{6}|[0-9a-f]{3})\b/gi;
 
@@ -131,11 +135,46 @@ export function readBrand(html: string, pageUrl: string, { name, logo }: { name?
   const description = $('meta[name="description"]').attr('content')?.trim() || null;
   const tone = [description && hebrewRatio(description) > 0.4 ? description : null, ...unique].filter(Boolean).join('\n').slice(0, 700) || null;
 
+  const abs = (src: string) => new URL(src.startsWith('//') ? `https:${src}` : src, pageUrl).toString();
   let lg = logo || null;
   if (!lg) {
     const img = $('img').filter((_, el) => /logo/i.test(`${$(el).attr('class') || ''} ${$(el).attr('alt') || ''} ${$(el).attr('src') || ''}`)).first();
     const src = img.attr('src') || img.attr('data-src');
-    if (src) lg = new URL(src.startsWith('//') ? `https:${src}` : src, pageUrl).toString();
+    if (src) lg = abs(src);
   }
-  return { name: name || null, logo: lg, colors, tone, description, themeColor: theme };
+  // The share image is where readHome falls back to when no <img> says logo; the Organization's logo is better.
+  const og = $('meta[property="og:image"]').attr('content');
+  const ogUrl = og ? abs(og) : null;
+  const org = ldOrganizationLogo(html);
+  const orgUrl = org ? abs(org) : null;
+  if ((!lg || lg === ogUrl) && orgUrl) lg = orgUrl;
+  // The share image is the mark too when the store's Organization names it, or its file says logo (Cashcow shares the logo).
+  const file = (u: string) => {
+    try {
+      return decodeURIComponent(new URL(u).pathname);
+    } catch {
+      return u;
+    }
+  };
+  const mark = Boolean(lg) && (lg !== ogUrl || lg === orgUrl || /logo/i.test(file(lg!)));
+  return { name: name || null, logo: lg, colors, tone, description, themeColor: theme, logoIsMark: mark };
+}
+
+/** The logo a page's schema.org Organization (or Store, LocalBusiness) names, or null. */
+function ldOrganizationLogo(html: string): string | null {
+  for (const m of html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    let data: any;
+    try {
+      data = JSON.parse(m[1].trim());
+    } catch {
+      continue;
+    }
+    for (const o of [data, ...(Array.isArray(data) ? data : []), ...(Array.isArray(data?.['@graph']) ? data['@graph'] : [])]) {
+      const t = [o?.['@type']].flat().map(String);
+      if (!t.some((x) => /^(Organization|Store|OnlineStore|LocalBusiness|Corporation)$/.test(x))) continue;
+      const logo = typeof o.logo === 'string' ? o.logo : o.logo?.url || o.logo?.contentUrl;
+      if (logo && typeof logo === 'string') return logo;
+    }
+  }
+  return null;
 }

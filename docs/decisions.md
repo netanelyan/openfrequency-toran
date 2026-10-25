@@ -407,7 +407,8 @@ stores in `examples/` (`tavlinim-ba-shuk.example`, `beit-hasabon.example`, `quie
   page).
 - `get_order_status` reads no platform's orders: that needs the owner's key (WooCommerce's REST API, Wix's API), which
   the demo does not have.
-- A Wix site on `<user>.wixsite.com/<site>` lives under a path, and ingest reads from the host's root: not handled.
+- A Wix site on `<user>.wixsite.com/<site>` lives under a path, and ingest reads from the host's root: not handled
+  (handled since 2026-10-25, below).
 
 ## 2026-10-25: Toran answers our own support, as a company store; only a demo turn is told it is a demo
 
@@ -619,3 +620,90 @@ link.
 - sending files on WhatsApp, Messenger and Instagram
 - the agent reading the customer's other conversations: deliberately not, see above
 - a check that the store's forwarding is in place before its own address is used
+
+## 2026-10-25: Cashcow stores are read, Konimbo's are closed to Toran; a Wix site under a path; questions in plain text; the logo's colour
+
+**The change:** ingest reads Cashcow stores into the same rows as the other three (`src/ingest/cashcow.ts`), so a
+Cashcow lead gets a page, the build and re-read buttons, the daily re-read and the add-by-URL job, and scores 14 for
+its platform, as Wix does. Every gate takes its list from `catalogue.ts` (`INGESTIBLE`, and `INGESTIBLE_EN` /
+`INGESTIBLE_HE` for the sentences), so the next platform is one line there. Konimbo stays out, with its reason.
+
+**Cashcow: its sitemap and each product page.** Cashcow publishes no feed and no JSON-LD Product, and every call its
+storefront makes for a price or stock (`GetPriceForProduct`, `GetProductMatrix`, `CheckQtyForProducts`) is a POST,
+which ToranBot never sends. What is public: one sitemap, `/crowlers/sitemap` (robots.txt names it), with the products
+under `/p/`, the categories under `/c/` and the pages under `/page/`, no dates; a big store's is an index of
+`?page=N`. Ingest reads the 150 it lists first, as for Wix. Each product page carries the product in its own markup:
+the id (`data-id`), the buy button's `data-price` (what the cart charges), the regular price before a sale
+(`data-realprice`), the options and the stock.
+- **Options are surcharges.** Each value of an option carries what it adds to the price ("בתוספת של ₪140"), so a
+  variant is the product's price and its values'. On a sale the page shows the surcharge before the sale and the
+  server works out the rest (a POST), so a variant is priced at the product's own discount (the paid price over the
+  regular one). That is the one number not read as the store shows it: on the real store with a sale (119 of its
+  150 products), all 12 products checked matched, and the options' prices cannot be checked without the POST. An option the customer may leave empty (not `attr_required`) is an add-on, listed in the product's text.
+  Past 60 combinations the first options are enough.
+- **Stock is what the page shows.** The "אזל המלאי" box is hidden when there is stock. A real sold-out product's
+  page said "in stock" in its meta tag and its microdata and showed the box; the box is what the customer sees, so it
+  wins. Stock per option is behind `GetProductMatrix`'s POST.
+- **The price check** (`--verify`) reads the price the page reports to Google Analytics (its dataLayer); ingest read
+  the buy button.
+- **Policies:** the `/page/` entries of the sitemap. A page Cashcow does not have answers with the home page, with a
+  200, at the home page's address; a guessed address that lands somewhere that does not say what it is is now
+  dropped, on every platform. Many Cashcow stores keep their terms (shipping, returns) only in the "תקנון" dialog,
+  which a POST fills: those stores have no shipping page to read, and the review screen says so as it does for any
+  store.
+
+**Konimbo: not read.** Every Konimbo store tried (six, and Konimbo's own site) answers a request with no referring
+page, robots.txt included, with a 1.6 KB "עבור לדף המבוקש" page (`Server: konimbo`, CloudFront) whose script reloads
+in a browser. Sending a made-up referrer would be getting around the store's gate, and ToranBot does not do that
+(docs/bot.md). Before this, the gate page read as "not a store"; now detection knows it (the header, `page_no_referer`),
+the lead says Konimbo, it is not rendered headless, and ingest stops with the reason. Konimbo's merchant API needs the
+owner's token: that is the way in, when an owner asks.
+- **Other Israeli platforms:** none was clearly common enough to earn a reader; Pay2Go and Atar storefronts were not
+  looked for.
+
+**A Wix site under a path.** A free Wix site lives at `<user>.wixsite.com/<site>` (and Wix Studio's and Editor X's
+hosts), where the host's root is a 404. Its home URL keeps the path, its domain is the user's host (one lead per
+user's host), and `siteBase()` in urls.ts is where detection and ingest read everything from: the sitemap, the product
+pages, the policies. An address under another site on the same host is not the store's. No real Israeli store on a
+path was found to try it on; the fixture keeps the shapes of the Wix fixture under `/shop`.
+
+**Questions beyond accordions** (pages.ts `readFaqs`): a schema.org FAQPage in JSON-LD (on any page read, the home
+page too); and, on the FAQ page, plain paragraphs: one that ends with "?" is a question, the paragraphs under it up to
+the next question its answer, with "ש:" and "ת:" taken off, and a bold question with its answer beside it. On a page
+that is not the FAQ, plain questions count only when there are three or more pairs, so "רוצים מתנה?" on an about page
+is not a question. The Hebrew slugs stores give the FAQ page are tried on each platform (`/שאלות-נפוצות`,
+`/pages/שאלות-נפוצות`, `/page/שאלות_נפוצות`, and the same with "ותשובות").
+
+**The logo's colour** (`src/ingest/logo.ts`): a store whose site names no colour gets its logo's dominant colour that
+is not white, black or grey, so its page does not wait for the owner to pick one. No dependency: an SVG's fills and
+strokes are counted; a PNG is inflated with node:zlib and unfiltered (every colour type, interlaced skipped); a
+baseline JPEG is decoded only as far as each 8x8 block's DC coefficient, which is the block's average colour, without
+the inverse DCT (progressive and CMYK skipped). WebP and GIF are skipped. Only a logo that is the store's mark counts:
+an image that says logo, or the Organization's logo in JSON-LD, never a share photo. The review screen says the colour
+came from the logo. On the real stores: an SVG logo gave the yellow the store's CSS already had (#ffde59 against
+#ffe065), an all-black PNG gave none, as it should.
+
+**The edit screen:** the products come 40 a page past 40, the search kept from page to page; on a phone the two
+columns become one list with the page preview first, folded behind "לראות איך הדף נראה" (open without JavaScript).
+
+**Tested on real stores (2026-10-25),** in a scratch database, prices checked with `verifyPrices`:
+
+| Store | Platform | Products read | In stock | Policy pages | Prices checked | Match | Time |
+|---|---|---|---|---|---|---|---|
+| A | Cashcow | 150 of 323 | 141 | 2 (terms in the dialog) | 12 | 12 | 264 s |
+| B | Cashcow | 150 of 513 (a paged sitemap) | 141 | 2 (terms in the dialog) | 12 | 12 | 246 s |
+| C | Cashcow | 149 of 491 (one page did not load) | 149 | 4 | 12 | 12 | 281 s |
+| D | Cashcow | 150 of 1,999 | 119 | 6 | 12 | 12 | 296 s |
+
+Store B first read as "the store has no products": its sitemap is an index, which the reader and the count now
+follow. A product B marks sold out was checked by hand against its page.
+
+**Fixtures:** `www.etz-tzaatzuim.example` (Cashcow: the product pages, the sitemap, the pages, a page that is not
+there, a drawn logo) and `noa-example.wixsite.com/shop` (a Wix site under a path, its FAQ in JSON-LD only, an SVG
+logo), served offline by `exampleFetcher`; a free Wix site's host must be Wix's, so `rememberPrivateName` treats
+`<name>-example.wixsite.com` as fictional, as it does `*.example`.
+
+**Not done here:**
+- Cashcow's options' prices on a sale, its stock per option and its terms dialog are behind POSTs.
+- Konimbo, as above.
+- A JPEG logo's colour is its blocks' average, so a thin coloured line in a JPEG can come out lighter than drawn.

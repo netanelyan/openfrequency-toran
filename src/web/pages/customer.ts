@@ -17,7 +17,7 @@ import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { waConnectReady } from '../../channels/meta.ts';
 import { socialReady } from '../../channels/social.ts';
 import { socialAccountOf, socialLine } from './social.ts';
-import { canIngest } from '../../ingest/catalogue.ts';
+import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
 import { mailDomainPanel } from './mailDomain.ts';
 import { orderAccessOf } from '../../orders.ts';
 import { ordersOn, ordersPanel } from './orders.ts';
@@ -320,7 +320,7 @@ export function customerRoutes(app: App): Route<DashReq>[] {
     ['POST', /^\/lead\/(\d+)\/reread$/, async (r, m) => {
       const id = Number(m[1]);
       const s = await app.db.one<{ platform: string }>('SELECT platform FROM stores WHERE id = $1', [id]);
-      if (!canIngest(s?.platform)) throw new ActionError('כרגע תורן קורא רק חנויות Shopify, WooCommerce ו־Wix.');
+      if (!canIngest(s?.platform)) throw new ActionError(`כרגע תורן קורא רק חנויות ${INGESTIBLE_HE}.`);
       // A rescrape: the store's knowledge again, and the demo page the operator approved left as it is.
       await enqueue(app.db, 'rescrape', { storeId: id }, { dedupeKey: `ingest:${id}` });
       await audit(app.db, { actor: r.user.name, action: 'reread', storeId: id });

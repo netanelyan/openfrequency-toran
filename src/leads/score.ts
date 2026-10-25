@@ -7,9 +7,10 @@ import type { Detection } from './detect.ts';
 // every day, small enough that the owner answers them personally, that already
 // sells on WhatsApp, and that we can reach.
 //
-//   platform   20  Shopify 20, WooCommerce 18, Wix 14 (the three ingest reads: Shopify's feed
-//                  and Woo's Store API whole, Wix page by page), Konimbo/Cashcow 8,
-//                  Magento/BigCommerce 6, a cart on an unknown platform 4
+//   platform   20  Shopify 20, WooCommerce 18, Wix and Cashcow 14 (the four ingest reads:
+//                  Shopify's feed and Woo's Store API whole, Wix and Cashcow page by page),
+//                  Konimbo 8 (its pages are closed to Toran), Magento/BigCommerce 6, a cart
+//                  on an unknown platform 4
 //   catalogue  25  30-499 products 25; 10-29 14; 500-999 18; 1,000-1,999 10; 2,000+ 3
 //                  (a chain's catalogue); 1-9 6; unknown 5
 //   Hebrew     15  the share of Hebrew in the visible text: 60%+ 15, 35%+ 10, 15%+ 4
@@ -41,7 +42,7 @@ export function scoreStore(d: Detection, now = Date.now()): Score {
   let reject: string | null = null;
 
   // platform
-  const P: Record<string, number> = { shopify: 20, woocommerce: 18, wix: 14, konimbo: 8, cashcow: 8, magento: 6, bigcommerce: 6, other: 4, unknown: 0 };
+  const P: Record<string, number> = { shopify: 20, woocommerce: 18, wix: 14, cashcow: 14, konimbo: 8, magento: 6, bigcommerce: 6, other: 4, unknown: 0 };
   add('platform', P[d.platform] ?? 0, 20, d.platform === 'unknown' ? 'no store platform found' : `${d.platform}: ${d.platformEvidence}`);
 
   // catalogue

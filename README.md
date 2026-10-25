@@ -53,7 +53,7 @@ copy the message, mark it sent, see the chats.
 | | |
 |---|---|
 | `src/leads` | discovery sources (StoreCensus, Brave, seed file, links between stores), detection, scoring, dedupe |
-| `src/ingest` | a store's catalogue (Shopify's feed, WooCommerce's Store API, Wix's product pages; a sitemap and JSON-LD when there is no feed), policies, FAQ and brand into one knowledge pack; local embeddings |
+| `src/ingest` | a store's catalogue (Shopify's feed, WooCommerce's Store API, Wix's and Cashcow's product pages; a sitemap and JSON-LD when there is no feed), policies, FAQ and brand (the logo's colour when the site names none) into one knowledge pack; local embeddings |
 | `src/agent` | the one agent loop, its six tools, the prompt, the reply guard, the model backends |
 | `src/pitch` | the pitch page, its sample chat, its tracking |
 | `src/wa` | the WhatsApp demo router and the BSP providers (Twilio, a simulator) |
@@ -78,5 +78,6 @@ The repository is public. Anything about real stores, leads, conversations, keys
   as it goes)
 
 The only stores in the repository are fictional: `kli-cheres.example` (Shopify), `tavlinim-ba-shuk.example` and
-`beit-hasabon.example` (WooCommerce, with and without its Store API) and `quiet-candles.example` (Wix). The last three
-keep the shapes of responses recorded from real stores, with every name, address and price made up (`examples/`).
+`beit-hasabon.example` (WooCommerce, with and without its Store API), `quiet-candles.example` (Wix),
+`noa-example.wixsite.com/shop` (a free Wix site under a path) and `etz-tzaatzuim.example` (Cashcow). All but the
+first keep the shapes of responses recorded from real stores, with every name, address and price made up (`examples/`).

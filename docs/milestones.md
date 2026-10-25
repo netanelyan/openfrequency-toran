@@ -170,6 +170,5 @@ is tested through the simulator.
 - The gate path (URL in, approved, ready-to-send page out) runs through the dashboard alone.
 - Screenshots: `docs/screenshots/*`.
 
-**Still weak:**
-- The edit screen lists 40 products at a time, with a search.
-- On a phone the page preview sits at the bottom of the edit screen.
+**Since then (2026-10-25):** the two weak spots found here are fixed. The edit screen pages its products, 40 at a
+time, and keeps the search from page to page; on a phone the page preview comes first, folded behind a tap.

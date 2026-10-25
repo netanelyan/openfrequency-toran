@@ -16,7 +16,7 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { storesOf } from '../workspace.ts';
 import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../channels/config.ts';
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
-import { canIngest } from '../../ingest/catalogue.ts';
+import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
 import { mailDomainPanel } from './mailDomain.ts';
 
 // Leads: the list (by status, with the score and what was found), adding one by URL,
@@ -109,7 +109,7 @@ async function leadPage(app: App, r: DashReq, id: number) {
 
   const sendBox = () => {
     if (s.taken_down_at) return '<p class="muted m0">העמוד הוסר, ולא כותבים להם יותר.</p>';
-    if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${canIngest(s.platform) ? 'אפשר לבנות אותו מכאן.' : `עם ${esc(PLATFORM_HE[s.platform] || s.platform)} זה עוד לא עובד, רק עם Shopify, WooCommerce ו־Wix.`}</p>`;
+    if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${canIngest(s.platform) ? 'אפשר לבנות אותו מכאן.' : `עם ${esc(PLATFORM_HE[s.platform] || s.platform)} זה עוד לא עובד, רק עם ${INGESTIBLE_HE}.`}</p>`;
     if (!s.approved_at) return `<p class="muted m0">הדף מחכה לבדיקה שלך לפני שאפשר לשלוח אותו. <a href="/lead/${id}/review">לבדיקה</a></p>`;
     if (!s.sent_at) {
       const text = firstMessage({ storeName: name, url: url! });
@@ -229,7 +229,7 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
     }],
     ['POST', /^\/lead\/(\d+)\/build$/, async (r, m) => {
       const s = await store(m[1]);
-      if (!canIngest(s.platform)) throw new ActionError('כרגע זה עובד רק עם חנויות Shopify, WooCommerce ו־Wix');
+      if (!canIngest(s.platform)) throw new ActionError(`כרגע זה עובד רק עם חנויות ${INGESTIBLE_HE}`);
       await enqueue(app.db, 'ingest', { storeId: s.id }, { dedupeKey: `ingest:${s.id}` });
       await audit(app.db, { actor: r.user.name, action: 'ingest', storeId: s.id });
       return { redirect: `/lead/${s.id}`, message: 'קורא את האתר ובונה את הדף. העמוד יתעדכן לבד.' };

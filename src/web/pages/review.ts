@@ -19,7 +19,12 @@ import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, s
 //
 // The edit screen is the knowledge pack: fix a wrong price or a wrong line, answer an
 // FAQ, set the brand colour; every correction is an override that survives the daily
-// re-scrape. The page is previewed in a phone-sized frame beside it.
+// re-scrape. The products come 40 a page (corrected ones first), with a search that
+// keeps its words from page to page. The page is previewed in a phone-sized frame
+// beside it on a wide screen; on a phone the frame is at the top, behind a tap, so the
+// page is a tap away and not under every product.
+
+const PER_PAGE = 40;
 
 async function flagsFor(app: App, s: any): Promise<{ good: string[]; warn: string[] }> {
   const good: string[] = [];
@@ -83,9 +88,14 @@ async function editPage(app: App, r: DashReq, id: number) {
   if (!s.page_built_at) throw new ActionError('לחנות הזאת עוד אין דף. קודם צריך לבנות אותו.', 400);
   const q = (r.url.searchParams.get('q') || '').trim();
   const pitch = await app.db.one<any>('SELECT sample_chat, built_at FROM pitches WHERE store_id = $1', [id]);
+  const where = `store_id = $1 AND gone_at IS NULL ${q ? 'AND lower(title) LIKE $2' : ''}`;
+  const args = q ? [id, `%${q.toLowerCase()}%`] : [id];
+  const found = (await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM products WHERE ${where}`, args))?.n || 0;
+  const pages = Math.max(1, Math.ceil(found / PER_PAGE));
+  const page = Math.min(pages, Math.max(1, Number.parseInt(r.url.searchParams.get('page') || '1', 10) || 1));
   const products = await app.db.query<any>(
-    `SELECT id, title, price_min::float, price_max::float, available, override, url FROM products WHERE store_id = $1 AND gone_at IS NULL ${q ? 'AND lower(title) LIKE $2' : ''} ORDER BY (override <> '{}'::jsonb) DESC, title LIMIT 40`,
-    q ? [id, `%${q.toLowerCase()}%`] : [id],
+    `SELECT id, title, price_min::float, price_max::float, available, override, url FROM products WHERE ${where} ORDER BY (override <> '{}'::jsonb) DESC, title, id LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`,
+    args,
   );
   const total = await app.db.one<any>('SELECT COUNT(*)::int AS n FROM products WHERE store_id = $1 AND gone_at IS NULL', [id]);
   const policies = await app.db.query<any>('SELECT id, kind, title, url, text, override_text FROM policies WHERE store_id = $1 ORDER BY kind', [id]);
@@ -108,16 +118,26 @@ async function editPage(app: App, r: DashReq, id: number) {
 <button class="btn sm" type="submit">לשמור</button></form></td></tr>`;
   });
 
+  // Page n of the products, with the search's words kept; the anchor brings the list back into view.
+  const pageHref = (n: number) => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    if (n > 1) p.set('page', String(n));
+    return `/lead/${id}/review${p.size ? `?${p}` : ''}#products`;
+  };
+  const pager = pages > 1 ? `<nav class="pager mt12" aria-label="עמודי המוצרים">${page > 1 ? `<a class="btn sm" href="${esc(pageHref(page - 1))}" rel="prev">לעמוד הקודם</a>` : '<span></span>'}<span class="small muted">עמוד ${page} מתוך ${pages}</span>${page < pages ? `<a class="btn sm" href="${esc(pageHref(page + 1))}" rel="next">לעמוד הבא</a>` : '<span></span>'}</nav>` : '';
+
   const body = `<a class="back" href="/lead/${id}">${icon('chev')}${esc(name)}</a>
 <div class="head"><h1 class="title">בדיקה ועריכה</h1><p class="sub">מה שמתקנים כאן נשמר מעל מה שנקרא מהאתר, ונשאר גם אחרי הרענון היומי.</p></div>
 ${gaps.length ? `<div class="banner bad">${icon('alert')}<div><b>הדף לא נפתח לאף אחד עד שזה מתמלא</b>${gapList(gaps)}</div></div>` : ''}
-<div class="cols">
+<div class="cols edit">
   <div class="grid12">
     <section class="panel"><header><h2>שיחת הדוגמה</h2><span class="end">${postButton(r.ctx, `/lead/${id}/sample`, 'לבנות מחדש', { cls: 'btn sm', iconName: 'refresh' })}</span></header>${chatBubbles(pitch?.sample_chat || [])}
       <p class="small muted mt8 m0">את התשובות כתב תורן מהנתונים של החנות${pitch?.built_at ? `, ${esc(ago(pitch.built_at))}` : ''}.</p></section>
-    <section class="panel"><header><h2>מוצרים</h2><span class="end small muted">${total?.n || 0} בסך הכול</span></header>
-      <form class="inline-form" method="get" action="/lead/${id}/review"><input type="search" name="q" value="${esc(q)}" placeholder="חיפוש מוצר"><button class="btn" type="submit">${icon('search')}</button></form>
-      <div class="scrollx mt12"><table class="table stack"><thead><tr><th>מוצר</th><th>מחיר באתר</th><th>תיקון</th></tr></thead><tbody>${productRows.join('')}</tbody></table></div>
+    <section class="panel" id="products"><header><h2>מוצרים</h2><span class="end small muted">${total?.n || 0} בסך הכול${q ? `, ${found} מתאימים לחיפוש` : ''}</span></header>
+      <form class="inline-form" method="get" action="/lead/${id}/review"><input type="search" name="q" value="${esc(q)}" placeholder="חיפוש מוצר" aria-label="חיפוש מוצר"><button class="btn" type="submit" aria-label="לחפש">${icon('search')}</button></form>
+      ${productRows.length ? `<div class="scrollx mt12"><table class="table stack"><thead><tr><th>מוצר</th><th>מחיר באתר</th><th>תיקון</th></tr></thead><tbody>${productRows.join('')}</tbody></table></div>` : `<p class="muted mt12 m0">${q ? 'אין מוצר שהשם שלו כולל את זה.' : 'לא נקראו מוצרים מהאתר.'}</p>`}
+      ${pager}
     </section>
     <section class="panel"><header><h2>מדיניות</h2></header>
       ${policies.length ? policies.map((p) => `<details class="panel mt12"><summary><b>${esc(p.title)}</b> <span class="chip">${esc(p.kind)}</span>${p.override_text ? '<span class="chip sig">תוקן</span>' : ''}</summary>
@@ -131,12 +151,12 @@ ${gaps.length ? `<div class="banner bad">${icon('alert')}<div><b>הדף לא נ�
     </section>
   </div>
   <div class="grid12">
-    <section class="panel p0x"><iframe class="pv" src="/s/${esc(s.slug)}?preview=1" title="תצוגה מקדימה של הדף" loading="lazy"></iframe></section>
-    <a class="btn" href="${esc(url)}?preview=1" target="_blank" rel="noopener">${icon('ext')}לפתוח את הדף</a>
+    <section class="panel p0x pvbox"><button class="btn pvtoggle" type="button" data-toggle="#pv" aria-expanded="false" aria-controls="pv">${icon('eye')}לראות איך הדף נראה</button><div class="pvframe" id="pv"><iframe class="pv" src="/s/${esc(s.slug)}?preview=1" title="תצוגה מקדימה של הדף" loading="lazy"></iframe></div></section>
+    <a class="btn pvopen" href="${esc(url)}?preview=1" target="_blank" rel="noopener">${icon('ext')}לפתוח את הדף</a>
     <section class="panel"><header><h2>מותג</h2>${storeBadge(s)}</header>
       <form method="post" action="/lead/${id}/brand" class="formgrid">${csrfField(r.ctx)}
         <label class="f">השם שמופיע בדף<input type="text" name="name" value="${esc(brand.name || '')}" dir="auto"></label>
-        <label class="f">צבע ראשי<small>מהאתר: ${esc((s.brand?.colors || []).join(', ') || 'לא נמצא')}. עכשיו: ${esc(brandColor(brand) || 'אין צבע, אז הדף מחכה')}</small><input type="text" name="color" value="${esc(s.brand_override?.colors?.[0] || '')}" placeholder="#b4532a" dir="ltr"></label>
+        <label class="f">צבע ראשי<small>${s.brand?.colorsFrom === 'logo' ? 'באתר לא מצאתי צבע, אז לקחתי אותו מהלוגו' : 'מהאתר'}: ${esc((s.brand?.colors || []).join(', ') || 'לא נמצא')}. עכשיו: ${esc(brandColor(brand) || 'אין צבע, אז הדף מחכה')}</small><input type="text" name="color" value="${esc(s.brand_override?.colors?.[0] || '')}" placeholder="#b4532a" dir="ltr"></label>
         <label class="f">לוגו (כתובת https)<input type="url" name="logo" value="${esc(s.brand_override?.logo || '')}" placeholder="${esc(s.brand?.logo || '')}" dir="ltr"></label>
         <label class="f">טון הכתיבה של החנות<small>מהטקסטים באתר. תורן כותב בסגנון הזה.</small><textarea name="tone" rows="5" dir="rtl">${esc(brand.tone || '')}</textarea></label>
         <button class="btn sm" type="submit">לשמור</button>

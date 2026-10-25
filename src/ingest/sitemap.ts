@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import type { Fetcher } from '../core/http.ts';
 import { DEFAULT_TITLE, type ProductRow, type Variant, htmlText, plainText, price, searchText, summarize } from './rows.ts';
 import { wixRow, wixWarmupProduct } from './wix.ts';
+import { cashcowRow, isCashcowProduct } from './cashcow.ts';
 
 // A catalogue with no feed, read the way a search engine reads it: the store's sitemap
 // lists the product pages, and each page says what it sells in schema.org JSON-LD (the
@@ -9,23 +10,40 @@ import { wixRow, wixWarmupProduct } from './wix.ts';
 // shopping results. Wix's pages carry more than that (wix.ts), and are read from it when
 // it is there.
 //
-// This is how Wix stores are read (store-products-sitemap.xml), and how a WooCommerce
-// store is read when its Store API is off (wp-sitemap-posts-product-1.xml, Yoast's
+// This is how Wix stores are read (store-products-sitemap.xml), Cashcow stores (one
+// sitemap, /crowlers/sitemap, its products under /p/: cashcow.ts), and a WooCommerce
+// store when its Store API is off (wp-sitemap-posts-product-1.xml, Yoast's
 // product-sitemap.xml). One request a page, through the polite fetcher (one at a time
-// per host, robots.txt obeyed), newest pages first by the sitemap's lastmod, and no more
-// than MAX_PRODUCT_PAGES a run: past that the rest are counted and reported, not read.
+// per host, robots.txt obeyed), newest pages first by the sitemap's lastmod (Cashcow's
+// gives none: its order), and no more than MAX_PRODUCT_PAGES a run: past that the rest
+// are counted and reported, not read.
+//
+// Every address is the store's base and a path: its origin, or a free Wix site's
+// https://<user>.wixsite.com/<site> (urls.ts siteBase), whose sitemaps and pages all
+// hang from the site's path. An entry outside the base is not the store's.
 //
 // The same sitemaps list the store's other pages, which is where shipping, returns and
-// contact pages are found on Wix and WordPress (they have no standard /policies/ paths):
-// pageLinks() hands them to readPolicies (pages.ts).
+// contact pages are found on Wix, WordPress and Cashcow (they have no standard /policies/
+// paths): pageLinks() hands them to readPolicies (pages.ts).
 
 export const MAX_PRODUCT_PAGES = 150;
-const INDEXES = ['/sitemap.xml', '/sitemap_index.xml', '/wp-sitemap.xml'];
-const DIRECT = ['/store-products-sitemap.xml', '/wp-sitemap-posts-product-1.xml', '/product-sitemap.xml'];
+const XML = 'application/xml,text/xml;q=0.9,*/*;q=0.5';
 const PRODUCT_MAP = /store-products|product-sitemap|posts-product|sitemap[_-]products?[_-]?\d*\.xml/i;
 const NOT_PRODUCTS = /categor|product_cat|product-cat|product_tag|product-tag|tags?-sitemap|brand/i;
 const PAGE_MAP = /pages-sitemap|posts-page|page-sitemap|sitemap[_-]pages/i;
-const XML = 'application/xml,text/xml;q=0.9,*/*;q=0.5';
+
+/**
+ * Where a platform's sitemaps are: the indexes that name the product and page sitemaps, the product sitemaps to try
+ * when no index answers, and, for a platform with one flat sitemap (Cashcow), which of its entries are products and
+ * which are pages, by their path under the base.
+ */
+type Plan = { indexes: string[]; direct: string[]; isProduct?: (path: string) => boolean; isPage?: (path: string) => boolean };
+const PLANS: Record<string, Plan> = {
+  default: { indexes: ['/sitemap.xml', '/sitemap_index.xml', '/wp-sitemap.xml'], direct: ['/store-products-sitemap.xml', '/wp-sitemap-posts-product-1.xml', '/product-sitemap.xml'] },
+  // One sitemap; a big store's is an index of /crowlers/sitemap?page=N, each a mix of products, categories and pages.
+  cashcow: { indexes: ['/crowlers/sitemap'], direct: ['/crowlers/sitemap'], isProduct: (p) => /^\/p\/[^/]+/.test(p), isPage: (p) => /^\/page\/[^/]+/.test(p) },
+};
+const planOf = (platform?: string | null) => PLANS[String(platform || '')] || PLANS.default;
 
 export type SitemapEntry = { loc: string; lastmod: string | null };
 
@@ -53,9 +71,9 @@ async function getXml(fetcher: Fetcher, url: string): Promise<string | null> {
 }
 
 /** The child sitemaps the store's sitemap index names, from the first index that answers. */
-async function childMaps(fetcher: Fetcher, origin: string): Promise<SitemapEntry[]> {
-  for (const p of INDEXES) {
-    const xml = await getXml(fetcher, `${origin}${p}`);
+async function childMaps(fetcher: Fetcher, base: string, plan: Plan): Promise<SitemapEntry[]> {
+  for (const p of plan.indexes) {
+    const xml = await getXml(fetcher, `${base}${p}`);
     if (!xml) continue;
     const s = readSitemap(xml);
     if (s.index) return s.entries;
@@ -63,19 +81,33 @@ async function childMaps(fetcher: Fetcher, origin: string): Promise<SitemapEntry
   return [];
 }
 
-const sameSite = (a: string, origin: string) => {
+/** The path of an address under the store's base ("/p/x"), or null when it is not under it (another site, another Wix site on the host). */
+export function pathUnder(loc: string, base: string): string | null {
   try {
-    return new URL(a).hostname.replace(/^www\./, '') === new URL(origin).hostname.replace(/^www\./, '');
+    const u = new URL(loc);
+    const b = new URL(base);
+    if (u.hostname.replace(/^www\./, '') !== b.hostname.replace(/^www\./, '')) return null;
+    const root = b.pathname.replace(/\/+$/, '');
+    let p = u.pathname;
+    try {
+      p = decodeURIComponent(p);
+    } catch {
+      /* kept as sent */
+    }
+    if (!root) return p;
+    return p === root || p.startsWith(`${root}/`) ? p.slice(root.length) || '/' : null;
   } catch {
-    return false;
+    return null;
   }
-};
+}
 
-/** Every product page the sitemaps list, newest first, and which sitemaps said so. */
-export async function productUrls(fetcher: Fetcher, origin: string): Promise<{ entries: SitemapEntry[]; maps: string[] }> {
-  const children = await childMaps(fetcher, origin);
-  let maps = children.map((c) => c.loc).filter((l) => PRODUCT_MAP.test(l) && !NOT_PRODUCTS.test(l));
-  if (!maps.length) maps = DIRECT.map((p) => `${origin}${p}`);
+/** Every product page the sitemaps list, newest first, which sitemaps said so, and whether they gave dates. */
+export async function productUrls(fetcher: Fetcher, base: string, platform?: string | null): Promise<{ entries: SitemapEntry[]; maps: string[]; dated: boolean }> {
+  const plan = planOf(platform);
+  const children = await childMaps(fetcher, base, plan);
+  // A flat-sitemap platform's index pages one sitemap: every child is read, and its entries told apart by their paths.
+  let maps = children.map((c) => c.loc).filter((l) => plan.isProduct || (PRODUCT_MAP.test(l) && !NOT_PRODUCTS.test(l)));
+  if (!maps.length) maps = plan.direct.map((p) => `${base}${p}`);
   const seen = new Set<string>();
   const entries: SitemapEntry[] = [];
   const used: string[] = [];
@@ -86,7 +118,8 @@ export async function productUrls(fetcher: Fetcher, origin: string): Promise<{ e
     if (s.index) continue;
     used.push(m);
     for (const e of s.entries) {
-      if (!sameSite(e.loc, origin) || seen.has(e.loc)) continue;
+      const p = pathUnder(e.loc, base);
+      if (p == null || seen.has(e.loc) || (plan.isProduct && !plan.isProduct(p))) continue;
       // A shop's own front page is in WordPress's product sitemap too; it has no Product and is dropped later.
       seen.add(e.loc);
       entries.push(e);
@@ -94,18 +127,27 @@ export async function productUrls(fetcher: Fetcher, origin: string): Promise<{ e
     // Every product sitemap the index names is read (WordPress pages them); of the direct guesses, the first that answers.
     if (!children.length) break;
   }
-  entries.sort((a, b) => (Date.parse(b.lastmod || '') || 0) - (Date.parse(a.lastmod || '') || 0));
-  return { entries, maps: used };
+  const dated = entries.some((e) => e.lastmod);
+  if (dated) entries.sort((a, b) => (Date.parse(b.lastmod || '') || 0) - (Date.parse(a.lastmod || '') || 0));
+  return { entries, maps: used, dated };
 }
 
-/** The store's own pages from its pages sitemap (Wix's pages-sitemap.xml, WordPress's page sitemap), as links for readPolicies. */
-export async function pageLinks(fetcher: Fetcher, origin: string): Promise<{ url: string; text: string }[]> {
-  const maps = (await childMaps(fetcher, origin)).map((c) => c.loc).filter((l) => PAGE_MAP.test(l));
+/**
+ * The store's own pages from its sitemap (Wix's pages-sitemap.xml, WordPress's page sitemap, the /page/ entries of
+ * Cashcow's one sitemap), as links for readPolicies.
+ */
+export async function pageLinks(fetcher: Fetcher, base: string, platform?: string | null): Promise<{ url: string; text: string }[]> {
+  const plan = planOf(platform);
+  const children = (await childMaps(fetcher, base, plan)).map((c) => c.loc);
+  const maps = plan.isPage ? (children.length ? children : plan.direct.map((p) => `${base}${p}`)) : children.filter((l) => PAGE_MAP.test(l));
   const out: { url: string; text: string }[] = [];
   for (const m of maps.slice(0, 3)) {
     const xml = await getXml(fetcher, m);
     if (!xml) continue;
-    for (const e of readSitemap(xml).entries) if (sameSite(e.loc, origin)) out.push({ url: e.loc, text: '' });
+    for (const e of readSitemap(xml).entries) {
+      const p = pathUnder(e.loc, base);
+      if (p != null && (!plan.isPage || plan.isPage(p))) out.push({ url: e.loc, text: '' });
+    }
   }
   return out.slice(0, 400);
 }
@@ -212,10 +254,11 @@ export function ldRow(ld: any, url: string, html = '', currency = 'ILS'): Produc
   };
 }
 
-/** A product page as a row: Wix's own product data when the page has it, else its JSON-LD. Null when it sells nothing. */
+/** A product page as a row: Wix's or Cashcow's own product data when the page has it, else its JSON-LD. Null when it sells nothing. */
 export function readProductPage(html: string, url: string, currency = 'ILS'): ProductRow | null {
   const wix = wixWarmupProduct(html);
   if (wix) return wixRow(wix, url, currency);
+  if (isCashcowProduct(html)) return cashcowRow(html, url, currency);
   const ld = jsonLdProducts(html)[0];
   return ld ? ldRow(ld, url, html, currency) : null;
 }
@@ -223,13 +266,13 @@ export function readProductPage(html: string, url: string, currency = 'ILS'): Pr
 /** The canonical address of a page, when it names one on the same site; else where it was fetched from. */
 function canonical(html: string, fetched: string): string {
   const href = cheerio.load(html.slice(0, 200_000))('link[rel="canonical"]').attr('href');
-  return href && sameSite(href, fetched) ? new URL(href, fetched).toString() : fetched;
+  return href && pathUnder(new URL(href, fetched).toString(), new URL(fetched).origin) != null ? new URL(href, fetched).toString() : fetched;
 }
 
-export type SitemapCatalogue = { rows: ProductRow[]; listed: number; read: number; failed: number; maps: string[]; currency: string | null };
+export type SitemapCatalogue = { rows: ProductRow[]; listed: number; read: number; failed: number; maps: string[]; dated: boolean; currency: string | null };
 
-export async function fetchSitemapCatalogue(fetcher: Fetcher, origin: string, { max = MAX_PRODUCT_PAGES, onPage }: { max?: number; onPage?: (done: number, total: number) => void } = {}): Promise<SitemapCatalogue> {
-  const { entries, maps } = await productUrls(fetcher, origin);
+export async function fetchSitemapCatalogue(fetcher: Fetcher, base: string, { max = MAX_PRODUCT_PAGES, onPage, platform }: { max?: number; onPage?: (done: number, total: number) => void; platform?: string | null } = {}): Promise<SitemapCatalogue> {
+  const { entries, maps, dated } = await productUrls(fetcher, base, platform);
   const todo = entries.slice(0, max);
   const rows: ProductRow[] = [];
   const ids = new Set<string>();
@@ -251,5 +294,5 @@ export async function fetchSitemapCatalogue(fetcher: Fetcher, origin: string, { 
     }
     onPage?.(i + 1, todo.length);
   }
-  return { rows, listed: entries.length, read, failed, maps, currency: rows.find((r) => r.currency)?.currency || null };
+  return { rows, listed: entries.length, read, failed, maps, dated, currency: rows.find((r) => r.currency)?.currency || null };
 }

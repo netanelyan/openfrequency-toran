@@ -61,7 +61,7 @@ try {
       try {
         const s = await ingestStore(app, id, { progress: (m) => process.stdout.write(`\r  ${m}                    `) });
         process.stdout.write('\r');
-        say(`✓ ${s.domain}: ${s.products} products (${s.available} in stock${s.gone ? `, ${s.gone} gone` : ''}), ${s.policies.length} policy pages [${s.policies.map((p) => p.kind).join(', ')}], ${s.chunks} chunks, ${s.faqs} FAQ, colours ${s.brand.colors.join(' ') || 'none'}${s.brand.logo ? ', logo' : ''}${s.brand.tone ? ', tone sample' : ''} (${Math.round((Date.now() - t0) / 1000)} s)`);
+        say(`✓ ${s.domain}: ${s.products} products (${s.available} in stock${s.gone ? `, ${s.gone} gone` : ''}), ${s.policies.length} policy pages [${s.policies.map((p) => p.kind).join(', ')}], ${s.chunks} chunks, ${s.faqs} FAQ, colours ${s.brand.colors.join(' ') || 'none'}${s.brand.colorsFrom === 'logo' ? ' (from the logo)' : ''}${s.brand.logo ? ', logo' : ''}${s.brand.tone ? ', tone sample' : ''} (${Math.round((Date.now() - t0) / 1000)} s)`);
         for (const w of s.warnings) say(`    ! ${w}`);
         if (args.includes('--verify')) {
           const v = await verifyPrices(app, id);

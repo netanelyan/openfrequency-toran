@@ -32,7 +32,7 @@ export async function seedDemo(app: App, { conversation = true }: { conversation
   for (const [domain, name, platform, score, qualified, status, reject] of FAKE) {
     if (await app.db.one('SELECT 1 FROM stores WHERE domain = $1', [domain])) continue;
     const breakdown = [
-      { factor: 'platform', points: platform === 'shopify' ? 20 : platform === 'woocommerce' ? 18 : platform === 'wix' ? 14 : 8, max: 20, evidence: `${platform}: fictional` },
+      { factor: 'platform', points: platform === 'shopify' ? 20 : platform === 'woocommerce' ? 18 : platform === 'wix' || platform === 'cashcow' ? 14 : 8, max: 20, evidence: `${platform}: fictional` },
       { factor: 'catalogue', points: Math.min(25, Math.round(score / 4)), max: 25, evidence: 'fictional' },
       { factor: 'hebrew', points: 15, max: 15, evidence: '90% Hebrew letters' },
       { factor: 'whatsapp', points: score > 60 ? 15 : 0, max: 15, evidence: score > 60 ? 'WhatsApp number on the site' : 'no WhatsApp on the site' },

@@ -1,4 +1,4 @@
-import { canonicalDomain, homeUrl } from '../core/urls.ts';
+import { canonicalDomain, homeUrl, siteBase } from '../core/urls.ts';
 import { type Fetcher, FetchError, getJson } from '../core/http.ts';
 import { hebrewRatio } from '../core/hebrew.ts';
 import { readHome, type HomeSignals } from './signals.ts';
@@ -12,7 +12,14 @@ import { readHome, type HomeSignals } from './signals.ts';
 //   WooCommerce   GET /wp-json/wc/store/v1/products?per_page=1: the X-WP-Total header
 //                 is the count. Proof as well.
 //   Wix, other    the HTML fingerprints, and the product sitemap for a count
-//                 (store-products-sitemap.xml on Wix, product-sitemap.xml on WordPress)
+//                 (store-products-sitemap.xml on Wix, product-sitemap.xml on WordPress,
+//                 the /p/ entries of /crowlers/sitemap on Cashcow)
+//   Konimbo       the "Server: konimbo" header, and the screen Konimbo answers a request
+//                 with no referring page with (id="page_no_referer"): its stores' pages
+//                 are closed to Toran, so the lead says Konimbo and nothing more
+//
+// A free Wix site at <user>.wixsite.com/<site> is detected from its path (urls.ts
+// siteBase): its sitemap is /<site>/store-products-sitemap.xml, the host's root a 404.
 //
 // A contact page is read only when the home page gave no email. A page that is almost
 // all JavaScript (under 300 characters of text) is rendered headless when a browser is
@@ -43,6 +50,7 @@ export type Detection = {
 };
 
 const SHOPIFY_PAGES = 4; // 1,000 products is enough to place a store in its tier
+const KONIMBO_GATE = /id=["']page_no_referer["']|class=["']limit_no_referer["']/;
 
 export async function detect(input: string, { fetcher, render }: { fetcher: Fetcher; render?: (url: string) => Promise<string | null> }): Promise<Detection> {
   const start = homeUrl(input);
@@ -52,11 +60,14 @@ export async function detect(input: string, { fetcher, render }: { fetcher: Fetc
   const home = await fetcher(start, { accept: 'text/html' });
   const url = home.url || start;
   const domain = canonicalDomain(url) || canonicalDomain(start)!;
-  const origin = new URL(url).origin;
+  const origin = siteBase(url); // a free Wix site's path on wixsite.com, else the origin
   let html = home.text;
   let signals = readHome(html, url);
   let rendered = false;
-  if (signals.textLength < 300 && render) {
+  // Konimbo's gate: every request with no referring page gets a "go to the requested page" screen with server
+  // "konimbo". It is the store saying no to a bot, so it is not rendered and not got around: the lead is Konimbo's.
+  const konimboGate = KONIMBO_GATE.test(html.slice(0, 4000));
+  if (signals.textLength < 300 && render && !konimboGate) {
     const r = await render(url).catch(() => null);
     if (r) {
       html = r;
@@ -64,8 +75,9 @@ export async function detect(input: string, { fetcher, render }: { fetcher: Fetc
       rendered = true;
     }
   }
-  const headerHints = Object.keys(home.headers || {}).some((k) => /^x-wix-/i.test(k)) ? ['wix'] : [];
-  const shopifyHeader = Object.keys(home.headers || {}).some((k) => /^x-shopid$|^x-shopify-/i.test(k));
+  const headers = home.headers || {};
+  const headerHints = [...(Object.keys(headers).some((k) => /^x-wix-/i.test(k)) ? ['wix'] : []), ...(/^konimbo$/i.test(String(headers.server || '')) || konimboGate ? ['konimbo'] : [])];
+  const shopifyHeader = Object.keys(headers).some((k) => /^x-shopid$|^x-shopify-/i.test(k));
   const hints = new Set([...signals.platformHints, ...headerHints, ...(shopifyHeader ? ['shopify'] : [])]);
 
   let platform: Platform = 'unknown';
@@ -151,7 +163,7 @@ export async function detect(input: string, { fetcher, render }: { fetcher: Fetc
     for (const k of ['wix', 'konimbo', 'cashcow', 'magento', 'bigcommerce'] as const) {
       if (hints.has(k)) {
         platform = k;
-        platformEvidence = `${k} markers in the HTML`;
+        platformEvidence = k === 'konimbo' && konimboGate ? 'Konimbo\'s "go to the requested page" screen: the store\'s pages are closed to a request with no referring page' : k === 'konimbo' && !signals.platformHints.includes(k) ? 'the server says konimbo' : `${k} markers in the HTML`;
         break;
       }
     }
@@ -161,13 +173,19 @@ export async function detect(input: string, { fetcher, render }: { fetcher: Fetc
     platformEvidence = 'a cart on the page, platform not recognised';
   }
 
-  // ---- a product count from the sitemap, where the platform gave none
-  if (productCount == null && platform !== 'unknown') {
-    const candidates = platform === 'wix' ? ['/store-products-sitemap.xml'] : platform === 'shopify' ? ['/sitemap_products_1.xml'] : ['/product-sitemap.xml', '/wp-sitemap-posts-product-1.xml', '/sitemap.xml'];
+  // ---- a product count from the sitemap, where the platform gave none (Konimbo's sitemap is behind its gate too)
+  if (productCount == null && platform !== 'unknown' && platform !== 'konimbo') {
+    const candidates = platform === 'wix' ? ['/store-products-sitemap.xml'] : platform === 'shopify' ? ['/sitemap_products_1.xml'] : platform === 'cashcow' ? ['/crowlers/sitemap'] : ['/product-sitemap.xml', '/wp-sitemap-posts-product-1.xml', '/sitemap.xml'];
     for (const p of candidates) {
       try {
         const r = await fetcher(`${origin}${p}`, { accept: 'application/xml,text/xml' });
-        if (p === '/sitemap.xml') {
+        if (p === '/crowlers/sitemap') {
+          // Cashcow's one sitemap, products under /p/; a big store's is an index of pages of it (?page=N), up to 10 read.
+          const pages = /<sitemapindex[\s>]/i.test(r.text) ? [...r.text.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/g)].map((m) => m[1].replace(/&amp;/g, '&')).slice(0, 10) : [];
+          const texts = pages.length ? await Promise.all(pages.map((u) => fetcher(u, { accept: 'application/xml,text/xml' }).then((x) => x.text, () => ''))) : [r.text];
+          productCount = texts.reduce((n, t) => n + (t.match(/<loc>[^<]*\/p\/[^<]*<\/loc>/g) || []).length, 0);
+          productCountCapped = pages.length === 10;
+        } else if (p === '/sitemap.xml') {
           const child = /<loc>([^<]*product[^<]*)<\/loc>/i.exec(r.text)?.[1];
           if (!child) continue;
           const c = await fetcher(child.trim(), { accept: 'application/xml,text/xml' });
