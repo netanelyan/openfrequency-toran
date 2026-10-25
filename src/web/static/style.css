@@ -539,6 +539,13 @@ pre.msg { margin: 0; padding: 14px 16px; border-radius: var(--r-m); background: 
 .chat .note .bad { color: var(--bad); }
 .chat .note .warn { color: var(--warn); }
 .chat .note.start { justify-self: start; margin: -2px 0 4px 6px; }
+.chat .b .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; white-space: normal; }
+.chat .b .files .thumb img { display: block; max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; }
+.chat .b .files .file { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: var(--fill); font-size: 13px; }
+.chat .b .files .file.off { color: var(--ink-3); }
+.chat .b .files .file svg.i { width: 16px; height: 16px; }
+.records td { overflow-wrap: anywhere; }
+.records code { font-size: 12px; user-select: all; }
 textarea.wide { width: 100%; }
 
 /* ------------------------------------------------------------ the brand page */

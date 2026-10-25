@@ -7,12 +7,17 @@ import { runTurn } from '../agent/loop.ts';
 import type { RouteResult } from './demo.ts';
 import { hold, isPaused } from './owner.ts';
 import { LEDGER, reply } from './send.ts';
-import type { ChannelAdapter, Inbound } from './types.ts';
+import { keepInbound, setAttachments } from './files.ts';
+import { mailDomainOf, ownAddress, ownAddresses } from './mailDomain.ts';
+import { noteCustomer } from './customers.ts';
+import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
 
 // A message to a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the
 // store is the account's, so there is no code and no binding. The agent answers as the store, with no demo footer, unless the mail
 // was automated, the owner has taken the conversation (owner.ts), or the customer reached today's limit; then the
-// message is kept for the owner and nothing is sent.
+// message is kept for the owner and nothing is sent. Before any of that, its files are kept for the owner (files.ts),
+// and the addresses and numbers it gives join this customer's other conversations (customers.ts). An email answer
+// goes out from the store's own address once its domain is verified (mailDomain.ts).
 
 const DAILY_REPLIES = 20; // the agent's answers to one customer of one account in a day; past it, the owner's turn
 
@@ -62,6 +67,13 @@ async function remember(app: App, conversationId: number, inbound: Inbound) {
   await app.db.query('UPDATE conversations SET meta = meta || $2::jsonb WHERE id = $1', [conversationId, J({ ids })]);
 }
 
+/** The line the agent is told about the files on a message: their names and kinds; it cannot open them. */
+export function filesContext(files: Attachment[]): string | undefined {
+  if (!files.length) return undefined;
+  const kind = (f: Attachment) => (f.type.startsWith('image/') || f.type === 'image' ? 'an image' : f.type === 'application/pdf' ? 'a PDF' : 'a file');
+  return `The customer attached ${files.length} file(s): ${files.map((f) => `${cleanLine(f.name, 40)} (${kind(f)})`).join(', ')}. You cannot open them; the store's owner sees them in the inbox. If the question depends on them, say someone from the store will look at them, and call handoff.`;
+}
+
 /** The conversation a WhatsApp, Messenger or Instagram message belongs to (no threads): one per customer per account. */
 export const conversationOf = (app: App, adapter: ChannelAdapter, account: Account, inbound: Inbound) => threadFor(app, adapter, account, inbound);
 
@@ -80,13 +92,18 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   const conv = await threadFor(app, adapter, account, inbound);
   await remember(app, conv, inbound);
   const text = String(inbound.text || '').trim();
-  const files = inbound.attachments || [];
+  // Mail from the store's own address is the store writing to itself (a loop through its forwarding), never a customer.
+  const domain = adapter.channel === 'email' ? await mailDomainOf(app, store.id) : null;
+  const automated = inbound.automated || (ownAddresses(domain).includes(String(inbound.from).toLowerCase()) ? "the store's own address" : null);
 
-  if (inbound.automated) {
-    await hold(app, conv, inbound, { automated: inbound.automated });
-    await event(db, store.id, `${tag}_automated`, { conversationId: conv, why: inbound.automated });
+  if (automated) {
+    await hold(app, conv, inbound, { automated });
+    await event(db, store.id, `${tag}_automated`, { conversationId: conv, why: automated });
     return { action: 'automated', storeId: store.id };
   }
+  const files = await keepInbound(app, adapter, inbound, conv);
+  inbound = { ...inbound, attachments: files };
+  if (text) await noteCustomer(app, store.id, conv, { channel: account.channel, value: inbound.from }, text);
   if (await isPaused(app, conv)) {
     await hold(app, conv, inbound);
     await event(db, store.id, 'held', { conversationId: conv });
@@ -105,11 +122,11 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   }
 
   await event(db, store.id, `${tag}_in`, { conversationId: conv, chars: text.length, preview: cleanLine(text, 60) });
-  const context = files.length ? `The customer attached ${files.length} file(s) you cannot open (${files.map((f) => cleanLine(f.name, 40)).join(', ')}). If the question depends on them, say someone from the store will look at them, and call handoff.` : undefined;
-  const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context });
-  if (files.length) await db.query('UPDATE messages SET attachments = $2::jsonb WHERE ext_id = $1', [inbound.id, J(files)]);
+  const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context: filesContext(files) });
+  await setAttachments(app, inbound.id, files);
   const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
-  const d = await reply(app, adapter, inbound, o.reply, store.id, conv, { who: 'agent', storeName });
+  const own = adapter.channel === 'email' ? await ownAddress(app, store.id) : null;
+  const d = await reply(app, adapter, inbound, o.reply, store.id, conv, { who: 'agent', storeName, ...(own || {}) });
   if (d.ok && o.agentMessageId) await db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [o.agentMessageId, J(d.ids)]);
   return { action: 'answered', storeId: store.id, reply: o.reply };
 }

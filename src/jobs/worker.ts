@@ -13,6 +13,7 @@ import { handleTederEvent, handleTederReady } from '../owners/events.ts';
 import { deliverRequested } from '../ops/actions.ts';
 import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
 import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialStore.ts';
+import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -26,6 +27,7 @@ import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialSt
 //   dm_inbound   a message to a store's Facebook Page (Messenger) or Instagram account: the same as wa_inbound
 //   dm_echo      the owner answered from the Page's inbox or the Instagram app (channels/socialStore.ts)
 //   ig_refresh   an Instagram token's 60 days, renewed before they end
+//   mail_domain_check  a store's own mail domain read again at Resend, until it is verified (channels/mailDomain.ts)
 //   add_store    "add by URL" from the dashboard, or a demo asked for on the website: detect and score, ingest, build
 //                the page
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
@@ -60,6 +62,10 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return socialEcho(app, p);
     case 'ig_refresh':
       return refreshInstagram(app, Number(p.accountId));
+    case 'mail_domain_check': {
+      const d = await checkDomain(app, Number(p.storeId), { verify: false });
+      return d ? { domain: d.domain, status: d.status, receiving: d.receiving_status } : null;
+    }
     case 'add_store': {
       await say('בודק את האתר');
       const domain = canonicalDomain(p.url);
@@ -131,6 +137,8 @@ export async function schedule(app: App) {
   // An Instagram token that ends within REFRESH_DAYS, and was not renewed today: a fresh 60 days.
   const ending = await app.db.query<{ id: number }>(`SELECT id FROM channel_accounts WHERE channel = 'instagram' AND status = 'active' AND (meta->>'expires_at')::timestamptz < now() + interval '${REFRESH_DAYS} days' AND COALESCE((meta->>'refreshed_at')::timestamptz, connected_at) < now() - interval '1 day'`);
   for (const a of ending) await enqueue(app.db, 'ig_refresh', { accountId: a.id }, { dedupeKey: `ig_refresh:${a.id}`, maxAttempts: 3 });
+  // A store's own mail domain whose DNS records are not verified yet: read again every ten minutes, for three days.
+  if (app.mail) for (const storeId of await domainsToCheck(app)) await enqueue(app.db, 'mail_domain_check', { storeId }, { dedupeKey: `mail_domain:${storeId}`, maxAttempts: 1 });
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */

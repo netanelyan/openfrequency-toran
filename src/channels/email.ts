@@ -1,16 +1,20 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import * as cheerio from 'cheerio';
+import { download } from './files.ts';
+import { DomainError, domainState, simDomains, type MailDomains } from './mailDomain.ts';
 import { LIMITS } from './policy.ts';
 import type { ChannelAdapter, Inbound, Sent, SendCtx } from './types.ts';
 
 // Email's adapters, behind the channel interface (types.ts). Each store gets an address on our receiving domain
 // (<slug>@TORAN_MAIL_DOMAIN) and forwards its own support mail there; replies go out from that address, with the
-// store's name, through Resend.
+// store's name, through Resend, or from the store's own address once its domain is verified (mailDomain.ts).
 //
 //   resend   inbound: Resend's webhook (email.received), signed by Svix. It carries the metadata only, so the worker
-//            fetches the body and the headers (complete()). The same webhook reports bounces and spam complaints,
-//            which suppress the address. Outbound: Resend's send API, threaded with In-Reply-To and References.
-//   sim      the simulator: a whole email posted as JSON, from the tests and the dev page; replies into an outbox.
+//            fetches the body and the headers (complete()), and each attachment through its download link
+//            (fetchFile()). The same webhook reports bounces and spam complaints, which suppress the address.
+//            Outbound: Resend's send API, threaded with In-Reply-To and References, with the owner's files attached.
+//   sim      the simulator: a whole email posted as JSON (an attachment's bytes as base64 in "content"), from the
+//            tests and the dev page; replies into an outbox.
 //
 // What is never answered (automated() says why): auto-replies, bounces and delivery reports, mailing lists and bulk
 // mail, mail from no-reply and daemon addresses, and mail from our own domain (a loop). The agent's own replies say
@@ -103,9 +107,12 @@ const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const asHtml = (text: string) => `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;text-align:right">${text.split(/\n{2,}/).map((p) => `<p style="margin:0 0 12px">${escHtml(p).replace(/\n/g, '<br>')}</p>`).join('')}</div>`;
 const quoteName = (n: string) => `"${n.replace(/["\\\r\n]/g, '')}"`;
 
-/** The message to send: from the store's address with its name, threaded on the email it answers. */
+/**
+ * The message to send: from the store's address with its name (its own, once its domain is verified, else the one on
+ * our domain), threaded on the email it answers, with the owner's files.
+ */
 export function outgoing(to: string, text: string, inReplyTo: Inbound, ctx: SendCtx = { who: 'agent' }) {
-  const account = String(inReplyTo.account || '');
+  const account = ctx.from || String(inReplyTo.account || '');
   const refs = [...new Set([...(inReplyTo.thread?.references || []), inReplyTo.thread?.messageId || inReplyTo.id].filter((x) => /^<[^<>\s]+>$/.test(x)))].slice(-20);
   const headers: Record<string, string> = {};
   if (refs.length) {
@@ -116,11 +123,12 @@ export function outgoing(to: string, text: string, inReplyTo: Inbound, ctx: Send
   return {
     from: ctx.storeName ? `${quoteName(ctx.storeName)} <${account}>` : account,
     to: [to],
-    reply_to: account,
+    reply_to: ctx.replyTo || account,
     subject: reSubject(inReplyTo.subject),
     text,
     html: asHtml(text),
     headers,
+    ...(ctx.files?.length ? { attachments: ctx.files.map((f) => ({ filename: f.name, content: f.bytes.toString('base64'), content_type: f.type })) } : {}),
   };
 }
 
@@ -141,9 +149,41 @@ export function fromEmail(e: any, ownDomain: string, at?: number): Inbound {
     text: stripQuoted(body),
     subject: String(e.subject || headers.subject || ''),
     thread: { messageId, inReplyTo: ids(headers['in-reply-to'])[0] || null, references: ids(headers.references) },
-    attachments: (e.attachments || []).filter((a: any) => a.content_disposition !== 'inline').map((a: any) => ({ name: String(a.filename || 'file'), type: String(a.content_type || ''), size: Number(a.size) || 0 })),
+    // ref: Resend's "<email id>/<attachment id>" to fetch it by, or the simulator's bytes.
+    attachments: (e.attachments || []).filter((a: any) => a.content_disposition !== 'inline').map((a: any) => {
+      const ref = a.id && (e.id || e.email_id) ? `${e.id || e.email_id}/${a.id}` : typeof a.content === 'string' ? `base64:${a.content}` : null;
+      return { name: String(a.filename || 'file'), type: String(a.content_type || ''), size: Number(a.size) || (typeof a.content === 'string' ? Buffer.byteLength(a.content, 'base64') : 0), ...(ref ? { ref } : {}) };
+    }),
     automated: automated(headers, e.from || headers.from || '', ownDomain),
     ...(at ? { at } : {}),
+  };
+}
+
+/** Resend's domains API, for the stores' own domains (mailDomain.ts). */
+export function resendDomains({ apiKey, fetchImpl = fetch }: { apiKey: string; fetchImpl?: typeof fetch }): MailDomains {
+  const call = async (method: string, path: string, body?: unknown) => {
+    const res = await fetchImpl(`https://api.resend.com${path}`, { method, headers: { authorization: `Bearer ${apiKey}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(15_000) });
+    const out: any = await res.json().catch(() => ({}));
+    if (!res.ok) throw new DomainError(`Resend refused ${method} ${path.replace(/[0-9a-f-]{36}/g, ':id')} (${res.status}): ${String(out?.message || '').slice(0, 200)}`, res.status);
+    return out;
+  };
+  return {
+    async create(name, c) {
+      return domainState(await call('POST', '/domains', { name, capabilities: { sending: c.sending ? 'enabled' : 'disabled', receiving: c.receiving ? 'enabled' : 'disabled' } }));
+    },
+    async get(id) {
+      return domainState(await call('GET', `/domains/${encodeURIComponent(id)}`));
+    },
+    async verify(id) {
+      await call('POST', `/domains/${encodeURIComponent(id)}/verify`);
+    },
+    async remove(id) {
+      try {
+        await call('DELETE', `/domains/${encodeURIComponent(id)}`);
+      } catch (e) {
+        if (!(e instanceof DomainError && e.status === 404)) throw e; // gone already
+      }
+    },
   };
 }
 
@@ -159,6 +199,8 @@ export interface EmailAdapter extends ChannelAdapter {
   channel: 'email';
   kind: 'resend' | 'sim';
   domain: string;
+  /** The stores' own domains (mailDomain.ts), at Resend or the simulator's. */
+  domains: MailDomains;
   notice(to: string, subject: string, text: string): Promise<Sent>;
 }
 
@@ -170,6 +212,7 @@ export function resendEmail({ apiKey, webhookSecret, domain, fetchImpl = fetch }
     channel: 'email',
     kind: 'resend',
     domain,
+    domains: resendDomains({ apiKey, fetchImpl }),
     limits: LIMITS.email,
     inboundUsd: 0, // Resend is a monthly plan, not a price per message
     parse({ raw, headers }) {
@@ -196,6 +239,15 @@ export function resendEmail({ apiKey, webhookSecret, domain, fetchImpl = fetch }
       const full = fromEmail(await res.json(), domain, inbound.at);
       return { ...full, id: inbound.id };
     },
+    async fetchFile(_inbound, file, max) {
+      const [emailId, attId] = String(file.ref || '').split('/');
+      if (!emailId || !attId) return null;
+      const res = await fetchImpl(`${API}/emails/receiving/${encodeURIComponent(emailId)}/attachments/${encodeURIComponent(attId)}`, { headers: auth, signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) throw new Error(`Resend would not give attachment ${attId} (${res.status})`);
+      const a: any = await res.json();
+      if (Number(a?.size) > max) throw new Error('the file is too big');
+      return a?.download_url ? download(fetchImpl, String(a.download_url), max) : null;
+    },
     async send(to, text, inReplyTo, ctx) {
       const res = await fetchImpl(`${API}/emails`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(outgoing(to, text, inReplyTo, ctx)), signal: AbortSignal.timeout(15_000) });
       const out: any = await res.json().catch(() => ({}));
@@ -219,6 +271,7 @@ export function simEmail({ domain = 'mail.toran.test' }: { domain?: string } = {
     channel: 'email',
     kind: 'sim',
     domain,
+    domains: simDomains(),
     limits: LIMITS.email,
     inboundUsd: 0,
     outbox,
@@ -233,9 +286,15 @@ export function simEmail({ domain = 'mail.toran.test' }: { domain?: string } = {
       if (!e.from || !e.to) return [];
       return [fromEmail({ id: `sim-${n++}`, ...e }, domain)];
     },
+    async fetchFile(_inbound, file, max) {
+      if (!String(file.ref || '').startsWith('base64:')) return null;
+      const bytes = Buffer.from(String(file.ref).slice(7), 'base64');
+      if (bytes.length > max) throw new Error('the file is too big');
+      return bytes;
+    },
     async send(to, text, inReplyTo, ctx) {
       const m = outgoing(to, text, inReplyTo, ctx);
-      outbox.push({ to, text, inReplyTo: inReplyTo.id, at: Date.now(), from: m.from, subject: m.subject, headers: m.headers });
+      outbox.push({ to, text, inReplyTo: inReplyTo.id, at: Date.now(), from: m.from, replyTo: m.reply_to, subject: m.subject, headers: m.headers, attachments: m.attachments || [] });
       return { id: `sim-mail-${Date.now()}-${n++}`, usd: 0 };
     },
     async notice(to, subject, text) {

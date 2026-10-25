@@ -554,3 +554,68 @@ scripted model). The guard's earlier tests pass unchanged.
   skin"); "free" with no subject of its own on a page whose header names one; a negation further than the windows
   reach; a claim spread over two sentences of the reply; a store sentence with the right words in another relation
   in one clause; a condition the store wrote in another sentence ("free shipping." then "over 300 ₪.").
+
+## 2026-10-25: email from the store's own domain, files both ways, and one customer across channels
+
+The three things the email entry left out (2026-10-23). Migration `015_mail_domains_files_customers.sql`.
+
+**The store's own address** (`src/channels/mailDomain.ts`, docs/connecting-channels.md step 1). The owner writes it in
+Settings. Toran adds its domain at Resend through the domains API, for sending only, and shows the DNS records Resend
+lists: DKIM on `resend._domainkey`, SPF and the bounce MX on `send`. Every record sits on a name of its own, so the
+store's own mail, MX and SPF are never touched. "לבדוק עכשיו" asks Resend to verify and reads the domain again, and
+the worker reads it every ten minutes for the three days Resend keeps trying.
+- **Until Resend says "verified", nothing changes:** answers go out from `<slug>@TORAN_MAIL_DOMAIN`, as before. Once
+  verified, the agent's answers and the owner's go out from the store's address, with Reply-To the same address.
+- **Mail keeps coming in as it did:** forwarded to the address on our domain. Optionally, a subdomain the owner picks
+  is a second Resend domain, receiving only. Its MX brings mail straight to Toran, routed to the store only once
+  verified, and Reply-To moves to it. A domain belongs to one store. Mail from the store's own address is not
+  answered: it is the store writing to itself.
+- **Alternatives:** the root domain for receiving (it would take over the store's own mail); SMTP credentials of the
+  store's mailbox (a password we would hold, and a different sending path per store); DNS by the store's registrar API
+  (one integration per registrar, and keys to their DNS).
+- **Not checked by Toran:** that forwarding from that very address is set up. The form says it must be, and a reply to
+  an address that does not forward to us would not come back.
+
+**Files** (`src/channels/files.ts`).
+- **Inbound:** a customer's attachments are fetched in the worker, from Resend's attachment API (its signed
+  `download_url`) or Meta's CDN link on Messenger and Instagram, and kept. Kept means an image (JPEG, PNG, GIF, WebP) or
+  a PDF of up to 10 MB, ten a message, its kind told by its bytes, never by its name or declared type.
+- **Where they live:** the bytes are in the private folder under their SHA-256, never in the database or the
+  repository, and a row in `files` says whose. Anything else is listed by name with why ("גדול מדי", "סוג קובץ שלא
+  מוצג כאן").
+- **In the inbox:** a kept image shows in the conversation and a PDF downloads. Both are served only inside the
+  conversation's workspace, with their checked type and a sandbox CSP. An SVG is never shown, since it can carry a
+  script.
+- **The agent:** told in the server context which files came (names and kinds), that it cannot open them, and to hand
+  off if the question depends on them. It sends none.
+- **Outbound:** the owner can attach one image or PDF to an answer from the inbox, on email only. The reply form is
+  the one multipart form the server takes, up to the same 10 MB. WhatsApp, Messenger and Instagram answers from the
+  inbox stay text.
+- **Alternatives:** the bytes in Postgres (backups and the database grow with every photo); only listing them, as
+  before (the owner had to ask the customer to send the photo again by WhatsApp).
+
+**One customer across channels** (`src/channels/customers.ts`). A row in `customer_ids` says that one id on one channel
+is one customer of the store. Only an exact id joins two conversations:
+- the same id on the same channel, as always (another email thread, a chat a week later)
+- an email address or phone number a customer wrote in a conversation that is another conversation's id, now or when
+  it writes later (a WhatsApp customer gives their email; an email's signature has the phone)
+- the owner in the inbox: "זה אותו לקוח" from a list of the store's recent conversations, and "זה לא אותו לקוח"
+
+Guards on what a customer wrote:
+- An id a second customer gives is left with the first.
+- The store's own addresses and numbers, its domain, and ours are nobody's.
+- What the owner split is never joined back by what someone writes; only the owner joins it again.
+
+No names and no likeness: two people called דנה are two customers. The conversation page lists the customer's other
+conversations with why ("אותה כתובת מייל", "המייל או הטלפון נכתבו בשיחה", "חוברו ידנית"). The agent never reads
+another conversation: a customer who types someone else's address learns nothing from it, and only the owner sees the
+link.
+- **Alternatives:** asking the customer to confirm on the other channel (Toran never writes first); matching names
+  (wrong too often, and a wrong merge shows one customer's conversation as another's).
+
+**Not done here:**
+- the files of a store's own WhatsApp number: Meta's media API needs the number's token, so they are listed by name,
+  as before
+- sending files on WhatsApp, Messenger and Instagram
+- the agent reading the customer's other conversations: deliberately not, see above
+- a check that the store's forwarding is in place before its own address is used

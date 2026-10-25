@@ -24,6 +24,8 @@ export const pgliteDir = (env?: Env) => path.join(dataDir(env), 'pglite');
 export const logsDir = (env?: Env) => path.join(home(env), 'logs');
 export const cacheDir = (env?: Env) => path.join(home(env), 'cache');
 export const evalDir = (env?: Env) => path.join(home(env), 'eval');
+/** The files customers send and owners attach (channels/files.ts), each under its SHA-256. */
+export const filesDir = (env?: Env) => path.join(home(env), 'files');
 
 /**
  * Where the embedding model is kept. Outside the repo and short: on Windows a path past

@@ -19,19 +19,31 @@ export type Inbound = {
   to?: string | null; // the WhatsApp number it was written to (international digits): the demo number or the owner line
   subject?: string;
   thread?: { messageId: string; inReplyTo: string | null; references: string[] }; // email's threading headers
-  attachments?: { name: string; type: string; size: number }[];
+  attachments?: Attachment[];
   automated?: string | null; // why it must not be answered: an auto-reply, a bounce, a mailing list
   pending?: string; // the provider's id to fetch the rest from (Resend sends an email's body separately)
   report?: 'bounced' | 'complained'; // not a message: the provider saying mail to `from` failed or was marked spam
 };
 
+/**
+ * A file on a message. As the adapter parsed it: the name, the type the sender gave, the size, and ref, the
+ * provider's handle to fetch the bytes with (fetchFile). Once the store has it (files.ts): id, its row in files, and
+ * the type the bytes really are; or skipped, why it was not kept.
+ */
+export type Attachment = { name: string; type: string; size: number; ref?: string; id?: number; skipped?: string };
+
+/** A file the owner attaches to an answer from the inbox, checked (files.ts). Email only; the agent attaches none. */
+export type OutFile = { name: string; type: string; bytes: Buffer };
+
 export type Sent = { id: string; usd: number };
 
 /**
  * Who a send speaks for: the agent (an automatic reply) or the store's owner, from the inbox. tag is the message tag
- * Meta needs on Messenger and Instagram past the 24 hours (HUMAN_AGENT: a person answering, up to 7 days).
+ * Meta needs on Messenger and Instagram past the 24 hours (HUMAN_AGENT: a person answering, up to 7 days). On email,
+ * from and replyTo are the store's own address once its domain is verified (mailDomain.ts), and files the owner's
+ * attachments, on the first part only.
  */
-export type SendCtx = { who: 'agent' | 'owner'; storeName?: string; tag?: 'HUMAN_AGENT' };
+export type SendCtx = { who: 'agent' | 'owner'; storeName?: string; tag?: 'HUMAN_AGENT'; from?: string; replyTo?: string; files?: OutFile[] };
 
 /** What a channel allows, checked in code before every send (policy.ts), never left to the prompt. */
 export type ChannelLimits = {
@@ -41,7 +53,7 @@ export type ChannelLimits = {
   outside: 'template' | 'tag' | null; // what the channel allows past the window (Toran sends no template yet)
   humanAgent?: { hours: number }; // past the window, the owner's own answer with the HUMAN_AGENT tag, this long
   markup: 'whatsapp' | 'plain' | 'html';
-  attachments: { inbound: boolean; outbound: boolean }; // whether Toran reads or sends them
+  attachments: { inbound: boolean; outbound: boolean }; // whether Toran keeps them, and whether the owner may send one
 };
 
 export interface ChannelAdapter {
@@ -55,6 +67,8 @@ export interface ChannelAdapter {
   /** Fetch what the webhook left out (an email's body and headers), in the worker. */
   complete?(inbound: Inbound): Promise<Inbound>;
   send(to: string, text: string, inReplyTo: Inbound, ctx?: SendCtx): Promise<Sent>;
+  /** A file's bytes, from the attachment's ref, at most max of them; null when the provider has none to give. */
+  fetchFile?(inbound: Inbound, file: Attachment, max: number): Promise<Buffer | null>;
   /** The customer's name as the provider gives it, for the inbox (Messenger and Instagram, whose ids mean nothing). */
   profile?(peer: string): Promise<string | null>;
   /** The webhook's answer body. */

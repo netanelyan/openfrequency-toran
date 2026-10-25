@@ -36,9 +36,10 @@ export async function reply(app: App, adapter: ChannelAdapter, to: Inbound, text
   }
   // Past the 24 hours, only the owner's answer reaches here (blockedFor), and it goes out tagged as a person's.
   const plan = sendPlan(adapter.limits, { lastCustomerAt: to.at ?? now(), now: now(), who: ctx.who, humanAgent: humanAgentOn(app.env) });
-  const sendCtx: SendCtx = plan.ok && plan.mode === 'human_agent' ? { ...ctx, tag: 'HUMAN_AGENT' } : ctx;
+  let sendCtx: SendCtx = plan.ok && plan.mode === 'human_agent' ? { ...ctx, tag: 'HUMAN_AGENT' } : ctx;
   const ids: string[] = [];
-  for (const part of fit(text, adapter.limits.maxChars, adapter.limits.maxBytes)) {
+  for (const [i, part] of fit(text, adapter.limits.maxChars, adapter.limits.maxBytes).entries()) {
+    if (i === 1) sendCtx = { ...sendCtx, files: undefined }; // the owner's files go with the first part only
     const sent = await adapter.send(to.from, part, to, sendCtx);
     await usage(app.db, { storeId, conversationId, kind, backend: adapter.kind, units: 1, usd: sent.usd, apiUsd: sent.usd, tag: `${tag}_out` });
     await event(app.db, storeId, `${tag}_out`, { conversationId, id: sent.id });

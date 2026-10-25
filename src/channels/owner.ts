@@ -6,13 +6,15 @@ import { displayName } from '../ingest/brand.ts';
 import { adapterOf } from './adapters.ts';
 import { blockedFor, reply, type Blocked, type Delivery } from './send.ts';
 import { humanAgentOn } from './policy.ts';
-import type { Channel, ChannelAdapter, Inbound } from './types.ts';
+import { keepOutbound } from './files.ts';
+import { ownAddress } from './mailDomain.ts';
+import type { Channel, ChannelAdapter, Inbound, OutFile } from './types.ts';
 
 // The store's owner in a conversation, on any channel: they answer from the inbox, and the agent steps back.
 //
 //   ownerReply()   sends the owner's text to the customer through the conversation's own channel, after the same
-//                  checks as any send (the window, a suppressed address), and pauses the agent there for
-//                  PAUSE_HOURS from the owner's last message
+//                  checks as any send (the window, a suppressed address), with a file the owner attached where the
+//                  channel takes one (email), and pauses the agent there for PAUSE_HOURS from the owner's last message
 //   resumeAgent()  "להחזיר לתורן": the agent answers again from the next message
 //   hold()         a customer message kept without an answer (the agent is paused, or the mail was automated)
 
@@ -24,11 +26,11 @@ export async function isPaused(app: App, conversationId: number): Promise<boolea
 
 /** Keep a customer message without answering it. */
 export async function hold(app: App, conversationId: number, inbound: Inbound, { automated = null }: { automated?: string | null } = {}) {
-  await app.db.query('INSERT INTO messages (conversation_id, role, text, ext_id, attachments, automated) VALUES ($1, $2, $3, $4, $5::jsonb, $6) ON CONFLICT (ext_id) DO NOTHING', [conversationId, 'customer', inbound.text || '', inbound.id, J(inbound.attachments || []), automated]);
+  await app.db.query('INSERT INTO messages (conversation_id, role, text, ext_id, attachments, automated) VALUES ($1, $2, $3, $4, $5::jsonb, $6) ON CONFLICT (ext_id) DO NOTHING', [conversationId, 'customer', inbound.text || '', inbound.id, J((inbound.attachments || []).map(({ ref: _ref, ...a }) => a)), automated]);
   await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [conversationId]);
 }
 
-type Target = { adapter: ChannelAdapter; to: Inbound; storeId: number; storeName: string; pausedUntil: number | null; reconnect: boolean };
+type Target = { adapter: ChannelAdapter; to: Inbound; storeId: number; storeName: string; pausedUntil: number | null; reconnect: boolean; from: { from: string; replyTo: string } | null };
 
 /** Who a reply in this conversation goes to, rebuilt from what the conversation kept; null when the customer never wrote. */
 export async function replyTarget(app: App, conversationId: number): Promise<Target | null> {
@@ -52,11 +54,13 @@ export async function replyTarget(app: App, conversationId: number): Promise<Tar
     ...(c.channel === 'email' ? { subject: c.meta?.subject || '', thread: { messageId: id, inReplyTo: null, references: c.meta?.ids || [] } } : {}),
   };
   const storeName = displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain;
-  return { adapter, to, storeId: c.store_id, storeName, pausedUntil: c.agent_paused_until ? new Date(c.agent_paused_until).getTime() : null, reconnect: c.account_status === 'reconnect' };
+  // An email answer goes out from the store's own address once its domain is verified (mailDomain.ts).
+  const from = c.channel === 'email' ? await ownAddress(app, c.store_id) : null;
+  return { adapter, to, storeId: c.store_id, storeName, pausedUntil: c.agent_paused_until ? new Date(c.agent_paused_until).getTime() : null, reconnect: c.account_status === 'reconnect', from };
 }
 
 /** What the inbox shows above the reply box: whether a reply can go out, and until when. */
-export async function replyState(app: App, conversationId: number): Promise<{ canReply: boolean; reason: Blocked | 'no_customer' | 'channel_off' | 'reconnect' | null; windowEnds: number | null; windowHours?: number; pausedUntil: number | null }> {
+export async function replyState(app: App, conversationId: number): Promise<{ canReply: boolean; reason: Blocked | 'no_customer' | 'channel_off' | 'reconnect' | null; windowEnds: number | null; windowHours?: number; pausedUntil: number | null; files?: boolean; from?: string }> {
   let t: Target | null;
   try {
     t = await replyTarget(app, conversationId);
@@ -66,24 +70,27 @@ export async function replyState(app: App, conversationId: number): Promise<{ ca
   if (!t) return { canReply: false, reason: 'no_customer', windowEnds: null, pausedUntil: null };
   // The store's WhatsApp token ended (waStore.ts): nothing goes out from here until it is connected again.
   if (t.reconnect) return { canReply: false, reason: 'reconnect', windowEnds: null, pausedUntil: null };
+  const extra = { ...(t.adapter.limits.attachments.outbound ? { files: true } : {}), ...(t.from ? { from: t.from.from } : {}) };
   const blocked = await blockedFor(app, t.adapter, t.to, 'owner');
   const w = t.adapter.limits.window;
   // The owner's own answer: on Messenger and Instagram up to 7 days, tagged HUMAN_AGENT, once Meta approved it.
   const hours = w && t.adapter.limits.humanAgent && humanAgentOn(app.env) ? t.adapter.limits.humanAgent.hours : w?.hours;
   const pausedUntil = t.pausedUntil && t.pausedUntil > now() ? t.pausedUntil : null;
-  return { canReply: !blocked, reason: blocked, windowEnds: hours ? t.to.at! + hours * HOUR : null, ...(hours ? { windowHours: hours } : {}), pausedUntil };
+  return { canReply: !blocked, reason: blocked, windowEnds: hours ? t.to.at! + hours * HOUR : null, ...(hours ? { windowHours: hours } : {}), pausedUntil, ...extra };
 }
 
-export async function ownerReply(app: App, conversationId: number, text: string, author: string): Promise<Delivery | { ok: false; reason: 'no_customer' | 'reconnect' }> {
+export async function ownerReply(app: App, conversationId: number, text: string, author: string, files: OutFile[] = []): Promise<Delivery | { ok: false; reason: 'no_customer' | 'no_files' | 'reconnect' }> {
   const t = await replyTarget(app, conversationId);
   if (!t) return { ok: false, reason: 'no_customer' };
   if (t.reconnect) return { ok: false, reason: 'reconnect' };
-  const d = await reply(app, t.adapter, t.to, text, t.storeId, conversationId, { who: 'owner', storeName: t.storeName });
+  if (files.length && !t.adapter.limits.attachments.outbound) return { ok: false, reason: 'no_files' };
+  const d = await reply(app, t.adapter, t.to, text, t.storeId, conversationId, { who: 'owner', storeName: t.storeName, ...(t.from || {}), ...(files.length ? { files } : {}) });
   if (!d.ok) return d;
-  await app.db.query('INSERT INTO messages (conversation_id, role, text, author, delivery) VALUES ($1, $2, $3, $4, $5::jsonb)', [conversationId, 'owner', text, author, J(d.ids)]);
+  const kept = files.length ? await keepOutbound(app, conversationId, files) : [];
+  await app.db.query('INSERT INTO messages (conversation_id, role, text, author, delivery, attachments) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)', [conversationId, 'owner', text, author, J(d.ids), J(kept)]);
   await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [conversationId]);
   await event(app.db, t.storeId, 'owner_reply', { conversationId });
-  await audit(app.db, { actor: author, action: 'owner_reply', storeId: t.storeId, detail: { conversationId, chars: text.length } });
+  await audit(app.db, { actor: author, action: 'owner_reply', storeId: t.storeId, detail: { conversationId, chars: text.length, ...(files.length ? { files: files.length } : {}) } });
   return d;
 }
 

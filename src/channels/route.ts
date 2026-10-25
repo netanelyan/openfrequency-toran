@@ -8,6 +8,7 @@ import { demoNumber, type RouteResult } from './demo.ts';
 import { ownerLine } from '../owners/line.ts';
 import { LEDGER } from './send.ts';
 import { accountFor, storeChannel } from './store.ts';
+import { receivingAccount } from './mailDomain.ts';
 import { enabledChannels, type AnyChannel } from './config.ts';
 import { isSocial } from './social.ts';
 import type { Inbound } from './types.ts';
@@ -16,8 +17,9 @@ import type { Inbound } from './types.ts';
 // address is recorded, a delivery already handled is dropped, the rest of the message is fetched when the webhook
 // left it out, its cost is recorded, and it goes to the store it belongs to. Two ways lead to a store:
 //
-//   a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the account's
-//   store answers (store.ts); while its WhatsApp token needs connecting again, the message waits for the owner
+//   a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account, or mail to the
+//   receiving subdomain of its own domain): the account's store answers (store.ts); while its WhatsApp token needs
+//   connecting again, the message waits for the owner
 //   the owner line (TORAN_ASSISTANT_WA): business owners talking to their assistant (owners/line.ts)
 //   the shared WhatsApp demo number, whose codes bind a phone to a store (demo.ts)
 //
@@ -68,7 +70,8 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
     }
     return demoNumber(app, adapter, ours);
   }
-  const account = own || (msg.account ? await accountFor(app, adapter.channel, msg.account) : null);
+  // Mail to a store's own receiving subdomain (its MX, mailDomain.ts) belongs to the store's email account.
+  const account = own || (msg.account ? (await accountFor(app, adapter.channel, msg.account)) || (adapter.channel === 'email' ? await receivingAccount(app, msg.account) : null) : null);
   if (account) {
     if (account.status === 'pending') await markLive(app, account.id, account.store_id);
     // The store's token ended (waStore.ts): Toran cannot answer, so the message waits for the owner, said so.

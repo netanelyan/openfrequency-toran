@@ -14,6 +14,8 @@ import { notFoundPage, refusalPage } from './pages/basic.ts';
 import { dashboardRoutes, headerCounts, storesCss } from './routes.ts';
 import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
+import { boundaryOf, parseMultipart, type Upload } from './multipart.ts';
+import { MAX_BYTES } from '../channels/files.ts';
 
 // The website: the owner's dashboard, the public pitch pages, and the WhatsApp webhook,
 // in one process. It listens on 127.0.0.1 (or the container's interface behind Caddy).
@@ -27,13 +29,14 @@ import { demoArt } from './demoArt.ts';
 //     a closed workspace or a plan without Toran gets a page saying so, and a check that
 //     fails (accounts down, a wrong token) lets nobody in
 //   - every dashboard POST asks accounts afresh, carries the CSRF token derived from the
-//     session, and an Origin that is ours; a read-only session (view-as) posts nothing
+//     session, and an Origin that is ours; a read-only session (view-as) posts nothing; a form with a file is
+//     taken only as the owner's answer in a conversation, and no bigger than one file (channels/files.ts)
 //   - a page or action about one store, chat or job answers only inside its workspace
 //     (workspace.ts); the whole server's settings are the operator's
 
 export type Out = { status?: number; message?: string; html?: string; json?: unknown; text?: string; type?: string; redirect?: string; headers?: Record<string, string | string[]>; body?: Buffer };
 export type Req = { req: IncomingMessage; url: URL; path: string; form: Record<string, string>; ip: string; secure: boolean; raw?: string };
-export type DashReq = Req & { user: { id: number; name: string; role: string; email?: string }; scope: Scope; ctx: PageCtx; ajax: boolean };
+export type DashReq = Req & { user: { id: number; name: string; role: string; email?: string }; scope: Scope; ctx: PageCtx; ajax: boolean; files?: Upload[] };
 
 /**
  * The operator's alone (the superadmin outside view-as): the whole server's settings, adding stores, and selling to
@@ -116,16 +119,20 @@ function reply(req: IncomingMessage, res: ServerResponse, o: Out, extra: Record<
   return send(req, res, o.status || 200, o.html || '', o.type || 'text/html; charset=utf-8', headers);
 }
 
-async function readBody(req: IncomingMessage, limit = 300_000): Promise<string> {
+async function readBytes(req: IncomingMessage, limit: number, tooBig = 'body too large'): Promise<Buffer> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const c of req) {
     size += (c as Buffer).length;
-    if (size > limit) throw new ActionError('body too large', 413);
+    if (size > limit) throw new ActionError(tooBig, 413);
     chunks.push(c as Buffer);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
+const readBody = async (req: IncomingMessage, limit = 300_000) => (await readBytes(req, limit)).toString('utf8');
+
+/** The one form that may carry a file: the owner's answer in a conversation, with room for one file and its text. */
+const UPLOAD = /^\/chat\/\d+\/reply$/;
 
 const flashCookie = (msg: string) => `tn_flash=${encodeURIComponent(String(msg).slice(0, 200))}; Path=/; Max-Age=20; SameSite=Strict`;
 
@@ -264,12 +271,20 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       if (method === 'GET' && !scope.operator && OPERATOR_PAGES.test(p)) return reply(req, res, { redirect: leadId && /^\/lead\/\d+$/.test(p) ? `/lead/${leadId}/knowledge` : '/' });
 
       let form: Record<string, string> = {};
+      let files: Upload[] = [];
       if (method === 'POST') {
         const origin = req.headers.origin;
         if (origin && !origins.has(origin)) return json(403, { ok: false, message: 'בקשה מאתר אחר נחסמה.' });
         if (scope.readOnly) return ajax ? json(403, { ok: false, message: 'במצב צפייה אי אפשר לשנות כלום.' }) : send(req, res, 403, 'read-only: view-as changes nothing', 'text/plain; charset=utf-8');
         if (OPERATOR_ONLY.test(p) && !scope.operator) return ajax ? json(403, { ok: false, message: 'את זה משנים רק אנחנו, ב־OpenFrequency.' }) : send(req, res, 403, 'only the operator changes this', 'text/plain; charset=utf-8');
-        form = Object.fromEntries(new URLSearchParams(await readBody(req)));
+        const type = String(req.headers['content-type'] || '');
+        if (/^multipart\/form-data/i.test(type)) {
+          const boundary = boundaryOf(type);
+          if (!UPLOAD.test(p) || !boundary) return send(req, res, 415, 'a file goes only with an answer in a conversation', 'text/plain; charset=utf-8');
+          const parsed = parseMultipart(await readBytes(req, MAX_BYTES + 100_000, `הקובץ גדול מדי. אפשר לצרף עד ${MAX_BYTES / 1024 / 1024}MB.`), boundary);
+          form = parsed.fields;
+          files = parsed.files;
+        } else form = Object.fromEntries(new URLSearchParams(await readBody(req)));
         if (!csrfOk(form._csrf, sid, secret)) return ajax ? json(403, { ok: false, message: 'הדף ישן. צריך לרענן אותו.' }) : send(req, res, 403, 'stale page, reload it', 'text/plain; charset=utf-8');
         if (p === '/settings/dev') {
           const on = form.on === '1';
@@ -280,7 +295,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       }
       if (method === 'GET' && p === '/static/stores.css') return send(req, res, 200, await storesCss(app, scope), 'text/css; charset=utf-8', { 'cache-control': 'private, max-age=60' });
 
-      const r: DashReq = { req, url, path: p, form, ip: clientIp(req), secure, user, scope, ctx, ajax };
+      const r: DashReq = { req, url, path: p, form, ip: clientIp(req), secure, user, scope, ctx, ajax, files };
       for (const [m, re, fn] of dash) {
         if (m !== method) continue;
         const mm = re.exec(p);
