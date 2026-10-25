@@ -2,7 +2,7 @@ import type { App } from '../app.ts';
 import { event, usage } from '../db/log.ts';
 import { adapterFor, adapterOf } from './adapters.ts';
 import { heldForReconnect, markLive, needsReconnect } from './waStore.ts';
-import { lineNumber, lineOf, metaLinesAdapter } from './lines.ts';
+import { lineNumber, lineOf, metaLinesAdapter, oneNumber, withOne } from './lines.ts';
 import { GraphError, TOKEN_GONE } from './meta.ts';
 import { demoNumber, type RouteResult } from './demo.ts';
 import { ownerLine } from '../owners/line.ts';
@@ -24,7 +24,10 @@ import type { Inbound } from './types.ts';
 //   the shared WhatsApp demo number, whose codes bind a phone to a store (demo.ts)
 //
 // The owner line and the demo number come through Twilio, or through Meta when META_OWNER_PHONE_ID or
-// META_DEMO_PHONE_ID names them (lines.ts); either way they reach the same two functions.
+// META_DEMO_PHONE_ID names them (lines.ts); either way they reach the same two functions. Our one number, once our
+// company store connected it on its WhatsApp page (lines.ts oneNumber), is the demo number's: its router sends a
+// verified owner to the assistant, a code or a live demo to the demo, and anyone else to our support. It is never
+// answered as the company store's own WhatsApp, which would skip the first two.
 //
 // Anything else (mail to an address no store has connected) is recorded and not answered.
 
@@ -41,7 +44,11 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
   // Our own demo number or owner line on Meta (lines.ts): Meta names the number by its id, as it does a store's, but
   // it is ours, so it is routed to that line before any store's account is looked at, and answered through the Cloud
   // API from the same number. It is written to the number the line is known by, so what follows is Twilio's path.
-  const line = (inbound.channel || 'whatsapp') === 'whatsapp' && inbound.account ? lineOf(app.env, inbound.account) : null;
+  const wa = (inbound.channel || 'whatsapp') === 'whatsapp' && inbound.account;
+  const one = wa ? await oneNumber(app) : null;
+  const line = wa ? lineOf(app.env, inbound.account, withOne(app.env, one)) : null;
+  // A message on our one number while Meta still says pending: it is on, as for a store's number.
+  if (line && one?.status === 'pending' && one.phoneId === inbound.account) await markLive(app, one.accountId, one.storeId);
   // A message to a store's own WhatsApp number, Page or Instagram account (Meta) carries the account's id, and goes
   // through that account's adapter. Messenger and Instagram have nothing else: an account no store has, or a channel
   // whose code was turned off since, is recorded and not answered.
@@ -66,7 +73,7 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
     const ours = { ...msg, channel: 'whatsapp' as const, to: lineNumber(app.env, line) || msg.to || null };
     if (line === 'owner') {
       const r = await ownerLine(app, adapter, ours);
-      return { action: r.action === 'assistant' || r.action === 'duplicate' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
+      return { action: r.action === 'assistant' || r.action === 'duplicate' || r.action === 'held' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
     }
     return demoNumber(app, adapter, ours);
   }
@@ -87,7 +94,7 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
   }
   if (adapter.channel === 'whatsapp' && isOwnerLine(app.env, msg.to)) {
     const r = await ownerLine(app, adapter, msg);
-    return { action: r.action === 'assistant' || r.action === 'duplicate' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
+    return { action: r.action === 'assistant' || r.action === 'duplicate' || r.action === 'held' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
   }
   if (adapter.channel === 'whatsapp') return demoNumber(app, adapter, msg);
   await event(app.db, null, `${tag}_unknown_account`, { account: msg.account || null });

@@ -13,7 +13,7 @@ import { PAGE_ABOUT, PAGE_DOWN } from '../offer.ts';
 import { J } from '../db/index.ts';
 import { ownerLine } from '../owners/line.ts';
 import { supportAccount } from '../company.ts';
-import { storeChannel } from './store.ts';
+import { conversationOf, storeChannel } from './store.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
@@ -23,7 +23,18 @@ import { storeChannel } from './store.ts';
 //   that store in wa_users for 7 days; a new code overwrites the binding
 //   every later message from that phone goes to the bound store's agent
 //   a message without a code from a phone with no live binding gets one short reply
-//   asking for the demo link, and nothing else
+//   asking for the demo link, and nothing else; or, when our support is set up
+//   (src/company.ts), our support agent
+//   a business owner accounts verified, or a link code, goes to the owner's assistant
+//   (owners/line.ts), before any binding
+//
+// The demo ends back into our support, when it is set up: after BINDING_DAYS, or when
+// the person writes just "תמיכה" or "עזרה" (SUPPORT_WORD). The binding goes, one short
+// line says so, and from then on our support answers that phone (backToSupport).
+//
+// On our one number (lines.ts oneNumber), this router is everything the number does: the
+// owner line, the demos and our support, in that order, except that a code is read first,
+// so a business owner who presses a pitch page's button still gets the demo.
 //
 // THE RULE: nothing here, or anywhere, sends a message to a phone that did not just
 // write. Every send answers the inbound message being handled, through send.ts (the
@@ -46,9 +57,14 @@ const msg = {
   noText: 'בדמו אפשר לשלוח רק טקסט. אפשר לכתוב את השאלה במילים?',
   takedown: 'קיבלנו, ונוריד את העמוד. לא נכתוב לכם שוב.',
   contact: 'קיבלנו את ההודעה, ונחזור אליכם כאן.',
+  // The demo ends back into our support (backToSupport).
+  toSupport: (why: 'asked' | 'expired') => `${why === 'expired' ? `עברו ${BINDING_DAYS} ימים מאז שהדמו התחיל, אז סגרנו אותו.` : 'סגרנו את הדמו.'} מעכשיו עונה לכם כאן התמיכה של OpenFrequency, ואפשר לשאול על תורן, על תדר ועל המחירים. כדי לחזור לדמו לוחצים שוב על הכפתור בעמוד.`,
 };
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact'; storeId?: number; reply?: string };
+/** A message that is only this word ends a live demo and goes back to our support. */
+export const SUPPORT_WORD = /^\s*(?:תמיכה|עזרה)\s*[.!?]*\s*$/;
+
+export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact' | 'demo_ended'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 
@@ -63,6 +79,32 @@ async function held(app: App, conv: number, inbound: Inbound, storeId: number): 
   await hold(app, conv, inbound);
   await event(app.db, storeId, 'held', { conversationId: conv });
   return { action: 'held', storeId };
+}
+
+/** Our support's account on this number (src/company.ts), or null while it is not set up. */
+const supportOf = (app: App, adapter: ChannelAdapter, inbound: Inbound) => supportAccount(app, adapter, inbound.to || app.env.DEMO_WA_NUMBER || app.env.TWILIO_WHATSAPP_FROM);
+
+/**
+ * A demo ends back into our support: the binding goes, one short line says so (kept in the support conversation, so
+ * the inbox shows it), and a question that came with the message is our support's to answer. Null while our support
+ * is not set up: the demo number says what it said before.
+ */
+async function backToSupport(app: App, adapter: ChannelAdapter, inbound: Inbound, storeId: number, why: 'asked' | 'expired'): Promise<RouteResult | null> {
+  const support = await supportOf(app, adapter, inbound);
+  if (!support) return null;
+  await app.db.query('DELETE FROM wa_users WHERE phone = $1', [inbound.from]);
+  await event(app.db, storeId, 'demo_ended', { why });
+  const line = msg.toSupport(why);
+  const conv = await conversationOf(app, adapter, support, inbound);
+  if (why === 'asked' || !String(inbound.text || '').trim()) {
+    await logPair(app, conv, inbound, line);
+    await reply(app, adapter, inbound, line, support.store_id, conv);
+    return { action: 'demo_ended', storeId: support.store_id, reply: line };
+  }
+  await app.db.query("INSERT INTO messages (conversation_id, role, text) VALUES ($1, 'agent', $2)", [conv, line]);
+  await reply(app, adapter, inbound, line, support.store_id, conv);
+  const r = await storeChannel(app, adapter, inbound, support);
+  return { ...r, action: r.action === 'answered' ? 'demo_ended' : r.action, reply: r.reply ? `${line}\n\n${r.reply}` : line };
 }
 
 export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult> {
@@ -122,19 +164,21 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
   const own = await ownerByPhone(app, phone);
   if (own.ok) {
     const r = await ownerLine(app, adapter, inbound, own.owner);
-    return { action: r.action === 'assistant' ? 'assistant' : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
+    return { action: r.action === 'assistant' || r.action === 'held' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
   }
 
   const binding = await db.one<{ store_id: number; expired: boolean }>('SELECT store_id, expires_at < now() AS expired FROM wa_users WHERE phone = $1', [phone]);
   if (!binding) {
     // Our demo number is our public number too: someone with no demo gets our own support, when it is set up.
-    const support = await supportAccount(app, adapter, inbound.to || app.env.DEMO_WA_NUMBER || app.env.TWILIO_WHATSAPP_FROM);
+    const support = await supportOf(app, adapter, inbound);
     if (support) return storeChannel(app, adapter, inbound, support);
     await reply(app, adapter, inbound, msg.noBinding, null, null);
     await event(db, null, 'wa_unbound', {});
     return { action: 'no_binding', reply: msg.noBinding };
   }
   if (binding.expired) {
+    const back = await backToSupport(app, adapter, inbound, binding.store_id, 'expired');
+    if (back) return back;
     await reply(app, adapter, inbound, msg.expired, binding.store_id, null);
     return { action: 'no_binding', storeId: binding.store_id, reply: msg.expired };
   }
@@ -142,6 +186,11 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
   const conv = await conversationFor(db, binding.store_id, 'whatsapp', phone);
   // The owner answered here from the inbox (owner.ts): the message waits for them, and nothing is sent.
   if (await isPaused(app, conv)) return held(app, conv, { ...inbound, text }, binding.store_id);
+  // "תמיכה" or "עזרה" alone: the demo ends, and our support answers from here.
+  if (SUPPORT_WORD.test(text)) {
+    const back = await backToSupport(app, adapter, inbound, binding.store_id, 'asked');
+    if (back) return back;
+  }
   if (!text) {
     await logPair(app, conv, inbound, msg.noText);
     await reply(app, adapter, inbound, msg.noText, binding.store_id, conv);

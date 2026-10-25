@@ -707,3 +707,46 @@ logo), served offline by `exampleFetcher`; a free Wix site's host must be Wix's,
 - Cashcow's options' prices on a sale, its stock per option and its terms dialog are behind POSTs.
 - Konimbo, as above.
 - A JPEG logo's colour is its blocks' average, so a thin coloured line in a JPEG can come out lighter than drawn.
+
+## 2026-10-25: Toran on our own number: one WhatsApp number for the owners, the demos and support
+
+**The number.** OpenFrequency has one WhatsApp number, its public number on the WhatsApp Business app on the
+operator's phone: the pitch pages' button, the website's, `DEMO_WA_NUMBER` and `TORAN_OWNER_WHATSAPP`. There is no
+second number and no Twilio. It goes on Meta through Embedded Signup with coexistence, on our company store's
+WhatsApp page (store 95), once App Review passes.
+
+**Connecting it is the switch.** A Meta number connected on a company store's page is our one number
+(`channels/lines.ts` `oneNumber`, read from channel_accounts on each message, so the web and the worker agree without
+a restart). It fills every role no setting gives another number: the demo number, and the owner line unless
+`META_OWNER_PHONE_ID` names another. Disconnecting on the same page ends it. Without TORAN_SUPPORT_STORE, that
+company store is our support.
+
+**One router for three roles.** Every message to it goes to the demo number's router (`channels/demo.ts`), which
+already knew the three: a code (REQ-, DEMO-) and a pitch page's own message first; then a link code or a business
+owner accounts verified, to the assistant; then a phone bound to a demo; then our support. The code comes before the
+owner on purpose: a Teder customer we pitch Toran to presses the page's button from their own phone and has to get
+the demo, and a REQ- code from the website's form has to be claimed, whoever sends it. A binding does not beat the
+owner. Before this, connecting the number on the company store's page without `META_DEMO_PHONE_ID` would have made it
+that store's own WhatsApp, and every owner and demo would have been answered as support.
+
+**The phone's answers land where the person is.** An `smb_message_echoes` message on our number used to be dropped,
+so that the operator would not be taken for the owner of the store that connected it. Now it lands in the
+conversation that person wrote in last, and Toran stops there for 12 hours, as on a store's own number: the demo
+store's conversation, our support's, or an owner's chat with the assistant. The owner's chat has no conversation row,
+so its pause is `owner_numbers.agent_paused_until` (migration 018); "הפסק" still works while it waits. Someone who
+never wrote gets a new support conversation, paused.
+
+**A demo ends back into support.** "תמיכה" or "עזרה" alone, or a message after the 7 days: the binding goes, one line
+says our support answers from here, and it does (a question sent with it is answered at once). Without our support
+set up, the demo number says what it said before.
+
+**No other store can connect it.** A store's page refuses our number by its Meta id or by the number Meta shows:
+"זה המספר של OpenFrequency, ואי אפשר לחבר אותו לחנות". The check by number runs after Meta's subscription, which is
+left alone: it is our own account's, and our number needs it.
+
+**Shown:** the company store's WhatsApp page and lead page list the roles in order; `/internal/ops` has `ourNumber`.
+
+**Alternatives:** a `META_SUPPORT_PHONE_ID` setting (one more id to copy from WhatsApp Manager and keep in step with
+the connection, which already names the number); a router of its own for the one number (the demo router already
+held all three roles, and two copies would drift); the owner before the codes (every owner who tries a demo or asks
+for one from their own phone would lose it).

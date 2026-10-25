@@ -4,6 +4,7 @@ import { event } from './db/log.ts';
 import { normalize } from './core/hebrew.ts';
 import { embed } from './ingest/embed.ts';
 import { chunk } from './ingest/pages.ts';
+import { oneNumber } from './channels/lines.ts';
 
 // A company store: Toran answering for a business that sells a service, not a catalogue. OpenFrequency's own support
 // is the first one: Toran answers people who write to us about Toran and Teder, from what openfrequency.co.il says.
@@ -31,14 +32,19 @@ export const isCompany = (s: { platform?: string | null } | null | undefined) =>
  * number cannot otherwise answer gets the support agent: on the owner line, a number no workspace linked (instead of
  * "not linked", owners/line.ts); on the demo number, which is also our public number, a phone with no demo (instead of
  * "press the button on the page", channels/demo.ts). The account's status is 'line', which accountFor
- * (channels/store.ts) never matches, so owners still reach their assistant and demo codes still bind. Unset, no such
- * company store, or no number: null, and the number answers as before.
+ * (channels/store.ts) never matches, so owners still reach their assistant and demo codes still bind. Without
+ * TORAN_SUPPORT_STORE, the company store that connected our one number on its WhatsApp page (channels/lines.ts
+ * oneNumber) is our support. Neither, no such company store, or no number: null, and the number answers as before.
  */
 export async function supportAccount(app: App, adapter: { kind: string }, number: string | null | undefined) {
   const domain = String(app.env.TORAN_SUPPORT_STORE || '').trim().toLowerCase();
   const line = String(number || '').replace(/\D/g, '');
-  if (!domain || !line) return null;
-  const s = await app.db.one<{ id: number; name: string | null }>('SELECT id, name FROM stores WHERE domain = $1 AND platform = $2', [domain, COMPANY]);
+  if (!line) return null;
+  const one = domain ? null : await oneNumber(app);
+  if (!domain && !one) return null;
+  const s = domain
+    ? await app.db.one<{ id: number; name: string | null }>('SELECT id, name FROM stores WHERE domain = $1 AND platform = $2', [domain, COMPANY])
+    : await app.db.one<{ id: number; name: string | null }>('SELECT id, name FROM stores WHERE id = $1 AND platform = $2', [one!.storeId, COMPANY]);
   if (!s) return null;
   // The kind follows the adapter, so a number moved from Twilio to Meta (channels/lines.ts) answers from the inbox
   // through Meta too.

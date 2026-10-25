@@ -19,7 +19,9 @@ import { storeChannel } from '../channels/store.ts';
 //   2. who the number is, asked of accounts now. Not linked: our support agent answers when TORAN_SUPPORT_STORE names
 //      a company store (src/company.ts), else one short line saying so (at most once an hour); accounts not
 //      answering: a line saying to try again. Nobody unverified gets further than support
-//   3. the limit: OWNER_PER_10_MIN and OWNER_PER_DAY messages a number, then one line saying so, then silence
+//   3. the limit: OWNER_PER_10_MIN and OWNER_PER_DAY messages a number, then one line saying so, then silence.
+//      The operator answered this owner from our phone (our one number, channels/waStore.ts lineEcho): until the
+//      pause ends, everything but "הפסק" and "התחל" is kept for the operator and not answered
 //   4. "הפסק" and "התחל", read in code: Teder's messages stop or start again (accounts keeps the consent; Toran
 //      keeps the stop too, in case accounts could not be told)
 //   5. Toran's "כן" or "לא" to the one offer waiting (assistant/index.ts), when that offer is newer than the last
@@ -55,7 +57,7 @@ const say = {
   noText: 'אני קורא כאן רק טקסט. אפשר לכתוב לי במילים?',
 };
 
-export type LineResult = { action: 'duplicate' | 'assistant' | 'support' | 'linked' | 'link_refused' | 'not_linked' | 'unavailable' | 'limit' | 'opt_out' | 'opt_in' | 'no_text' | 'silent'; reply?: string; storeId?: number | null };
+export type LineResult = { action: 'duplicate' | 'assistant' | 'support' | 'linked' | 'link_refused' | 'not_linked' | 'unavailable' | 'limit' | 'opt_out' | 'opt_in' | 'no_text' | 'silent' | 'held'; reply?: string; storeId?: number | null };
 
 const textOf = (parts: Part[]) => parts.map((p) => ('text' in p ? p.text : p.caption ? `[${p.caption}]` : '[תמונה]')).join('\n\n');
 
@@ -139,6 +141,12 @@ export async function ownerLine(app: App, adapter: ChannelAdapter, inbound: Inbo
   if ((n?.ten || 0) >= OWNER_PER_10_MIN || (n?.day || 0) >= OWNER_PER_DAY) {
     if (await onceAnHour(app, 'owner_line_limit', phone)) await send([{ text: say.tooMany }]);
     return { action: 'limit' };
+  }
+  // The operator is answering this owner from our phone: kept for them, not answered, but "הפסק" still stops.
+  if (row.agent_paused_until && new Date(row.agent_paused_until).getTime() > Date.now() && !STOP.test(text) && !START.test(text)) {
+    await keep(app, base, 'owner', text || '(קובץ)', phone);
+    await event(app.db, storeId, 'held', { via: 'owner_line', phone });
+    return { action: 'held', storeId };
   }
   if (!text) return answer([{ text: say.noText }], 'no_text');
 

@@ -14,7 +14,7 @@ repository, unused.
 | --- | --- | --- |
 | Email | Built: Resend, signed webhook, threads, bounces, owner replies, attachments both ways (the owner's only), a store's own address on its domain | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
 | WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox, the token's end watched and renewed or asked for again | The Meta app is set; App Review for advanced access is submitted (step 2) |
-| WhatsApp, our demo number and owner line | Built on both: Twilio's code, and Meta's Cloud API once `META_DEMO_PHONE_ID` and `META_OWNER_PHONE_ID` name them | On the simulator: no Twilio account, and the Meta settings of step 3 are not set |
+| WhatsApp, our own number (owner line, demo number, support) | Built: our one number, on as soon as the company store's WhatsApp page connects it (step 3); also Twilio's code, and Meta by `META_DEMO_PHONE_ID` and `META_OWNER_PHONE_ID` for separate numbers | On the simulator: the number is not connected yet (step 3, after App Review) |
 | Instagram, Messenger | Built, behind the flag: login at Meta, `/meta/oauth/<channel>`, the same `/meta/webhook`, replies through the Send API inside the 24 hours, the owner's own answers in the inbox | Off: `TORAN_CHANNELS` does not list them (step 4) |
 
 ## How to change a setting on the server
@@ -231,8 +231,42 @@ banner above handle it.
 
 ## Step 3. Our demo number and owner line: Twilio or Meta, built
 
-Both work on Twilio's code and on Meta's Cloud API. Each one is on Meta once its setting names its Meta number id, and
-on Twilio (or, with no Twilio account, the simulator) until then:
+### Toran on our own number: the way we go live
+
+OpenFrequency has one WhatsApp number, its public number on the WhatsApp Business app on your phone
+(`DEMO_WA_NUMBER`, `TORAN_OWNER_WHATSAPP`, every pitch page's button). It is the owner line, the demo number and our
+support at once. You connect it once, on the company store's WhatsApp page, and that is the switch: no id to copy, no
+second number, no Twilio. docs/company.md, "Toran on our own number", has the order the messages are read in, the
+demo's way back to support and where the phone's answers land. After App Review:
+
+1. **Step 2 is done** (the Meta app, the webhook with `messages`, `smb_message_echoes` and `account_update`, its
+   settings in `.env`), and the company store is synced (docs/company.md; store 95 in production).
+2. **`.env`**, then restart:
+   ```
+   TORAN_SUPPORT_STORE=openfrequency.co.il
+   DEMO_WA_NUMBER=<our number, digits only>          # already set
+   TORAN_OWNER_WHATSAPP=<the same number>            # already set
+   TORAN_ASSISTANT_WA=<the same number>              # and OF_ASSISTANT_WA in accounts' .env, the same
+   META_SYSTEM_TOKEN=<optional, recommended: item 4 below>
+   ```
+   Leave `META_DEMO_PHONE_ID` and `META_OWNER_PHONE_ID` out.
+3. **Connect:** `/admin/toran/lead/95/whatsapp`, "לחבר את הוואטסאפ של החנות", our business and our existing WhatsApp
+   Business app number in Meta's window, the code on the phone. The page says "המספר שלנו מחובר" and lists the three
+   roles. It is on at once, with no restart.
+4. **Templates:** item 6 below, on this number's WhatsApp account, then `META_TEMPLATES` and restart.
+5. **Try each role** from a personal phone: a question from a number accounts does not know (support answers); a
+   pitch page's button, a question, then "תמיכה" (the demo, then support); "מה קורה?" from a number linked in accounts
+   (the assistant). Answer one of them from the WhatsApp Business app: it shows in that conversation in the inbox, and
+   Toran waits there.
+6. **Undo:** "לנתק את הוואטסאפ מתורן" on the same page.
+
+A store's own page cannot connect this number: it says "זה המספר של OpenFrequency, ואי אפשר לחבר אותו לחנות".
+
+### Separate numbers, by setting
+
+Both lines also work on Twilio's code, and on Meta's Cloud API as numbers of their own. Each one is on Meta once its
+setting names its Meta number id, and on Twilio (or, with no Twilio account, the simulator) until then. Our own
+number above takes every role a setting leaves out:
 
 | Setting | The number | Known everywhere else as |
 | --- | --- | --- |
@@ -243,7 +277,8 @@ A message Meta sends for one of these ids goes to the demo number's router or to
 does: codes bind, owners reach their assistant, strangers get our support (`TORAN_SUPPORT_STORE`). It is never
 answered as a store's own WhatsApp, even when the number was connected on a store's page. Every answer, image and
 template goes out through the Cloud API from the number it belongs to, and so do the inbox's replies. The operator
-writing from our phone (coexistence) is not taken for a store's owner.
+writing from our phone (coexistence) is not taken for a store's owner: the answer lands in the conversation that
+person is in, as on our own number.
 
 **Set it up once App Review has passed** (our own numbers are our own business's, so standard access already lets you
 try them; App Review is what the stores need):

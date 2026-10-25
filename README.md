@@ -60,7 +60,7 @@ copy the message, mark it sent, see the chats.
 | `src/ops` | the operator's dashboard: who to write to today, the conversations, the funnels, the money (docs/operator.md) |
 | `src/owners` | the owner line: one WhatsApp number for business owners, about Toran and Teder (docs/owner-line.md) |
 | `src/orders.ts` | a store's own orders (Shopify, WooCommerce, Wix) with the owner's read-only key, for get_order_status |
-| `src/company.ts` | a company store: Toran answering our own support from the site's export (docs/company.md) |
+| `src/company.ts` | a company store: Toran answering our own support from the site's export, and on our one WhatsApp number as owner line, demo number and support (docs/company.md) |
 | `src/web` | the dashboard (Teder's look), auth, the public routes |
 | `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape) |
 | `src/brand.ts` | the family's marks and tokens; `assets/brand/` holds the files |

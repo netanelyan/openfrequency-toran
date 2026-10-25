@@ -97,7 +97,7 @@ export async function sendDirect(app: App, id: string, by: string): Promise<void
   if (!req) throw new OpsError('לא ביקשו את הדמו הזה באתר');
   if (now() - new Date(req.claimed_at).getTime() >= 24 * HOUR) throw new OpsError('עברו 24 שעות מההודעה שלהם, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.');
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
-  const d = await reply(app, demoWa(app), { from: req.phone, text: '', id: `req-${req.code}`, at: new Date(req.claimed_at).getTime(), channel: 'whatsapp' }, requestedLink({ storeName: name, url: pitchUrl(app.env, s.slug) }), s.id, null);
+  const d = await reply(app, await demoWa(app), { from: req.phone, text: '', id: `req-${req.code}`, at: new Date(req.claimed_at).getTime(), channel: 'whatsapp' }, requestedLink({ storeName: name, url: pitchUrl(app.env, s.slug) }), s.id, null);
   if (!d.ok) throw new OpsError('ההודעה לא יצאה: עברו 24 שעות מההודעה שלהם. אפשר לשלוח מהוואטסאפ שלך.');
   await markSent(app, 'toran', id, by);
   await log(app, 'toran', id, 'direct', by, { code: req.code });

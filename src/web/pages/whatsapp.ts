@@ -7,6 +7,9 @@ import { SecretError } from '../../core/secrets.ts';
 import { ActionError, DASH_CSP, type DashReq, type Route } from '../server.ts';
 import { esc, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
 import { tokenState } from '../../channels/waStore.ts';
+import { oneNumberRoles, ROLE_HE, type Role } from '../../channels/lines.ts';
+import { isCompany } from '../../company.ts';
+import { BINDING_DAYS } from '../../channels/demo.ts';
 
 // A store connects its own WhatsApp number (channels/meta.ts, waStore.ts): the page under /lead/<id>/whatsapp, which
 // server.ts opens to the store's own workspace only. Before the button, what to check so Meta's window does not stop
@@ -49,9 +52,11 @@ export function waBanner(a: WaRow | null, storeId: number, { here = false }: { h
 }
 
 /** One line on the store's WhatsApp, for Today, Settings and the lead page. */
-export function waLine(a: WaRow | null, s: { id: number; demo_code?: string | null; taken_down_at?: string | null }, ready: boolean): string {
+export function waLine(a: WaRow | null, s: { id: number; demo_code?: string | null; taken_down_at?: string | null; platform?: string | null }, ready: boolean): string {
   if (a?.status === 'reconnect') return `החיבור של ${phone(a)} לתורן הסתיים, ותורן לא עונה בו. <a href="/lead/${s.id}/whatsapp">${AGAIN}</a>`;
   if (a?.status === 'active' && tokenState(a).soon) return `מחובר, ${phone(a)}. החיבור מסתיים ב-${esc(shortDate(tokenState(a).endsAt))}. <a href="/lead/${s.id}/whatsapp">${AGAIN}</a>`;
+  // Our company store's number is our one number (channels/lines.ts): never this store's own WhatsApp.
+  if (a?.status === 'active' && isCompany(s)) return `מחובר, ${phone(a)}. זה המספר שלנו: תורן עונה בו לבעלי העסקים, לדמו ולתמיכה, והוואטסאפ בטלפון ממשיך לעבוד. <a href="/lead/${s.id}/whatsapp">מה המספר עושה</a>`;
   if (a?.status === 'active') return `מחובר, ${phone(a)}. תורן עונה בו, והוואטסאפ בטלפון ממשיך לעבוד.`;
   if (a?.status === 'pending') return `${phone(a)} ממתין לאישור של Meta. תורן יתחיל לענות בו לבד כשהמספר מאושר.`;
   if (a?.status === 'error') return `Meta עצרה את המספר ${phone(a)} (${esc(a.meta?.why || 'בלי סיבה')}). תורן לא עונה בו. כתבו לנו ונבדוק יחד.`;
@@ -59,9 +64,31 @@ export function waLine(a: WaRow | null, s: { id: number; demo_code?: string | nu
   return ready ? `${demo}<a href="/lead/${s.id}/whatsapp">לחבר את הוואטסאפ של החנות</a>` : `${demo}החיבור של המספר של החנות עוד לא פתוח.`;
 }
 
+/**
+ * On our company store's page: what our one number does once it is connected here (channels/lines.ts), in the order
+ * its messages are read, and how to try each role; before that, what connecting it here does.
+ */
+async function oursPanel(app: App, storeId: number): Promise<string> {
+  const r = await oneNumberRoles(app);
+  if (!r || r.one.storeId !== storeId) return `<section class="panel mt16"><header><h2>המספר של OpenFrequency</h2></header>
+  <p class="m0">זה העמוד של התמיכה שלנו. כשמחברים כאן את המספר של OpenFrequency, תורן עונה בו בשלושה תפקידים: לבעלי העסקים שמחוברים לחשבון, לדמו ולתמיכה. אין צורך בהגדרה נוספת.</p>
+</section>`;
+  const items = r.roles.map((x) => `<li>${esc(ROLE_HE[x])}</li>`).join('');
+  const off = (['owner', 'demo', 'support'] as Role[]).filter((x) => !r.roles.includes(x));
+  return `<section class="panel mt16"><header><h2>מה המספר הזה עושה</h2><span class="end chip ok">מספר אחד, ${r.roles.length} תפקידים</span></header>
+  <p class="m0">כל הודעה למספר נקראת לפי הסדר הזה, והתשובה יוצאת מאותו מספר:</p>
+  <ol class="mt8 m0">${items}</ol>
+  <p class="small mt12 m0">קוד של דמו נקרא לפני הכול, כדי שגם בעל עסק שלוחץ על הכפתור בעמוד של חנות יקבל את הדמו. מי שבדמו וכותב "תמיכה" או "עזרה" עובר לתמיכה, וכך גם כשעוברים ${BINDING_DAYS} ימים מתחילת הדמו.</p>
+  ${off.includes('owner') ? '<p class="small muted mt8 m0">הקו של בעלי העסקים במספר אחר, כי META_OWNER_PHONE_ID מכוון אליו.</p>' : ''}
+  ${off.includes('support') ? '<p class="small muted mt8 m0">התמיכה כבויה: TORAN_SUPPORT_STORE מכוון לחנות שלא קיימת כאן.</p>' : ''}
+  <p class="small mt12 m0">כשעונים מהטלפון, התשובה נכנסת לשיחה שבה האדם נמצא עכשיו, ותורן מפסיק לענות בה ל-12 שעות.</p>
+</section>`;
+}
+
 async function page(app: App, r: DashReq, id: number) {
-  const s = await app.db.one<any>('SELECT id, name, domain, brand, brand_override, demo_code, taken_down_at FROM stores WHERE id = $1', [id]);
+  const s = await app.db.one<any>('SELECT id, name, domain, brand, brand_override, demo_code, taken_down_at, platform FROM stores WHERE id = $1', [id]);
   if (!s) return null;
+  const ours = isCompany(s) ? await oursPanel(app, id) : '';
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   const a = await waAccountOf(app, id);
   const ready = waConnectReady(app.env);
@@ -84,7 +111,7 @@ async function page(app: App, r: DashReq, id: number) {
   ${again ? `<p class="small mt12 m0">מחברים מחדש באותו חלון של Meta, עם אותו מספר. השיחות נשארות, והוואטסאפ בטלפון לא משתנה.</p>${connectButton(AGAIN)}` : ''}
   <dl class="kv mt12"><dt>שם העסק ב-WhatsApp</dt><dd>${esc(a!.name || a!.meta?.verified_name || '-')}</dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd>${until ? `<dt>החיבור בתוקף עד</dt><dd>${until}</dd>` : ''}</dl>
   <p class="small mt12 m0">כשעונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.</p>
-  ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: 'לנתק? תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}
+  ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: ours ? 'לנתק? תורן יפסיק לענות במספר שלנו: לבעלי העסקים, בדמו ובתמיכה. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' : 'לנתק? תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}
 </section>`
     : `<section class="panel"><header><h2>לפני שמחברים</h2></header>
   <ul class="m0">
@@ -108,6 +135,7 @@ async function page(app: App, r: DashReq, id: number) {
 <div class="head"><div class="row">${storeBadge({ id: s.id, name, domain: s.domain })}<h1 class="title">הוואטסאפ של ${esc(name)}</h1></div><p class="sub">מחברים את המספר שכבר יש לחנות ב-WhatsApp Business, ותורן עונה בו ללקוחות.</p></div>
 ${live ? waBanner(a, id, { here: true }) : ''}
 ${state}
+${ours}
 ${ready && (!live || again) && !ro ? '<script src="/static/wa-connect.js?v=2" defer></script>' : ''}`;
   return layout({ ...r.ctx, title: `הוואטסאפ של ${name}`, active: 'settings' }, body);
 }
@@ -125,6 +153,8 @@ export function whatsappRoutes(app: App): Route<DashReq>[] {
         // The person who connects is who hears when the connection has to be made again (waStore.ts).
         const email = r.user.role === 'superadmin' ? null : r.user.email || null;
         const out = await connectWhatsapp(app, id, { code: r.form.code, phoneId: r.form.phone_number_id, wabaId: r.form.waba_id, businessId: r.form.business_id, event: r.form.event, by: r.user.name, email });
+        // Our company store's number is our one number from now on (channels/lines.ts): nothing else to set.
+        if (out.ours) return { redirect: `/lead/${id}/whatsapp`, message: out.status === 'active' ? 'המספר שלנו מחובר. מעכשיו תורן עונה בו לבעלי העסקים, לדמו ולתמיכה.' : 'החיבור נשלח. כש-Meta תאשר את המספר, תורן יענה בו לבעלי העסקים, לדמו ולתמיכה.' };
         return { redirect: `/lead/${id}/whatsapp`, message: out.status === 'active' ? 'הוואטסאפ מחובר. תורן עונה בו מעכשיו.' : 'החיבור נשלח. ממתין לאישור של Meta, ותורן יתחיל לענות לבד כשהמספר מאושר.' };
       } catch (e: any) {
         if (e instanceof ConnectError) throw new ActionError(e.he);

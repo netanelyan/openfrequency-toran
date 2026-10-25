@@ -4,6 +4,7 @@ import { J } from '../db/index.ts';
 import { audit, event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
 import { adapterOf } from './adapters.ts';
+import { demoWa } from './lines.ts';
 import { blockedFor, reply, type Blocked, type Delivery } from './send.ts';
 import { humanAgentOn } from './policy.ts';
 import { keepOutbound } from './files.ts';
@@ -38,7 +39,8 @@ export async function replyTarget(app: App, conversationId: number): Promise<Tar
   if (!c?.peer) return null;
   const last = await app.db.one<{ ext_id: string | null; at: string }>("SELECT ext_id, at FROM messages WHERE conversation_id = $1 AND role = 'customer' ORDER BY id DESC LIMIT 1", [conversationId]);
   if (!last) return null;
-  const adapter = adapterOf(app, c.channel as Channel, c.account_id ? { id: c.account_id, external_id: c.account, kind: c.account_kind, secret: c.account_secret, meta: c.account_meta } : null);
+  // A demo conversation (WhatsApp, no account) answers from the demo number: on Meta while it is there (lines.ts).
+  const adapter = c.channel === 'whatsapp' && !c.account_id ? await demoWa(app) : adapterOf(app, c.channel as Channel, c.account_id ? { id: c.account_id, external_id: c.account, kind: c.account_kind, secret: c.account_secret, meta: c.account_meta } : null);
   const id = last.ext_id || `conversation-${conversationId}`;
   const to: Inbound = {
     channel: c.channel,

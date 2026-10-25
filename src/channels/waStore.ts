@@ -6,7 +6,8 @@ import { seal, open } from '../core/secrets.ts';
 import { ownersOf } from '../owners/identity.ts';
 import { accountState, debugToken, exchangeCode, lastingToken, phoneInfo, refreshToken, subscribeApp, unsubscribeApp, waConnectReady, type Echo, type PhoneInfo, type Status, type TokenInfo } from './meta.ts';
 import { hold, PAUSE_HOURS } from './owner.ts';
-import { lineOf } from './lines.ts';
+import { lineNumber, lineOf, oneNumber, withOne, type Line } from './lines.ts';
+import { isCompany, supportAccount } from '../company.ts';
 import { conversationOf, handOver, type Account } from './store.ts';
 import type { RouteResult } from './demo.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
@@ -23,6 +24,11 @@ import type { ChannelAdapter, Inbound } from './types.ts';
 // same. Only coexistence is accepted: the number the store already has on the WhatsApp Business app, which keeps
 // working on the owner's phone. ownerEcho() is that phone: a message the owner sends from the app is the owner
 // answering, so it lands in the inbox and the agent steps back, as when they answer from the dashboard.
+//
+// Our own number is connected the same way, on our company store's WhatsApp page (lines.ts oneNumber, docs/company.md):
+// from then on it is the demo number, the owner line and our support at once, never that store's own WhatsApp. No
+// other store can connect it (OURS_HE), and the operator's answers from our phone land where that person is talking
+// (lineEcho).
 //
 // The token's life (meta.ts has what Meta allows): debug_token is read after the connect and once a day
 // (checkToken), and its issue and end are kept in the row's token_* columns. A token that never expires is left
@@ -43,6 +49,14 @@ export class ConnectError extends Error {
 
 const COEXISTENCE = 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
 const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '');
+
+/** What a store is told when it tries to connect our own number. */
+export const OURS_HE = 'זה המספר של OpenFrequency, ואי אפשר לחבר אותו לחנות. כאן מחברים את מספר הוואטסאפ של החנות עצמה.';
+
+/** The numbers our own WhatsApp is known by: the demo number, the owner line, and our one number as Meta shows it. */
+function ourNumbers(env: Record<string, string | undefined>, one: { number: string | null } | null): Set<string> {
+  return new Set([lineNumber(env, 'demo'), lineNumber(env, 'owner'), one?.number || null].filter((n): n is string => Boolean(n)));
+}
 
 export type ConnectInput = { code: string; phoneId: string; wabaId: string; businessId?: string; event: string; by: string; email?: string | null };
 
@@ -70,12 +84,21 @@ export async function connectWhatsapp(app: App, storeId: number, input: ConnectI
   const code = String(input.code || '').trim();
   if (!code || !phoneId || !wabaId) throw new ConnectError('the signup gave no code or ids', 'Meta לא החזירה את פרטי החיבור. אפשר לנסות שוב.');
   if (input.event !== COEXISTENCE) throw new ConnectError(`not a coexistence onboarding (${input.event})`, 'צריך לבחור בחלון של Meta לחבר את המספר שכבר פעיל באפליקציית WhatsApp Business. ככה הוואטסאפ ממשיך לעבוד גם בטלפון.');
+  // Our own number is connected on our company store's page only: on a store's page it would be answered as that
+  // store, and our demos, owners and support would stop.
+  const company = isCompany(await app.db.one<{ platform: string | null }>('SELECT platform FROM stores WHERE id = $1', [storeId]));
+  const one = await oneNumber(app);
+  if (!company && lineOf(app.env, phoneId, withOne(app.env, one))) throw new ConnectError(`phone ${phoneId} is our own number`, OURS_HE);
   const taken = await app.db.one<{ store_id: number }>("SELECT store_id FROM channel_accounts WHERE channel = 'whatsapp' AND external_id = $1", [phoneId]);
   if (taken && taken.store_id !== storeId) throw new ConnectError(`phone ${phoneId} belongs to store ${taken.store_id}`, 'המספר הזה כבר מחובר לחנות אחרת.');
 
   const token = await exchangeCode(app.env, app.graph, code);
   await subscribeApp(app.env, app.graph, wabaId, token);
   const info = await phoneInfo(app.env, app.graph, phoneId, token);
+  // Known by its number too, before it is kept. The subscription stays: it is our own account's, which our number
+  // needs anyway.
+  const display = digits(info.display_phone_number);
+  if (!company && display && ourNumbers(app.env, one).has(display)) throw new ConnectError(`phone ${phoneId} (${display}) is our own number`, OURS_HE);
   const state = accountState(info);
   // How long the token lasts. Not knowing yet stops nothing: the worker reads it again within a day.
   let life: TokenInfo | null = null;
@@ -95,9 +118,10 @@ export async function connectWhatsapp(app: App, storeId: number, input: ConnectI
      RETURNING id`,
     [storeId, phoneId, info.verified_name || null, seal(app.env, token), state.status, J(meta), life?.issuedAt ?? null, life?.expiresAt ?? null, life?.dataAccessUntil ?? null, life ? new Date().toISOString() : null],
   );
-  await audit(app.db, { actor: input.by, action: 'whatsapp_connect', storeId, detail: { phoneId, wabaId, status: state.status, tokenEnds: life ? life.expiresAt || 'never' : 'unknown' } });
+  await audit(app.db, { actor: input.by, action: 'whatsapp_connect', storeId, detail: { phoneId, wabaId, status: state.status, tokenEnds: life ? life.expiresAt || 'never' : 'unknown', ...(company ? { ours: true } : {}) } });
   await event(app.db, storeId, state.status === 'active' ? 'wa_connected' : 'wa_pending', { accountId: row!.id, phone: meta.display_phone_number });
-  return { accountId: row!.id, status: state.status, phone: meta.display_phone_number };
+  // Our company store's number is our one number from now on (lines.ts): nothing to set.
+  return { accountId: row!.id, status: state.status, phone: meta.display_phone_number, ours: company };
 }
 
 /** Read a number's state from Meta again, and turn it on (or off) when it changed. */
@@ -143,8 +167,9 @@ export async function disconnectWhatsapp(app: App, storeId: number, by: string) 
 
 /** The owner wrote to a customer from the WhatsApp Business app: their answer, in the inbox, and Toran steps back. */
 export async function ownerEcho(app: App, echo: Echo) {
-  // Our own demo number or owner line (lines.ts): the operator writing from our phone is not a store's owner.
-  if (lineOf(app.env, echo.account)) return { action: 'our_line' };
+  // Our own number (lines.ts): the operator writing from our phone is not a store's owner (lineEcho).
+  const line = lineOf(app.env, echo.account, withOne(app.env, await oneNumber(app)));
+  if (line) return lineEcho(app, echo, line);
   const a = await app.db.one<{ id: number; store_id: number }>("SELECT id, store_id FROM channel_accounts WHERE channel = 'whatsapp' AND external_id = $1 AND status IN ('active', 'pending', 'reconnect')", [echo.account]);
   if (!a) return { action: 'unknown_account' };
   // Meta reports our own API sends as delivery statuses, not echoes; this guards against one arriving as both.
@@ -155,6 +180,50 @@ export async function ownerEcho(app: App, echo: Echo) {
   await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [c!.id]);
   await event(app.db, a.store_id, 'owner_reply', { conversationId: c!.id, via: 'phone' });
   return { action: 'owner_echo', conversationId: c!.id };
+}
+
+type Where = { kind: 'demo' | 'support' | 'owner'; id: number | null; storeId: number | null; workspaceId?: number | null; at: string | null };
+
+/**
+ * The operator wrote from our own phone, on our number (lines.ts): the answer lands where that person is talking now,
+ * and Toran steps back there for PAUSE_HOURS, as for a store's owner answering from theirs. Where they wrote last wins:
+ *   a demo        the demo conversation (no account) with the store the phone is bound to; on the demo number only
+ *   our support   their conversation on our support's account (status 'line', src/company.ts)
+ *   an owner      their chat with the assistant (assistant_messages), paused on their number (owner_numbers)
+ * Someone who never wrote gets a new support conversation, paused, so their answer waits for the operator; with no
+ * support set up, the echo is only recorded.
+ */
+async function lineEcho(app: App, echo: Echo, line: Line) {
+  const { db } = app;
+  // Our own sends come back as delivery reports, not echoes; one that came as both is known by its id.
+  if (await db.one("SELECT 1 FROM messages WHERE ext_id = $1 OR delivery @> $2::jsonb", [`echo:${echo.id}`, J([echo.id])])) return { action: 'duplicate' };
+  if (await db.one("SELECT 1 FROM events WHERE kind IN ('wa_out', 'owner_reply') AND (data->>'id' = $1 OR data->>'echo' = $1) AND at > now() - interval '2 days'", [echo.id])) return { action: 'duplicate' };
+  const peer = echo.to;
+  const demo = line === 'demo' ? await db.one<Where>(`SELECT 'demo' AS kind, id, store_id AS "storeId", last_at AS at FROM conversations WHERE channel = 'whatsapp' AND peer = $1 AND account_id IS NULL AND closed_at IS NULL AND last_at > now() - interval '7 days' ORDER BY last_at DESC LIMIT 1`, [peer]) : null;
+  const support = await db.one<Where>(`SELECT 'support' AS kind, c.id, c.store_id AS "storeId", c.last_at AS at FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE a.channel = 'whatsapp' AND a.status = 'line' AND c.peer = $1 AND c.closed_at IS NULL AND c.last_at > now() - interval '7 days' ORDER BY c.last_at DESC LIMIT 1`, [peer]);
+  const owner = await db.one<Where>("SELECT 'owner' AS kind, NULL::int AS id, (SELECT store_id FROM assistant_messages WHERE phone = o.phone ORDER BY id DESC LIMIT 1) AS \"storeId\", o.workspace_id AS \"workspaceId\", GREATEST((SELECT max(at) FROM assistant_messages WHERE phone = o.phone AND via = 'whatsapp'), o.last_inbound_at) AS at FROM owner_numbers o WHERE o.phone = $1", [peer]);
+  const when = (w: Where | null) => (w?.at ? new Date(w.at).getTime() : -1);
+  let where = [demo, support, owner].reduce<Where | null>((best, w) => (w && when(w) > when(best) ? w : best), null);
+
+  if (where?.kind === 'owner') {
+    await db.query("INSERT INTO assistant_messages (store_id, role, text, via, author, workspace_id, phone) VALUES ($1, 'assistant', $2, 'whatsapp', 'מהטלפון', $3, $4)", [where.storeId, echo.text || '(קובץ)', where.workspaceId ?? null, peer]);
+    await db.query(`UPDATE owner_numbers SET agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE phone = $1`, [peer]);
+    await event(db, where.storeId, 'owner_reply', { via: 'phone', line: 'owner', echo: echo.id });
+    return { action: 'owner_echo', owner: peer };
+  }
+  if (!where) {
+    const account = await supportAccount(app, { kind: 'meta_line' }, lineNumber(app.env, line) || (await oneNumber(app))?.number);
+    if (!account) {
+      await event(db, null, 'our_line_echo', { line, echo: echo.id });
+      return { action: 'our_line' };
+    }
+    const c = await db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer, account_id) VALUES ($1, 'whatsapp', $2, $3) RETURNING id", [account.store_id, peer, account.id]);
+    where = { kind: 'support', id: c!.id, storeId: account.store_id, at: null };
+  }
+  await db.query("INSERT INTO messages (conversation_id, role, text, author, ext_id) VALUES ($1, 'owner', $2, 'מהטלפון', $3)", [where.id, echo.text || '(קובץ)', `echo:${echo.id}`]);
+  await db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [where.id]);
+  await event(db, where.storeId, 'owner_reply', { conversationId: where.id, via: 'phone', line: where.kind, echo: echo.id });
+  return { action: 'owner_echo', conversationId: where.id, line: where.kind };
 }
 
 /** A delivery report: only a failure is kept, with Meta's reason, so a reply that never arrived is visible. */

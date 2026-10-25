@@ -140,6 +140,11 @@ by its own name, in Hebrew, its body's variables in order, and only once `META_T
 Otherwise it is skipped as `no_template`, as on Twilio without a SID. The setup is in docs/connecting-channels.md,
 step 3.
 
+**On our own number** (docs/company.md, "Toran on our own number"): the line is OpenFrequency's one number, which is
+also the demo number and our support. A verified owner's message there reaches the same `ownerLine()`, and Teder's
+news and templates leave from that number. When the operator answers an owner from our phone, the answer is kept in
+the owner's chat and the assistant waits 12 hours (`owner_numbers.agent_paused_until`), except for "הפסק" and "התחל".
+
 **Numbers belong to the list the owner last saw.** When Toran shows posts, it keeps their order (`owner_lists`),
 and "1" means the first one shown. The model names a post by that number, never by Teder's id. An approval or a
 rejection of a number is refused in code unless the owner's message names that number (or "all", or there was only

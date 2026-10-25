@@ -5,6 +5,7 @@ import { accountsLinks, ADMIN } from '../web/accounts.ts';
 import { syncTeder } from './sources.ts';
 import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests } from './queue.ts';
 import { funnels } from './funnel.ts';
+import { oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
 import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, setNext, type Kind } from './actions.ts';
 
 // The operator's dashboard, as data for accounts' /admin, where it is shown (docs/operator.md section 4). Toran's
@@ -47,7 +48,7 @@ const TOLD = `סומן שאמרת להם לחבר מחדש את הוואטסאפ
 
 export async function opsData(app: App) {
   const ok = await syncTeder(app);
-  const [q, convs, stuck, f] = await Promise.all([queue(app), conversations(app), stuckRequests(app), funnels(app, null)]);
+  const [q, convs, stuck, f, one] = await Promise.all([queue(app), conversations(app), stuckRequests(app), funnels(app, null), oneNumberRoles(app)]);
   // The last stage, customers, is accounts' word: it fills it from its subscriptions.
   for (const s of [...f.toran, ...f.teder]) if (s.key === 'customers') Object.assign(s, { all: null, month: null });
   return {
@@ -57,6 +58,9 @@ export async function opsData(app: App) {
     stuck: stuck.map((s) => ({ ...s, leadUrl: leadUrl(app, s.storeId) })),
     conversations: convs.map((c) => ({ ...c, leadUrl: c.product === 'toran' ? leadUrl(app, c.id) : null })),
     funnels: f,
+    // Our one WhatsApp number (channels/lines.ts) and what it does now, in the order its messages are read; null
+    // until our company store connects it.
+    ourNumber: one ? { number: one.one.number, status: one.one.status, roles: one.roles.map((key) => ({ key, he: ROLE_HE[key] })), leadUrl: leadUrl(app, one.one.storeId) } : null,
   };
 }
 

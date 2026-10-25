@@ -110,10 +110,12 @@ test('the demo number on Meta: a code binds and Toran answers through the Cloud 
     assert.ok((await ownerReply(s.app, conv, 'כאן נורית, יש בכחול', 'operator')).ok);
     assert.equal(g.from(DEMO_ID).at(-1)!.body.text.body, 'כאן נורית, יש בכחול');
 
-    // The operator writing from our phone (coexistence) is not a store's owner answering.
+    // The operator writing from our phone (coexistence) is not the owner of the store that connected the number: the
+    // answer lands in the demo conversation the customer is in, and Toran steps back there.
     await hook(change('smb_message_echoes', { message_echoes: [{ from: DEMO_NUMBER, to: CUSTOMER, id: `wamid.echo-${seq++}`, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: 'מהטלפון' } }] }));
     await drain(s.app);
-    assert.ok(!(await s.app.db.one("SELECT 1 FROM messages WHERE author = 'מהטלפון'")));
+    assert.equal((await s.app.db.one<any>("SELECT conversation_id FROM messages WHERE author = 'מהטלפון'"))?.conversation_id, conv);
+    assert.ok(await s.app.db.one('SELECT 1 FROM conversations WHERE id = $1 AND agent_paused_until > now()', [conv]));
 
     // Without META_DEMO_PHONE_ID the demo number is Twilio's (here the simulator), as before.
     delete s.app.env.META_DEMO_PHONE_ID;
