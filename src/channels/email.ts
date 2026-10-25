@@ -124,10 +124,11 @@ export function outgoing(to: string, text: string, inReplyTo: Inbound, ctx: Send
     from: ctx.storeName ? `${quoteName(ctx.storeName)} <${account}>` : account,
     to: [to],
     reply_to: ctx.replyTo || account,
-    subject: reSubject(inReplyTo.subject),
+    // An automatic message (auto/send.ts) starts its own thread with its own subject; everything else answers one.
+    subject: ctx.subject || reSubject(inReplyTo.subject),
     text,
     html: asHtml(text),
-    headers,
+    headers: { ...headers, ...(ctx.headers || {}) },
     ...(ctx.files?.length ? { attachments: ctx.files.map((f) => ({ filename: f.name, content: f.bytes.toString('base64'), content_type: f.type })) } : {}),
   };
 }

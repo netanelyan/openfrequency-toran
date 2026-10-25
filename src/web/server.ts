@@ -195,7 +195,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       }
       const method = req.method === 'HEAD' ? 'GET' : (req.method as 'GET' | 'POST');
       // Never the machine-to-machine routes or the providers' webhooks under the admin prefix.
-      if (viaAdmin && /^\/(internal|wa|mail|meta)\//.test(p)) return send(req, res, 404, 'not found', 'text/plain; charset=utf-8');
+      if (viaAdmin && /^\/(internal|wa|mail|meta|hooks)\//.test(p)) return send(req, res, 404, 'not found', 'text/plain; charset=utf-8');
 
       // ---- static files and brand assets, no session
       if (method === 'GET') {

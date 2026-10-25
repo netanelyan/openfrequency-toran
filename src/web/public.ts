@@ -17,6 +17,7 @@ import { J } from '../db/index.ts';
 import { secretOf, verify } from '../owners/teder.ts';
 import { EVENT_TYPES } from '../owners/events.ts';
 import { opsRoutes } from '../ops/api.ts';
+import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
 
 // The public routes, answered without a session:
 //
@@ -34,6 +35,9 @@ import { opsRoutes } from '../ops/api.ts';
 //                              checked, acknowledged at once, handled by the worker. 404 while TORAN_CHANNELS has
 //                              no email
 //   POST /mail/sim             the email simulator's webhook (development only)
+//   POST /hooks/<platform>/<id> a store's own Shopify or WooCommerce, for the automatic messages: signed with the
+//                              store's webhook secret (Shopify's X-Shopify-Hmac-Sha256, WooCommerce's
+//                              X-WC-Webhook-Signature), acknowledged at once, read by the worker (auto/platforms.ts)
 //   GET  /meta/webhook         Meta's check of the webhook (hub.verify_token = META_WEBHOOK_VERIFY_TOKEN)
 //   POST /meta/webhook         Meta's webhook for every store's own WhatsApp number, Facebook Page and Instagram
 //                              account: X-Hub-Signature-256 checked (under the app's secret, or the Instagram app's),
@@ -169,6 +173,34 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       const ack = mail.ack();
       return { text: ack.body, type: ack.type };
     }],
+    // A store's own platform, for the automatic messages (auto/platforms.ts): signed with the store's own webhook
+    // secret, acknowledged at once, read by the worker. A webhook is only a hint to look: what it says is kept once by
+    // the platform's own ids, so a replayed or doubled one sends nothing twice.
+    ['POST', /^\/hooks\/(shopify|woocommerce)\/(\d+)$/, async (r, m) => {
+      if (!hookOk(r.ip)) return { status: 429, text: '' };
+      const platform = m[1];
+      const storeId = Number(m[2]);
+      const h = r.req.headers;
+      // WooCommerce checks a new webhook with an unsigned "webhook_id=<n>" before its first delivery.
+      if (platform === 'woocommerce' && !h['x-wc-webhook-signature'] && /^webhook_id=\d+$/.test(String(r.raw || '').trim())) return { text: 'ok' };
+      const secret = await hookSecretOf(app, storeId, platform);
+      const sig = platform === 'shopify' ? h['x-shopify-hmac-sha256'] : h['x-wc-webhook-signature'];
+      if (!secret || !(platform === 'shopify' ? shopifyHmacOk(secret, r.raw || '', sig) : wooSignatureOk(secret, r.raw || '', sig))) {
+        app.log(`[auto] ${platform} webhook for store ${storeId}: signature failed from ${r.ip}`);
+        return { status: 401, text: 'bad signature' };
+      }
+      let body: unknown;
+      try {
+        body = JSON.parse(r.raw || '');
+      } catch {
+        return { status: 400, text: '' };
+      }
+      const topic = String((platform === 'shopify' ? h['x-shopify-topic'] : h['x-wc-webhook-topic']) || '');
+      const id = String((platform === 'shopify' ? h['x-shopify-webhook-id'] : h['x-wc-webhook-delivery-id']) || '');
+      await app.db.query('UPDATE auto_sources SET hook_at = now() WHERE store_id = $1', [storeId]);
+      await enqueue(app.db, 'auto_hook', { storeId, platform, topic, body }, { dedupeKey: id ? `auto_hook:${platform}:${storeId}:${id}` : null, maxAttempts: 3 });
+      return { text: 'ok' };
+    }],
     ['GET', /^\/meta\/webhook$/, async (r) => {
       const m = metaSettings(app.env);
       const q = r.url.searchParams;
@@ -205,6 +237,8 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       for (const msg of w.messages) await enqueue(app.db, 'wa_inbound', { ...msg, at: Date.now() }, { dedupeKey: `wa:${msg.id}` });
       for (const e of w.echoes) await enqueue(app.db, 'wa_echo', e, { dedupeKey: `wa_echo:${e.id}` });
       for (const s of w.statuses.filter((x) => x.status === 'failed')) await enqueue(app.db, 'wa_status', s, { dedupeKey: `wa_status:${s.id}`, maxAttempts: 1 });
+      // A store's template approved, rejected or moved to another category (auto/templates.ts).
+      for (const t of w.templates) await enqueue(app.db, 'wa_template_status', t, { maxAttempts: 2 });
       for (const waba of w.accounts) {
         const rows = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status <> 'off' AND meta->>'waba_id' = $1", [waba]);
         for (const a of rows) await enqueue(app.db, 'wa_check', { accountId: a.id }, { dedupeKey: `wa_check:${a.id}`, maxAttempts: 1 });

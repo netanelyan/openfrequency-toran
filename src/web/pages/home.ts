@@ -19,6 +19,7 @@ import { checkUpload, fileOf, MAX_BYTES } from '../../channels/files.ts';
 import { apartCustomer, candidates, otherConversations, sameCustomer } from '../../channels/customers.ts';
 import { customerSettings, customerToday } from './customer.ts';
 import { canIngest } from '../../ingest/catalogue.ts';
+import { MESSAGES } from '../../auto/messages.ts';
 
 // Today, the inbox (every channel's conversations, the owner's reply in each with a file where the channel takes one,
 // the files customers sent, and the customer's other conversations), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
@@ -120,6 +121,8 @@ const DM_CLOSED: Record<string, string> = {
   instagram: 'עבר יותר מדי זמן מההודעה האחרונה של הלקוח, ו־Meta לא מאפשרת לענות באינסטגרם אחרי זה. כשהלקוח יכתוב שוב, אפשר לענות מכאן.',
 };
 
+const AUTO_HE: Record<string, string> = Object.fromEntries(Object.entries(MESSAGES).map(([k, v]) => [k, v.he]));
+
 const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', claim: 'עובדה שלא הגיעה מהנתונים', continuation: 'המשך של משפט שנחתך' };
 
 async function chat(app: App, r: DashReq, id: number) {
@@ -133,6 +136,8 @@ async function chat(app: App, r: DashReq, id: number) {
   const out = msgs.map((m) => {
     const cls = m.role === 'agent' ? `agent${m.handoff ? ' hand' : m.guard?.length ? ' flag' : ''}` : m.role === 'owner' ? 'owner' : m.role === 'system' ? `system${m.handoff ? ' hand' : ''}` : 'customer';
     const notes = m.role === 'agent' ? [
+      // A message Toran sent by itself (auto/send.ts), or its answer to "הסר".
+      ...(m.auto ? [`<span>${icon('send')} ${m.auto === 'opt_out' ? 'תשובה אוטומטית ללקוח שביקש להסיר' : `הודעה אוטומטית: ${esc(AUTO_HE[m.auto] || m.auto)}`}</span>`] : []),
       ...(op ? m.tools || [] : []).map((t: any) => `<span>${icon('search')} ${esc(t.name)} ${esc(JSON.stringify(t.input)).slice(0, 120)}</span>`),
       ...(m.guard || []).filter((g: any) => g.rule !== 'continuation').map((g: any) => `<span class="warn">${icon('alert')} נמחק לפני השליחה (${esc(RULE_HE[g.rule] || g.rule)}): "${esc(g.sentence)}"</span>`),
       ...(m.handoff ? [op ? `<span class="bad">${icon('hand')} הועבר אליך (${esc(m.handoff.reason)}): ${esc(m.handoff.summary)}</span>` : `<span class="bad">${icon('hand')} תורן העביר את זה אליכם${/[\u0590-\u05FF]/.test(m.handoff.summary || '') ? `: ${esc(m.handoff.summary)}` : ''}</span>`] : []),

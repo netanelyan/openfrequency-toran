@@ -15,6 +15,7 @@ repository, unused.
 | Email | Built: Resend, signed webhook, threads, bounces, owner replies, attachments both ways (the owner's only), a store's own address on its domain | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
 | WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox, the token's end watched and renewed or asked for again | The Meta app is set; App Review for advanced access is submitted (step 2) |
 | WhatsApp, our demo number and owner line | Built on both: Twilio's code, and Meta's Cloud API once `META_DEMO_PHONE_ID` and `META_OWNER_PHONE_ID` name them | On the simulator: no Twilio account, and the Meta settings of step 3 are not set |
+| A store's automatic messages (cart, payment, shipping, review) | Built: the store's platform by webhook or a reading every 15 minutes, its own WhatsApp templates submitted and tracked, email, consent and "הסר", quiet time (step 5) | Off for every store until its owner turns a kind on |
 | Instagram, Messenger | Built, behind the flag: login at Meta, `/meta/oauth/<channel>`, the same `/meta/webhook`, replies through the Send API inside the 24 hours, the owner's own answers in the inbox | Off: `TORAN_CHANNELS` does not list them (step 4) |
 
 ## How to change a setting on the server
@@ -168,7 +169,8 @@ answer shows in the inbox and Toran stops answering in that conversation for 12 
    `META_WA_CONFIG_ID`. Add `toran.openfrequency.co.il` to the app's allowed domains for the JavaScript SDK.
 5. **The webhook.** In the app's WhatsApp, Configuration: callback URL `https://toran.openfrequency.co.il/meta/webhook`,
    verify token the string you put in `META_WEBHOOK_VERIFY_TOKEN`. Subscribe the fields `messages`,
-   `smb_message_echoes` and `account_update`.
+   `smb_message_echoes`, `account_update`, and for the stores' automatic messages (step 5)
+   `message_template_status_update` and `template_category_update`.
 6. **App Review.** For stores outside our own business, Meta must approve `whatsapp_business_messaging` and
    `whatsapp_business_management` with advanced access. You submit it; Claude never does. Until then the flow works
    for people with a role on the app, so try it with our own number first.
@@ -193,9 +195,9 @@ answer shows in the inbox and Toran stops answering in that conversation for 12 
 free and keeps the chats), updated, in use on that number for at least a week, a Facebook account, and the phone at
 hand.
 
-**Cost:** Meta charges nothing for replies within 24 hours of the customer's message, which is everything Toran
-sends today. Messages a store starts (the cart and shipping templates, a later item) are billed by Meta to the store's
-own WhatsApp account, so each store adds a payment method in its WhatsApp Manager before those are turned on.
+**Cost:** Meta charges nothing for replies within 24 hours of the customer's message. Messages a store starts (the
+automatic messages of step 5) are billed by Meta to the store's own WhatsApp account, so each store adds a payment
+method in its WhatsApp Manager before those are turned on; the settings page says so.
 
 **How long a store's connection lasts.** The code from Embedded Signup becomes a business integration system user
 token, and the configuration in item 4 decides how long it lasts. Meta's template, "WhatsApp Embedded Signup
@@ -344,6 +346,60 @@ message. Once Meta approves Human Agent for the app, set `META_HUMAN_AGENT=1`, a
 out tagged, up to those 7 days. The agent never answers past 24 hours.
 
 **Then** set Messenger and Instagram to "דמו" or "פעיל" under "ערוצים" on your Settings page, as for email.
+
+## Step 5. A store's automatic messages: built, each off until the store turns it on
+
+The cart, the payment, the shipping and the review request (docs/customer.md, `src/auto/`). They need the store's
+orders connected (the key on "מה תורן יודע") and at least one of its own channels: its WhatsApp number (step 2) or
+its email (step 1). Never our demo number.
+
+**What you set up once:**
+1. **Meta's webhook fields** `message_template_status_update` and `template_category_update` (step 2, item 5), so a
+   template's approval reaches Toran within seconds. Without them the worker reads every pending template once an hour.
+2. **`PUBLIC_BASE_URL`** on https (already set). The stores' platforms send their webhooks to
+   `https://toran.openfrequency.co.il/hooks/<shopify|woocommerce>/<store id>`. Without it Toran reads every 15 minutes.
+3. Nothing in Caddy: it passes every path to Toran (deploy/Caddyfile.example). Under accounts' `/admin` prefix
+   `/hooks/` answers 404, like the other webhooks.
+
+**What the store does, in Settings, "הודעות אוטומטיות":**
+1. **Its WhatsApp templates**, once its number is connected: "לשלוח את התבניות לאישור של Meta". Toran submits seven
+   Hebrew templates to the store's own WhatsApp Business Account with the store's token (`POST
+   /<WABA>/message_templates`), with the store's name in them:
+
+   | Template | Category | Variables |
+   | --- | --- | --- |
+   | `toran_cart_reminder` | Marketing, with the footer and a "הסר" button | name, cart link |
+   | `toran_order_paid` | Utility | name, order number |
+   | `toran_payment_pending` | Utility | name, order number |
+   | `toran_payment_failed` | Utility | name, order number, link to pay again |
+   | `toran_order_shipped` | Utility | name, order number, tracking link |
+   | `toran_order_delivered` | Utility | name, order number |
+   | `toran_review_request` | Marketing, with the footer and a "הסר" button | name, order number, review link |
+
+   The words are in `src/auto/messages.ts`, and the page shows each one as the customer will read it. Each template's
+   state shows on the page; a kind turns on for WhatsApp only once all of its templates are approved. Meta may approve
+   a utility template as marketing (the page says so); it then costs as marketing.
+2. **A payment method** on the store's WhatsApp account, in WhatsApp Manager, under billing. Meta bills every template
+   the store sends to it.
+3. **Instant updates, optional.** Shopify: paste the custom app's **API secret key** (`shpss_...`, the same screen as
+   the token, under API credentials). Toran then registers `checkouts/create`, `checkouts/update`, `orders/create`,
+   `orders/updated`, `orders/paid`, `fulfillments/create` and `fulfillments/update`, and checks each one's
+   `X-Shopify-Hmac-Sha256` with that key. The access token alone cannot sign anything, so without the key Toran reads
+   every 15 minutes. `fulfillments/*` need `read_fulfillments` on the app; without it, shipments come from the orders,
+   on the readings. WooCommerce: a key with **Read/Write** lets Toran register `order.created` and `order.updated`
+   with a secret of its own (`X-WC-Webhook-Signature`); the Read key of "שאלות על הזמנות" cannot, and the page says
+   Toran reads every 15 minutes instead. Wix: an API key cannot subscribe to events at all, so Toran reads; the key
+   needs "Read Abandoned Checkouts" for cart reminders, and the page says so when it does not have it.
+4. **Each kind:** WhatsApp, email or both; the cart's delay; the review's link. Saving turns it on from that moment:
+   nothing that happened before is ever sent.
+
+**Consent for the cart and the review** is read from the checkout: Shopify's email and SMS marketing consent (the SMS
+one counts for WhatsApp, so the store's checkbox text should say messages may come on WhatsApp), WooCommerce's from
+consent plugins that keep it on the order (Mailchimp for WooCommerce and a few common keys), Wix's from the contact's
+subscription. Each is kept with its source and time in `auto_consent`.
+
+To check a store's source from the server: `SELECT store_id, platform, can, hooks, polled_at FROM auto_sources;`, and
+its messages: `SELECT key, status, why, channel FROM auto_events WHERE store_id = <id> ORDER BY id DESC LIMIT 20;`.
 
 ## When a channel is live
 

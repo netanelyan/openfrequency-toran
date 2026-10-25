@@ -59,7 +59,8 @@ async function graph(env: Env, f: GraphFetch, method: 'GET' | 'POST' | 'DELETE',
     signal: AbortSignal.timeout(15_000),
   });
   const out: any = await res.json().catch(() => ({}));
-  if (!res.ok || out?.error) throw new GraphError(`Meta refused ${method} ${url.pathname} (${res.status}${out?.error?.code ? `, code ${out.error.code}` : ''}): ${String(out?.error?.message || '').slice(0, 200)}`, res.status, out?.error?.code ?? null);
+  // The subcode and Meta's own sentence for a person say what a bare code does not (a template's name already taken).
+  if (!res.ok || out?.error) throw new GraphError(`Meta refused ${method} ${url.pathname} (${res.status}${out?.error?.code ? `, code ${out.error.code}${out.error.error_subcode ? `/${out.error.error_subcode}` : ''}` : ''}): ${String(out?.error?.error_user_msg || out?.error?.message || '').slice(0, 200)}`, res.status, out?.error?.code ?? null);
   return out;
 }
 
@@ -140,6 +141,13 @@ export const TOKEN_GONE = 190;
 export const subscribeApp = (env: Env, f: GraphFetch, wabaId: string, token: string) => graph(env, f, 'POST', `${wabaId}/subscribed_apps`, { token });
 export const unsubscribeApp = (env: Env, f: GraphFetch, wabaId: string, token: string) => graph(env, f, 'DELETE', `${wabaId}/subscribed_apps`, { token });
 
+/** A message template submitted for review on a store's WhatsApp account (auto/templates.ts): Meta's id, status and category. */
+export const createTemplate = (env: Env, f: GraphFetch, wabaId: string, token: string, body: unknown): Promise<{ id?: string; status?: string; category?: string }> => graph(env, f, 'POST', `${wabaId}/message_templates`, { token, body });
+
+/** The account's templates of this name, with their status, category and why one was rejected. */
+export const templatesNamed = (env: Env, f: GraphFetch, wabaId: string, token: string, name: string): Promise<{ data?: any[] }> =>
+  graph(env, f, 'GET', `${wabaId}/message_templates`, { token, query: { name, fields: 'id,name,status,category,language,rejected_reason' } });
+
 export type PhoneInfo = { display_phone_number?: string; verified_name?: string; status?: string; platform_type?: string; name_status?: string; quality_rating?: string; code_verification_status?: string; is_on_biz_app?: boolean };
 
 export const phoneInfo = (env: Env, f: GraphFetch, phoneId: string, token: string): Promise<PhoneInfo> =>
@@ -185,13 +193,17 @@ const textOf = (m: any): string => {
 };
 const FILE_TYPES = new Set(['image', 'audio', 'video', 'document', 'sticker', 'location', 'contacts']);
 
+/** Meta's word on one of a store's templates (auto/templates.ts): its status, or the category it moved it to. */
+export type TemplateNews = { waba: string; name: string; status: string | null; category: string | null; reason: string | null };
+
 /** Everything one webhook call carries, per kind. Messages from numbers no store has are kept: the router decides. */
-export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; statuses: Status[]; accounts: string[] } {
+export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; statuses: Status[]; accounts: string[]; templates: TemplateNews[] } {
   const messages: Inbound[] = [];
   const echoes: Echo[] = [];
   const statuses: Status[] = [];
+  const templates: TemplateNews[] = [];
   const accounts = new Set<string>();
-  if (body?.object !== 'whatsapp_business_account') return { messages, echoes, statuses, accounts: [] };
+  if (body?.object !== 'whatsapp_business_account') return { messages, echoes, statuses, accounts: [], templates };
   for (const entry of Array.isArray(body.entry) ? body.entry : []) {
     for (const ch of Array.isArray(entry?.changes) ? entry.changes : []) {
       const v = ch?.value || {};
@@ -223,13 +235,21 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
           if (!to || !m?.id) continue;
           echoes.push({ account: phoneId, to, id: String(m.id), text: textOf(m).trim(), at: Number(m.timestamp) ? Number(m.timestamp) * 1000 : Date.now() });
         }
+      } else if ((ch?.field === 'message_template_status_update' || ch?.field === 'template_category_update') && entry?.id && v.message_template_name) {
+        templates.push({
+          waba: String(entry.id),
+          name: String(v.message_template_name),
+          status: ch.field === 'message_template_status_update' && v.event ? String(v.event) : null,
+          category: ch.field === 'template_category_update' && v.new_category ? String(v.new_category) : null,
+          reason: v.reason ? String(v.reason) : null,
+        });
       } else if (entry?.id) {
         // An account change (its status, its quality, its name): the number's state is read again.
         accounts.add(String(entry.id));
       }
     }
   }
-  return { messages, echoes, statuses, accounts: [...accounts] };
+  return { messages, echoes, statuses, accounts: [...accounts], templates };
 }
 
 // ---- sending through the Cloud API

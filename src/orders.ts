@@ -33,7 +33,7 @@ export const ORDER_PLATFORMS = ['shopify', 'woocommerce', 'wix'] as const;
 export type OrderPlatform = (typeof ORDER_PLATFORMS)[number];
 export const ordersPlatform = (p: string | null | undefined): p is OrderPlatform => (ORDER_PLATFORMS as readonly string[]).includes(String(p || ''));
 
-type Creds = { token?: string; shop?: string; key?: string; secret?: string; apiKey?: string; siteId?: string };
+export type Creds = { token?: string; shop?: string; key?: string; secret?: string; apiKey?: string; siteId?: string };
 export type Shipment = { status: string | null; company: string | null; number: string | null; url: string | null };
 /** One order as every platform's reader gives it: what may be told (number, date, status, shipments) and who may be told (emails, phones). */
 export type Order = { number: string; placed: string | null; status: string; emails: string[]; phones: string[]; shipments: Shipment[] };
@@ -59,7 +59,9 @@ const SHOPIFY_VERSION = '2026-04'; // past its year, Shopify serves the oldest v
 const WIX_API = 'https://www.wixapis.com';
 const str = (v: unknown) => (v == null ? '' : String(v).trim());
 
-async function call(api: Api, url: string, { method = 'GET', headers = {}, body }: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: unknown } = {}): Promise<any> {
+type Method = 'GET' | 'POST' | 'DELETE';
+
+async function call(api: Api, url: string, { method = 'GET', headers = {}, body }: { method?: Method; headers?: Record<string, string>; body?: unknown } = {}): Promise<any> {
   const res = await api(url, {
     method,
     headers: { accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
@@ -73,7 +75,9 @@ async function call(api: Api, url: string, { method = 'GET', headers = {}, body 
 
 // ---- Shopify
 
-const shopifyGet = (api: Api, c: Creds, path: string) => call(api, `https://${c.shop}/admin/api/${SHOPIFY_VERSION}/${path}`, { headers: { 'x-shopify-access-token': c.token! } });
+/** One call to the store's Admin API with the owner's token (the automatic messages read checkouts and register webhooks with it too). */
+export const shopifyCall = (api: Api, c: Creds, path: string, { method = 'GET', body }: { method?: Method; body?: unknown } = {}) => call(api, `https://${c.shop}/admin/api/${SHOPIFY_VERSION}/${path}`, { method, headers: { 'x-shopify-access-token': c.token! }, body });
+const shopifyGet = (api: Api, c: Creds, path: string) => shopifyCall(api, c, path);
 const SHOPIFY_FIELDS = 'id,name,order_number,email,contact_email,phone,created_at,cancelled_at,financial_status,fulfillment_status,customer,billing_address,shipping_address,fulfillments';
 
 const SHOPIFY_PAID: Record<string, string> = { pending: 'waiting for payment', authorized: 'payment approved, not charged yet', partially_paid: 'partly paid', paid: 'paid', partially_refunded: 'paid, partly refunded', refunded: 'refunded', voided: 'payment cancelled' };
@@ -140,17 +144,19 @@ export function wooOrder(o: any): Order {
   };
 }
 
-async function wooGet(api: Api, origin: string, c: Creds, path: string): Promise<any> {
+/** One call to the store's REST API with the owner's key (the automatic messages read orders and register webhooks with it too). */
+export async function wooCall(api: Api, origin: string, c: Creds, path: string, { method = 'GET', body }: { method?: Method; body?: unknown } = {}): Promise<any> {
   const url = `${origin}/wp-json/wc/v3/${path}`;
   try {
-    return await call(api, url, { headers: { authorization: `Basic ${Buffer.from(`${c.key}:${c.secret}`).toString('base64')}` } });
+    return await call(api, url, { method, headers: { authorization: `Basic ${Buffer.from(`${c.key}:${c.secret}`).toString('base64')}` }, body });
   } catch (e) {
     if (!(e instanceof OrderApiError && e.status === 401)) throw e;
     // Some hosts drop the Authorization header before WordPress sees it; WooCommerce then takes the key in the query,
     // over HTTPS only (origin is always https here).
-    return call(api, `${url}${path.includes('?') ? '&' : '?'}consumer_key=${encodeURIComponent(c.key!)}&consumer_secret=${encodeURIComponent(c.secret!)}`);
+    return call(api, `${url}${path.includes('?') ? '&' : '?'}consumer_key=${encodeURIComponent(c.key!)}&consumer_secret=${encodeURIComponent(c.secret!)}`, { method, body });
   }
 }
+const wooGet = (api: Api, origin: string, c: Creds, path: string) => wooCall(api, origin, c, path);
 
 async function wooFind(api: Api, origin: string, c: Creds, number: string): Promise<Order | null> {
   const n = bare(number);
@@ -169,7 +175,7 @@ async function wooFind(api: Api, origin: string, c: Creds, number: string): Prom
 
 // ---- Wix
 
-const wixPost = (api: Api, c: Creds, path: string, body: unknown) => call(api, `${WIX_API}${path}`, { method: 'POST', headers: { authorization: c.apiKey!, 'wix-site-id': c.siteId! }, body });
+export const wixPost = (api: Api, c: Creds, path: string, body: unknown) => call(api, `${WIX_API}${path}`, { method: 'POST', headers: { authorization: c.apiKey!, 'wix-site-id': c.siteId! }, body });
 
 const WIX_PAID: Record<string, string> = { NOT_PAID: 'not paid yet', PENDING: 'payment pending', PENDING_MERCHANT: 'waiting for the store to confirm the payment', PARTIALLY_PAID: 'partly paid', PAID: 'paid', AUTHORIZED: 'payment approved, not charged yet', PARTIALLY_REFUNDED: 'paid, partly refunded', FULLY_REFUNDED: 'refunded', DECLINED: 'the payment was declined', CANCELED: 'payment cancelled', VOIDED: 'payment cancelled' };
 const WIX_SENT: Record<string, string> = { NOT_FULFILLED: 'not shipped yet', PARTIALLY_FULFILLED: 'partly shipped', FULFILLED: 'shipped' };
@@ -238,6 +244,24 @@ export type AccessRow = { platform: OrderPlatform; status: string; meta: any; co
 export const orderAccessOf = (db: Db, storeId: number) => db.one<AccessRow>('SELECT platform, status, meta, connected_at FROM order_access WHERE store_id = $1', [storeId]);
 
 const httpsOrigin = (url: string) => `https://${new URL(url).host}`;
+
+/**
+ * The store's platform and the owner's key, opened, for the automatic messages (auto/platforms.ts), which read the
+ * store's checkouts and orders with the same key; null when there is none, or it is marked as refused.
+ */
+export async function openAccess(app: Pick<App, 'db' | 'env'>, storeId: number): Promise<{ platform: OrderPlatform; creds: Creds; origin: string } | null> {
+  const row = await app.db.one<{ platform: OrderPlatform; secret: string; url: string; status: string }>('SELECT a.platform, a.secret, a.status, s.url FROM order_access a JOIN stores s ON s.id = a.store_id WHERE a.store_id = $1', [storeId]);
+  if (!row || row.status !== 'active') return null;
+  try {
+    return { platform: row.platform, creds: JSON.parse(open(app.env, row.secret)), origin: httpsOrigin(row.url) };
+  } catch (e) {
+    if (e instanceof SecretError) await markError(app.db, storeId, 'the key does not open with this TORAN_SECRETS_KEY');
+    return null;
+  }
+}
+
+/** The platform refused the owner's key: the row says so, and the page asks for a new one. */
+export const keyRefused = (db: Db, storeId: number, why: string) => markError(db, storeId, why);
 
 /** The order with this number in the store's own system, or null; throws OrderApiError when the platform did not answer. */
 export async function findOrder(app: Pick<App, 'db' | 'env' | 'api'>, storeId: number, number: string): Promise<Order | null> {

@@ -10,7 +10,8 @@ This repository is **phase 1, the demo machine**:
 3. Let the owner review and approve the page, then send the link by hand.
 4. Watch what happens next.
 
-Nothing in it contacts a store or a customer by itself.
+Nothing in it contacts a store or a customer by itself, with one exception a paying store turns on: its automatic
+messages to its own customers (a cart, a payment, a shipment, a review), on its own number or email (docs/customer.md).
 
 ```
 lead discovery -> dedupe + platform detection -> score -> ingest -> knowledge pack -> pitch page + demo code
@@ -60,6 +61,7 @@ copy the message, mark it sent, see the chats.
 | `src/ops` | the operator's dashboard: who to write to today, the conversations, the funnels, the money (docs/operator.md) |
 | `src/owners` | the owner line: one WhatsApp number for business owners, about Toran and Teder (docs/owner-line.md) |
 | `src/orders.ts` | a store's own orders (Shopify, WooCommerce, Wix) with the owner's read-only key, for get_order_status |
+| `src/auto` | the store's automatic messages: its platform's webhooks and readings, consent and "הסר", quiet time, the WhatsApp templates on the store's own account |
 | `src/company.ts` | a company store: Toran answering our own support from the site's export (docs/company.md) |
 | `src/web` | the dashboard (Teder's look), auth, the public routes |
 | `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape) |

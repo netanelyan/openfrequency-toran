@@ -1,6 +1,7 @@
 import type { App } from '../../app.ts';
 import { secretsReady } from '../../core/secrets.ts';
 import { connectOrders, disconnectOrders, OrderConnectError, orderAccessOf, ordersPlatform, type AccessRow, type OrderPlatform } from '../../orders.ts';
+import { dropSource } from '../../auto/platforms.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, postButton, shortDate } from '../ui.ts';
 
@@ -83,6 +84,8 @@ export function ordersRoutes(app: App): Route<DashReq>[] {
     ['POST', /^\/lead\/(\d+)\/orders\/off$/, async (r, m) => {
       owner(r);
       const id = Number(m[1]);
+      // The automatic messages read the store with the same key: their webhooks go first, while the key still works.
+      await dropSource(app, id).catch((e) => app.log(`[auto] store ${id}: the source was not dropped cleanly: ${e?.message || e}`));
       await disconnectOrders(app, id, r.user.name);
       return { redirect: `/lead/${id}/knowledge#orders`, message: 'ההזמנות נותקו, והמפתח נמחק אצלנו.' };
     }],
