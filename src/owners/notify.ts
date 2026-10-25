@@ -5,7 +5,8 @@ import { event, usage } from '../db/log.ts';
 import type { Part } from '../channels/send.ts';
 import type { WaOut } from '../channels/whatsapp.ts';
 import { mayNotify, type Owner } from './identity.ts';
-import { filled, templateSid, TEMPLATES } from './templates.ts';
+import { filled, templateRef, TEMPLATES } from './templates.ts';
+import { ownerWa } from '../channels/lines.ts';
 import type { PostId } from './teder.ts';
 
 // The one place Toran writes to someone who did not just write: a business owner's own number, about their own Teder
@@ -80,6 +81,8 @@ export async function pushToOwner(app: App, owner: Owner, p: Push): Promise<Outc
   const today = await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM owner_notifications WHERE phone = $1 AND status = 'sent' AND at > now() - interval '24 hours'", [phone]);
   if ((today?.n || 0) >= PUSHES_PER_DAY) return skip('rate_limited');
 
+  // The owner line's provider: Meta's Cloud API when META_OWNER_PHONE_ID is set (channels/lines.ts), else Twilio.
+  const wa = ownerWa(app);
   const inWindow = row.last_inbound_at && Date.now() - new Date(row.last_inbound_at).getTime() < 24 * HOUR - WINDOW_MARGIN_MS;
   let messages: WaOut[];
   let mode: 'session' | 'template';
@@ -94,7 +97,7 @@ export async function pushToOwner(app: App, owner: Owner, p: Push): Promise<Outc
   } else {
     mode = 'template';
     const t = p.template ? TEMPLATES[p.template.name] : null;
-    const sid = t ? templateSid(app.env, t.name) : null;
+    const sid = t ? templateRef(app.env, wa.kind, t.name) : null;
     if (!t || !p.template || !sid) return skip('no_template');
     messages = [{ template: { name: t.name, sid, vars: p.template.vars } }];
   }
@@ -102,8 +105,8 @@ export async function pushToOwner(app: App, owner: Owner, p: Push): Promise<Outc
   const ids: string[] = [];
   try {
     for (const m of messages) {
-      const sent = await app.wa.push(phone, { ...m, from: lineNumber(app.env) });
-      await usage(app.db, { kind: 'bsp', backend: app.wa.kind, units: 1, usd: sent.usd, apiUsd: sent.usd, tag: mode === 'template' ? 'wa_template' : 'wa_push' });
+      const sent = await wa.push(phone, { ...m, from: lineNumber(app.env) });
+      await usage(app.db, { kind: 'bsp', backend: wa.kind, units: 1, usd: sent.usd, apiUsd: sent.usd, tag: mode === 'template' ? 'wa_template' : 'wa_push' });
       ids.push(sent.id);
     }
   } catch (e: any) {

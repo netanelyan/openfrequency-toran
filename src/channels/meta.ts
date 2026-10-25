@@ -3,6 +3,7 @@ import { toIntl } from '../core/urls.ts';
 import { open } from '../core/secrets.ts';
 import { LIMITS } from './policy.ts';
 import type { ChannelAdapter, Inbound, Sent } from './types.ts';
+import type { WaOut } from './whatsapp.ts';
 
 // Meta, directly: a store's own WhatsApp number through the WhatsApp Cloud API (Instagram and Messenger come through
 // the same app later). docs/connecting-channels.md has the setup.
@@ -15,7 +16,9 @@ import type { ChannelAdapter, Inbound, Sent } from './types.ts';
 //                HMAC-SHA256 of the raw body under the app secret). parseWebhook() reads the customers' messages,
 //                the owner's own messages from the phone (coexistence echoes), delivery reports and account changes.
 //   sending      waAccountAdapter() is the channel adapter of one connected number: POST /<phone id>/messages with the
-//                store's token, inside the 24-hour window that send.ts checks before every send.
+//                store's token, inside the 24-hour window that send.ts checks before every send. Our own demo
+//                number and owner line send the same way, when they are on Meta (lines.ts).
+//   the token    debugToken() says when it ends; lastingToken() and refreshToken() keep it on (waStore.ts)
 //
 // Meta charges nothing for a reply inside the customer's 24 hours (a service message), so usage records $0.
 
@@ -67,6 +70,71 @@ export async function exchangeCode(env: Env, f: GraphFetch, code: string): Promi
   if (!out?.access_token) throw new GraphError('Meta gave no access token for the code', 200, null);
   return String(out.access_token);
 }
+
+// ---- the store's token, and how long it lasts
+//
+// Embedded Signup's code becomes a business integration system user token. How long it lasts is the configuration's
+// (META_WA_CONFIG_ID) choice: Meta's template "WhatsApp Embedded Signup Configuration With 60 Expiration Token" gives
+// one that ends after 60 days; a configuration made by hand (login variation "WhatsApp Embedded Signup", a
+// system-user access token) can choose "Never". debug_token says which one a store has, and when it ends.
+//
+// Before a 60-day token ends there are two ways to keep the number on, both tried by the worker (waStore.ts):
+//   lasting      POST /<the store's business>/system_user_access_tokens, Meta's call for a new token from the one we
+//                hold, which never expires unless asked to. It takes business_management, which the token has only
+//                when the configuration asked for it, and the store's business id
+//   refresh      GET /oauth/access_token with grant_type fb_exchange_token and set_token_expires_in_60_days, Meta's
+//                refresh of an expiring system user token: another 60 days, while the old one is still valid
+// When neither works, the store connects again (the dashboard asks from 10 days before the end).
+
+export type TokenInfo = {
+  valid: boolean;
+  issuedAt: string | null;
+  expiresAt: string | null; // null: it never expires
+  dataAccessUntil: string | null;
+  scopes: string[];
+  business: string | null; // the business that business_management covers, when it does
+};
+
+const secondsToIso = (s: unknown) => (Number(s) > 0 ? new Date(Number(s) * 1000).toISOString() : null);
+
+/** What Meta says about a token: debug_token, asked with the app's own token. */
+export async function debugToken(env: Env, f: GraphFetch, token: string): Promise<TokenInfo> {
+  const m = metaSettings(env);
+  const out = await graph(env, f, 'GET', 'debug_token', { token: `${m.appId}|${m.appSecret}`, query: { input_token: token } });
+  const d = out?.data || {};
+  const granular = Array.isArray(d.granular_scopes) ? d.granular_scopes : [];
+  const bm = granular.find((g: any) => g?.scope === 'business_management');
+  return {
+    valid: d.is_valid === true,
+    issuedAt: secondsToIso(d.issued_at),
+    // 0 is Meta's word for never.
+    expiresAt: secondsToIso(d.expires_at),
+    dataAccessUntil: secondsToIso(d.data_access_expires_at),
+    scopes: Array.isArray(d.scopes) ? d.scopes.map(String) : [],
+    business: bm?.target_ids?.[0] ? String(bm.target_ids[0]) : null,
+  };
+}
+
+/** appsecret_proof: the token's HMAC-SHA256 under the app secret, which some calls about a client's business ask for. */
+export const appSecretProof = (appSecret: string, token: string) => createHmac('sha256', appSecret).update(token).digest('hex');
+
+/** A token that never expires, made from the one we hold, for the store's own business (see above). */
+export async function lastingToken(env: Env, f: GraphFetch, businessId: string, token: string): Promise<string> {
+  const out = await graph(env, f, 'POST', `${businessId}/system_user_access_tokens`, { token, query: { appsecret_proof: appSecretProof(metaSettings(env).appSecret, token) } });
+  if (!out?.access_token) throw new GraphError('Meta gave no token for the business', 200, null);
+  return String(out.access_token);
+}
+
+/** Another 60 days for an expiring system user token, while it is still valid. */
+export async function refreshToken(env: Env, f: GraphFetch, token: string): Promise<string> {
+  const m = metaSettings(env);
+  const out = await graph(env, f, 'GET', 'oauth/access_token', { query: { grant_type: 'fb_exchange_token', client_id: m.appId, client_secret: m.appSecret, set_token_expires_in_60_days: 'true', fb_exchange_token: token } });
+  if (!out?.access_token) throw new GraphError('Meta gave no refreshed token', 200, null);
+  return String(out.access_token);
+}
+
+/** Meta's code for a token that no longer works: expired, revoked, or the password changed. */
+export const TOKEN_GONE = 190;
 
 /** Ask Meta to send this business account's messages to our app's webhook. */
 export const subscribeApp = (env: Env, f: GraphFetch, wabaId: string, token: string) => graph(env, f, 'POST', `${wabaId}/subscribed_apps`, { token });
@@ -130,6 +198,8 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
       const phoneId = String(v.metadata?.phone_number_id || '');
       if (ch?.field === 'messages' && phoneId) {
         const names = new Map((v.contacts || []).map((c: any) => [String(c.wa_id), c.profile?.name || null]));
+        // The number it was written to, as Twilio's webhook says it: our own numbers are routed by it (lines.ts).
+        const to = toIntl(String(v.metadata?.display_phone_number || '')) || null;
         for (const m of Array.isArray(v.messages) ? v.messages : []) {
           const from = toIntl(String(m?.from || ''));
           if (!from || !m?.id || ['reaction', 'unsupported', 'system', 'request_welcome'].includes(m.type)) continue;
@@ -140,6 +210,7 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
             id: String(m.id),
             profileName: (names.get(String(m.from)) as string) || null,
             account: phoneId,
+            to,
             ...(FILE_TYPES.has(m.type) ? { attachments: [{ name: m[m.type]?.filename || m.type, type: m[m.type]?.mime_type || m.type, size: 0 }] } : {}),
           });
         }
@@ -161,6 +232,31 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
   return { messages, echoes, statuses, accounts: [...accounts] };
 }
 
+// ---- sending through the Cloud API
+
+/**
+ * The Cloud API's body for one message: text, an image with its caption, or an approved template (Hebrew, its body's
+ * variables in order). A template is named by the name Meta approved, which WaOut carries in `sid` (Twilio's word).
+ */
+export function outBody(to: string, msg: WaOut): Record<string, unknown> {
+  const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to };
+  if (msg.template) {
+    const vars = msg.template.vars.map((text) => ({ type: 'text', text }));
+    return { ...base, type: 'template', template: { name: msg.template.sid, language: { code: 'he' }, ...(vars.length ? { components: [{ type: 'body', parameters: vars }] } : {}) } };
+  }
+  if (msg.mediaUrl) return { ...base, type: 'image', image: { link: msg.mediaUrl, ...(msg.text ? { caption: msg.text } : {}) } };
+  return { ...base, type: 'text', text: { body: msg.text || '', preview_url: false } };
+}
+
+/**
+ * One message out of a number on the Cloud API. A reply inside the 24 hours costs nothing; a template is billed by
+ * Meta to the number's own WhatsApp account, at Meta's rate, which the ledger does not know, so it records $0.
+ */
+export async function cloudSend(env: Env, f: GraphFetch, phoneId: string, token: string, to: string, msg: WaOut): Promise<Sent> {
+  const out = await graph(env, f, 'POST', `${phoneId}/messages`, { token, body: outBody(to, msg) });
+  return { id: String(out?.messages?.[0]?.id || ''), usd: 0 };
+}
+
 // ---- one connected number, as a channel adapter
 
 export type WaAccount = { id: number; external_id: string; secret: string | null; meta: any };
@@ -176,10 +272,7 @@ export function waAccountAdapter(env: Env, f: GraphFetch, account: WaAccount): C
     limits: LIMITS.whatsapp,
     inboundUsd: 0,
     parse: () => null, // the one webhook is /meta/webhook (parseWebhook), not an adapter's
-    async send(to: string, text: string): Promise<Sent> {
-      const out = await graph(env, f, 'POST', `${account.external_id}/messages`, { token: token(), body: { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { body: text, preview_url: false } } });
-      return { id: String(out?.messages?.[0]?.id || ''), usd: 0 };
-    },
+    send: (to: string, text: string): Promise<Sent> => cloudSend(env, f, account.external_id, token(), to, { text }),
     ack: () => ({ type: 'text/plain; charset=utf-8', body: 'ok' }),
   };
 }

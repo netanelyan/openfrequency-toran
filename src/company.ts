@@ -40,7 +40,9 @@ export async function supportAccount(app: App, adapter: { kind: string }, number
   if (!domain || !line) return null;
   const s = await app.db.one<{ id: number; name: string | null }>('SELECT id, name FROM stores WHERE domain = $1 AND platform = $2', [domain, COMPANY]);
   if (!s) return null;
-  await app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, name, status) VALUES ($1, 'whatsapp', $2, $3, $4, 'line') ON CONFLICT (channel, external_id) DO NOTHING", [s.id, adapter.kind, line, s.name]);
+  // The kind follows the adapter, so a number moved from Twilio to Meta (channels/lines.ts) answers from the inbox
+  // through Meta too.
+  await app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, name, status) VALUES ($1, 'whatsapp', $2, $3, $4, 'line') ON CONFLICT (channel, external_id) DO UPDATE SET kind = EXCLUDED.kind WHERE channel_accounts.status = 'line'", [s.id, adapter.kind, line, s.name]);
   return app.db.one<{ id: number; store_id: number; channel: string; external_id: string; kind: string; secret: string | null; meta: any; status: string }>(
     "SELECT id, store_id, channel, external_id, kind, secret, meta, status FROM channel_accounts WHERE channel = 'whatsapp' AND external_id = $1 AND store_id = $2 AND status = 'line'",
     [line, s.id],

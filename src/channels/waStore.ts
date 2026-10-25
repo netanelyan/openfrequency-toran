@@ -1,9 +1,15 @@
 import type { App } from '../app.ts';
+import { DAY, now } from '../core/clock.ts';
 import { J } from '../db/index.ts';
 import { audit, event } from '../db/log.ts';
 import { seal, open } from '../core/secrets.ts';
-import { accountState, exchangeCode, phoneInfo, subscribeApp, unsubscribeApp, waConnectReady, type Echo, type PhoneInfo, type Status } from './meta.ts';
-import { PAUSE_HOURS } from './owner.ts';
+import { ownersOf } from '../owners/identity.ts';
+import { accountState, debugToken, exchangeCode, lastingToken, phoneInfo, refreshToken, subscribeApp, unsubscribeApp, waConnectReady, type Echo, type PhoneInfo, type Status, type TokenInfo } from './meta.ts';
+import { hold, PAUSE_HOURS } from './owner.ts';
+import { lineOf } from './lines.ts';
+import { conversationOf, handOver, type Account } from './store.ts';
+import type { RouteResult } from './demo.ts';
+import type { ChannelAdapter, Inbound } from './types.ts';
 
 // A store's own WhatsApp number, connected through Meta (meta.ts), as a row of channel_accounts:
 //
@@ -17,6 +23,15 @@ import { PAUSE_HOURS } from './owner.ts';
 // same. Only coexistence is accepted: the number the store already has on the WhatsApp Business app, which keeps
 // working on the owner's phone. ownerEcho() is that phone: a message the owner sends from the app is the owner
 // answering, so it lands in the inbox and the agent steps back, as when they answer from the dashboard.
+//
+// The token's life (meta.ts has what Meta allows): debug_token is read after the connect and once a day
+// (checkToken), and its issue and end are kept in the row's token_* columns. A token that never expires is left
+// alone. One that ends within RENEW_DAYS is renewed, a never-expiring one made from it when Meta allows, else another
+// 60 days. When neither works: from WARN_DAYS before the end the store's dashboard and the operator's list say
+// "לחבר מחדש את הוואטסאפ" (and the owner gets an email, once), and on the end, or the first time Meta refuses the
+// token, the status becomes 'reconnect' (needsReconnect): every customer message waits for the owner with a note
+// saying why (heldForReconnect), instead of an answer that cannot go out. Connecting again on the same page makes it
+// active again with a new token.
 
 export class ConnectError extends Error {
   he: string;
@@ -29,7 +44,24 @@ export class ConnectError extends Error {
 const COEXISTENCE = 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
 const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '');
 
-export type ConnectInput = { code: string; phoneId: string; wabaId: string; event: string; by: string };
+export type ConnectInput = { code: string; phoneId: string; wabaId: string; businessId?: string; event: string; by: string; email?: string | null };
+
+/** The worker renews a token that ends within this many days. */
+export const RENEW_DAYS = 20;
+/** The store is asked to connect again from this many days before its token ends. */
+export const WARN_DAYS = 10;
+
+/** When the token ends (null: never, or not read yet), and whether the store should connect again now. */
+export function tokenState(a: { status: string; token_expires_at?: string | Date | null }): { endsAt: number | null; ended: boolean; soon: boolean } {
+  const endsAt = a.token_expires_at ? new Date(a.token_expires_at).getTime() : null;
+  const ended = a.status === 'reconnect';
+  return { endsAt, ended, soon: !ended && a.status !== 'off' && endsAt != null && endsAt - now() < WARN_DAYS * DAY };
+}
+
+/** What debug_token said, kept on the row. */
+async function recordToken(app: App, accountId: number, t: TokenInfo) {
+  await app.db.query('UPDATE channel_accounts SET token_issued_at = $2, token_expires_at = $3, token_data_until = $4, token_checked_at = now(), meta = meta || $5::jsonb WHERE id = $1', [accountId, t.issuedAt, t.expiresAt, t.dataAccessUntil, J({ token_scopes: t.scopes, token_error: null })]);
+}
 
 export async function connectWhatsapp(app: App, storeId: number, input: ConnectInput) {
   if (!waConnectReady(app.env)) throw new ConnectError('the Meta settings or TORAN_SECRETS_KEY are missing', 'החיבור לוואטסאפ עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.');
@@ -45,14 +77,25 @@ export async function connectWhatsapp(app: App, storeId: number, input: ConnectI
   await subscribeApp(app.env, app.graph, wabaId, token);
   const info = await phoneInfo(app.env, app.graph, phoneId, token);
   const state = accountState(info);
-  const meta = { waba_id: wabaId, display_phone_number: digits(info.display_phone_number) || null, verified_name: info.verified_name || null, phone_status: info.status || null, why: state.why, checked_at: new Date().toISOString(), event: input.event };
+  // How long the token lasts. Not knowing yet stops nothing: the worker reads it again within a day.
+  let life: TokenInfo | null = null;
+  try {
+    life = await debugToken(app.env, app.graph, token);
+  } catch (e: any) {
+    app.log(`[wa] debug_token after the connect of store ${storeId} failed (read again by the worker): ${e?.message || e}`);
+  }
+  const meta = {
+    waba_id: wabaId, business_id: digits(input.businessId) || life?.business || null, display_phone_number: digits(info.display_phone_number) || null, verified_name: info.verified_name || null,
+    phone_status: info.status || null, why: state.why, checked_at: new Date().toISOString(), event: input.event, by_email: input.email || null, token_scopes: life?.scopes || [],
+  };
   const row = await app.db.one<{ id: number }>(
-    `INSERT INTO channel_accounts (store_id, channel, kind, external_id, name, secret, status, meta) VALUES ($1, 'whatsapp', 'meta', $2, $3, $4, $5, $6::jsonb)
-     ON CONFLICT (channel, external_id) DO UPDATE SET kind = 'meta', name = EXCLUDED.name, secret = EXCLUDED.secret, status = EXCLUDED.status, meta = EXCLUDED.meta, connected_at = now()
+    `INSERT INTO channel_accounts (store_id, channel, kind, external_id, name, secret, status, meta, token_issued_at, token_expires_at, token_data_until, token_checked_at) VALUES ($1, 'whatsapp', 'meta', $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+     ON CONFLICT (channel, external_id) DO UPDATE SET kind = 'meta', name = EXCLUDED.name, secret = EXCLUDED.secret, status = EXCLUDED.status, meta = EXCLUDED.meta, connected_at = now(),
+       token_issued_at = EXCLUDED.token_issued_at, token_expires_at = EXCLUDED.token_expires_at, token_data_until = EXCLUDED.token_data_until, token_checked_at = EXCLUDED.token_checked_at
      RETURNING id`,
-    [storeId, phoneId, info.verified_name || null, seal(app.env, token), state.status, J(meta)],
+    [storeId, phoneId, info.verified_name || null, seal(app.env, token), state.status, J(meta), life?.issuedAt ?? null, life?.expiresAt ?? null, life?.dataAccessUntil ?? null, life ? new Date().toISOString() : null],
   );
-  await audit(app.db, { actor: input.by, action: 'whatsapp_connect', storeId, detail: { phoneId, wabaId, status: state.status } });
+  await audit(app.db, { actor: input.by, action: 'whatsapp_connect', storeId, detail: { phoneId, wabaId, status: state.status, tokenEnds: life ? life.expiresAt || 'never' : 'unknown' } });
   await event(app.db, storeId, state.status === 'active' ? 'wa_connected' : 'wa_pending', { accountId: row!.id, phone: meta.display_phone_number });
   return { accountId: row!.id, status: state.status, phone: meta.display_phone_number };
 }
@@ -60,7 +103,8 @@ export async function connectWhatsapp(app: App, storeId: number, input: ConnectI
 /** Read a number's state from Meta again, and turn it on (or off) when it changed. */
 export async function checkAccount(app: App, accountId: number) {
   const a = await app.db.one<any>("SELECT id, store_id, external_id, secret, status, meta FROM channel_accounts WHERE id = $1 AND channel = 'whatsapp' AND kind = 'meta'", [accountId]);
-  if (!a || a.status === 'off' || !a.secret) return { status: a?.status || 'missing' };
+  // A number waiting to be connected again stays so until it is: its token is no good for asking.
+  if (!a || a.status === 'off' || a.status === 'reconnect' || !a.secret) return { status: a?.status || 'missing' };
   let info: PhoneInfo;
   try {
     info = await phoneInfo(app.env, app.graph, a.external_id, open(app.env, a.secret));
@@ -99,7 +143,9 @@ export async function disconnectWhatsapp(app: App, storeId: number, by: string) 
 
 /** The owner wrote to a customer from the WhatsApp Business app: their answer, in the inbox, and Toran steps back. */
 export async function ownerEcho(app: App, echo: Echo) {
-  const a = await app.db.one<{ id: number; store_id: number }>("SELECT id, store_id FROM channel_accounts WHERE channel = 'whatsapp' AND external_id = $1 AND status IN ('active', 'pending')", [echo.account]);
+  // Our own demo number or owner line (lines.ts): the operator writing from our phone is not a store's owner.
+  if (lineOf(app.env, echo.account)) return { action: 'our_line' };
+  const a = await app.db.one<{ id: number; store_id: number }>("SELECT id, store_id FROM channel_accounts WHERE channel = 'whatsapp' AND external_id = $1 AND status IN ('active', 'pending', 'reconnect')", [echo.account]);
   if (!a) return { action: 'unknown_account' };
   // Meta reports our own API sends as delivery statuses, not echoes; this guards against one arriving as both.
   if (await app.db.one('SELECT 1 FROM messages WHERE ext_id = $1 OR delivery @> $2::jsonb', [`echo:${echo.id}`, J([echo.id])])) return { action: 'duplicate' };
@@ -116,4 +162,135 @@ export async function deliveryStatus(app: App, s: Status) {
   if (s.status !== 'failed') return;
   const a = await app.db.one<{ store_id: number }>("SELECT store_id FROM channel_accounts WHERE channel = 'whatsapp' AND external_id = $1", [s.account]);
   await event(app.db, a?.store_id ?? null, 'wa_failed', { id: s.id, error: s.error });
+}
+
+// ---- the token's life
+
+const TZ = 'Asia/Jerusalem';
+const dateHe = (t: string | number | Date) => new Intl.DateTimeFormat('he-IL', { timeZone: TZ, day: 'numeric', month: 'long' }).format(new Date(t));
+
+/** The page a store connects its WhatsApp again on (pages/whatsapp.ts). */
+export const reconnectUrl = (env: Record<string, string | undefined>, storeId: number) => `${String(env.PUBLIC_BASE_URL || '').replace(/\/+$/, '')}/lead/${storeId}/whatsapp`;
+
+/** Read the token's life from Meta, renew it when it ends soon, and say so when it cannot be renewed. The worker, daily. */
+export async function checkToken(app: App, accountId: number) {
+  const a = await app.db.one<any>("SELECT id, store_id, secret, status, meta, token_expires_at FROM channel_accounts WHERE id = $1 AND channel = 'whatsapp' AND kind = 'meta'", [accountId]);
+  if (!a || !a.secret || a.status === 'off' || a.status === 'reconnect') return { status: a?.status || 'missing' };
+  const token = open(app.env, a.secret);
+  let t: TokenInfo;
+  try {
+    t = await debugToken(app.env, app.graph, token);
+  } catch (e: any) {
+    await app.db.query('UPDATE channel_accounts SET token_checked_at = now(), meta = meta || $2::jsonb WHERE id = $1', [a.id, J({ token_error: String(e?.message || e).slice(0, 200) })]);
+    // Meta did not answer, and the end we know of has passed: the token is gone either way.
+    if (a.token_expires_at && new Date(a.token_expires_at).getTime() <= now()) {
+      await needsReconnect(app, a.id, 'expired');
+      return { status: 'reconnect' };
+    }
+    return { status: a.status, error: String(e?.message || e) };
+  }
+  await recordToken(app, a.id, t);
+  const endsAt = t.expiresAt ? new Date(t.expiresAt).getTime() : null;
+  if (!t.valid || (endsAt != null && endsAt <= now())) {
+    await needsReconnect(app, a.id, t.valid ? 'expired' : 'token');
+    return { status: 'reconnect' };
+  }
+  if (endsAt == null) return { status: a.status, expiresAt: null };
+  if (endsAt - now() < RENEW_DAYS * DAY) {
+    const how = await renewToken(app, { ...a, meta: a.meta || {} }, token, t);
+    if (how) return { status: a.status, renewed: how };
+  }
+  if (endsAt - now() < WARN_DAYS * DAY) await tellOwner(app, a.id, 'soon');
+  return { status: a.status, expiresAt: t.expiresAt };
+}
+
+/**
+ * A new token before this one ends: one that never expires, when the token covers the store's business
+ * (business_management), else another 60 days. The new one is believed only once debug_token says it is valid and
+ * lasts longer. Neither: null, and the reasons are kept for the operator.
+ */
+async function renewToken(app: App, a: { id: number; store_id: number; meta: any }, token: string, t: TokenInfo): Promise<'lasting' | 'refreshed' | null> {
+  const business = t.business || a.meta.business_id || null;
+  const tries: ['lasting' | 'refreshed', () => Promise<string>][] = [];
+  if (business && t.scopes.includes('business_management')) tries.push(['lasting', () => lastingToken(app.env, app.graph, business, token)]);
+  tries.push(['refreshed', () => refreshToken(app.env, app.graph, token)]);
+  const why: string[] = [];
+  for (const [how, get] of tries) {
+    try {
+      const next = await get();
+      const n = await debugToken(app.env, app.graph, next);
+      if (!n.valid) throw new Error('Meta says the new token is not valid');
+      if (n.expiresAt && t.expiresAt && new Date(n.expiresAt).getTime() <= new Date(t.expiresAt).getTime()) throw new Error('the new token ends no later than the old one');
+      await app.db.query('UPDATE channel_accounts SET secret = $2, meta = meta || $3::jsonb WHERE id = $1', [a.id, seal(app.env, next), J({ renewed_at: new Date().toISOString(), renewed_by: how, renew_error: null, notified: {} })]);
+      await recordToken(app, a.id, n);
+      await event(app.db, a.store_id, 'wa_token_renewed', { accountId: a.id, how, expiresAt: n.expiresAt });
+      return how;
+    } catch (e: any) {
+      why.push(`${how}: ${String(e?.message || e).slice(0, 160)}`);
+    }
+  }
+  await app.db.query('UPDATE channel_accounts SET meta = meta || $2::jsonb WHERE id = $1', [a.id, J({ renew_error: why.join('; ') })]);
+  await event(app.db, a.store_id, 'wa_token_renew_failed', { accountId: a.id, why });
+  app.log(`[wa] the token of account ${a.id} (store ${a.store_id}) could not be renewed: ${why.join('; ')}`);
+  return null;
+}
+
+/** The token ended, or Meta refused it: Toran stops answering on the number, and the owner is told. */
+export async function needsReconnect(app: App, accountId: number, why: 'expired' | 'token') {
+  const r = await app.db.query<{ id: number; store_id: number }>("UPDATE channel_accounts SET status = 'reconnect', meta = meta || $2::jsonb WHERE id = $1 AND status IN ('active', 'pending') RETURNING id, store_id", [accountId, J({ why: `token_${why}`, reconnect_at: new Date().toISOString() })]);
+  if (!r.length) return false;
+  await event(app.db, r[0].store_id, 'wa_reconnect', { accountId, why });
+  await tellOwner(app, accountId, 'ended');
+  return true;
+}
+
+const NOTICE = {
+  soon: (store: string, ends: string, url: string) => ({
+    subject: `צריך לחבר מחדש את הוואטסאפ של ${store} לתורן`,
+    text: `שלום,\n\nהחיבור של הוואטסאפ של ${store} לתורן מסתיים ב-${ends}. מהתאריך הזה תורן לא יוכל לענות בו, עד שתחברו אותו מחדש.\n\nזה לוקח דקה: נכנסים לקישור, לוחצים "לחבר מחדש את הוואטסאפ" ומאשרים בחלון של Meta. הוואטסאפ בטלפון ממשיך לעבוד כרגיל, והשיחות נשארות.\n\n${url}\n\nתורן, OpenFrequency`,
+  }),
+  ended: (store: string, _ends: string, url: string) => ({
+    subject: `תורן הפסיק לענות בוואטסאפ של ${store}`,
+    text: `שלום,\n\nהחיבור של הוואטסאפ של ${store} לתורן הסתיים, ותורן לא עונה בו עכשיו. ההודעות של הלקוחות מחכות לכם בשיחות בדשבורד, ואפשר לענות להן מהטלפון כרגיל.\n\nכדי שתורן יחזור לענות, צריך לחבר מחדש. זה לוקח דקה:\n\n${url}\n\nתורן, OpenFrequency`,
+  }),
+};
+
+/**
+ * Tell the store's owner, once for each of 'soon' and 'ended': an event (the dashboard and the operator's list read
+ * the row itself), and an email when email is on here and an address is known (the person who connected, and the
+ * workspace's people accounts knows). An email that fails is logged; the dashboard still says it.
+ */
+async function tellOwner(app: App, accountId: number, kind: 'soon' | 'ended') {
+  const a = await app.db.one<any>('SELECT a.id, a.store_id, a.meta, a.token_expires_at, s.name, s.domain, s.brand, s.workspace_id FROM channel_accounts a JOIN stores s ON s.id = a.store_id WHERE a.id = $1', [accountId]);
+  if (!a || a.meta?.notified?.[kind]) return;
+  await app.db.query("UPDATE channel_accounts SET meta = jsonb_set(meta, '{notified}', COALESCE(meta->'notified', '{}'::jsonb) || $2::jsonb) WHERE id = $1", [a.id, J({ [kind]: new Date().toISOString() })]);
+  const sent: string[] = [];
+  if (app.mail) {
+    const to = new Set<string>();
+    if (a.meta?.by_email) to.add(String(a.meta.by_email).toLowerCase());
+    if (a.workspace_id) for (const o of (await ownersOf(app, a.workspace_id)) || []) if (o.user.email) to.add(o.user.email.toLowerCase());
+    const name = a.brand?.name || a.name || a.domain;
+    const m = NOTICE[kind](name, a.token_expires_at ? dateHe(a.token_expires_at) : '', reconnectUrl(app.env, a.store_id));
+    for (const address of [...to].filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))) {
+      try {
+        await app.mail.notice(address, m.subject, m.text);
+        sent.push(address);
+      } catch (e: any) {
+        app.log(`[wa] the ${kind} notice to the owner of store ${a.store_id} failed: ${e?.message || e}`);
+      }
+    }
+  }
+  await event(app.db, a.store_id, kind === 'soon' ? 'wa_reconnect_soon' : 'wa_reconnect_told', { accountId: a.id, emails: sent.length });
+}
+
+const HELD_NOTE = 'החיבור של הוואטסאפ לתורן הסתיים, אז תורן לא ענה. ההודעה מחכה לכם: אפשר לענות מהטלפון, ולחבר מחדש בהגדרות כדי שתורן יחזור לענות.';
+
+/** A customer wrote while the number needs connecting again: the message waits for the owner, with a note once a day. */
+export async function heldForReconnect(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account): Promise<RouteResult> {
+  const conv = await conversationOf(app, adapter, account, inbound);
+  await hold(app, conv, inbound);
+  const noted = await app.db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'system' AND handoff->>'reason' = 'reconnect' AND at > now() - interval '1 day'", [conv]);
+  if (!noted) await handOver(app, account.store_id, conv, 'reconnect', 'the WhatsApp token ended', HELD_NOTE);
+  await event(app.db, account.store_id, 'held', { conversationId: conv, why: 'reconnect' });
+  return { action: 'held', storeId: account.store_id };
 }

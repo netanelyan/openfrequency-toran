@@ -13,8 +13,8 @@ repository, unused.
 | Channel | Code | Production (checked from outside, 2026-10-24) |
 | --- | --- | --- |
 | Email | Built: Resend, signed webhook, threads, bounces, owner replies | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
-| WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox | Waits for the Meta app and its settings (step 2) |
-| WhatsApp, our demo number and owner line | Built on Twilio's code; moving them to Meta is a later item | On the simulator |
+| WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox, the token's end watched and renewed or asked for again | The Meta app is set; App Review for advanced access is submitted (step 2) |
+| WhatsApp, our demo number and owner line | Built on both: Twilio's code, and Meta's Cloud API once `META_DEMO_PHONE_ID` and `META_OWNER_PHONE_ID` name them | On the simulator: no Twilio account, and the Meta settings of step 3 are not set |
 | Instagram, Messenger | Built, behind the flag: login at Meta, `/meta/oauth/<channel>`, the same `/meta/webhook`, replies through the Send API inside the 24 hours, the owner's own answers in the inbox | Off: `TORAN_CHANNELS` does not list them (step 4) |
 
 ## How to change a setting on the server
@@ -34,7 +34,7 @@ journalctl -u toran -n 30 --no-pager    # if it is not active
 To see which settings are present without printing any value:
 
 ```
-ssh tiyul-vps 'cd /opt/toran; for k in ANTHROPIC_API_KEY META_APP_ID META_APP_SECRET META_WA_CONFIG_ID META_WEBHOOK_VERIFY_TOKEN META_FB_CONFIG_ID META_IG_APP_ID META_IG_APP_SECRET PUBLIC_BASE_URL TORAN_SECRETS_KEY RESEND_API_KEY RESEND_WEBHOOK_SECRET TORAN_MAIL_DOMAIN TORAN_CHANNELS; do grep -qE "^$k=.+" private/.env && echo "$k: set" || echo "$k: MISSING"; done'
+ssh tiyul-vps 'cd /opt/toran; for k in ANTHROPIC_API_KEY META_APP_ID META_APP_SECRET META_WA_CONFIG_ID META_WEBHOOK_VERIFY_TOKEN META_FB_CONFIG_ID META_IG_APP_ID META_IG_APP_SECRET META_DEMO_PHONE_ID META_OWNER_PHONE_ID META_SYSTEM_TOKEN META_TEMPLATES PUBLIC_BASE_URL TORAN_SECRETS_KEY RESEND_API_KEY RESEND_WEBHOOK_SECRET TORAN_MAIL_DOMAIN TORAN_CHANNELS; do grep -qE "^$k=.+" private/.env && echo "$k: set" || echo "$k: MISSING"; done'
 ```
 
 ## Step 0. The model: check this first
@@ -151,12 +151,92 @@ hand.
 sends today. Messages a store starts (the cart and shipping templates, a later item) are billed by Meta to the store's
 own WhatsApp account, so each store adds a payment method in its WhatsApp Manager before those are turned on.
 
-## Step 3. Our demo number and owner line: Meta next
+**How long a store's connection lasts.** The code from Embedded Signup becomes a business integration system user
+token, and the configuration in item 4 decides how long it lasts. Meta's template, "WhatsApp Embedded Signup
+Configuration With 60 Expiration Token", gives one that ends after 60 days. Toran never stops on that by surprise:
+- It reads the token with Meta's `debug_token` right after the connect and once a day, and keeps when it was issued
+  and when it ends (`channel_accounts.token_*`). The store's WhatsApp page shows "החיבור בתוקף עד".
+- From 20 days before the end the worker renews it, in this order. When the token covers the store's business
+  (`business_management`), Meta's `POST /<business>/system_user_access_tokens` makes one that never expires. Else
+  Meta's refresh of an expiring system user token (`GET /oauth/access_token`, `grant_type=fb_exchange_token`,
+  `set_token_expires_in_60_days=true`) gives another 60 days. A new token is used only once `debug_token` says it is
+  valid and lasts longer.
+- If Meta allows neither, then from 10 days before the end Today, the lead page and the WhatsApp page show "צריך
+  לחבר מחדש את הוואטסאפ" with the button. Your list on /admin has the store first, with a message to copy (its "שלחתי"
+  hides it for three days). The person who connected, and the workspace's linked owners, get one email, once email
+  (step 1) is on.
+- On the end, or the first time Meta refuses the token (code 190): the number's status is `reconnect`. Meta still
+  delivers the customers' messages, Toran does not answer them, and each conversation gets a note for the owner (once
+  a day) saying why. The inbox's reply box says to answer from the phone. One more email goes out.
+- The store presses "לחבר מחדש את הוואטסאפ", goes through the same window of Meta with the same number, and is active
+  again with a new token.
 
-Both run on Twilio's code today, and in production on the simulator. The plan is to move them to Meta's Cloud API
-too, with coexistence, so OpenFrequency's own number (`TORAN_OWNER_WHATSAPP`, the support number and the number on
-your phone) stays in the WhatsApp Business app on the phone. That is a separate item. The owner line's five
-templates (docs/whatsapp-templates.md) are then submitted to Meta directly.
+To stop the 60-day cycle for the stores that connect from now on, make the configuration by hand instead of from
+the template. In Facebook Login for Business, Configurations, "Create configuration":
+1. Login variation **WhatsApp Embedded Signup**.
+2. Access token **System-user access token**, token expiration **Never**.
+3. The assets and permissions the template had: WhatsApp accounts, `whatsapp_business_management`,
+   `whatsapp_business_messaging`.
+4. Put its id in `META_WA_CONFIG_ID` and restart.
+
+Stores connected with the old configuration keep their 60-day token until they connect again once. The banner asks
+them to. If Meta does not offer "Never" for this login variation on your app, keep the template. The renewal and the
+banner above handle it.
+
+## Step 3. Our demo number and owner line: Twilio or Meta, built
+
+Both work on Twilio's code and on Meta's Cloud API. Each one is on Meta once its setting names its Meta number id, and
+on Twilio (or, with no Twilio account, the simulator) until then:
+
+| Setting | The number | Known everywhere else as |
+| --- | --- | --- |
+| `META_DEMO_PHONE_ID` | the demo number, which is also our public number and support | `DEMO_WA_NUMBER` (the pitch pages' button) |
+| `META_OWNER_PHONE_ID` | the owner line | `TORAN_ASSISTANT_WA` (accounts' link code, Teder's news) |
+
+A message Meta sends for one of these ids goes to the demo number's router or to the owner line, exactly as Twilio's
+does: codes bind, owners reach their assistant, strangers get our support (`TORAN_SUPPORT_STORE`). It is never
+answered as a store's own WhatsApp, even when the number was connected on a store's page. Every answer, image and
+template goes out through the Cloud API from the number it belongs to, and so do the inbox's replies. The operator
+writing from our phone (coexistence) is not taken for a store's owner.
+
+**Set it up once App Review has passed** (our own numbers are our own business's, so standard access already lets you
+try them; App Review is what the stores need):
+1. **The demo number** is OpenFrequency's own number on the WhatsApp Business app on your phone
+   (`TORAN_OWNER_WHATSAPP`). Connect it with coexistence, so the phone keeps working: sync the company store
+   (docs/company.md), open its WhatsApp page (`/admin/toran/lead/<its id>/whatsapp`) and press "לחבר את הוואטסאפ של
+   החנות". That subscribes our WhatsApp account to the webhook and seals the number's token.
+2. **The owner line** is a second number. Add it to the same WhatsApp account in WhatsApp Manager, or, if it is on the
+   WhatsApp Business app too, connect it the same way.
+3. **The ids.** In WhatsApp Manager, Phone numbers, copy each number's **Phone number ID** (not the number itself).
+4. **The token (recommended).** In Business Settings, System users, create an admin system user, assign it our
+   WhatsApp account with full control, and generate a token for the app with `whatsapp_business_messaging` and
+   `whatsapp_business_management`, expiration **Never**. Put it in `META_SYSTEM_TOKEN`. Without it, Toran uses the
+   token from item 1, which ends after 60 days with the template configuration, as in step 2.
+5. **The webhook for a number added in WhatsApp Manager only** (item 1 already did this for the demo number):
+   ```
+   curl -s -X POST "https://graph.facebook.com/v23.0/<our WhatsApp account id>/subscribed_apps" -H "Authorization: Bearer <META_SYSTEM_TOKEN>"
+   ```
+   It answers `{"success":true}`.
+6. **The owner line's five templates** (docs/whatsapp-templates.md). In WhatsApp Manager, Message templates, create
+   each one exactly as the sheet says: its name, Utility, Hebrew, the body, the footer, the quick reply buttons. Once
+   Meta approves them, list their names in `META_TEMPLATES`. A template not listed is not sent, and the owner
+   notifications record it as skipped. Add a payment method to our WhatsApp account: Meta bills each template.
+7. **`.env`**, then restart:
+   ```
+   META_DEMO_PHONE_ID=<the demo number's Phone number ID>
+   META_OWNER_PHONE_ID=<the owner line's Phone number ID>
+   META_SYSTEM_TOKEN=<item 4, optional>
+   META_TEMPLATES=teder_posts_ready,teder_post_reminder,teder_post_unposted,teder_quota_low,teder_weekly_summary
+   DEMO_WA_NUMBER=<the demo number, digits only>          # already set
+   TORAN_ASSISTANT_WA=<the owner line, digits only>       # already set, the same as OF_ASSISTANT_WA in accounts
+   ```
+   Either line can move alone: leave the other's id out and it stays on Twilio.
+8. **Try it.** From a personal phone, press a pitch page's demo button: the answer comes from the demo number. Write
+   to the owner line from a number linked in accounts: the assistant answers. Write to it from a number that is not
+   linked: our support answers, or "this number is not linked" when `TORAN_SUPPORT_STORE` is unset.
+
+Cost: the answers inside the 24 hours are free. The templates are billed by Meta to our WhatsApp account at Meta's
+rate for Israel, which the ledger does not know, so it records them at $0.
 
 ## Step 4. Instagram and Messenger: built, behind a flag
 

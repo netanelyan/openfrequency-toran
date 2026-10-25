@@ -13,7 +13,7 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, dayHe, esc, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
 import { storesOf, type Scope } from '../workspace.ts';
 import { conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
-import { waAccountOf, waLine } from './whatsapp.ts';
+import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { waConnectReady } from '../../channels/meta.ts';
 import { socialReady } from '../../channels/social.ts';
 import { socialAccountOf, socialLine } from './social.ts';
@@ -95,8 +95,11 @@ async function today(app: App, r: DashReq) {
   const row = (c: any) => conversationRow({ ...c, store: many ? nameOf.get(c.store_id) : null });
   const weeks = firstWeeks(stores);
   const channels = await Promise.all(stores.map(async (s) => ({ s, rows: await channelsOf(app, s) })));
+  // A store's WhatsApp that has to be connected again (channels/waStore.ts) comes first: customers are waiting on it.
+  const reconnect = (await Promise.all(stores.map(async (s) => waBanner(await waAccountOf(app, s.id), s.id)))).join('');
 
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(dayHe(now()))}${many ? '' : ` · ${esc(stores[0].name)}`}</p></div>
+${reconnect}
 ${weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
 <div class="kpis">
   <a class="kpi lead" href="/chats?state=waiting"><span class="l">${waitingAll === 1 ? 'שאלה מחכה לכם' : 'שאלות מחכות לכם'}</span><span class="v">${waitingAll}</span><span class="s">${waitingAll ? 'מה שאין עליו תשובה באתר, ותורן העביר אליכם' : 'כל מה שנשאל קיבל תשובה'}</span></a>

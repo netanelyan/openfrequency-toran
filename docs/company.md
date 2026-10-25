@@ -59,8 +59,9 @@ Handoffs land in the operator's inbox like any store's.
    - the owner line (`TORAN_ASSISTANT_WA`): a number no workspace linked gets the support agent instead of "this
      number is not linked". Owners still get their assistant.
 
-   Replies from the inbox go out from the number the person wrote to. Neither number is live yet (Twilio or Meta,
-   docs/connecting-channels.md), so this waits for them.
+   Replies from the inbox go out from the number the person wrote to. Neither number is live yet. They go live on
+   Meta with docs/connecting-channels.md step 3, which also connects our number on this store's WhatsApp page: a
+   message to it still goes to the demo number's router, never to this store as its own WhatsApp.
 5. **After a change on the site** (a price, a question, `support.json`): steps 1 and 2 again. The owner's own answers
    (the dashboard's questions, the inbox's "save the answer") are kept.
 

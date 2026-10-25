@@ -28,11 +28,11 @@ export async function hold(app: App, conversationId: number, inbound: Inbound, {
   await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [conversationId]);
 }
 
-type Target = { adapter: ChannelAdapter; to: Inbound; storeId: number; storeName: string; pausedUntil: number | null };
+type Target = { adapter: ChannelAdapter; to: Inbound; storeId: number; storeName: string; pausedUntil: number | null; reconnect: boolean };
 
 /** Who a reply in this conversation goes to, rebuilt from what the conversation kept; null when the customer never wrote. */
 export async function replyTarget(app: App, conversationId: number): Promise<Target | null> {
-  const c = await app.db.one<any>('SELECT c.id, c.channel, c.peer, c.meta, c.agent_paused_until, s.id AS store_id, s.name, s.domain, s.brand, s.brand_override, a.id AS account_id, a.external_id AS account, a.kind AS account_kind, a.secret AS account_secret, a.meta AS account_meta FROM conversations c JOIN stores s ON s.id = c.store_id LEFT JOIN channel_accounts a ON a.id = c.account_id WHERE c.id = $1', [conversationId]);
+  const c = await app.db.one<any>('SELECT c.id, c.channel, c.peer, c.meta, c.agent_paused_until, s.id AS store_id, s.name, s.domain, s.brand, s.brand_override, a.id AS account_id, a.external_id AS account, a.kind AS account_kind, a.secret AS account_secret, a.meta AS account_meta, a.status AS account_status FROM conversations c JOIN stores s ON s.id = c.store_id LEFT JOIN channel_accounts a ON a.id = c.account_id WHERE c.id = $1', [conversationId]);
   if (!c?.peer) return null;
   const last = await app.db.one<{ ext_id: string | null; at: string }>("SELECT ext_id, at FROM messages WHERE conversation_id = $1 AND role = 'customer' ORDER BY id DESC LIMIT 1", [conversationId]);
   if (!last) return null;
@@ -45,17 +45,18 @@ export async function replyTarget(app: App, conversationId: number): Promise<Tar
     id,
     at: new Date(last.at).getTime(),
     ...(c.account ? { account: c.account } : {}),
-    // A number of ours that is not a Meta account (the owner line, answering for our support store, src/company.ts):
-    // the reply goes out from that number, as the agent's did, not from the demo number.
+    // A number of ours that is not a store's Meta account (the owner line, answering for our support store,
+    // src/company.ts, on Twilio or on Meta, lines.ts): the reply goes out from that number, as the agent's did, not
+    // from the demo number.
     ...(c.channel === 'whatsapp' && c.account && c.account_kind !== 'meta' ? { to: c.account } : {}),
     ...(c.channel === 'email' ? { subject: c.meta?.subject || '', thread: { messageId: id, inReplyTo: null, references: c.meta?.ids || [] } } : {}),
   };
   const storeName = displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain;
-  return { adapter, to, storeId: c.store_id, storeName, pausedUntil: c.agent_paused_until ? new Date(c.agent_paused_until).getTime() : null };
+  return { adapter, to, storeId: c.store_id, storeName, pausedUntil: c.agent_paused_until ? new Date(c.agent_paused_until).getTime() : null, reconnect: c.account_status === 'reconnect' };
 }
 
 /** What the inbox shows above the reply box: whether a reply can go out, and until when. */
-export async function replyState(app: App, conversationId: number): Promise<{ canReply: boolean; reason: Blocked | 'no_customer' | 'channel_off' | null; windowEnds: number | null; windowHours?: number; pausedUntil: number | null }> {
+export async function replyState(app: App, conversationId: number): Promise<{ canReply: boolean; reason: Blocked | 'no_customer' | 'channel_off' | 'reconnect' | null; windowEnds: number | null; windowHours?: number; pausedUntil: number | null }> {
   let t: Target | null;
   try {
     t = await replyTarget(app, conversationId);
@@ -63,6 +64,8 @@ export async function replyState(app: App, conversationId: number): Promise<{ ca
     return { canReply: false, reason: 'channel_off', windowEnds: null, pausedUntil: null };
   }
   if (!t) return { canReply: false, reason: 'no_customer', windowEnds: null, pausedUntil: null };
+  // The store's WhatsApp token ended (waStore.ts): nothing goes out from here until it is connected again.
+  if (t.reconnect) return { canReply: false, reason: 'reconnect', windowEnds: null, pausedUntil: null };
   const blocked = await blockedFor(app, t.adapter, t.to, 'owner');
   const w = t.adapter.limits.window;
   // The owner's own answer: on Messenger and Instagram up to 7 days, tagged HUMAN_AGENT, once Meta approved it.
@@ -71,9 +74,10 @@ export async function replyState(app: App, conversationId: number): Promise<{ ca
   return { canReply: !blocked, reason: blocked, windowEnds: hours ? t.to.at! + hours * HOUR : null, ...(hours ? { windowHours: hours } : {}), pausedUntil };
 }
 
-export async function ownerReply(app: App, conversationId: number, text: string, author: string): Promise<Delivery | { ok: false; reason: 'no_customer' }> {
+export async function ownerReply(app: App, conversationId: number, text: string, author: string): Promise<Delivery | { ok: false; reason: 'no_customer' | 'reconnect' }> {
   const t = await replyTarget(app, conversationId);
   if (!t) return { ok: false, reason: 'no_customer' };
+  if (t.reconnect) return { ok: false, reason: 'reconnect' };
   const d = await reply(app, t.adapter, t.to, text, t.storeId, conversationId, { who: 'owner', storeName: t.storeName });
   if (!d.ok) return d;
   await app.db.query('INSERT INTO messages (conversation_id, role, text, author, delivery) VALUES ($1, $2, $3, $4, $5::jsonb)', [conversationId, 'owner', text, author, J(d.ids)]);

@@ -2,9 +2,10 @@ import type { App } from '../app.ts';
 import { HOUR, now } from '../core/clock.ts';
 import { displayName } from '../ingest/brand.ts';
 import { canIngest } from '../ingest/catalogue.ts';
-import { PLATFORM_HE } from '../web/ui.ts';
+import { PLATFORM_HE, shortDate } from '../web/ui.ts';
 import { contactTarget, firstMessage, pitchUrl, reminderMessage } from '../outreach.ts';
-import { requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo } from './messages.ts';
+import { reconnectUrl, WARN_DAYS } from '../channels/waStore.ts';
+import { reconnectWhatsapp, requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo } from './messages.ts';
 
 // Who the operator writes to today, about Toran or Teder, most urgent first (docs/operator.md section 4), and who is
 // already in a conversation. Every entry carries its message and where to send it. Nothing here sends anything,
@@ -12,7 +13,8 @@ import { requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo
 // inside its 24 hours (ops/actions.ts).
 //
 // The order, by rank:
-//   100  tried_demo       a Toran store that tried the demo: asking how it went takes the reminder's place
+//   110  reconnect        a store that has Toran, whose WhatsApp has to be connected again (its token ends or ended)
+//   100  tried_demo      a Toran store that tried the demo: asking how it went takes the reminder's place
 //    90  next_step        someone in a conversation whose next step is due
 //    85  asked_toran      a Toran page someone asked for on the website, ready and not sent: they are waiting
 //    85  asked_teder      the same for a Teder demo
@@ -20,7 +22,7 @@ import { requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo
 //  40-50 first_send       a Toran page found by discovery, ready to send, by its score
 // A page with nothing to send it to is listed apart (noContact), to find a contact for.
 
-export type Reason = 'tried_demo' | 'next_step' | 'asked_toran' | 'asked_teder' | 'reminder' | 'teder_reminder' | 'first_send';
+export type Reason = 'reconnect' | 'tried_demo' | 'next_step' | 'asked_toran' | 'asked_teder' | 'reminder' | 'teder_reminder' | 'first_send';
 export type Item = {
   key: string; // toran:12, teder:7
   product: 'toran' | 'teder';
@@ -37,6 +39,10 @@ export type Item = {
   page: string | null;
   at: string | null; // the moment the reason is counted from
 };
+
+/** A store's WhatsApp that has to be connected again: its token ended, or ends within WARN_DAYS. */
+export const reconnectSql = (t = '') => `${t}channel = 'whatsapp' AND ${t}kind = 'meta' AND (${t}status = 'reconnect' OR (${t}status = 'active' AND ${t}token_expires_at < now() + interval '${WARN_DAYS} days'))`;
+export const RECONNECT_AGAIN_DAYS = 3;
 
 /** Not answered, not lost, not put off: still someone to write to. */
 const open = (t = '') => `${t}lost_at IS NULL AND ${t}replied_at IS NULL AND (${t}snoozed_until IS NULL OR ${t}snoozed_until <= now())`;
@@ -74,6 +80,19 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
   const { db } = app;
   const items: Item[] = [];
   const base = live();
+
+  // A store whose WhatsApp has to be connected again (channels/waStore.ts) comes first: its customers are waiting.
+  // "שלחתי" records that they were told, and the card comes back after RECONNECT_AGAIN_DAYS while it is still so.
+  for (const s of await db.query<any>(
+    `SELECT s.*, a.status AS wa_status, a.token_expires_at FROM channel_accounts a JOIN stores s ON s.id = a.store_id
+      WHERE ${reconnectSql('a.')} AND COALESCE((a.meta->>'reconnect_told_at')::timestamptz, 'epoch') < now() - interval '${RECONNECT_AGAIN_DAYS} days'
+      ORDER BY a.status = 'reconnect' DESC, a.token_expires_at`,
+  )) {
+    const name = storeName(s);
+    const ended = s.wa_status === 'reconnect';
+    const ends = ended ? null : shortDate(s.token_expires_at);
+    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'reconnect', rank: 110, name, domain: s.domain, why: ended ? 'החיבור של הוואטסאפ הסתיים, תורן לא עונה בו' : `צריך לחבר מחדש את הוואטסאפ עד ${ends}`, message: reconnectWhatsapp({ storeName: name, url: reconnectUrl(app.env, s.id), ends }), target: contactTarget(s), direct: false, mark: 'sent', page: reconnectUrl(app.env, s.id), at: s.token_expires_at });
+  }
 
   for (const s of await db.query<any>(`SELECT * FROM stores WHERE ${base} AND demo_started_at IS NOT NULL AND followup_sent_at IS NULL ORDER BY demo_started_at DESC`)) {
     const name = storeName(s);

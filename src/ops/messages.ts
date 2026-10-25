@@ -37,6 +37,19 @@ ${o.url}
 
 זו ההודעה האחרונה שלנו בנושא.`;
 
+/**
+ * To a store that already has Toran, not outreach: its WhatsApp has to be connected again (channels/waStore.ts),
+ * before its token ends (`ends`) or after it ended (no `ends`).
+ */
+export const reconnectWhatsapp = (o: { storeName: string; url: string; ends: string | null }) =>
+  o.ends
+    ? `היי, כאן OpenFrequency. החיבור של הוואטסאפ של ${o.storeName} לתורן מסתיים ב-${o.ends}, ואחרי זה תורן לא יוכל לענות בו. צריך לחבר אותו מחדש, זה לוקח דקה:
+${o.url}
+
+הוואטסאפ בטלפון לא משתנה, והשיחות נשארות.`
+    : `היי, כאן OpenFrequency. החיבור של הוואטסאפ של ${o.storeName} לתורן הסתיים, ותורן לא עונה בו עכשיו. ההודעות של הלקוחות מחכות לכם בשיחות בדשבורד. כדי שתורן יחזור לענות, מחברים מחדש כאן:
+${o.url}`;
+
 /** Why a store said no, as the operator picks it. */
 export const LOST_REASONS: Record<string, string> = {
   not_interested: 'לא מעוניינים',
