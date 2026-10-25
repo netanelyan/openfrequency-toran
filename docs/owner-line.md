@@ -128,7 +128,17 @@ Toran maps an owner's "line 1 / line 2" of a slide to Teder's fields. On the cov
 | `notify.ts` | The only place Toran writes to someone who did not just write. It sends only to a verified number that opted in and did not opt out, within the per-number limit (Teder already held its events through quiet time). Inside the 24 hours it sends text and images; outside them it sends an approved template only. Every attempt is recorded in `owner_notifications`, whatever happened to it. |
 | `posts.ts` | What the line does with posts: show the posts waiting (and keep their order), act on numbered ones, send one ready to post, say the status. The reader in code and the model's tools both use it. |
 | `events.ts` | The text and images for each Teder event. Teder's post.ready events, one per post, are gathered for 90 seconds and sent as one numbered list of everything waiting. |
-| `templates.ts` | The utility templates, as submitted to Meta (docs/whatsapp-templates.md) |
+| `templates.ts` | The utility templates, as submitted to Meta (docs/whatsapp-templates.md), and what each is sent by on the provider in use |
+
+**The number itself: Twilio or Meta.** The line is `TORAN_ASSISTANT_WA` either way. On Twilio, Twilio's webhook brings
+its messages and Twilio sends the answers, from the line's number, with each template's Content SID
+(`TWILIO_TEMPLATES`). Once `META_OWNER_PHONE_ID` names its Meta number id, Meta's `/meta/webhook` brings them instead.
+The router (`src/channels/route.ts`) sends them to the same `ownerLine()` before any store's account is looked at. The answers, the images,
+Teder's news and the inbox's replies to our support go out through the Cloud API from that number
+(`src/channels/lines.ts`, with `META_SYSTEM_TOKEN` or the token sealed when the number was connected). A template goes
+by its own name, in Hebrew, its body's variables in order, and only once `META_TEMPLATES` lists it as approved.
+Otherwise it is skipped as `no_template`, as on Twilio without a SID. The setup is in docs/connecting-channels.md,
+step 3.
 
 **Numbers belong to the list the owner last saw.** When Toran shows posts, it keeps their order (`owner_lists`),
 and "1" means the first one shown. The model names a post by that number, never by Teder's id. An approval or a

@@ -107,6 +107,7 @@ const BLOCKED_HE: Record<string, string> = {
   suppressed: 'מייל לכתובת הזו חזר או סומן כספאם, אז לא שולחים אליה יותר.',
   no_customer: 'הלקוח עוד לא כתב בשיחה הזו, אז אין למי לענות.',
   channel_off: 'הערוץ של השיחה הזו כבוי בשרת (TORAN_CHANNELS), אז אי אפשר לשלוח ממנו.',
+  reconnect: 'החיבור של הוואטסאפ לתורן הסתיים, אז מכאן אי אפשר לשלוח. אפשר לענות ללקוח מהטלפון, ולחבר מחדש בהגדרות.',
 };
 
 /** Messenger and Instagram past their window: Meta lets nothing more go out until the customer writes again. */

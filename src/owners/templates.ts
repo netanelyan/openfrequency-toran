@@ -4,8 +4,10 @@
 // as an ordinary answer after it.
 //
 // The text is what is submitted to Meta (docs/whatsapp-templates.md, made from this file). Twilio keeps an approved
-// template as a Content SID (HX...); TWILIO_TEMPLATES maps each name to its SID ("teder_posts_ready=HX...,..."). A
-// template with no SID set is not sent, and the attempt is recorded as skipped ('no_template').
+// template as a Content SID (HX...); TWILIO_TEMPLATES maps each name to its SID ("teder_posts_ready=HX...,..."). On
+// Meta's Cloud API (META_OWNER_PHONE_ID) a template goes by its name, and META_TEMPLATES lists the names Meta
+// approved. A template not set for the provider in use is not sent, and the attempt is recorded as skipped
+// ('no_template').
 //
 // The footer carries the disclosure and the way out, so every template message says it comes from a digital
 // assistant and how to stop it.
@@ -45,6 +47,15 @@ export const TEMPLATES: Record<string, Template> = {
     buttons: ['סטטוס'],
   },
 };
+
+/**
+ * What a template is sent by, on the provider the owner line is on: on Meta's Cloud API (channels/lines.ts) its own
+ * name, once META_TEMPLATES lists it as approved ("teder_posts_ready,teder_post_reminder,..."); on Twilio its SID.
+ */
+export function templateRef(env: Record<string, string | undefined>, kind: string, name: string): string | null {
+  if (kind === 'meta_line') return String(env.META_TEMPLATES || '').split(/[,\s]+/).includes(name) ? name : null;
+  return templateSid(env, name);
+}
 
 /** The SID Twilio gave each approved template, from TWILIO_TEMPLATES. */
 export function templateSid(env: Record<string, string | undefined>, name: string): string | null {

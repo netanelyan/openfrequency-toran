@@ -117,7 +117,11 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
 ```
 
 - `items` is already in its order (src/ops/queue.ts says why).
-- `reason` is one of tried_demo, next_step, asked_toran, asked_teder, reminder, teder_reminder, first_send.
+- `reason` is one of reconnect, tried_demo, next_step, asked_toran, asked_teder, reminder, teder_reminder, first_send.
+  `reconnect` (rank 110, first) is a store that has Toran whose WhatsApp has to be connected again: its Meta token
+  ends within 10 days or has ended (docs/connecting-channels.md, step 2). Its message asks them to, with the link, and
+  its `page` is the store's WhatsApp page. Its `mark` is sent: on such a store, "שלחתי" records that they were told,
+  and the card comes back after three days while the number still waits.
 - `mark` says what "שלחתי" records: sent, reminded, or next (a next step: no message; its card offers the next-step
   form).
 - `direct` means the message can go out now from the demo number (the `direct` action).

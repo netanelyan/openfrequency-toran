@@ -78,6 +78,10 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'META_IG_APP_SECRET', group: 'channels', he: 'Meta: הסוד של אפליקציית האינסטגרם. מחליף את הקוד של החיבור במפתח' },
   { name: 'META_HUMAN_AGENT', group: 'channels', he: 'Meta: 1 כש-Meta אישרה את Human Agent. אז תשובה שלכם במסנג׳ר ובאינסטגרם יוצאת עד 7 ימים מההודעה של הלקוח' },
   { name: 'META_GRAPH_VERSION', group: 'channels', he: 'Meta: גרסת ה-Graph API, למשל v23.0' },
+  { name: 'META_DEMO_PHONE_ID', group: 'whatsapp', he: 'Meta: המזהה (phone number ID) של מספר הדמו, כשהוא ב-Meta ולא ב-Twilio. ריק: מספר הדמו נשאר ב-Twilio' },
+  { name: 'META_OWNER_PHONE_ID', group: 'whatsapp', he: 'Meta: המזהה של הקו של בעלי העסק, כשהוא ב-Meta. ריק: הקו נשאר ב-Twilio' },
+  { name: 'META_SYSTEM_TOKEN', group: 'whatsapp', he: 'Meta: מפתח של system user בעסק שלנו, למספרים שלנו ב-Meta. ריק: המפתח שהתקבל כשחיברו את המספר בדף הוואטסאפ של חנות השירות' },
+  { name: 'META_TEMPLATES', group: 'whatsapp', he: 'Meta: שמות התבניות של הקו של בעלי העסק שמטא אישרה, מופרדים בפסיק, למשל teder_posts_ready,teder_post_reminder' },
   { name: 'TORAN_SECRETS_KEY', group: 'channels', he: 'המפתח שמצפין את המפתחות של החנויות במסד הנתונים, לפחות 32 תווים. בלעדיו אי אפשר לחבר' },
   { name: 'DATABASE_URL', group: 'database', he: 'Postgres בפרודקשן. בלעדיו: PGlite בתוך התיקייה הפרטית' },
 ];

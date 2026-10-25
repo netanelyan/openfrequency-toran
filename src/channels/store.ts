@@ -18,9 +18,12 @@ const DAILY_REPLIES = 20; // the agent's answers to one customer of one account 
 
 export type Account = { id: number; store_id: number; channel: string; external_id: string; kind: string; secret: string | null; meta: any; status: string };
 
-/** The store's account a message came to. A WhatsApp number still pending at Meta counts: a message on it means it is on. */
+/**
+ * The store's account a message came to. A WhatsApp number still pending at Meta counts: a message on it means it is
+ * on. So does one whose token ended (waStore.ts): the message is the owner's to answer (route.ts).
+ */
 export async function accountFor(app: App, channel: string, externalId: string): Promise<Account | null> {
-  return app.db.one<Account>("SELECT id, store_id, channel, external_id, kind, secret, meta, status FROM channel_accounts WHERE channel = $1 AND external_id = $2 AND (status = 'active' OR (channel = 'whatsapp' AND status = 'pending'))", [channel, externalId.toLowerCase()]);
+  return app.db.one<Account>("SELECT id, store_id, channel, external_id, kind, secret, meta, status FROM channel_accounts WHERE channel = $1 AND external_id = $2 AND (status = 'active' OR (channel = 'whatsapp' AND status IN ('pending', 'reconnect')))", [channel, externalId.toLowerCase()]);
 }
 
 const bareSubject = (s: string | undefined) => String(s || '').replace(/^\s*((re|fwd?|תשובה|השב|הועבר)\s*:\s*)+/i, '').trim().toLowerCase();
@@ -59,8 +62,11 @@ async function remember(app: App, conversationId: number, inbound: Inbound) {
   await app.db.query('UPDATE conversations SET meta = meta || $2::jsonb WHERE id = $1', [conversationId, J({ ids })]);
 }
 
+/** The conversation a WhatsApp, Messenger or Instagram message belongs to (no threads): one per customer per account. */
+export const conversationOf = (app: App, adapter: ChannelAdapter, account: Account, inbound: Inbound) => threadFor(app, adapter, account, inbound);
+
 /** A note for the owner in the conversation, counted as a handoff (shown on Today and in the inbox). */
-async function handOver(app: App, storeId: number, conversationId: number, reason: string, summary: string, text: string) {
+export async function handOver(app: App, storeId: number, conversationId: number, reason: string, summary: string, text: string) {
   await app.db.query('INSERT INTO messages (conversation_id, role, text, handoff) VALUES ($1, $2, $3, $4::jsonb)', [conversationId, 'system', text, J({ reason, summary })]);
   await app.db.query('UPDATE conversations SET handoffs = handoffs + 1, last_at = now() WHERE id = $1', [conversationId]);
   await event(app.db, storeId, 'handoff', { conversationId, reason, summary });
