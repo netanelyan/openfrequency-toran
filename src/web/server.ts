@@ -135,6 +135,8 @@ const STATIC_FILES: Record<string, { file: string; type: string; cache: string }
   '/static/pitch.css': { file: path.join(STATIC, 'pitch.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.js': { file: path.join(STATIC, 'pitch.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/wa-connect.js': { file: path.join(STATIC, 'wa-connect.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
+  // The card a pitch page's link shows where it is sent (WhatsApp, email apps): drawn by openfrequency-web's scripts/og.mjs.
+  '/static/og-toran.png': { file: path.join(STATIC, 'og-toran.png'), type: 'image/png', cache: 'public, max-age=604800' },
   // Heebo (OFL, fonts/HEEBO-LICENSE.txt), served from here so a pitch page never calls Google Fonts.
   '/static/fonts/heebo-hebrew.woff2': { file: path.join(STATIC, 'fonts/heebo-hebrew.woff2'), type: 'font/woff2', cache: 'public, max-age=31536000, immutable' },
   '/static/fonts/heebo-latin.woff2': { file: path.join(STATIC, 'fonts/heebo-latin.woff2'), type: 'font/woff2', cache: 'public, max-age=31536000, immutable' },

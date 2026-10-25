@@ -182,6 +182,11 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
   const greenBtn = (label: string, cls = '') => (demo ? `<a class="wa ${cls}" href="${esc(demo)}" data-demo rel="noopener">${waIcon()}<span>${label}</span></a>` : `<span class="wa off ${cls}">${waIcon()}<span>${owner ? ph('[מספר הדמו]') : label}</span></span>`);
   const held = owner && !d.public ? `<aside class="held" role="note"><b>${d.store.taken_down_at ? 'העמוד הזה הוסר. רואים אותו רק מהדשבורד.' : 'את העמוד הזה רואים רק מהדשבורד, עוד לא לכולם.'}</b>${d.gaps.length ? `<ul>${d.gaps.map((g) => `<li>${esc(g.he)}</li>`).join('')}</ul>` : !d.store.approved_at && !d.store.taken_down_at ? '<p>הוא נפתח לכולם אחרי שמאשרים אותו בבדיקה.</p>' : ''}</aside>` : '';
 
+  // What the link shows where the owner sends it (WhatsApp, email): the page's own title and line over Toran's card.
+  // Absolute addresses need PUBLIC_BASE_URL; without it the page goes out with no card.
+  const title = `בנינו ${le(nameText)}${nameText} תורן שעונה ללקוחות שלכם`;
+  const base = String(env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+
   return `<!doctype html>
 <html lang="he" dir="rtl">
 <head>
@@ -190,8 +195,19 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#f4f4f6">
 <meta name="robots" content="noindex, nofollow, noarchive">
-<title>בנינו ${esc(le(nameText))}${esc(nameText)} תורן שעונה ללקוחות שלכם</title>
+<title>${esc(title)}</title>
 <meta name="description" content="${esc(read)}">
+${base ? `<meta property="og:type" content="website">
+<meta property="og:site_name" content="תורן · OpenFrequency">
+<meta property="og:locale" content="he_IL">
+<meta property="og:url" content="${esc(`${base}/s/${d.store.slug}`)}">
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(read)}">
+<meta property="og:image" content="${esc(base)}/static/og-toran.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+` : ''}
 <link rel="preload" href="/static/fonts/heebo-hebrew.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/brand.css">
 <link rel="stylesheet" href="/static/pitch.css">
