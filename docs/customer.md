@@ -11,7 +11,8 @@ superadmin viewing a workspace as its customer sees the customer's dashboard, re
 | --- | --- |
 | Answers on WhatsApp, Instagram, Messenger and email | Today and Settings list the four channels for each store: connected (with the address), on our demo number with its code, or "בקרוב". Connecting the store's own WhatsApp number through Meta is not built yet, and the page says so. |
 | All the conversations in one inbox, each with its channel and what happened: "ענה לבד", "מחכה לכם", "תיקנתם" | `/chats`: one list with a channel chip and the state, filtered by state and by channel (`src/web/inbox.ts`). A chat on our shared demo number is tagged "דמו". |
-| What it answers alone, and what it leaves to you | `/lead/<id>/knowledge` lists both, word for word as the website does. |
+| What it answers alone, and what it leaves to you | `/lead/<id>/knowledge` lists both, word for word as the website does. With the store's orders connected, "where is my order" moves to what it answers alone. |
+| Order status answered automatically | "שאלות על הזמנות" on `/lead/<id>/knowledge` (`src/web/pages/orders.ts`): the account's owner pastes a key that only reads orders (Shopify, WooCommerce or Wix, with the steps to make one), tried before it is kept and sealed with `TORAN_SECRETS_KEY`. An order is told only to a customer who gave its email or phone (docs/decisions.md, 2026-10-25). |
 | When the site has no answer it says it is checking and sends you the question; what you answer it remembers | A handed-over conversation waits on Today and in the inbox. Answering it from the chat has a "לשמור את התשובה" box (on by default), with the question editable; the answer becomes an FAQ with the conversation's id, and the agent prefers it to the site. "טיפלתי בזה" clears it without an answer. |
 | Two plans by conversations a month: חנות up to 300, חנות גדולה up to 1,500 | `/plan`: the store's plan, this month's conversations against it, the two months before, and the website's rule for moving. The header shows the month's conversations where the operator sees tokens. |
 | Abandoned-cart reminders included | Listed in the plan as "עוד לא פעיל". Nothing sends them yet. |
@@ -57,3 +58,4 @@ the price in accounts.
 - A customer changes their own store's answers, policies' text, products' corrections and email channel, answers
   their customers, and asks their assistant.
 - The export is for `client_owner` (and the superadmin); a `client_member` gets 403 and no link.
+- Connecting and disconnecting the store's orders is the same: a `client_member` sees whether they are connected.

@@ -2,6 +2,7 @@ import type { Db } from '../db/index.ts';
 import { V } from '../db/index.ts';
 import { normalize, termGroups } from '../core/hebrew.ts';
 import { embed } from '../ingest/embed.ts';
+import { contactsIn, findOrder, matches, orderAccessOf, type Order } from '../orders.ts';
 import type { ToolDef } from './llm/types.ts';
 
 // The agent's tools, the same six for every store. Only the store they read changes.
@@ -14,8 +15,9 @@ import type { ToolDef } from './llm/types.ts';
 // Each result ends with a short rule line for that moment ("quote only the prices
 // above"): the last thing the model reads is what it follows (tiyul-plus again).
 //
-// In the demo, create_cart_link and get_order_status are mocks that say so; handoff
-// records the handoff for the dashboard and tells the agent what to say.
+// In the demo, create_cart_link and get_order_status are mocks that say so. Live, create_cart_link builds the
+// platform's own cart link from the stored variant ids, and get_order_status reads the store's orders once the owner
+// connected them (src/orders.ts). handoff records the handoff for the dashboard and tells the agent what to say.
 
 export const TOOLS: ToolDef[] = [
   {
@@ -43,21 +45,21 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'create_cart_link',
-    description: 'Prepare a link for the customer to buy specific products. Use when the customer wants to order. For now it gives the product pages to order from.',
+    description: 'Prepare a link for the customer to buy specific products. Use when the customer wants to order. For a product with several options (size, colour), give the variant_id of the one the customer chose, from get_product. The result is the link to give, or the product pages when the store has no cart link.',
     input_schema: {
       type: 'object',
-      properties: { items: { type: 'array', items: { type: 'object', properties: { product_id: { type: 'integer' }, variant_id: { type: 'string' }, quantity: { type: 'integer' } }, required: ['product_id'] } } },
+      properties: { items: { type: 'array', items: { type: 'object', properties: { product_id: { type: 'integer' }, variant_id: { type: 'string', description: 'The [variant ...] id from get_product' }, quantity: { type: 'integer' } }, required: ['product_id'] } } },
       required: ['items'],
     },
   },
   {
     name: 'get_order_status',
-    description: 'Look up an existing order by its number. The store\'s orders are not connected yet, so its result says how to hand the question to the store.',
-    input_schema: { type: 'object', properties: { order_number: { type: 'string' } }, required: ['order_number'] },
+    description: 'Look up an existing order by its number in the store\'s own system: its status, shipping and tracking link. It answers only when the customer gave, in their own message, the email address or phone number the order was placed with (or writes from that phone on WhatsApp), so ask for the order number and one of them first. When the store\'s orders are not connected, its result says how to hand the question to the store.',
+    input_schema: { type: 'object', properties: { order_number: { type: 'string', description: 'The order number as the customer wrote it' } }, required: ['order_number'] },
   },
   {
     name: 'handoff',
-    description: 'Hand the conversation to a person at the store. Use it whenever: you do not have the answer from a tool; the customer asks for a refund, a discount, a price match, a special arrangement or anything outside the written policy; the customer is upset or asks for a person; or the question is about an existing order.',
+    description: 'Hand the conversation to a person at the store. Use it whenever: you do not have the answer from a tool; the customer asks for a refund, a discount, a price match, a special arrangement or anything outside the written policy; the customer is upset or asks for a person; or the question is about an existing order that get_order_status did not answer.',
     input_schema: {
       type: 'object',
       properties: {
@@ -98,10 +100,13 @@ export const COMPANY_TOOLS: ToolDef[] = [
   },
 ];
 
-export type ToolContext ={ db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean };
+// said: the customer's own messages in this conversation, this turn's included (an order is told only to whoever wrote
+// its email or phone in them); waPhone: the number the customer writes from on the store's own WhatsApp; api: the way
+// to the store's order API (app.api).
+export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null };
 export type ToolOutcome = { ok: boolean; content: string; handoff?: { reason: string; summary: string }; facts?: string[] };
 
-type P = { id: number; title: string; url: string; handle: string; image: string | null; price_min: number | null; price_max: number | null; compare_at_max: number | null; available: boolean; variants: any[]; body_text: string; search_text: string; product_type: string | null; override: any };
+type P = { id: number; ext_id: string; title: string; url: string; handle: string; image: string | null; price_min: number | null; price_max: number | null; compare_at_max: number | null; available: boolean; variants: any[]; body_text: string; search_text: string; product_type: string | null; override: any };
 
 /** A fee sold as a line item (exchange shipping, gift wrap, a warranty extension): in the catalogue, not merchandise. */
 export const isFee = (title: string) => /משלוח|שילוח|אריזת מתנה|עטיפת מתנה|אחריות|ביטוח|פיקדון|shipping|delivery|gift ?wrap|warranty|insurance|deposit/i.test(title);
@@ -133,7 +138,7 @@ function priceLine(p: P, currency: string): string {
 }
 
 export async function loadProducts(db: Db, storeId: number): Promise<P[]> {
-  const rows = await db.query<P>("SELECT id, title, url, handle, image, price_min::float, price_max::float, compare_at_max::float, available, variants, body_text, search_text, product_type, override FROM products WHERE store_id = $1 AND gone_at IS NULL AND COALESCE((override->>'hidden')::boolean, false) = false", [storeId]);
+  const rows = await db.query<P>("SELECT id, ext_id, title, url, handle, image, price_min::float, price_max::float, compare_at_max::float, available, variants, body_text, search_text, product_type, override FROM products WHERE store_id = $1 AND gone_at IS NULL AND COALESCE((override->>'hidden')::boolean, false) = false", [storeId]);
   return rows.map(effective);
 }
 
@@ -250,25 +255,114 @@ async function getPlans(c: ToolContext): Promise<ToolOutcome> {
   return { ok: true, content: `${lines.join('\n')}\nRule: quote prices, VAT, setup fees and what a plan covers exactly as written above. A plan, a price, a discount or a condition that is not written here, you do not know.`, facts: lines };
 }
 
+type Picked = { p: P; v: any; qty: number };
+
+/** Where a product lives: its own page's host (the store's canonical one), else the store's. */
+const originOf = (p: P, fallback: string) => {
+  try {
+    return new URL(p.url).origin;
+  } catch {
+    return fallback;
+  }
+};
+const optionOf = (v: any) => (v && !/^default title$/i.test(String(v.title)) ? String(v.title) : null);
+const itemLine = (x: Picked) => `${x.p.title}${optionOf(x.v) ? ` (${optionOf(x.v)})` : ''}${x.qty > 1 ? `, ${x.qty} units` : ''}`;
+
+/**
+ * The id WooCommerce adds to a cart: a simple product's own id, or a variation's. A variation's id is known only when
+ * the catalogue came from the Store API (stores.config.catalogue); read from the sitemap, a product's options carry
+ * its JSON-LD's SKUs, which add nothing, and only a one-option product's page id (ext_id) does. One row with a price
+ * range is a variable product whose variations were not read: its own id would only open its page, so it gets none.
+ */
+function wooCartId(p: P, v: any, source: string | undefined): string | null {
+  if (p.variants.length === 1) return /^\d+$/.test(p.ext_id) && (p.price_max == null || p.price_max === p.price_min) ? p.ext_id : null;
+  return source === 'store-api' && v && /^\d+$/.test(String(v.id)) ? String(v.id) : null;
+}
+
+// A live cart, by platform: Shopify takes every item in one link (/cart/<variant>:<qty>,...); WooCommerce takes one
+// product a link (?add-to-cart=<id>&quantity=<n>), so several items are several links that fill one cart in one
+// browser; Wix has no address that fills a cart, so the customer gets the product pages and is told which option to
+// pick. Every item is checked first: the product is in this store, the option is one of its own, and it is in stock.
 async function cartLink(c: ToolContext, input: any): Promise<ToolOutcome> {
   const items = Array.isArray(input.items) ? input.items : [];
   const all = await loadProducts(c.db, c.storeId);
-  const lines: string[] = [];
+  const store = await c.db.one<{ platform: string; config: any }>('SELECT platform, config FROM stores WHERE id = $1', [c.storeId]);
+  const platform = store?.platform || '';
+  const picked: Picked[] = [];
   for (const it of items.slice(0, 10)) {
     const p = all.find((x) => x.id === Number(it.product_id));
     if (!p) return { ok: false, content: `No product with id ${it.product_id}. Search first.` };
-    if (!p.available) return { ok: true, content: `${p.title} is out of stock, so it cannot go in a cart. Tell the customer it is out of stock and offer to hand off to the store about restocking.` };
-    lines.push(`${p.title}: ${p.url}`);
+    const given = it.variant_id != null && String(it.variant_id) !== '';
+    const v = given ? p.variants.find((x: any) => String(x.id) === String(it.variant_id)) : p.variants.length === 1 ? p.variants[0] : null;
+    if (given && !v) return { ok: false, content: `${p.title} has no option [variant ${it.variant_id}]. Call get_product for its options.` };
+    if (!p.available || v?.available === false) return { ok: true, content: `${p.title}${optionOf(v) ? ` (${optionOf(v)})` : ''} is out of stock, so it cannot go in a cart. Tell the customer it is out of stock and offer to hand off to the store about restocking.` };
+    picked.push({ p, v, qty: Math.min(20, Math.max(1, Math.floor(Number(it.quantity)) || 1)) });
   }
-  if (!lines.length) return { ok: false, content: 'No items given.' };
-  if (c.demo === false) return { ok: true, content: `The product pages, where the customer adds the item to the cart:\n${lines.join('\n')}\nRule: give these links.` };
-  return { ok: true, content: `DEMO: in the live version this is one link to a ready cart. For now, the product pages:\n${lines.join('\n')}\nRule: give these links and say plainly that in the full version the customer would get a ready cart.` };
+  if (!picked.length) return { ok: false, content: 'No items given.' };
+  const pages = picked.map((x) => `${itemLine(x)}: ${x.p.url}`);
+  const wixPages = `Wix has no link that fills a cart, so the customer orders from the product pages:\n${pages.join('\n')}\nRule: give these links, and say which option to pick on the page when there is one.`;
+  if (c.demo !== false) {
+    if (platform === 'wix') return { ok: true, content: `DEMO: ${wixPages.replace('so the customer', 'in the demo or in the live version, so the customer')}` };
+    return { ok: true, content: `DEMO: in the live version this is one link to a ready cart. For now, the product pages:\n${pages.join('\n')}\nRule: give these links and say plainly that in the full version the customer would get a ready cart.` };
+  }
+
+  // A product with several options and none chosen: the cart needs one.
+  const unchosen = picked.find((x) => !x.v && (platform === 'shopify' || (platform === 'woocommerce' && store?.config?.catalogue === 'store-api')));
+  if (unchosen) return { ok: true, content: `${unchosen.p.title} comes in ${unchosen.p.variants.length} options, and the cart needs one.\nRule: ask the customer which option they want (get_product lists them), then call create_cart_link again with its variant_id.` };
+
+  if (platform === 'shopify') {
+    const url = `${originOf(picked[0].p, c.origin)}/cart/${picked.map((x) => `${x.v.id}:${x.qty}`).join(',')}`;
+    return { ok: true, content: `One link to a ready cart with ${picked.map(itemLine).join('; ')}:\n${url}\nRule: give this link exactly as written. The customer checks the cart and pays on the store's own checkout.`, facts: [url] };
+  }
+  if (platform === 'woocommerce') {
+    const lines = picked.map((x) => {
+      const id = wooCartId(x.p, x.v, store?.config?.catalogue);
+      return id ? `${itemLine(x)}: ${originOf(x.p, c.origin)}/?add-to-cart=${id}&quantity=${x.qty}` : `${itemLine(x)}: ${x.p.url} (its page: the option is picked there)`;
+    });
+    const one = lines.length === 1;
+    return { ok: true, content: `${one ? 'A link that puts the item in the cart' : 'Links that put each item in the cart (the store takes one product a link; opened one after another in the same browser, they fill one cart)'}:\n${lines.join('\n')}\nRule: give ${one ? 'this link' : 'these links'} exactly as written. The customer checks the cart and pays on the store's own checkout.`, facts: lines };
+  }
+  if (platform === 'wix') return { ok: true, content: wixPages };
+  return { ok: true, content: `The product pages, where the customer adds the item to the cart:\n${pages.join('\n')}\nRule: give these links.` };
 }
 
+const ORDER_TRIES = 3;
+const israelDay = (iso: string) => new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', year: 'numeric' }).format(new Date(iso));
+
+// An order is looked up only on a live turn, in the store's own system (src/orders.ts), and told only to whoever
+// wrote the email or phone number on it, or writes from that phone on the store's WhatsApp. A number that is not
+// there and details that do not match get the same answer, so a guess learns nothing; after ORDER_TRIES of them in
+// one conversation the question goes to the store.
 async function orderStatus(c: ToolContext, input: any): Promise<ToolOutcome> {
-  const order = String(input.order_number || '').slice(0, 30);
-  if (c.demo === false) return { ok: true, content: `The store's orders are not connected here, so order ${order} cannot be looked up.\nRule: tell the customer you are passing it to the store, who will answer here, and call handoff with reason "order".` };
-  return { ok: true, content: `DEMO: this demo is not connected to the store's orders, so order ${order} cannot be looked up.\nRule: say that in the live version order status is answered here automatically, and call handoff with reason "order" so the store can check it.` };
+  const order = String(input.order_number || '').trim().slice(0, 30);
+  if (c.demo !== false) return { ok: true, content: `DEMO: this demo is not connected to the store's orders, so order ${order} cannot be looked up.\nRule: say that in the live version order status is answered here automatically, and call handoff with reason "order" so the store can check it.` };
+  const toStore = (why: string): ToolOutcome => ({ ok: true, content: `${why}\nRule: tell the customer you are passing it to the store, who will answer here, and call handoff with reason "order".` });
+  const access = await orderAccessOf(c.db, c.storeId);
+  if (!access) return toStore(`The store's orders are not connected here, so order ${order} cannot be looked up.`);
+  if (access.status !== 'active') return toStore(`The store's order system did not accept its key, so order ${order} cannot be looked up now.`);
+  if (!/^#?[A-Za-z0-9-]{1,30}$/.test(order)) return { ok: true, content: `"${order}" is not an order number.\nRule: ask the customer for the order number, as it appears in the order confirmation.` };
+
+  const said = contactsIn(c.said || []);
+  if (!said.emails.length && !said.phones.length && !c.waPhone) return { ok: true, content: 'To look an order up, the customer needs to give the email address or the phone number the order was placed with, in their own message.\nRule: ask for it in one short question. Say nothing about the order before it matches.' };
+  if (c.conversationId) {
+    const tried = await c.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM messages m, jsonb_array_elements(m.tools) t WHERE m.conversation_id = $1 AND t->>'name' = 'get_order_status' AND t->>'result' LIKE 'NO MATCH%'", [c.conversationId]);
+    if ((tried?.n || 0) >= ORDER_TRIES) return toStore('Several order numbers and details did not match in this conversation, so the store checks this one itself.');
+  }
+  let o: Order | null;
+  try {
+    o = await findOrder({ db: c.db, env: c.env || {}, api: c.api || fetch }, c.storeId, order);
+  } catch (e: any) {
+    return toStore(`The store's order system did not answer (${String(e?.message || e).slice(0, 120)}).`);
+  }
+  if (!o || !matches(o, said, c.waPhone)) return { ok: true, content: `NO MATCH: no order ${order} goes with the email or phone number the customer gave.\nRule: say you could not find an order with these details, and ask them to check the order number and the email or phone they ordered with. Do not say which of them did not match. If it does not match again, tell them you are passing it to the store and call handoff with reason "order".` };
+
+  const ships = o.shipments.map((s) => `- ${[s.status, s.company ? `with ${s.company}` : null, s.number ? `tracking number ${s.number}` : null].filter(Boolean).join(', ') || 'a shipment'}${s.url ? `, tracking link: ${s.url}` : ''}`);
+  const lines = [`Order ${o.number}${o.placed ? `, placed ${israelDay(o.placed)}` : ''}: ${o.status}.`, ships.length ? `Shipments:\n${ships.join('\n')}` : 'No tracking details on the order.'];
+  return {
+    ok: true,
+    content: `${lines.join('\n')}\nRule: tell the customer this status in your own short words, with the tracking link exactly as written when there is one. A delivery date, the reason for a delay, or anything the lines above do not say, you do not know. To change, cancel or return the order, or for a refund: tell them you are passing it to the store and call handoff with reason "order".`,
+    facts: lines,
+  };
 }
 
 export async function runTool(c: ToolContext, name: string, input: any): Promise<ToolOutcome> {

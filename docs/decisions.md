@@ -437,3 +437,57 @@ first: people who write to OpenFrequency about Toran and Teder are answered from
 - **Alternatives:** a scraped "store" of openfrequency.co.il (ingest refuses a site with no products, and would have
   read the launch-day claims as facts); FAQ rows typed in the dashboard (no plans, no pages, and drifting from the
   site's prices).
+
+## 2026-10-25: real cart links, and a store's own orders read with the owner's key
+
+**Cart links, on a live turn** (`create_cart_link`, agent/tools.ts), from the variant ids ingest already stores:
+- **Shopify:** one link for the whole cart, `https://<store>/cart/<variant>:<qty>,<variant>:<qty>`.
+- **WooCommerce:** `https://<store>/?add-to-cart=<id>&quantity=<n>`, one product a link. WooCommerce core has no
+  link for several products (only a grouped product's own page), so several items are several links, which fill one
+  cart when opened one after another in the same browser. The id is a simple product's own or a variation's. A
+  variation's id is known only when the catalogue came from the Store API, so ingest now records the source in
+  `stores.config.catalogue`. Read from the sitemap, options carry JSON-LD SKUs, and a variable product is one row with
+  a price range: those go to the product page.
+- **Wix:** no address fills a cart, so the product pages, with the option to pick. The demo now says so too ("in the
+  demo or in the live version"), instead of promising a ready cart Wix cannot make.
+
+Every item is checked first: the product is the store's, the variant is one of its own, and it is in stock. A
+product with several options and none chosen gets a question back ("which option"), not a cart. A demo turn keeps
+the demo's words and its product pages.
+
+**Order status** (`get_order_status`, src/orders.ts). The owner pastes a key that only reads orders on the store's
+knowledge page ("שאלות על הזמנות"), with the steps to make one on their platform:
+- **Shopify:** an Admin API access token of a custom app with `read_orders` only, plus the store's myshopify
+  address, read from `/meta.json` when left out. Lookup: `orders.json?name=#<n>&status=any`.
+- **WooCommerce:** a REST API key with Read permission. Lookup: `/wc/v3/orders/<n>`, checked against the order's
+  `number`, else `?search=<n>` for stores that number orders with a plugin. Basic auth first, the key in the query
+  when the host drops the header (HTTPS only).
+- **Wix:** an API key that reads orders, plus the site id. Lookup: eCommerce's orders search by number, then the
+  order's fulfillments for tracking.
+
+The key is tried once before it is kept, so a wrong one is refused on the page. It is sealed with TORAN_SECRETS_KEY
+in `order_access` (migration 012), one row a store, deleted on disconnect. A key the platform refuses later marks the
+row `error`; the page says so and questions go to the owner again. The platforms are called through `app.api`
+(fetch, or the tests' stand-in), not the polite fetcher: these are the store's own keys on its own API.
+
+**Who is told.** An order is told only to whoever shows they placed it:
+- an email or phone number on the order appears in the customer's own messages in this conversation (the latest
+  three of each, so a message with a list of numbers proves nothing), or
+- the customer writes from the order's phone on the store's own WhatsApp (Meta's number, not their word).
+
+The tool reads these from the stored messages, never from the model's arguments, so the model cannot supply them.
+A number that is not there and details that do not match get the same answer ("NO MATCH"), and the order's details
+are never in it. After three of them in one conversation the question goes to the store. The answer has the status,
+the shipping state and the tracking link when the platform has one, and its rule line says a delivery date or
+anything else not written there is unknown.
+- **Alternatives:** asking the model to pass the email (it could pass anything); answering by order number alone
+  (anyone could read anyone's order); an OAuth app per platform (a review at Shopify and Wix before the first store,
+  for a read the owner can grant in two minutes).
+
+**Not done here:**
+- Shopify moved new custom apps to its Dev Dashboard during 2026. The page's steps follow the admin's "Develop
+  apps", and need checking against a store that creates one today.
+- Wix's order number is sent to its search as a string, as its docs type it. Not tried on a live Wix site, nor any
+  of the three on a live store: the tests use stand-ins shaped from the platforms' docs.
+- WooCommerce's own fulfillments (a new feature) and tracking plugins other than Shipment Tracking are not read: the
+  order's status stands, with no tracking.
