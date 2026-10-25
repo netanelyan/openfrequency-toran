@@ -17,6 +17,7 @@ import { storesOf } from '../workspace.ts';
 import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../channels/config.ts';
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
 import { canIngest } from '../../ingest/catalogue.ts';
+import { mailDomainPanel } from './mailDomain.ts';
 
 // Leads: the list (by status, with the score and what was found), adding one by URL,
 // and one lead's page: its score's parts, its contacts, its pitch page and what the
@@ -69,13 +70,13 @@ export function addForm(r: DashReq) {
 }
 
 /** The store's own channels: its email address, connected or not, and the automated mail that came to it (Gmail's forwarding confirmation lands there). */
-function channelsPanel(r: DashReq, id: number, account: any, address: string, automatedMail: any[], wa: string, social: string) {
+function channelsPanel(r: DashReq, id: number, account: any, address: string, automatedMail: any[], wa: string, social: string, ownDomain = '') {
   const on = account?.status === 'active';
   return `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header>
   <dl class="kv"><dt>וואטסאפ</dt><dd>${wa}</dd>${social}<dt>מייל</dt><dd>${on ? `<bdi class="ltr">${esc(account.external_id)}</bdi> · <span class="chip ok">מחובר</span>` : '<span class="chip ghost">לא מחובר</span>'}</dd></dl>
   ${on ? `<p class="small mt12 m0">מעבירים לכתובת הזו את המייל של החנות, למשל ב־Gmail: הגדרות, "העברה ו־POP/IMAP", "הוספת כתובת להעברה". Gmail שולח לכתובת קוד אישור, והוא מופיע כאן למטה ובשיחות. תורן עונה משם בשם החנות.</p>
   ${automatedMail.length ? `<div class="list mt12">${automatedMail.map((m) => `<a href="/chat/${m.id}"><span class="ico warn">${icon('alert')}</span><span class="t"><b>${esc(m.subject || 'מייל אוטומטי')}</b><small>${esc(ago(m.at))} · מייל אוטומטי, תורן לא ענה</small></span></a>`).join('')}</div>` : ''}
-  <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>`
+  <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>${ownDomain}`
   : `<p class="small mt12 m0">החנות מקבלת כתובת משלה, <bdi class="ltr">${esc(address)}</bdi>, ומעבירה אליה את המייל שלה. תורן עונה משם בשם החנות, ומה שהוא לא יודע עובר אליך.</p>
   <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לחבר מייל', { cls: 'btn sm primary', fields: { on: '1' } })}</div>`}
 </section>`;
@@ -139,7 +140,7 @@ ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד 
   <div class="grid12">
     <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>
     <section class="panel"><header><h2>הציון</h2><span class="end">${scoreNum(s.score, s.qualified)}</span></header><ul class="parts">${parts}</ul></section>
-    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env)), social) : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env))}</dd>${social}</dl></section>`}
+    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env)), social, mailAccount?.status === 'active' ? await mailDomainPanel(app, r, id, mailAccount.external_id) : '') : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env))}</dd>${social}</dl></section>`}
     <section class="panel"><header><h2>שיחות</h2><a class="end small" href="/chats?store=${id}">כולן</a></header>
       ${convs.length ? `<div class="list">${convs.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : ''}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc((c.last_text || '').replace(/\n/g, ' ').slice(0, 80))}</b><small>${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)} · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}</small></span></a>`).join('')}</div>` : '<p class="muted m0">עוד אין שיחות.</p>'}
     </section>

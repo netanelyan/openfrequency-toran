@@ -1,5 +1,6 @@
 import { secretsReady, open } from '../core/secrets.ts';
 import { enabledChannels } from './config.ts';
+import { download } from './files.ts';
 import { GraphError, metaSettings, type GraphFetch } from './meta.ts';
 import { LIMITS } from './policy.ts';
 import type { ChannelAdapter, Inbound, Sent, SendCtx } from './types.ts';
@@ -148,7 +149,8 @@ export async function refreshInstagramToken(f: GraphFetch, token: string): Promi
 export type DmEcho = { channel: Social; account: string; to: string; id: string; text: string; appId: string | null; at: number };
 
 const textOf = (msg: any) => String(msg?.text || '').trim();
-const filesOf = (msg: any) => (Array.isArray(msg?.attachments) ? msg.attachments : []).map((a: any) => ({ name: String(a?.type || 'file'), type: String(a?.type || 'file'), size: 0 }));
+// A photo or a file the customer sent: Meta gives its kind and a link to it on its CDN (ref), which needs no token.
+const filesOf = (msg: any) => (Array.isArray(msg?.attachments) ? msg.attachments : []).map((a: any) => ({ name: String(a?.payload?.title || a?.type || 'file'), type: String(a?.type || 'file'), size: 0, ...(/^https:\/\//.test(String(a?.payload?.url || '')) ? { ref: String(a.payload.url) } : {}) }));
 
 /** Everything one webhook call for Messenger or Instagram carries. Anything else (WhatsApp's) is meta.ts's. */
 export function parseSocial(body: any): { channel: Social | null; messages: Inbound[]; echoes: DmEcho[] } {
@@ -199,6 +201,9 @@ export function dmAdapter(env: Env, f: GraphFetch, account: SocialAccount): Chan
     limits: LIMITS[account.channel],
     inboundUsd: 0,
     parse: () => null, // the one webhook is /meta/webhook (parseSocial), not an adapter's
+    async fetchFile(_inbound, file, max) {
+      return file.ref ? download(f, file.ref, max) : null;
+    },
     async send(to: string, text: string, _inReplyTo: Inbound, ctx?: SendCtx): Promise<Sent> {
       const tagged = ctx?.tag ? { messaging_type: 'MESSAGE_TAG', tag: ctx.tag } : { messaging_type: 'RESPONSE' };
       const body = { recipient: { id: to }, ...tagged, message: { text } };

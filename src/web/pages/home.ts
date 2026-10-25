@@ -14,11 +14,14 @@ import { ALL_CHANNELS, CHANNEL_HE, channelStates, enabledChannels, MESSAGING, me
 import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../../channels/owner.ts';
 import { questionOf } from '../../assistant/index.ts';
 import { forgetStorePrompt } from '../../agent/loop.ts';
-import { conversationRow, maskPeer, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, type InboxState } from '../inbox.ts';
+import { conversationRow, filesHtml, maskPeer, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, whyHe, type InboxState } from '../inbox.ts';
+import { checkUpload, fileOf, MAX_BYTES } from '../../channels/files.ts';
+import { apartCustomer, candidates, otherConversations, sameCustomer } from '../../channels/customers.ts';
 import { customerSettings, customerToday } from './customer.ts';
 import { canIngest } from '../../ingest/catalogue.ts';
 
-// Today, the inbox (every channel's conversations, and the owner's reply in each), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
+// Today, the inbox (every channel's conversations, the owner's reply in each with a file where the channel takes one,
+// the files customers sent, and the customer's other conversations), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
 // the offer, lead discovery, the keys and developer mode are the whole server's, so only the operator sees them.
 
 async function today(app: App, r: DashReq) {
@@ -105,6 +108,7 @@ const waMarkup = (html: string) => html.replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$
 const BLOCKED_HE: Record<string, string> = {
   window_closed: 'עברו יותר מ־24 שעות מההודעה האחרונה של הלקוח. בוואטסאפ אפשר לענות אחרי זה רק בתבנית שמטא אישרה, ולתורן עוד אין תבניות, אז מכאן אי אפשר לענות בשיחה הזו.',
   suppressed: 'מייל לכתובת הזו חזר או סומן כספאם, אז לא שולחים אליה יותר.',
+  no_files: 'בערוץ הזה אפשר לשלוח מכאן רק טקסט, בלי קבצים.',
   no_customer: 'הלקוח עוד לא כתב בשיחה הזו, אז אין למי לענות.',
   channel_off: 'הערוץ של השיחה הזו כבוי בשרת (TORAN_CHANNELS), אז אי אפשר לשלוח ממנו.',
 };
@@ -134,9 +138,8 @@ async function chat(app: App, r: DashReq, id: number) {
     ] : m.role === 'owner' ? [`<span>${icon('send')} נשלח מכאן${m.author ? ` (${esc(m.author)})` : ''}</span>`]
     : m.role === 'customer' ? [
       ...(m.automated ? [`<span class="warn">${icon('alert')} הודעה אוטומטית (${esc(m.automated)}), ותורן לא ענה עליה</span>`] : []),
-      ...((m.attachments || []).length ? [`<span>קבצים: ${(m.attachments as any[]).map((a) => `${esc(a.name)} (${Math.max(1, Math.round((Number(a.size) || 0) / 1024))}KB)`).join(', ')}</span>`] : []),
     ] : [];
-    return `<div class="b ${cls}">${markup(m.text)}<span class="at">${esc(stamp(m.at))}</span></div>${notes.length ? `<div class="note${m.role === 'customer' ? ' start' : ''}">${notes.join('')}</div>` : ''}`;
+    return `<div class="b ${cls}">${markup(m.text)}${filesHtml(id, m.attachments)}<span class="at">${esc(stamp(m.at))}</span></div>${notes.length ? `<div class="note${m.role === 'customer' ? ' start' : ''}">${notes.join('')}</div>` : ''}`;
   });
   const st = await replyState(app, id);
   const ch = CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel;
@@ -151,8 +154,8 @@ async function chat(app: App, r: DashReq, id: number) {
   const settle = waiting && !r.ctx.readOnly ? `<div class="row mt12">${postButton(r.ctx, `/chat/${id}/settle`, 'טיפלתי בזה בלי לענות מכאן', { cls: 'btn sm ghost', iconName: 'check' })}</div>` : '';
   const replyBox = (MESSAGING as string[]).includes(c.channel) ? `<section class="panel mt16" id="reply"><header><h2>לענות ללקוח</h2><span class="end chip">${esc(ch)}</span></header>
   ${pausedNote}
-  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto" required maxlength="4000" class="wide" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>${learn}<div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
-  <p class="small muted mt8 m0">${windowNote}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc((st.reason === 'window_closed' && DM_CLOSED[c.channel]) || BLOCKED_HE[st.reason || ''] || '')}</p>`}
+  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply"${st.files ? ' enctype="multipart/form-data"' : ''} class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto"${st.files ? '' : ' required'} maxlength="4000" class="wide" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>${learn}${st.files ? `<label class="f mt8">לצרף קובץ<small>תמונה או PDF, עד ${MAX_BYTES / 1024 / 1024}MB. תורן עצמו לא שולח קבצים.</small><input type="file" name="file" accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"></label>` : ''}<div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
+  <p class="small muted mt8 m0">${windowNote}${st.from ? `התשובה יוצאת מהכתובת <bdi class="ltr">${esc(st.from)}</bdi>. ` : ''}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc((st.reason === 'window_closed' && DM_CLOSED[c.channel]) || BLOCKED_HE[st.reason || ''] || '')}</p>`}
   ${settle}
   ${learned.length ? `<p class="small mt12 m0">${icon('book')} תורן שמר מהשיחה הזו את התשובה ל"${esc(learned.map((x) => x.question).join('", "'))}". <a href="/lead/${c.sid}/knowledge#answers">${op ? 'לתשובות של החנות' : 'לתשובות שלכם'}</a></p>` : ''}
 </section>` : '';
@@ -160,8 +163,28 @@ async function chat(app: App, r: DashReq, id: number) {
   const body = `<a class="back" href="/chats">${icon('chev')}שיחות</a>
 <div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub">${stateChip(c.state)} · ${esc(ch)}${c.channel === 'whatsapp' && !c.account_id ? ' (דמו)' : ''} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer, c.meta?.name) || c.channel)}</bdi>${subject} · התחילה ${esc(stamp(c.started_at))}${op ? ` · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}` : ''}</p><div class="end">${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}מה הוא יודע</a>`}</div></div>
 <section class="panel"><div class="chat">${out.join('')}</div></section>
-${replyBox}`;
+${replyBox}
+${await customerPanel(app, r, id)}`;
   return layout({ ...r.ctx, title: 'שיחה', active: 'chat' }, body);
+}
+
+/**
+ * The customer's other conversations on the store's channels, with why each is theirs; "זה אותו לקוח" joins another
+ * one, "זה לא אותו לקוח" splits one off (channels/customers.ts). Nothing here is shown to the agent.
+ */
+async function customerPanel(app: App, r: DashReq, id: number) {
+  const others = await otherConversations(app, id, ROW_SQL);
+  const pick = r.ctx.readOnly ? [] : await candidates(app, id, others.map((o) => o.id), ROW_SQL);
+  if (!others.length && !pick.length) return '';
+  const label = (c: any) => `${CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel} · ${maskPeer(c.channel, c.peer, c.name) || 'לקוח'} · ${String(c.last_q || c.subject || '').replace(/\s+/g, ' ').slice(0, 50)}`;
+  const linked = others.filter((o) => o.why !== 'same');
+  const apart = linked.length && !r.ctx.readOnly ? `<details class="mt12"><summary class="small">אחת השיחות האלה של מישהו אחר?</summary><div class="row mt8">${linked.map((o) => postButton(r.ctx, `/chat/${id}/apart`, `זה לא אותו לקוח: ${esc(label(o))}`, { cls: 'btn sm ghost', fields: { other: String(o.id) } })).join('')}</div></details>` : '';
+  const same = pick.length ? `<form method="post" action="/chat/${id}/same" class="row mt12">${csrfField(r.ctx)}<select name="other" aria-label="שיחה אחרת של אותו לקוח">${pick.map((c) => `<option value="${Number(c.id)}">${esc(label(c))}</option>`).join('')}</select><button class="btn sm" type="submit">${icon('check')}זה אותו לקוח</button></form>` : '';
+  return `<section class="panel mt16" id="customer"><header><h2>הלקוח הזה בשיחות אחרות</h2></header>
+  ${others.length ? `<div class="list">${others.map((o) => conversationRow({ ...(o as any), note: whyHe(o.why, o.channel) })).join('')}</div>` : '<p class="muted m0">אין ללקוח הזה שיחות אחרות שאנחנו יודעים עליהן.</p>'}
+  ${apart}${same}
+  <p class="small muted mt12 m0">שיחות מתחברות רק כשאותו מייל או אותו טלפון מופיעים בשתיהן, או כשמחברים אותן כאן. כשתורן עונה, הוא לא קורא את השיחות האחרות.</p>
+</section>`;
 }
 
 async function followups(app: App, r: DashReq) {
@@ -259,13 +282,16 @@ export function homeRoutes(app: App): Route<DashReq>[] {
     }],
     ['POST', /^\/chat\/(\d+)\/reply$/, async (r, m) => {
       const text = String(r.form.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 4000);
-      if (!text) throw new ActionError('התשובה ריקה.');
+      const upload = (r.files || []).find((f) => f.field === 'file' && f.bytes.length);
+      const checked = upload ? checkUpload(upload.name, upload.bytes) : null;
+      if (checked && !checked.ok) throw new ActionError(checked.he);
+      if (!text && !checked) throw new ActionError('התשובה ריקה.');
       const id = Number(m[1]);
-      const d = await ownerReply(app, id, text, r.user.name);
+      const d = await ownerReply(app, id, text, r.user.name, checked?.ok ? [checked.file] : []);
       if (!d.ok) throw new ActionError(BLOCKED_HE[d.reason] || 'לא נשלח.');
       // Kept for next time: the question as the owner left it, and their answer (the agent prefers it to the site's).
       const question = String(r.form.question || '').replace(/\s+/g, ' ').trim().slice(0, 300);
-      if (r.form.learn === '1' && question.length >= 2) {
+      if (r.form.learn === '1' && text && question.length >= 2) {
         const c = await app.db.one<{ store_id: number }>('SELECT store_id FROM conversations WHERE id = $1', [id]);
         await app.db.query('INSERT INTO faqs (store_id, question, answer, conversation_id) VALUES ($1, $2, $3, $4)', [c!.store_id, question, text.slice(0, 2000), id]);
         await app.db.query('UPDATE stores SET updated_at = now() WHERE id = $1', [c!.store_id]);
@@ -274,6 +300,23 @@ export function homeRoutes(app: App): Route<DashReq>[] {
         return { redirect: `/chat/${id}#reply`, message: `נשלח, ותורן שמר את התשובה לפעם הבאה. בשיחה הזו הוא לא עונה ${PAUSE_HOURS} שעות.` };
       }
       return { redirect: `/chat/${id}#reply`, message: `נשלח. תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות.` };
+    }],
+    // A file in a conversation (server.ts has checked the conversation is the session's): an image shows, a PDF downloads.
+    ['GET', /^\/chat\/(\d+)\/file\/(\d+)$/, async (_r, m) => {
+      const f = await fileOf(app, Number(m[1]), Number(m[2]));
+      if (!f) throw new ActionError('אין קובץ כזה', 404);
+      const image = f.row.type.startsWith('image/');
+      return { body: f.bytes, type: f.row.type, headers: { 'content-disposition': `${image ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.row.name)}`, 'cache-control': 'private, max-age=3600', 'content-security-policy': "default-src 'none'; sandbox" } };
+    }],
+    ['POST', /^\/chat\/(\d+)\/same$/, async (r, m) => {
+      const id = Number(m[1]);
+      if (!(await sameCustomer(app, id, Number(r.form.other) || 0, r.user.name))) throw new ActionError('אי אפשר לחבר את השיחות האלה. מחברים רק שתי שיחות של אותה חנות, בערוצים שלה.');
+      return { redirect: `/chat/${id}#customer`, message: 'חובר. השיחות של הלקוח מופיעות עכשיו אחת ליד השנייה.' };
+    }],
+    ['POST', /^\/chat\/(\d+)\/apart$/, async (r, m) => {
+      const id = Number(m[1]);
+      if (!(await apartCustomer(app, id, Number(r.form.other) || 0, r.user.name))) throw new ActionError('אי אפשר להפריד את השיחה הזו.');
+      return { redirect: `/chat/${id}#customer`, message: 'הופרד. השיחה הזו כבר לא מופיעה כאן.' };
     }],
     ['POST', /^\/chat\/(\d+)\/resume$/, async (r, m) => {
       await resumeAgent(app, Number(m[1]), r.user.name);

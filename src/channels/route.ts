@@ -6,6 +6,7 @@ import { demoNumber, type RouteResult } from './demo.ts';
 import { ownerLine } from '../owners/line.ts';
 import { LEDGER } from './send.ts';
 import { accountFor, storeChannel } from './store.ts';
+import { receivingAccount } from './mailDomain.ts';
 import { enabledChannels, type AnyChannel } from './config.ts';
 import { isSocial } from './social.ts';
 import type { Inbound } from './types.ts';
@@ -14,8 +15,8 @@ import type { Inbound } from './types.ts';
 // address is recorded, a delivery already handled is dropped, the rest of the message is fetched when the webhook
 // left it out, its cost is recorded, and it goes to the store it belongs to. Two ways lead to a store:
 //
-//   a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the account's
-//   store answers (store.ts)
+//   a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account, or mail to the
+//   receiving subdomain of its own domain): the account's store answers (store.ts)
 //   the owner line (TORAN_ASSISTANT_WA): business owners talking to their assistant (owners/line.ts)
 //   the shared WhatsApp demo number, whose codes bind a phone to a store (demo.ts)
 //
@@ -51,7 +52,8 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
   const msg = adapter.complete && inbound.pending ? await adapter.complete(inbound) : inbound;
   const { tag, kind } = LEDGER[adapter.channel];
   await usage(app.db, { kind, backend: adapter.kind, units: 1, usd: adapter.inboundUsd, apiUsd: adapter.inboundUsd, tag: `${tag}_in` });
-  const account = own || (msg.account ? await accountFor(app, adapter.channel, msg.account) : null);
+  // Mail to a store's own receiving subdomain (its MX, mailDomain.ts) belongs to the store's email account.
+  const account = own || (msg.account ? (await accountFor(app, adapter.channel, msg.account)) || (adapter.channel === 'email' ? await receivingAccount(app, msg.account) : null) : null);
   if (account) {
     if (account.status === 'pending') await markLive(app, account.id, account.store_id);
     return storeChannel(app, adapter, msg, account);

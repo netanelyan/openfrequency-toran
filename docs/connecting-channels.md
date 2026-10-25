@@ -12,7 +12,7 @@ repository, unused.
 
 | Channel | Code | Production (checked from outside, 2026-10-24) |
 | --- | --- | --- |
-| Email | Built: Resend, signed webhook, threads, bounces, owner replies | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
+| Email | Built: Resend, signed webhook, threads, bounces, owner replies, attachments both ways (the owner's only), a store's own address on its domain | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
 | WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox | Waits for the Meta app and its settings (step 2) |
 | WhatsApp, our demo number and owner line | Built on Twilio's code; moving them to Meta is a later item | On the simulator |
 | Instagram, Messenger | Built, behind the flag: login at Meta, `/meta/oauth/<channel>`, the same `/meta/webhook`, replies through the Send API inside the 24 hours, the owner's own answers in the inbox | Off: `TORAN_CHANNELS` does not list them (step 4) |
@@ -99,6 +99,52 @@ from that address in the store's name. Using a subdomain keeps openfrequency.co.
 
 Cost: Resend has a free plan with a daily and a monthly sending limit, and paid plans above it. Check
 resend.com/pricing against the number of stores you expect.
+
+### A store's own address, e.g. support@theirstore.co.il: built, optional
+
+Until a store does this, Toran answers from `<slug>@in.openfrequency.co.il`. With it, the same answers go out from the
+store's own address. Mail still comes in the way it did (forwarded to the address on our domain), or, if the owner
+wants, straight to Toran on a subdomain of theirs.
+
+**What you set up once:** nothing past step 1. Toran adds each store's domain through Resend's API with the same
+`RESEND_API_KEY`, which is why that key has full access. Two things to check at Resend:
+- **The plan's domain limit.** Every store with its own address is one domain at Resend, and a receiving subdomain is
+  a second. Check resend.com/pricing against the number of stores you expect before you tell stores about it.
+- **The webhook.** The one from step 1 item 4 (`email.received`) also carries mail to the stores' receiving
+  subdomains. Nothing to add.
+
+**What the store does,** in Settings, under the email (it shows once the store's email is connected):
+1. Writes the address Toran should answer from, e.g. `support@theirstore.co.il`. It has to be an address whose mail
+   they already forward to their address on our domain, so a customer's answer comes back to Toran.
+2. Optionally writes a subdomain for mail to come straight to Toran, e.g. `help`. This is only for a store that wants
+   to stop forwarding; their usual mail on `theirstore.co.il` is not touched either way.
+3. Presses "להוסיף את הדומיין". Toran adds `theirstore.co.il` at Resend for sending only (and `help.theirstore.co.il`
+   for receiving only), and the page lists the DNS records to add, each with its type, name, value and priority:
+   - a TXT on `resend._domainkey.theirstore.co.il` (DKIM)
+   - an MX and a TXT on `send.theirstore.co.il` (SPF, for bounces). These sit on a subdomain, so the store's own MX
+     and SPF stay as they are.
+   - with a subdomain: an MX on `help.theirstore.co.il`
+4. Adds them at their DNS host (where they bought the domain, or Cloudflare), exactly as listed. Some hosts want only
+   the part before the domain as the name (`resend._domainkey`, `send`, `help`).
+5. Presses "לבדוק עכשיו". Toran asks Resend to verify and reads the result. It usually takes minutes, sometimes up to
+   two days; the worker reads it again every ten minutes for three days, so the store does not have to keep pressing.
+
+**Once verified:** the agent's answers and the owner's answers from the inbox go out from `support@theirstore.co.il`,
+with Reply-To the same address (or `support@help.theirstore.co.il` once that subdomain is verified, so a customer's
+reply comes straight in). Mail from the store's own address is never answered: it is the store writing to itself. The
+reply box in a conversation says which address the answer goes out from. "להפסיק עם הדומיין הזה" deletes the domain
+at Resend, and the answers go out from our domain again.
+
+To check a store's records from any computer:
+```
+nslookup -type=TXT resend._domainkey.theirstore.co.il
+nslookup -type=MX send.theirstore.co.il
+nslookup -type=MX help.theirstore.co.il
+```
+
+**Files.** Nothing to set up. A customer's attachments (images and PDFs up to 10 MB) are fetched from Resend and kept
+in `/opt/toran/private/files`, and shown in the conversation. The owner can attach one image or PDF to an answer from
+the inbox. Include that folder in the server's backups.
 
 ## Step 2. A store's own WhatsApp number (Meta, coexistence): built
 

@@ -158,7 +158,7 @@ test('never answered: automated mail, mail to an address no store connected, a f
   assert.equal(files.action, 'no_text');
   const c = await app.db.one<any>("SELECT c.handoffs, (SELECT attachments FROM messages WHERE conversation_id = c.id AND role = 'customer' LIMIT 1) AS att FROM conversations c WHERE c.meta->>'subject' = 'תמונה'");
   assert.equal(c.handoffs, 1);
-  assert.deepEqual(c.att, [{ name: 'crack.jpg', type: 'image/jpeg', size: 90_000 }]);
+  assert.deepEqual(c.att, [{ id: 1, name: 'crack.jpg', type: 'image/jpeg', size: 90_000, skipped: 'unavailable' }], 'listed: the simulator sent no bytes');
   assert.equal(app.mail!.outbox!.length, 0, 'none of these got an answer');
   await app.db.close();
 });
@@ -167,7 +167,7 @@ test('the owner answers by email: it goes out threaded and without Auto-Submitte
   const { app, address } = await mailStore();
   await handleInbound(app, mail(address, { text: 'אפשר לשלם בביט?' }));
   const conv = (await app.db.one<{ id: number }>('SELECT id FROM conversations WHERE peer = $1', [CUSTOMER]))!.id;
-  assert.deepEqual(await replyState(app, conv), { canReply: true, reason: null, windowEnds: null, pausedUntil: null });
+  assert.deepEqual(await replyState(app, conv), { canReply: true, reason: null, windowEnds: null, pausedUntil: null, files: true });
   const d = await ownerReply(app, conv, 'כן, אפשר. נורית', 'owner@example.test');
   assert.equal(d.ok, true);
   const sent = app.mail!.outbox!.at(-1)!;
