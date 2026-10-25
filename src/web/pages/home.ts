@@ -115,7 +115,7 @@ const DM_CLOSED: Record<string, string> = {
   instagram: 'עבר יותר מדי זמן מההודעה האחרונה של הלקוח, ו־Meta לא מאפשרת לענות באינסטגרם אחרי זה. כשהלקוח יכתוב שוב, אפשר לענות מכאן.',
 };
 
-const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', continuation: 'המשך של משפט שנחתך' };
+const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', claim: 'עובדה שלא הגיעה מהנתונים', continuation: 'המשך של משפט שנחתך' };
 
 async function chat(app: App, r: DashReq, id: number) {
   const c = await app.db.one<any>(`SELECT c.*, ${STATE_SQL} AS state, s.name, s.domain, s.brand, s.id AS sid FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.id = $1`, [id]);

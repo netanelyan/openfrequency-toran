@@ -36,7 +36,7 @@ export function apiClient({ apiKey, workspaceId, gate }: { apiKey: string; works
         model: req.model,
         max_tokens: req.maxTokens,
         system,
-        tools: req.tools,
+        ...(req.tools.length ? { tools: req.tools } : {}),
         messages: req.messages,
         cache_control: { type: 'ephemeral' },
         output_config: { effort: req.effort || 'low' },

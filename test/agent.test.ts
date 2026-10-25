@@ -130,6 +130,46 @@ test('an invented price never reaches the customer: the guard cuts it, hands off
   await app.db.close();
 });
 
+test('a fact with no number that the tools never said is cut and handed off; TORAN_GUARD_LLM\'s "yes" puts a borderline one back', async () => {
+  let verdict = 'UNSUPPORTED';
+  const asked: string[] = [];
+  const script: Script = (req) => {
+    if (req.tag === 'guard verify') {
+      asked.push(String(req.messages[0].content));
+      return [{ type: 'text', text: verdict }];
+    }
+    if (lastToolResult(req)) return [{ type: 'text', text: 'ההחזרה חינם. רוצים את הקישור לדף ההחזרות?' }];
+    return [
+      { type: 'tool_use', id: 'p1', name: 'get_policy', input: { topic: 'כמה עולה משלוח?' } },
+      { type: 'tool_use', id: 'p2', name: 'get_policy', input: { topic: 'אפשר להחזיר או להחליף?' } },
+    ];
+  };
+  const { app, id } = await storeApp(script);
+  const turn = async () => runTurn(app, { storeId: id, conversationId: await conversationFor(app.db, id, 'cli', null), text: 'ההחזרה בחינם?' });
+
+  const off = await turn();
+  assert.equal(off.redactions[0].rule, 'claim');
+  assert.equal(off.redactions[0].claim, 'free');
+  assert.equal(off.redactions[0].borderline, true);
+  assert.match(off.reply, /^את זה אני בודק עם החנות/);
+  assert.equal(off.handoff?.reason, 'unknown');
+  assert.equal(asked.length, 0, 'off by default: no second call');
+
+  app.env.TORAN_GUARD_LLM = 'on';
+  const no = await turn();
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /ההחזרה חינם/);
+  assert.equal(no.redactions[0]?.rule, 'claim', 'a "no" keeps the cut');
+  verdict = 'SUPPORTED';
+  const yes = await turn();
+  assert.equal(yes.redactions.length, 0);
+  assert.equal(yes.handoff, null);
+  assert.match(yes.reply, /^ההחזרה חינם\./);
+  const tags = await app.db.query<{ tag: string }>("SELECT tag FROM usage WHERE store_id = $1 AND tag = 'guard'", [id]);
+  assert.equal(tags.length, 2, 'every second opinion is recorded against the store');
+  await app.db.close();
+});
+
 test('a price read in an earlier turn may be quoted later; a refund request goes to handoff through the tool', async () => {
   let turn = 0;
   const script: Script = (req) => {

@@ -29,7 +29,7 @@ if (!store.ingested_at) {
 const show = (o: TurnOutput) => {
   if (!quiet) {
     for (const t of o.tools) console.log(`  · ${t.name} ${JSON.stringify(t.input)}${t.ok ? '' : ' (error)'}`);
-    for (const r of o.redactions) console.log(`  ✂ guard cut (${r.rule}): ${r.sentence}`);
+    for (const r of o.redactions) console.log(`  ✂ guard cut (${r.rule}${r.claim ? ` ${r.claim}` : ''}): ${r.sentence}`);
     if (o.handoff) console.log(`  ↪ handoff (${o.handoff.reason}): ${o.handoff.summary}`);
     console.log(`  [${o.rounds} model call${o.rounds === 1 ? '' : 's'}, ${o.tokens.in + o.tokens.cacheRead + o.tokens.cacheWrite} in / ${o.tokens.out} out tokens, $${o.apiUsd.toFixed(4)} at API prices]`);
   }

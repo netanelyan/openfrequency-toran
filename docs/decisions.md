@@ -437,3 +437,66 @@ first: people who write to OpenFrequency about Toran and Teder are answered from
 - **Alternatives:** a scraped "store" of openfrequency.co.il (ingest refuses a site with no products, and would have
   read the launch-day claims as facts); FAQ rows typed in the dashboard (no plans, no pages, and drifting from the
   site's prices).
+
+## 2026-10-25: the guard checks claims, not only numbers
+
+**The gap:** the guard was lexical (milestones.md, section 3). It held every price, stock level and delivery time to
+the numbers in the tool results, and nothing else: "ההחזרה חינם", "שולחים גם לאילת", "החולצה מכותנה" and "כן, יש
+במלאי" were held only by the prompt.
+
+**The change:** a second pass, `src/agent/claims.ts`, on every sentence the lexical rules let through. It finds a
+claim by word lists in Hebrew and English, read the way `heWord` and `termGroups` read Hebrew (up to two prefix
+letters, final letters folded), and holds it to the conversation's tool results:
+- **free** ("חינם", "ללא עלות", "בלי תשלום", "at no cost"): in the same sentence as what is free, with the condition
+  the store wrote. "בהזמנה מעל 300 ₪ המשלוח חינם" backs "מעל 300 ₪ המשלוח חינם", not "המשלוח חינם" and not
+  "ההחזרה חינם".
+- **area** (a city, a region, all of Israel, abroad) and **delivery** (express, same day, a weekday, before the
+  holiday, to the door, a locker): in a passage about shipping or pickup. "כל הארץ" is not Eilat.
+- **return** (that a return or an exchange is possible, and its conditions: tags, original packaging, unused,
+  receipt, sale items) and **warranty** (a warranty or a guarantee, and its terms).
+- **payment** (Bit, PayBox, credit card, cash, instalments) and **product** (a material or a property: cotton,
+  ceramic, vegan, dishwasher safe, kosher, gluten free): anywhere in the tools' text.
+- **size:** a letter size, or a number beside the word for size, that the product's options do not list.
+- **stock:** said of the product the sentence names, against that product's row or variant, not only "some tool
+  said במלאי".
+
+Each concept keeps its Hebrew and English forms together, so an English reply is checked against a Hebrew policy and
+the other way round. **Polarity counts:** "אין משלוחים לחו"ל" backs "we don't ship abroad" and cuts "we ship abroad"
+(a negation word up to two words before, a clause that opens with one, or "is not", "אינה", "לא אפשרי" after).
+**A bare answer** ("כן, יש", "yes, we do") makes the claims of the customer's question.
+
+**What is not a claim:** a question back to the customer, a sentence that says it is checking, passing it on or does
+not know, a greeting, chit-chat. A cut claim is the new redaction rule `claim` (with its kind), replaced by the honest
+checking line once a reply, and hands off as `unknown`, like the lexical rules.
+
+**The customer's words** count only when they are a statement, not a question or a request, and only for payment,
+returns and delivery ("שילמתי בפייבוקס" lets the reply say PayBox). "יש משלוח לאילת?" never backs "כן, שולחים
+לאילת", and "אני גר באילת" does not either. A company store's "works today" list, which the agent reads in its
+prompt and not from a tool, backs a claim as a tool result would, and is never a source of numbers.
+
+**The model, behind a flag:** `TORAN_GUARD_LLM`, off by default. A cut is borderline when the tools mention its key
+term, but not in a way code can confirm (the opposite polarity, another subject, a dropped condition). With the flag
+on, each borderline cut (at most three a reply) goes to the model once, with the passages that mention it, and only
+the one-word answer "SUPPORTED" puts the sentence back. An error or any other answer keeps the cut. The call is
+recorded against the store with the tag `guard`. The tests never need it.
+
+**Alternatives:**
+- A model call on every reply that states a policy. Every answer would pay for a second call, and the check that
+  matters most would depend on a model again. tiyul-plus's rule is to move a rule to where it is not a choice.
+- Matching the reply's content words against the tools' text. A paraphrase defeats it both ways, and it does not
+  see "not".
+- Rewriting the reply instead of cutting the sentence. The guard never writes facts, it only removes them.
+
+**Tested:** `test/claims.test.ts`, 17 tests and about 140 sentences in Hebrew and English, cut and passed, on the
+fictional store's own policy pages, and a turn in `test/agent.test.ts` through the loop with the flag off and on (a
+scripted model). The guard's earlier tests pass unchanged.
+
+**Known weak spots:**
+- **Cut when it is true:** a paraphrase the word lists do not join ("שבועיים" for the policy's "14 יום"); a sound
+  inference ("Bit, not cash" when the store lists only Bit and card); a policy whose subject is named only in a
+  passage's header while the sentence names another; a customer's "yes" question answered "כן" when the store's
+  words for it are not in the lists.
+- **Passed when it is not:** a claim the lists do not know (colours, care, fit, opening hours, "it suits sensitive
+  skin"); "free" with no subject of its own on a page whose header names one; a negation further than the windows
+  reach; a claim spread over two sentences of the reply; a store sentence with the right words in another relation
+  in one clause; a condition the store wrote in another sentence ("free shipping." then "over 300 ₪.").

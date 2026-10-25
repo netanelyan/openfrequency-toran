@@ -58,11 +58,14 @@ export function transcript(messages: Msg[]): string {
 }
 
 export function protocol(req: TurnReq): string {
+  // A call with no tools (the guard's second opinion, claims.ts) only answers.
+  if (!req.tools.length) return '\n\n# How you answer in this environment\nAnswer with one JSON object and nothing else: {"reply": "<your answer>"}.';
   const tools = req.tools.map((t) => `- ${t.name}: ${t.description}\n  input schema: ${JSON.stringify(t.input_schema)}`).join('\n');
   return `\n\n# How you answer in this environment\nYou have these tools:\n${tools}\n\nAnswer with one JSON object and nothing else:\n- {"tool_calls": [{"name": "<tool>", "input": {...}}]} to call one or more tools. You will get their results and answer again.\n- {"reply": "<your message to the customer>"} when you are ready to answer the customer.\nNever both in one answer.`;
 }
 
 export function schemaFor(req: TurnReq) {
+  if (!req.tools.length) return { type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'] };
   return {
     type: 'object',
     properties: {
