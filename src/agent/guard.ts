@@ -1,4 +1,5 @@
 import { heWord } from '../core/hebrew.ts';
+import { claimEvidence, claimViolation, type ClaimEvidence } from './claims.ts';
 
 // The reply guard: a deterministic filter on every reply, after the model and before
 // the customer. Ported from tiyul-plus's priceGuard.ts, whose rule it keeps: when the
@@ -25,16 +26,21 @@ import { heWord } from '../core/hebrew.ts';
 // sets needsHandoff: unknown means escalate. A sentence ending in ":" that is cut takes
 // the list after it with it (tiyul-plus's colon continuation).
 //
+// THE CLAIMS (claims.ts): a sentence that passes all of the above may still state a fact
+// with no number in it ("returns are free", "we ship to Eilat", "it's cotton"). Its key
+// terms must be in the tool results too, or it is cut as "claim", and hands off.
+//
 // Also from the voice rules: no em or en dashes reach the customer.
 
-export type Redaction = { rule: string; sentence: string };
+// claim: what kind of fact a "claim" cut was (claims.ts); borderline: the tools mention it, not in a way code confirms.
+export type Redaction = { rule: string; sentence: string; claim?: string; borderline?: boolean };
 export type GuardResult = { text: string; redactions: Redaction[]; needsHandoff: boolean; handoffReason: string | null };
-export type Allow = { numbers: Set<string>; stockKnown: boolean; promiseWords: Set<string>; relativeTimes: boolean };
+export type Allow = { numbers: Set<string>; stockKnown: boolean; promiseWords: Set<string>; relativeTimes: boolean; claims?: ClaimEvidence };
 
 const CURRENCY = new RegExp(`₪|ש"ח|ש״ח|${heWord('שקלים', 'שקל', 'אירו', 'דולרים', 'דולר')}|\\bILS\\b|\\bNIS\\b|\\$|€|\\bshekels?\\b`, 'i');
 const MONEY_WORD = new RegExp(`${heWord('מחירים', 'מחיר', 'עולים', 'עולה', 'עלות', 'לשלם', 'משלמים', 'תשלום', 'בתוספת')}|\\b(price|prices|costs?|pay)\\b`, 'i');
 const PERCENT = /\d\s*%|%\s*\d|אחוז/;
-const STOCK = new RegExp(`${heWord('במלאי', 'מלאי', 'אזלו', 'אזל', 'נגמרו', 'נגמר', 'זמינים', 'זמינה', 'זמין')}|\\b(in stock|out of stock|sold out|available)\\b`, 'i');
+export const STOCK = new RegExp(`${heWord('במלאי', 'מלאי', 'אזלו', 'אזל', 'נגמרו', 'נגמר', 'זמינים', 'זמינה', 'זמין')}|\\b(in stock|out of stock|sold out|available)\\b`, 'i');
 const LEFT_N = /(?:נשאר(?:ו|ה)?|נותר(?:ו|ה)?|רק)\s+\d+|\d+\s+(?:יחידות|פריטים|זוגות)\s+(?:אחרונ)|only\s+\d+\s+left/i;
 const DELIVERY = new RegExp(`${heWord('משלוחים', 'משלוח', 'אספקה', 'יגיעו', 'יגיע', 'תגיע', 'מגיעים', 'מגיעה', 'מגיע', 'שליח', 'איסוף')}|\\b(shipping|delivery|deliver|arrive|arrives)\\b`, 'i');
 const TIME = /\d+\s*(?:-\s*\d+\s*)?(?:ימים|ימי\s*עסקים|יום|שעות|שעה|business\s*days|days|hours)|מחר|השבוע|tomorrow/i;
@@ -61,19 +67,21 @@ export function numbersIn(text: string): string[] {
  * The tools' own bookkeeping (how many results came back, ids) is not a fact a customer may be told: its numbers
  * are not allowed. A product's number of options is a fact ("in 3 sizes"), and stays.
  */
-const stripMeta = (t: string) =>
+export const stripMeta = (t: string) =>
   t
     .replace(/\[(?:id|variant) \d+\]/g, ' ')
     .replace(/\b\d+ matching products?\b|\(the \d+ closest\)|\b\d+ answered questions\b/g, ' ');
 
-export function buildAllow({ toolTexts, customerTexts }: { toolTexts: string[]; customerTexts: string[] }): Allow {
+// factTexts: what the app itself holds true and gave the model outside a tool (a company store's "works today" list):
+// evidence for a claim, never a source of numbers.
+export function buildAllow({ toolTexts, customerTexts, factTexts = [] }: { toolTexts: string[]; customerTexts: string[]; factTexts?: string[] }): Allow {
   const numbers = new Set<string>();
   for (const t of [...toolTexts.map(stripMeta), ...customerTexts]) for (const n of numbersIn(t)) numbers.add(n);
   const tools = toolTexts.join('\n');
   const stockKnown = /במלאי|אזל מהמלאי/.test(tools);
   const promiseWords = new Set<string>();
   for (const w of ['הנחה', 'קופון', 'זיכוי', 'החזר', 'מבצע', 'חינם', 'מתנה', 'refund', 'discount', 'free']) if (tools.includes(w)) promiseWords.add(w);
-  return { numbers, stockKnown, promiseWords, relativeTimes: RELATIVE.test(tools) };
+  return { numbers, stockKnown, promiseWords, relativeTimes: RELATIVE.test(tools), claims: claimEvidence({ toolTexts: [...toolTexts, ...factTexts], customerTexts }) };
 }
 
 /** Sentence ends: . ! ? : or a line break, followed by space or the end, outside parentheses, so "9:00" and "19.90" stay whole. */
@@ -133,6 +141,7 @@ const REPLACE: Record<string, string> = {
   delivery: 'כמה זמן לוקח המשלוח אני בודק עם החנות, ואחזור אליך כאן.',
   promise: 'הנחה או החזר מאשרים רק בחנות. העברתי להם את הבקשה, ויחזרו אליך כאן.',
   superlative: '',
+  claim: 'את זה אני בודק עם החנות, ואחזור אליך כאן.',
 };
 const REPLACE_EN: Record<string, string> = {
   price: "I'm checking the exact price with the store and will update you here.",
@@ -140,8 +149,9 @@ const REPLACE_EN: Record<string, string> = {
   delivery: "I'm checking delivery times with the store and will update you here.",
   promise: 'Discounts, refunds and exceptions are approved by the store itself. I passed your request on, and they will get back to you here.',
   superlative: '',
+  claim: "I'm checking this with the store and will update you here.",
 };
-const HANDOFF_REASON: Record<string, string> = { price: 'unknown', stock: 'unknown', delivery: 'unknown', promise: 'discount' };
+const HANDOFF_REASON: Record<string, string> = { price: 'unknown', stock: 'unknown', delivery: 'unknown', promise: 'discount', claim: 'unknown' };
 // A company store (our own support, src/company.ts) is not a store: the honest line says someone from us answers.
 const REPLACE_COMPANY: Record<string, string> = {
   price: 'את המחיר המדויק אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
@@ -149,6 +159,7 @@ const REPLACE_COMPANY: Record<string, string> = {
   delivery: 'את הזמנים אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
   promise: 'הנחה או הסדר מיוחד מאשרים רק אצלנו. העברתי את הבקשה, ויחזרו אליך כאן.',
   superlative: '',
+  claim: 'את זה אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
 };
 const REPLACE_COMPANY_EN: Record<string, string> = {
   price: "I'm checking the exact price, and someone from our team will get back to you here.",
@@ -156,6 +167,7 @@ const REPLACE_COMPANY_EN: Record<string, string> = {
   delivery: "I'm checking the timing, and someone from our team will get back to you here.",
   promise: 'Discounts and exceptions are approved by our team. I passed your request on, and they will get back to you here.',
   superlative: '',
+  claim: "I'm checking this, and someone from our team will get back to you here.",
 };
 /** The honest line when nothing is left to say, for a store or for a company. */
 export const checkingLine = (english: boolean, company = false) =>
@@ -167,7 +179,9 @@ export const checkingLine = (english: boolean, company = false) =>
 // break the voice guide does not allow, and becomes a comma.
 export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2').replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',');
 
-export function guardReply(text: string, allow: Allow, { company = false }: { company?: boolean } = {}): GuardResult {
+// verified: sentences the claim check's second opinion (claims.ts, TORAN_GUARD_LLM) found backed; the lexical rules
+// still apply to them.
+export function guardReply(text: string, allow: Allow, { company = false, verified }: { company?: boolean; verified?: Set<string> } = {}): GuardResult {
   const english = !/[א-ת]/.test(text) && /[a-z]/i.test(text);
   const lines = company ? (english ? REPLACE_COMPANY_EN : REPLACE_COMPANY) : english ? REPLACE_EN : REPLACE;
   const out: string[] = [];
@@ -175,8 +189,11 @@ export function guardReply(text: string, allow: Allow, { company = false }: { co
   const done = new Set<string>();
   let dropContinuation = false;
   let handoffReason: string | null = null;
+  let prev = '';
   for (const sentence of splitSentences(text)) {
     const trimmed = sentence.trim();
+    const before = prev;
+    if (trimmed) prev = trimmed;
     if (dropContinuation) {
       if (/^([-•*]|\d+[.)])\s/.test(trimmed) || !trimmed) {
         redactions.push({ rule: 'continuation', sentence: trimmed });
@@ -184,12 +201,14 @@ export function guardReply(text: string, allow: Allow, { company = false }: { co
       }
       dropContinuation = false;
     }
-    const rule = trimmed ? violation(trimmed, allow) : null;
+    const lexical = trimmed ? violation(trimmed, allow) : null;
+    const claim = !lexical && trimmed && allow.claims && !verified?.has(trimmed) ? claimViolation(trimmed, allow.claims, before) : null;
+    const rule = lexical || (claim ? 'claim' : null);
     if (!rule) {
       out.push(sentence);
       continue;
     }
-    redactions.push({ rule, sentence: trimmed });
+    redactions.push(claim ? { rule, sentence: trimmed, claim: claim.kind, borderline: claim.borderline } : { rule, sentence: trimmed });
     if (HANDOFF_REASON[rule]) handoffReason ??= HANDOFF_REASON[rule];
     if (trimmed.endsWith(':')) dropContinuation = true;
     // An introduction ending in a colon ("there are two options:") introduced what was just cut: it goes too.

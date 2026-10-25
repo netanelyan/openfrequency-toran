@@ -112,7 +112,7 @@ The one price "invented before the guard" was a correct price sentence in Englis
 
 **Still weak:**
 - **Opus 5.5 answers in two calls, about 15 seconds on the CLI.** The API is faster, and Sonnet 5.5 would be half the price: TORAN_MODEL_AGENT.
-- **The guard is lexical.** A claim made without any number ("returns are free") is held by the prompt and the tool rules, not by code.
+- **The guard is lexical.** A claim made without any number ("returns are free") is held by the prompt and the tool rules, not by code. Since 2026-10-25 a claim check holds the common kinds in code (decisions.md, "the guard checks claims").
 
 ## 4. The pitch page
 

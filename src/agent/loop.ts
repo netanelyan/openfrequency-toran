@@ -3,19 +3,21 @@ import { type Db, J } from '../db/index.ts';
 import { event, usage as recordUsage } from '../db/log.ts';
 import { cleanLine } from '../core/hebrew.ts';
 import { agentModel } from './llm/index.ts';
-import { type Block, type Msg, type ToolUseBlock, isText, isToolUse, LlmError } from './llm/types.ts';
+import { type Block, type Msg, type ToolUseBlock, type TurnRes, isText, isToolUse, LlmError } from './llm/types.ts';
 import { DEMO_NOTE, systemFor, type StoreForPrompt } from './prompt.ts';
 import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
 import { buildAllow, checkingLine, guardReply, type Redaction } from './guard.ts';
+import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
 //
 // A turn: the customer's text in -> the store's system prompt (cached per store) and
 // the conversation so far -> the model, calling tools until it answers (at most
-// MAX_ROUNDS calls) -> the reply guard -> the demo footer -> everything recorded: the
-// customer's message, the reply, the tool calls with their results, what the guard
-// cut, the handoff, the miss, and every call's tokens and cost against the store.
+// MAX_ROUNDS calls) -> the reply guard (numbers, then claims) -> the demo footer ->
+// everything recorded: the customer's message, the reply, the tool calls with their
+// results, what the guard cut, the handoff, the miss, and every call's tokens and cost
+// against the store.
 //
 // History is the server's (tiyul-plus trusted history sent by the client; a forged
 // "server context" was possible there). Earlier turns are replayed as text; their tool
@@ -135,6 +137,16 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   let apiUsd = 0;
   const tokens = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
   const model = agentModel(app.env);
+  // Every model call's tokens and cost, against the store.
+  const spend = async (res: TurnRes, tag: string) => {
+    usd += res.usd;
+    apiUsd += res.apiUsd;
+    tokens.in += res.usage.input_tokens;
+    tokens.out += res.usage.output_tokens;
+    tokens.cacheRead += res.usage.cache_read_input_tokens;
+    tokens.cacheWrite += res.usage.cache_creation_input_tokens;
+    await recordUsage(db, { storeId: store.id, conversationId: input.conversationId, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag });
+  };
 
   // The monthly cap on paid API spend (TORAN_MONTHLY_CAP_USD): past it, no model call is made; the customer gets the
   // honest "checking" line and the owner a handoff. The subscription (claude-cli) costs nothing per call and is not capped.
@@ -148,13 +160,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     for (; rounds < MAX_ROUNDS && !capped; ) {
       rounds++;
       const res = await app.llm.turn({ system, messages, tools: toolDefs, model, maxTokens: 1500, effort: 'low', tag: `turn store ${store.id}` });
-      usd += res.usd;
-      apiUsd += res.apiUsd;
-      tokens.in += res.usage.input_tokens;
-      tokens.out += res.usage.output_tokens;
-      tokens.cacheRead += res.usage.cache_read_input_tokens;
-      tokens.cacheWrite += res.usage.cache_creation_input_tokens;
-      await recordUsage(db, { storeId: store.id, conversationId: input.conversationId, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag: 'agent' });
+      await spend(res, 'agent');
       if (res.stopReason === 'refusal') {
         handoff = { reason: 'other', summary: 'the model declined to answer' };
         raw = '';
@@ -188,10 +194,29 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     handoff ??= { reason: 'unknown', summary: `no answer after ${rounds} rounds: ${cleanLine(input.text, 160)}` };
   }
 
-  const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text] });
+  // A company's "works today" list sits in its prompt, not in a tool result: it backs a claim as a tool would.
+  const factTexts = company ? [String(store.config?.company?.status || '')].filter(Boolean) : [];
+  const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts });
   // A service has no stock: "not available yet" is about a feature, never an invented stock level.
   if (company) allow.stockKnown = true;
-  const g = guardReply(raw, allow, { company });
+  let g = guardReply(raw, allow, { company });
+  // The claim check's second opinion (claims.ts), off unless TORAN_GUARD_LLM is set: a borderline cut (the tools
+  // mention it, not in a way code confirms) is shown to the model with the passages, at most three a reply. A "yes"
+  // puts the sentence back; no answer, an error or a "no" keeps the cut.
+  const borderline = g.redactions.filter((r) => r.rule === 'claim' && r.borderline).slice(0, 3);
+  if (borderline.length && allow.claims && claimLlmOn(app.env) && !capped) {
+    const verified = new Set<string>();
+    for (const r of borderline) {
+      try {
+        const v = await verifyClaim(app.llm, model, r.sentence, claimPassages(r.sentence, allow.claims));
+        if (v.res) await spend(v.res, 'guard');
+        if (v.supported) verified.add(r.sentence);
+      } catch (e: any) {
+        app.log(`[agent] store ${store.id}: the claim check's second opinion failed, the cut stands: ${cleanLine(e?.message || e, 160)}`);
+      }
+    }
+    if (verified.size) g = guardReply(raw, allow, { company, verified });
+  }
   if (g.needsHandoff && !handoff) handoff = { reason: g.handoffReason || 'unknown', summary: `the guard cut ${g.redactions.map((r) => r.rule).join(', ')}: ${cleanLine(input.text, 160)}` };
   const miss = g.redactions.length > 0 || handoff?.reason === 'unknown';
   const reply = input.footer === false ? g.text : `${g.text}\n\n${DEMO_FOOTER}`;
