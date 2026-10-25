@@ -153,6 +153,17 @@ test("the strip under the hero shows the store's own products, loops without a g
   assert.match(themeCss(fake({ shelf: Array.from({ length: 7 }, (_, i) => item(i)) })), /--shelf-0:32s;--shelf-1:36s/);
 });
 
+test("the page's link shows a card where it is sent: its own title and line over Toran's image, and none without a base address", () => {
+  const d = fake({});
+  const html = pitchPage(d, { env: ENV });
+  const title = html.match(/<title>([^<]*)<\/title>/)![1];
+  assert.match(html, new RegExp(`<meta property="og:title" content="${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}">`));
+  assert.match(html, new RegExp(`<meta property="og:url" content="https://toran\\.example/s/${d.store.slug}">`));
+  assert.match(html, /<meta property="og:image" content="https:\/\/toran\.example\/static\/og-toran\.png">/);
+  assert.match(html, /<meta name="twitter:card" content="summary_large_image">/);
+  assert.doesNotMatch(pitchPage(d, { env: { ...ENV, PUBLIC_BASE_URL: '' } }), /og:image/);
+});
+
 test('the page counts what was read: products, their images, the information pages by name, and the price range', () => {
   const page = (d: PitchData) => pitchPage(d, { env: ENV });
   const html = page(fake());

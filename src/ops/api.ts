@@ -3,9 +3,9 @@ import type { App } from '../app.ts';
 import type { Out, Req, Route } from '../web/server.ts';
 import { accountsLinks, ADMIN } from '../web/accounts.ts';
 import { syncTeder } from './sources.ts';
-import { conversations, queue, stuckRequests } from './queue.ts';
+import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests } from './queue.ts';
 import { funnels } from './funnel.ts';
-import { later, markLost, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, setNext, type Kind } from './actions.ts';
+import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, setNext, type Kind } from './actions.ts';
 
 // The operator's dashboard, as data for accounts' /admin, where it is shown (docs/operator.md section 4). Toran's
 // own site shows Toran only; this is the work behind the dashboard: who to write to today, the conversations, the
@@ -43,6 +43,7 @@ const SAID: Record<(typeof ACTIONS)[number], string> = {
   paid: 'סומן שמשלמים.',
   won: 'סומן כלקוח.',
 };
+const TOLD = `סומן שאמרת להם לחבר מחדש את הוואטסאפ. אם עוד לא יחברו, זה יחזור לרשימה בעוד ${RECONNECT_AGAIN_DAYS} ימים.`;
 
 export async function opsData(app: App) {
   const ok = await syncTeder(app);
@@ -76,8 +77,10 @@ export function opsRoutes(app: App): Route<Req>[] {
         return { status: 400, json: { ok: false, error: 'bad' } };
       }
       const by = String(b.by || 'operator').slice(0, 120);
+      let said: string = SAID[what];
       try {
-        if (what === 'sent') await markSent(app, kind, id, by);
+        if (what === 'sent' && kind === 'toran' && (await markReconnectTold(app, id, by))) said = TOLD;
+        else if (what === 'sent') await markSent(app, kind, id, by);
         else if (what === 'reminded') await markReminded(app, kind, id, by);
         else if (what === 'direct') {
           if (kind !== 'toran') throw new OpsError('אפשר לשלוח מהמספר של הדמו רק את תורן');
@@ -98,7 +101,7 @@ export function opsRoutes(app: App): Route<Req>[] {
         if (e instanceof OpsError) return { status: 400, json: { ok: false, error: e.message } };
         throw e;
       }
-      return { json: { ok: true, message: SAID[what] } };
+      return { json: { ok: true, message: said } };
     }],
   ];
 }

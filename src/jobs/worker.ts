@@ -11,7 +11,7 @@ import { event } from '../db/log.ts';
 import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
 import { handleTederEvent, handleTederReady } from '../owners/events.ts';
 import { deliverRequested } from '../ops/actions.ts';
-import { checkAccount, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
+import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
 import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialStore.ts';
 import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 
@@ -22,6 +22,8 @@ import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 //   wa_echo      the owner wrote to a customer from the WhatsApp Business app on their phone (channels/waStore.ts)
 //   wa_status    Meta's delivery report on a message from a store's own number: a failure is kept
 //   wa_check     a store's own WhatsApp number's state at Meta, read again (pending ones every ten minutes)
+//   wa_token     a store's WhatsApp token, read again once a day: renewed before it ends, or the store asked to
+//                connect again (channels/waStore.ts checkToken)
 //   dm_inbound   a message to a store's Facebook Page (Messenger) or Instagram account: the same as wa_inbound
 //   dm_echo      the owner answered from the Page's inbox or the Instagram app (channels/socialStore.ts)
 //   ig_refresh   an Instagram token's 60 days, renewed before they end
@@ -52,6 +54,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return deliveryStatus(app, p);
     case 'wa_check':
       return checkAccount(app, Number(p.accountId));
+    case 'wa_token':
+      return checkToken(app, Number(p.accountId));
     case 'dm_inbound':
       return handleInbound(app, p);
     case 'dm_echo':
@@ -127,6 +131,9 @@ export async function schedule(app: App) {
   // A store's own WhatsApp number waiting at Meta: read again every ten minutes, so it turns on by itself.
   const pending = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status = 'pending' AND COALESCE((meta->>'checked_at')::timestamptz, 'epoch') < now() - interval '10 minutes'");
   for (const a of pending) await enqueue(app.db, 'wa_check', { accountId: a.id }, { dedupeKey: `wa_check:${a.id}`, maxAttempts: 1 });
+  // A store's WhatsApp token: read once a day, and at once when the end we know of has come.
+  const tokens = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status IN ('active', 'pending') AND secret IS NOT NULL AND (token_checked_at IS NULL OR token_checked_at < now() - interval '1 day' OR token_expires_at <= now())");
+  for (const a of tokens) await enqueue(app.db, 'wa_token', { accountId: a.id }, { dedupeKey: `wa_token:${a.id}`, maxAttempts: 1 });
   // An Instagram token that ends within REFRESH_DAYS, and was not renewed today: a fresh 60 days.
   const ending = await app.db.query<{ id: number }>(`SELECT id FROM channel_accounts WHERE channel = 'instagram' AND status = 'active' AND (meta->>'expires_at')::timestamptz < now() + interval '${REFRESH_DAYS} days' AND COALESCE((meta->>'refreshed_at')::timestamptz, connected_at) < now() - interval '1 day'`);
   for (const a of ending) await enqueue(app.db, 'ig_refresh', { accountId: a.id }, { dedupeKey: `ig_refresh:${a.id}`, maxAttempts: 3 });

@@ -111,9 +111,11 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
       else await t.query('INSERT INTO faqs (store_id, question, site_answer, source_url) VALUES ($1,$2,$3,$4)', [storeId, f.question, f.site_answer, f.source_url]);
     }
 
+    // config.catalogue is where the rows came from (products.json, store-api, sitemap): a WooCommerce cart link can
+    // use a variant's id only when it is the Store API's (agent/tools.ts).
     await t.query(
       `UPDATE stores SET brand = $2::jsonb, name = COALESCE(NULLIF($3, ''), name), ingested_at = now(), updated_at = now(), config = config || $4::jsonb WHERE id = $1`,
-      [storeId, J(brand), cat.name || '', J({ currency, moneyFormat: cat.moneyFormat })],
+      [storeId, J(brand), cat.name || '', J({ currency, moneyFormat: cat.moneyFormat, catalogue: cat.source })],
     );
   });
   const available = rows.filter((r) => r.available).length;

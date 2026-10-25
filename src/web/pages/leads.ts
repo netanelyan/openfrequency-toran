@@ -8,7 +8,7 @@ import { pageStats } from '../../pitch/track.ts';
 import { pitchGaps } from '../../pitch/ready.ts';
 import { contactTarget, firstMessage, followupDue, pitchUrl, reminderMessage } from '../../outreach.ts';
 import { PLANS, planOf, type PlanKey } from '../../plans.ts';
-import { waAccountOf, waLine } from './whatsapp.ts';
+import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { waConnectReady } from '../../channels/meta.ts';
 import { SOCIAL, socialReady } from '../../channels/social.ts';
 import { socialAccountOf, socialLine } from './social.ts';
@@ -136,6 +136,7 @@ ${due <= now() ? `<label class="f mt12">התזכורת<textarea id="rem-msg" row
 ${job && ['queued', 'running'].includes(job.status) ? `<div class="banner info" data-wait-job="${job.id}">${icon('clock')}<div><b>בעבודה</b><p data-progress>${esc(job.progress || 'בתור')}</p></div></div>` : ''}
 ${job?.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>הקריאה האחרונה של האתר נכשלה</b><p>${esc(job.last_error || '')}</p></div></div>` : ''}
 ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד הוסר ${esc(stamp(s.taken_down_at))}</b><p>הקישור כבר לא עובד, הקוד של הדמו כבוי, ולא כותבים להם יותר.</p></div></div>` : s.takedown_asked_at ? `<div class="banner warn">${icon('alert')}<div><b>לחצו על "להוריד את העמוד הזה" ${esc(stamp(s.takedown_asked_at))}</b><p>אם הגיעה מהם הודעה בוואטסאפ, מורידים את העמוד מכאן. הלחיצה לבד עוד לא מורידה אותו.</p></div>${postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm danger', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' })}</div>` : ''}
+${waBanner(await waAccountOf(app, id), id)}
 <div class="cols">
   <div class="grid12">
     <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>

@@ -4,8 +4,10 @@ import { templatesDoc } from '../src/owners/templates.ts';
 const head = `# WhatsApp templates for the owner line
 
 What the owner line (docs/owner-line.md) sends outside the 24 hours after an owner's last message, when WhatsApp
-allows nothing but a template Meta approved. Submit each one in Twilio's Content Template Builder (or Meta's WhatsApp
-Manager) as below. When Meta approves it, put its Content SID (HX...) in \`TWILIO_TEMPLATES\`, for example
+allows nothing but a template Meta approved. Submit each one as below: in Meta's WhatsApp Manager (Message templates)
+when the owner line is on Meta's Cloud API (\`META_OWNER_PHONE_ID\`), or in Twilio's Content Template Builder when it
+is on Twilio. On Meta, once it is approved, add its name to \`META_TEMPLATES\`, for example
+\`teder_posts_ready,teder_post_reminder\`. On Twilio, put its Content SID (HX...) in \`TWILIO_TEMPLATES\`, for example
 \`teder_posts_ready=HX...,teder_post_reminder=HX...\`.
 
 Each is a **Utility** template: it is about the owner's own Teder account, which they linked and agreed to hear about,

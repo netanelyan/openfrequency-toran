@@ -187,12 +187,21 @@ export function resendDomains({ apiKey, fetchImpl = fetch }: { apiKey: string; f
   };
 }
 
+/**
+ * A notice from us to one of our own customers about their account (a store's WhatsApp needs connecting again,
+ * waStore.ts): from toran@ our domain, not threaded, never to a store's customer.
+ */
+export function noticeMail(domain: string, to: string, subject: string, text: string) {
+  return { from: `"OpenFrequency" <toran@${domain}>`, to: [to], subject, text, html: asHtml(text), headers: { 'Auto-Submitted': 'auto-generated' } };
+}
+
 export interface EmailAdapter extends ChannelAdapter {
   channel: 'email';
   kind: 'resend' | 'sim';
   domain: string;
   /** The stores' own domains (mailDomain.ts), at Resend or the simulator's. */
   domains: MailDomains;
+  notice(to: string, subject: string, text: string): Promise<Sent>;
 }
 
 const ack = () => ({ type: 'application/json; charset=utf-8', body: '{"ok":true}' });
@@ -245,6 +254,12 @@ export function resendEmail({ apiKey, webhookSecret, domain, fetchImpl = fetch }
       if (!res.ok) throw new Error(`Resend refused the email (${res.status}): ${String(out?.message || '').slice(0, 200)}`);
       return { id: String(out.id || ''), usd: 0 } satisfies Sent;
     },
+    async notice(to, subject, text) {
+      const res = await fetchImpl(`${API}/emails`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(noticeMail(domain, to, subject, text)), signal: AbortSignal.timeout(15_000) });
+      const out: any = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(`Resend refused the notice (${res.status}): ${String(out?.message || '').slice(0, 200)}`);
+      return { id: String(out.id || ''), usd: 0 };
+    },
     ack,
   };
 }
@@ -280,6 +295,11 @@ export function simEmail({ domain = 'mail.toran.test' }: { domain?: string } = {
     async send(to, text, inReplyTo, ctx) {
       const m = outgoing(to, text, inReplyTo, ctx);
       outbox.push({ to, text, inReplyTo: inReplyTo.id, at: Date.now(), from: m.from, replyTo: m.reply_to, subject: m.subject, headers: m.headers, attachments: m.attachments || [] });
+      return { id: `sim-mail-${Date.now()}-${n++}`, usd: 0 };
+    },
+    async notice(to, subject, text) {
+      const m = noticeMail(domain, to, subject, text);
+      outbox.push({ to, text, inReplyTo: '', at: Date.now(), from: m.from, subject, headers: m.headers, notice: true });
       return { id: `sim-mail-${Date.now()}-${n++}`, usd: 0 };
     },
     ack,

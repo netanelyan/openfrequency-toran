@@ -13,12 +13,14 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, dayHe, esc, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
 import { storesOf, type Scope } from '../workspace.ts';
 import { conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
-import { waAccountOf, waLine } from './whatsapp.ts';
+import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { waConnectReady } from '../../channels/meta.ts';
 import { socialReady } from '../../channels/social.ts';
 import { socialAccountOf, socialLine } from './social.ts';
 import { canIngest } from '../../ingest/catalogue.ts';
 import { mailDomainPanel } from './mailDomain.ts';
+import { orderAccessOf } from '../../orders.ts';
+import { ordersOn, ordersPanel } from './orders.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -96,8 +98,11 @@ async function today(app: App, r: DashReq) {
   const row = (c: any) => conversationRow({ ...c, store: many ? nameOf.get(c.store_id) : null });
   const weeks = firstWeeks(stores);
   const channels = await Promise.all(stores.map(async (s) => ({ s, rows: await channelsOf(app, s) })));
+  // A store's WhatsApp that has to be connected again (channels/waStore.ts) comes first: customers are waiting on it.
+  const reconnect = (await Promise.all(stores.map(async (s) => waBanner(await waAccountOf(app, s.id), s.id)))).join('');
 
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(dayHe(now()))}${many ? '' : ` · ${esc(stores[0].name)}`}</p></div>
+${reconnect}
 ${weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
 <div class="kpis">
   <a class="kpi lead" href="/chats?state=waiting"><span class="l">${waitingAll === 1 ? 'שאלה מחכה לכם' : 'שאלות מחכות לכם'}</span><span class="v">${waitingAll}</span><span class="s">${waitingAll ? 'מה שאין עליו תשובה באתר, ותורן העביר אליכם' : 'כל מה שנשאל קיבל תשובה'}</span></a>
@@ -131,6 +136,9 @@ async function usages(app: App, stores: Store[]): Promise<{ s: Store; usage: Usa
 
 const ANSWERS_ALONE = ['מחיר, מבצע ומלאי של מוצר, ישר מדף המוצר', 'מידות, צבעים ומה שכתוב בתיאור', 'משלוחים, החזרות ותשלום, לפי דפי המדיניות שבאתר', 'אם יש בחנות מוצר מסוים', 'לקוחות שכותבים באנגלית'];
 const LEAVES_YOU = ['שאלה שאין עליה תשובה באתר', 'בקשה להנחה או להחזר כספי', 'איפה הזמנה מסוימת נמצאת'];
+// Once the store's orders are connected (pages/orders.ts), where an order is moves to what Toran answers alone.
+const ORDER_ALONE = 'איפה ההזמנה, למי שנותן את המייל או הטלפון שבה';
+const ORDER_LEAVES = 'שינוי, ביטול או החזרה של הזמנה';
 const POLICY_HE: Record<string, string> = { shipping: 'משלוחים', returns: 'החזרות', payment: 'תשלום', contact: 'יצירת קשר', about: 'אודות', faq: 'שאלות', other: 'אחר' };
 
 async function knowledge(app: App, r: DashReq, id: number) {
@@ -143,6 +151,8 @@ async function knowledge(app: App, r: DashReq, id: number) {
   const job = await app.db.one<any>('SELECT status FROM jobs WHERE dedupe_key = $1 ORDER BY id DESC LIMIT 1', [`ingest:${id}`]);
   const reading = job && ['queued', 'running'].includes(job.status);
   const ro = r.ctx.readOnly;
+  const orders = ordersOn(await orderAccessOf(app.db, id));
+  const ordersBox = await ordersPanel(app, r, s, writeUs(app));
 
   const answer = (x: any) => `<form class="mt12" method="post" action="/lead/${id}/faq/${x.id}">${csrfField(r.ctx)}<label class="f">${esc(x.question)}${x.conversation_id ? `<small>מהתשובה שלכם <a href="/chat/${x.conversation_id}">בשיחה</a>, ${esc(shortDate(x.created_at))}</small>` : ''}<textarea name="answer" rows="2" dir="auto" maxlength="2000"${ro ? ' readonly' : ''}>${esc(x.answer)}</textarea></label>${ro ? '' : '<div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div>'}</form>`;
   const body = `<div class="head"><div class="row">${storeBadge({ id: s.id, name: s.name, domain: s.domain })}<h1 class="title">מה תורן יודע על ${esc(s.name)}</h1></div><p class="sub">תורן עונה ללקוחות רק ממה שכתוב באתר ומהתשובות שלכם כאן. ${s.ingested_at ? `האתר נקרא לאחרונה ${esc(stamp(s.ingested_at))}, ונקרא שוב כל יום.` : 'האתר עוד לא נקרא.'}</p></div>
@@ -150,8 +160,8 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
 <div class="cols">
   <div class="grid12">
     <section class="panel"><header><h2>מה הוא עונה לבד, ומה הוא משאיר לכם</h2></header>
-      <h3 class="small mt8">עונה לבד</h3><ul class="m0">${ANSWERS_ALONE.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-      <h3 class="small mt16">משאיר לכם</h3><ul class="m0">${LEAVES_YOU.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <h3 class="small mt8">עונה לבד</h3><ul class="m0">${(orders ? [...ANSWERS_ALONE, ORDER_ALONE] : ANSWERS_ALONE).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <h3 class="small mt16">משאיר לכם</h3><ul class="m0">${(orders ? LEAVES_YOU.map((x) => (x === LEAVES_YOU[2] ? ORDER_LEAVES : x)) : LEAVES_YOU).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       <p class="small muted mt12 m0">כשאין באתר תשובה, הוא אומר ללקוח שהוא בודק, במקום לנחש, והשאלה מגיעה אליכם ל<a href="/chats?state=waiting">שיחות</a>.</p>
     </section>
     <section class="panel" id="answers"><header><h2>התשובות שלכם</h2><span class="end small muted">${mine.length}</span></header>
@@ -168,6 +178,7 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
       <dl class="kv"><dt>אתר</dt><dd><bdi class="ltr">${esc(s.domain)}</bdi></dd><dt>מוצרים</dt><dd>${num(pack?.products)}${pack?.products ? `, ${num(pack.available)} מהם במלאי` : ''}</dd><dt>דפי מדיניות</dt><dd>${policies.length}</dd><dt>התשובות שלכם</dt><dd>${mine.length}</dd></dl>
       ${ro || !canIngest(s.platform) ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/reread`, 'לקרוא את האתר שוב עכשיו', { cls: 'btn sm', iconName: 'refresh' })}</div><p class="small muted mt8 m0">שיניתם מחיר, מלאי או מדיניות באתר? תורן קורא את האתר כל יום, ואפשר גם עכשיו.</p>`}
     </section>
+    ${ordersBox}
     <section class="panel"><header><h2>דפי המדיניות שתורן קורא</h2></header>
       ${policies.length ? policies.map((p) => `<details class="mt8"><summary><b>${esc(p.title)}</b> <span class="chip">${esc(POLICY_HE[p.kind] || p.kind)}</span>${p.override_text ? ' <span class="chip sig">הטקסט שלכם</span>' : ''}</summary>
         ${p.url ? `<p class="small mt8 m0"><a href="${esc(p.url)}" target="_blank" rel="noopener">${icon('ext')}בדף באתר</a></p>` : ''}

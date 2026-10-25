@@ -26,7 +26,7 @@ export type WaOut = { text?: string; mediaUrl?: string; template?: { name: strin
 
 export interface WaProvider extends ChannelAdapter {
   channel: 'whatsapp';
-  kind: 'twilio' | 'sim';
+  kind: 'twilio' | 'sim' | 'meta_line'; // meta_line: our own numbers on Meta's Cloud API (lines.ts)
   push(to: string, msg: WaOut): Promise<Sent>;
 }
 

@@ -1,7 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { open, seal, SecretError } from '../src/core/secrets.ts';
 import { parseWebhook, signBody, signatureOk } from '../src/channels/meta.ts';
+import { checkToken } from '../src/channels/waStore.ts';
+import { ownerReply, replyState } from '../src/channels/owner.ts';
+import { simEmail } from '../src/channels/email.ts';
+import { queue } from '../src/ops/queue.ts';
+import { markReconnectTold } from '../src/ops/actions.ts';
 import { counted, monthOf } from '../src/plans.ts';
 import { drain, schedule } from '../src/jobs/worker.ts';
 import { customer } from './helpers.ts';
@@ -18,10 +24,24 @@ const TOKEN = 'test-business-token-for-the-store';
 
 type Call = { method: string; path: string; auth: string | null; body: any };
 
-/** Meta's Graph API, as much of it as Toran uses. `status` is what the number reports. */
+const BUSINESS = '700600500400300';
+const DAY_S = 86_400;
+const nowS = () => Math.floor(Date.now() / 1000);
+const SCOPES = ['whatsapp_business_management', 'whatsapp_business_messaging'];
+
+type Tok = { expires: number; valid: boolean; scopes: string[] };
+
+/**
+ * Meta's Graph API, as much of it as Toran uses. `status` is what the number reports; `tokens` is what debug_token
+ * says about each token Meta gave (expires 0: never), and a token that is not valid, or past its end, is refused (190)
+ * everywhere, as Meta does. `refresh` and `lasting` are whether Meta allows each way of renewing one; `sendError` makes
+ * every send fail with that code.
+ */
 function fakeGraph() {
   const calls: Call[] = [];
-  const state = { status: 'CONNECTED', sent: 0 };
+  const tokens = new Map<string, Tok>([[TOKEN, { expires: 0, valid: true, scopes: SCOPES }]]);
+  const state = { status: 'CONNECTED', sent: 0, n: 0, refresh: true, lasting: false, sendError: 0 };
+  const live = (t: Tok | undefined) => Boolean(t?.valid && (t.expires === 0 || t.expires > nowS()));
   const f = (async (input: any, init: any = {}) => {
     const u = new URL(String(input));
     const method = String(init.method || 'GET');
@@ -30,14 +50,37 @@ function fakeGraph() {
     const auth = (init.headers as any)?.authorization || null;
     calls.push({ method, path, auth, body });
     const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } });
+    if (path === 'oauth/access_token' && u.searchParams.get('grant_type') === 'fb_exchange_token') {
+      const old = tokens.get(u.searchParams.get('fb_exchange_token') || '');
+      if (!state.refresh || !live(old) || u.searchParams.get('client_secret') !== APP_SECRET || u.searchParams.get('set_token_expires_in_60_days') !== 'true') return json({ error: { message: 'cannot refresh this token', code: 100 } }, 400);
+      const t = `refreshed-token-${++state.n}`;
+      tokens.set(t, { expires: nowS() + 60 * DAY_S, valid: true, scopes: old!.scopes });
+      return json({ access_token: t, token_type: 'bearer', expires_in: 60 * DAY_S });
+    }
     if (path === 'oauth/access_token') return u.searchParams.get('code') === 'good-code' && u.searchParams.get('client_secret') === APP_SECRET ? json({ access_token: TOKEN, token_type: 'bearer' }) : json({ error: { message: 'bad code', code: 100 } }, 400);
-    if (auth !== `Bearer ${TOKEN}`) return json({ error: { message: 'bad token', code: 190 } }, 401);
+    if (path === 'debug_token') {
+      if (auth !== `Bearer 1234567890|${APP_SECRET}`) return json({ error: { message: 'bad app token', code: 190 } }, 401);
+      const t = tokens.get(u.searchParams.get('input_token') || '');
+      const bm = t?.scopes.includes('business_management') ? [{ scope: 'business_management', target_ids: [BUSINESS] }] : [];
+      return json({ data: t ? { app_id: '1234567890', type: 'SYSTEM_USER', is_valid: live(t), issued_at: nowS() - DAY_S, expires_at: t.expires, data_access_expires_at: 0, scopes: t.scopes, granular_scopes: bm } : { is_valid: false, expires_at: 0, scopes: [] } });
+    }
+    const bearer = String(auth || '').replace(/^Bearer /, '');
+    if (!live(tokens.get(bearer))) return json({ error: { message: 'Error validating access token', code: 190 } }, 401);
+    if (path === `${BUSINESS}/system_user_access_tokens` && method === 'POST') {
+      if (!state.lasting || u.searchParams.get('appsecret_proof') !== createHmac('sha256', APP_SECRET).update(bearer).digest('hex')) return json({ error: { message: 'not allowed', code: 200 } }, 403);
+      const t = `lasting-token-${++state.n}`;
+      tokens.set(t, { expires: 0, valid: true, scopes: tokens.get(bearer)!.scopes });
+      return json({ access_token: t });
+    }
     if (path === `${WABA}/subscribed_apps`) return json({ success: true });
     if (path === PHONE_ID && method === 'GET') return json({ display_phone_number: '+972 50-000-0777', verified_name: 'כלי חרס של נורית', status: state.status, platform_type: 'CLOUD_API', id: PHONE_ID });
-    if (path === `${PHONE_ID}/messages` && method === 'POST') return json({ messaging_product: 'whatsapp', messages: [{ id: `wamid.out-${++state.sent}` }] });
+    if (path === `${PHONE_ID}/messages` && method === 'POST') {
+      if (state.sendError) return json({ error: { message: 'Error validating access token: Session has expired', code: state.sendError } }, 401);
+      return json({ messaging_product: 'whatsapp', messages: [{ id: `wamid.out-${++state.sent}` }] });
+    }
     return json({ error: { message: `no route ${method} ${path}`, code: 1 } }, 404);
   }) as typeof fetch;
-  return { f, calls, state };
+  return { f, calls, state, tokens };
 }
 
 async function shop() {
@@ -130,7 +173,7 @@ test('connecting: only the WhatsApp Business app number (coexistence), the token
     assert.ok(row.secret.startsWith('v1.') && !row.secret.includes(TOKEN), 'the token is sealed');
     assert.equal(row.meta.waba_id, WABA);
     assert.equal(row.meta.display_phone_number, '972500000777');
-    assert.deepEqual(g.calls.map((c) => `${c.method} ${c.path}`), ['GET oauth/access_token', `POST ${WABA}/subscribed_apps`, `GET ${PHONE_ID}`]);
+    assert.deepEqual(g.calls.map((c) => `${c.method} ${c.path}`), ['GET oauth/access_token', `POST ${WABA}/subscribed_apps`, `GET ${PHONE_ID}`, 'GET debug_token']);
 
     const settings = await (await s.get('/settings')).text();
     assert.match(settings, /מחובר, <bdi class="ltr">\+972500000777<\/bdi>/);
@@ -247,6 +290,137 @@ test('without the Meta settings or the secrets key, the page says the connection
     const r = await (await connect(s, a)).json();
     assert.equal(r.ok, false);
     assert.equal((await s.app.db.query("SELECT 1 FROM channel_accounts WHERE channel = 'whatsapp'")).length, 0);
+  } finally {
+    await s.close();
+  }
+});
+
+const tokenRow = (s: Awaited<ReturnType<typeof serve>>) => s.app.db.one<any>("SELECT id, status, secret, meta, token_issued_at, token_expires_at, token_checked_at FROM channel_accounts WHERE channel = 'whatsapp'");
+const DAY_MS = DAY_S * 1000;
+
+test('the token\'s life: read after the connect and daily; one that never expires is left alone; one ending within 20 days gets 60 more, or one that never expires when Meta allows', async () => {
+  const { s, a, g } = await shop();
+  try {
+    assert.equal((await (await connect(s, a)).json()).ok, true);
+    let row = await tokenRow(s);
+    assert.equal(row.token_expires_at, null, 'Meta said 0: it never expires');
+    assert.ok(row.token_issued_at && row.token_checked_at);
+    assert.deepEqual(row.meta.token_scopes, SCOPES);
+    assert.equal(row.meta.by_email, 'owner1@example.test', 'who connected, to tell them when it has to be done again');
+
+    // The next day the worker reads it again, and leaves it.
+    await s.app.db.query("UPDATE channel_accounts SET token_checked_at = now() - interval '25 hours'");
+    g.calls.length = 0;
+    await schedule(s.app);
+    await drain(s.app, { kinds: ['wa_token'] });
+    assert.deepEqual(g.calls.map((c) => c.path), ['debug_token']);
+    assert.equal((await tokenRow(s)).secret, row.secret);
+
+    // A 60-day token with 15 days left: Meta's refresh gives 60 more, and the store's messages go out with it.
+    g.tokens.get(TOKEN)!.expires = nowS() + 15 * DAY_S;
+    assert.deepEqual(await checkToken(s.app, row.id), { status: 'active', renewed: 'refreshed' });
+    row = await tokenRow(s);
+    assert.equal(open(s.app.env, row.secret), 'refreshed-token-1');
+    assert.ok(new Date(row.token_expires_at).getTime() > Date.now() + 59 * DAY_MS);
+    assert.ok(await s.app.db.one("SELECT 1 FROM events WHERE kind = 'wa_token_renewed' AND data->>'how' = 'refreshed'"));
+    await webhook(s, message('יש לכם קערות?'));
+    await drain(s.app);
+    assert.equal(g.calls.filter((c) => c.path === `${PHONE_ID}/messages`).at(-1)!.auth, 'Bearer refreshed-token-1');
+
+    // A token that covers the store's business: Meta makes one that never expires from it.
+    Object.assign(g.tokens.get('refreshed-token-1')!, { expires: nowS() + 12 * DAY_S, scopes: [...SCOPES, 'business_management'] });
+    g.state.lasting = true;
+    assert.deepEqual(await checkToken(s.app, row.id), { status: 'active', renewed: 'lasting' });
+    row = await tokenRow(s);
+    assert.equal(open(s.app.env, row.secret), 'lasting-token-2');
+    assert.equal(row.token_expires_at, null);
+    assert.ok(g.calls.some((c) => c.method === 'POST' && c.path === `${BUSINESS}/system_user_access_tokens`));
+  } finally {
+    await s.close();
+  }
+});
+
+test('a token Meta will not renew: from 10 days before its end the owner (once, by email too) and the operator are asked to connect again; on the end customers\' messages wait for the owner; connecting again turns it back on', async () => {
+  const { s, a, g } = await shop();
+  try {
+    const mail = simEmail({ domain: 'in.toran.test' });
+    s.app.mail = mail;
+    g.tokens.get(TOKEN)!.expires = nowS() + 8 * DAY_S;
+    g.state.refresh = false;
+    assert.equal((await (await connect(s, a)).json()).ok, true);
+    const id = (await tokenRow(s)).id;
+    assert.equal((await checkToken(s.app, id)).status, 'active', 'it still works: Toran answers until the end');
+    await checkToken(s.app, id);
+    const notices = () => mail.outbox!.filter((m) => m.notice);
+    assert.equal(notices().length, 1, 'told once');
+    assert.equal(notices()[0].to, 'owner1@example.test');
+    assert.match(String(notices()[0].subject), /לחבר מחדש את הוואטסאפ/);
+    assert.match(notices()[0].text, new RegExp(`/lead/${a}/whatsapp`));
+    assert.match((await tokenRow(s)).meta.renew_error, /refreshed: Meta refused/);
+
+    // The store's own dashboard says it, with the button, and the operator's list has it first.
+    const today = await (await s.get('/')).text();
+    assert.match(today, /צריך לחבר מחדש את הוואטסאפ עד/);
+    assert.match(today, new RegExp(`href="/lead/${a}/whatsapp"[^>]*>.*לחבר מחדש את הוואטסאפ`));
+    const page = await (await s.get(`/lead/${a}/whatsapp`)).text();
+    assert.match(page, /data-wa-connect[^>]*>.*לחבר מחדש את הוואטסאפ/);
+    assert.match(page, /\/static\/wa-connect\.js/);
+    let q = await queue(s.app);
+    assert.equal(q.items[0].reason, 'reconnect');
+    assert.equal(q.items[0].id, String(a));
+    assert.match(q.items[0].message!, /לחבר אותו מחדש/);
+    assert.ok(await markReconnectTold(s.app, String(a), 'operator'));
+    q = await queue(s.app);
+    assert.ok(!q.items.some((i) => i.reason === 'reconnect'), '"שלחתי": off the list for three days');
+
+    // The end: Meta says the token is no good. Toran stops answering on the number, and the owner is told.
+    g.tokens.get(TOKEN)!.expires = nowS() - 60;
+    assert.deepEqual(await checkToken(s.app, id), { status: 'reconnect' });
+    assert.equal((await tokenRow(s)).status, 'reconnect');
+    assert.equal(notices().length, 2);
+    assert.match(String(notices()[1].subject), /הפסיק לענות/);
+
+    // A customer writes: nothing is sent, and the message waits for the owner with a note saying why, once.
+    g.calls.length = 0;
+    await webhook(s, message('יש משלוח לאילת?'));
+    await webhook(s, message('הלו?'));
+    await drain(s.app);
+    assert.equal(g.calls.filter((c) => c.path === `${PHONE_ID}/messages`).length, 0);
+    const conv = (await s.app.db.one<any>('SELECT c.id FROM conversations c WHERE c.account_id = $1', [id])).id;
+    const msgs = await s.app.db.query<any>('SELECT role, text, handoff FROM messages WHERE conversation_id = $1 ORDER BY id', [conv]);
+    assert.deepEqual(msgs.filter((m) => m.role === 'customer').map((m) => m.text), ['יש משלוח לאילת?', 'הלו?']);
+    assert.equal(msgs.filter((m) => m.handoff?.reason === 'reconnect').length, 1);
+    assert.ok(!msgs.some((m) => m.role === 'agent'));
+    assert.equal((await replyState(s.app, conv)).reason, 'reconnect');
+    assert.deepEqual(await ownerReply(s.app, conv, 'כן, יש', 'owner'), { ok: false, reason: 'reconnect' });
+    assert.match(await (await s.get('/')).text(), /תורן לא עונה בוואטסאפ של החנות/);
+    assert.match(await (await s.get(`/chat/${conv}`)).text(), /החיבור של הוואטסאפ לתורן הסתיים/);
+
+    // Connecting again on the same page: a fresh token that never expires, and Toran answers.
+    g.tokens.set(TOKEN, { expires: 0, valid: true, scopes: SCOPES });
+    assert.equal((await (await connect(s, a)).json()).ok, true);
+    const row = await tokenRow(s);
+    assert.deepEqual([row.status, row.token_expires_at, row.meta.notified], ['active', null, undefined]);
+    assert.ok(!/לחבר מחדש את הוואטסאפ/.test(await (await s.get('/')).text()));
+    await webhook(s, message('ועכשיו?'));
+    await drain(s.app);
+    assert.equal(g.calls.filter((c) => c.path === `${PHONE_ID}/messages`).length, 1);
+  } finally {
+    await s.close();
+  }
+});
+
+test('Meta refusing the token while Toran answers (190) marks the number to connect again, and the message waits for the owner', async () => {
+  const { s, a, g } = await shop();
+  try {
+    assert.equal((await (await connect(s, a)).json()).ok, true);
+    g.state.sendError = 190;
+    await webhook(s, message('יש לכם צלחות?'));
+    await drain(s.app);
+    assert.equal((await tokenRow(s)).status, 'reconnect');
+    assert.ok(await s.app.db.one("SELECT 1 FROM events WHERE kind = 'wa_reconnect' AND store_id = $1", [a]));
+    assert.ok(await s.app.db.one("SELECT 1 FROM messages WHERE role = 'system' AND handoff->>'reason' = 'reconnect'"));
+    assert.ok(!(await s.app.db.one("SELECT 1 FROM jobs WHERE kind = 'wa_inbound' AND status = 'failed'")), 'handled, not a failed job retried');
   } finally {
     await s.close();
   }

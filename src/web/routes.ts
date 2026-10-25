@@ -14,6 +14,7 @@ import { customerRoutes } from './pages/customer.ts';
 import { whatsappRoutes } from './pages/whatsapp.ts';
 import { socialRoutes } from './pages/social.ts';
 import { mailDomainRoutes } from './pages/mailDomain.ts';
+import { ordersRoutes } from './pages/orders.ts';
 
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
@@ -50,6 +51,7 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
     ...whatsappRoutes(app),
     ...socialRoutes(app),
     ...mailDomainRoutes(app),
+    ...ordersRoutes(app),
     ...homeRoutes(app),
     ...leadRoutes(app),
     ...reviewRoutes(app),

@@ -36,7 +36,7 @@ import { MAX_BYTES } from '../channels/files.ts';
 
 export type Out = { status?: number; message?: string; html?: string; json?: unknown; text?: string; type?: string; redirect?: string; headers?: Record<string, string | string[]>; body?: Buffer };
 export type Req = { req: IncomingMessage; url: URL; path: string; form: Record<string, string>; ip: string; secure: boolean; raw?: string };
-export type DashReq = Req & { user: { id: number; name: string; role: string }; scope: Scope; ctx: PageCtx; ajax: boolean; files?: Upload[] };
+export type DashReq = Req & { user: { id: number; name: string; role: string; email?: string }; scope: Scope; ctx: PageCtx; ajax: boolean; files?: Upload[] };
 
 /**
  * The operator's alone (the superadmin outside view-as): the whole server's settings, adding stores, and selling to
@@ -142,6 +142,8 @@ const STATIC_FILES: Record<string, { file: string; type: string; cache: string }
   '/static/pitch.css': { file: path.join(STATIC, 'pitch.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.js': { file: path.join(STATIC, 'pitch.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/wa-connect.js': { file: path.join(STATIC, 'wa-connect.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
+  // The card a pitch page's link shows where it is sent (WhatsApp, email apps): drawn by openfrequency-web's scripts/og.mjs.
+  '/static/og-toran.png': { file: path.join(STATIC, 'og-toran.png'), type: 'image/png', cache: 'public, max-age=604800' },
   // Heebo (OFL, fonts/HEEBO-LICENSE.txt), served from here so a pitch page never calls Google Fonts.
   '/static/fonts/heebo-hebrew.woff2': { file: path.join(STATIC, 'fonts/heebo-hebrew.woff2'), type: 'font/woff2', cache: 'public, max-age=31536000, immutable' },
   '/static/fonts/heebo-latin.woff2': { file: path.join(STATIC, 'fonts/heebo-latin.woff2'), type: 'font/woff2', cache: 'public, max-age=31536000, immutable' },
@@ -248,7 +250,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
         if (method === 'GET') return reply(req, res, { redirect: there });
         return ajax ? json(409, { ok: false, message: 'הניהול של תורן עבר ל־/admin.', redirect: there }) : send(req, res, 409, 'the operator manages Toran at /admin/toran', 'text/plain; charset=utf-8');
       }
-      const user = { id: session.user.id, name: String(session.user.name || session.user.email), role: session.role };
+      const user = { id: session.user.id, name: String(session.user.name || session.user.email), role: session.role, email: session.user.email };
       const csrf = csrfFor(sid, secret);
       const setCookies: string[] = [];
       const flash = jar.tn_flash || null;

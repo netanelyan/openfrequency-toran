@@ -52,7 +52,8 @@
       return say('Meta לא החזירה את פרטי המספר. אפשר לנסות שוב.', true);
     }
     say('מחבר...');
-    const body = new URLSearchParams({ _csrf: csrf, code, phone_number_id: session.phone_number_id || '', waba_id: session.waba_id || '', event: session.event || '' });
+    // business_id: the store's own business at Meta, for a token that never expires (channels/waStore.ts).
+    const body = new URLSearchParams({ _csrf: csrf, code, phone_number_id: session.phone_number_id || '', waba_id: session.waba_id || '', business_id: session.business_id || '', event: session.event || '' });
     fetch(action, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-tn-ajax': '1' }, body })
       .then((r) => r.json())
       .then((j) => {

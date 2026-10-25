@@ -13,7 +13,8 @@ import { enabledChannels } from './channels/config.ts';
 import type { GraphFetch } from './channels/meta.ts';
 
 // The one object every part of the engine is handed: the database, the settings, a
-// log, the fetcher, the model and the channels' adapters (WhatsApp always; email when TORAN_CHANNELS turns it on).
+// log, the fetcher, the model and the channels' adapters (WhatsApp always; email when TORAN_CHANNELS turns it on), and
+// the way to a store's own order API.
 // Tests build their own with a fixture fetcher, a scripted model and the simulated providers.
 
 export type Env = Record<string, string | undefined>;
@@ -29,6 +30,8 @@ export type App = {
   mail?: EmailAdapter;
   /** Meta's Graph API (channels/meta.ts): fetch, or the tests' stand-in. */
   graph: GraphFetch;
+  /** A store's own order API with the owner's key (orders.ts): fetch, or the tests' stand-in. */
+  api: typeof fetch;
 };
 
 /** A log line to the console and to private/logs/toran.log, one line each (no forged entries). */
@@ -52,7 +55,7 @@ export function makeLog(env: Env = process.env, { quiet = false } = {}): (m: str
   };
 }
 
-export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, graph, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; llm?: Llm; wa?: WaProvider; mail?: EmailAdapter; graph?: GraphFetch; quiet?: boolean } = {}): Promise<App> {
+export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, graph, api, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; llm?: Llm; wa?: WaProvider; mail?: EmailAdapter; graph?: GraphFetch; api?: typeof fetch; quiet?: boolean } = {}): Promise<App> {
   if (env === process.env) loadEnv(env);
   const log = makeLog(env, { quiet });
   const theDb = db || (await openDb({ env }));
@@ -66,5 +69,6 @@ export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, g
     wa: wa || makeWaProvider(env, { log }),
     mail: mail || (enabledChannels(env).has('email') ? makeEmailAdapter(env) : undefined),
     graph: graph || ((input, init) => fetch(input, init)),
+    api: api || ((input, init) => fetch(input, init)),
   };
 }

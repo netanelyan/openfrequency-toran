@@ -4,12 +4,16 @@ import { audit, event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
 import { followupDue, pitchUrl } from '../outreach.ts';
 import { reply } from '../channels/send.ts';
+import { demoWa } from '../channels/lines.ts';
+import { J } from '../db/index.ts';
+import { reconnectSql } from './queue.ts';
 import { LOST_REASONS, requestedLink } from './messages.ts';
 
 // What the operator's buttons record, for a Toran store (stores) or a Teder demo (teder_leads), every one in the audit
 // log with the operator as its actor:
 //
-//   sent       the first message went out: the one reminder comes due four days later, never on Shabbat
+//   sent       the first message went out: the one reminder comes due four days later, never on Shabbat. On a store
+//              whose WhatsApp has to be connected again: they were told (markReconnectTold)
 //   reminded   the reminder (or, for a store that tried the demo, the question in its place) went out: the last one
 //   direct     the link to a demo someone asked for, sent now on the demo number where they asked (inside its 24
 //              hours), then recorded as sent
@@ -57,6 +61,17 @@ export async function markSent(app: App, kind: Kind, id: string, by: string) {
   await log(app, kind, id, 'sent', by);
 }
 
+/**
+ * "שלחתי" on a store whose WhatsApp has to be connected again (queue.ts, reason reconnect): they were told. The card
+ * comes back after RECONNECT_AGAIN_DAYS while the number still waits. False when the store has no such number.
+ */
+export async function markReconnectTold(app: App, id: string, by: string): Promise<boolean> {
+  const r = await app.db.query(`UPDATE channel_accounts SET meta = meta || $2::jsonb WHERE store_id = $1 AND ${reconnectSql()} RETURNING id`, [Number(id) || 0, J({ reconnect_told_at: ISO(now()), reconnect_told_by: by })]);
+  if (!r.length) return false;
+  await log(app, 'toran', id, 'reconnect_told', by);
+  return true;
+}
+
 export async function markReminded(app: App, kind: Kind, id: string, by: string) {
   const r = await row(app, kind, id);
   if (kind === 'toran') {
@@ -82,7 +97,7 @@ export async function sendDirect(app: App, id: string, by: string): Promise<void
   if (!req) throw new OpsError('לא ביקשו את הדמו הזה באתר');
   if (now() - new Date(req.claimed_at).getTime() >= 24 * HOUR) throw new OpsError('עברו 24 שעות מההודעה שלהם, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.');
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
-  const d = await reply(app, app.wa, { from: req.phone, text: '', id: `req-${req.code}`, at: new Date(req.claimed_at).getTime(), channel: 'whatsapp' }, requestedLink({ storeName: name, url: pitchUrl(app.env, s.slug) }), s.id, null);
+  const d = await reply(app, demoWa(app), { from: req.phone, text: '', id: `req-${req.code}`, at: new Date(req.claimed_at).getTime(), channel: 'whatsapp' }, requestedLink({ storeName: name, url: pitchUrl(app.env, s.slug) }), s.id, null);
   if (!d.ok) throw new OpsError('ההודעה לא יצאה: עברו 24 שעות מההודעה שלהם. אפשר לשלוח מהוואטסאפ שלך.');
   await markSent(app, 'toran', id, by);
   await log(app, 'toran', id, 'direct', by, { code: req.code });

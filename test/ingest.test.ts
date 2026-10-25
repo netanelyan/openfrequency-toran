@@ -219,7 +219,7 @@ test('from a WooCommerce or Wix lead to the demo: the agent\'s tools answer from
       const policy = await runTool(ctx, 'get_policy', { topic: 'כמה עולה משלוח?' });
       assert.match(policy.content, woo ? /30 ₪/ : /35 ₪/);
       const cart = await runTool(ctx, 'create_cart_link', { items: [{ product_id: pid }] });
-      assert.match(cart.content, /^DEMO: in the live version this is one link to a ready cart/);
+      assert.match(cart.content, woo ? /^DEMO: in the live version this is one link to a ready cart/ : /^DEMO: Wix has no link that fills a cart/);
       assert.ok(cart.content.includes(woo ? `https://${host}/product/` : `https://www.${host}/product-page/`));
       await buildPitch(app, id);
       const p = await app.db.one<any>('SELECT sample_chat FROM pitches WHERE store_id = $1', [id]);

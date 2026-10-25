@@ -88,7 +88,7 @@ test('only a demo turn is told it is a demo: the store block never says so, a st
   const liveCart = await runTool({ ...ctx, demo: false }, 'create_cart_link', { items: [{ product_id: pid }] });
   assert.match(demoCart.content, /^DEMO:/);
   assert.doesNotMatch(liveCart.content, /DEMO|live version/);
-  assert.ok(liveCart.content.includes('https://kli-cheres.example/products/'));
+  assert.match(liveCart.content, /comes in 3 options/, 'a live cart needs the option (test/orders.test.ts has the links)');
   const liveOrder = await runTool({ ...ctx, demo: false }, 'get_order_status', { order_number: '1042' });
   assert.match(liveOrder.content, /handoff with reason "order"/);
   assert.doesNotMatch(liveOrder.content, /DEMO|live version/);
