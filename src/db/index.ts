@@ -61,9 +61,16 @@ async function pglite(dataDir?: string): Promise<Db> {
   return wrap(pg as never, false);
 }
 
+/**
+ * json and jsonb parameters as PGlite takes them: text is already JSON (every caller passes J(...)) and goes as it is.
+ * The driver's own serializer JSON.stringify()s whatever it gets, so J()'s text arrived as one JSON string, and a job's
+ * payload read back as "{\"storeId\":95}", not { storeId: 95 } (migration 020 repairs what was written so).
+ */
+export const JSON_TYPE = { to: 114, from: [114, 3802], serialize: (x: unknown) => (typeof x === 'string' ? x : JSON.stringify(x)), parse: (x: string) => JSON.parse(x) };
+
 async function postgresDb(url: string): Promise<Db> {
   const { default: postgres } = await import('postgres');
-  const sql = postgres(url, { max: 8, onnotice: () => {} });
+  const sql = postgres(url, { max: 8, onnotice: () => {}, types: { json: JSON_TYPE } });
   const wrap = (s: any, inTx: boolean): Db => {
     const db: Db = {
       kind: 'postgres',
