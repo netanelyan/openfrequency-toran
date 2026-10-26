@@ -29,7 +29,8 @@ import {
 //
 // The connect, the pick and the disconnect are the store's own (server.ts checks the workspace of /lead/<id>/...);
 // the answer from Meta comes without a session, so the state, the cookie and the user who pressed are what tie it to
-// them.
+// them. Our company store is the operator's, from /admin on accounts' site: there the cookie is set for the domain
+// both sites share (adminCookieDomain), or Toran's own name, where Meta comes back, would never see it.
 
 export const CHANNEL_NAME: Record<Social, string> = { messenger: 'מסנג׳ר', instagram: 'אינסטגרם' };
 const CONNECT_MINUTES = 15;
@@ -39,15 +40,42 @@ export const NONCE_COOKIE = 'tn_meta';
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const sameHash = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
+const hostOf = (u: unknown) => {
+  try {
+    return new URL(String(u || '')).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * The domain accounts' site (OF_ACCOUNTS_URL) and Toran's public name (PUBLIC_BASE_URL) share, for the cookie of a
+ * connect begun on /admin: accounts.openfrequency.co.il and toran.openfrequency.co.il give openfrequency.co.il.
+ * Null when they share none (a laptop, an IP), and the connect can then only begin on Toran's own name.
+ */
+export function adminCookieDomain(env: Record<string, string | undefined>): string | null {
+  const parent = (h: string) => (h.split('.').length > 2 ? h.slice(h.indexOf('.') + 1) : '');
+  const a = parent(hostOf(env.OF_ACCOUNTS_URL || 'https://accounts.openfrequency.co.il'));
+  const b = parent(hostOf(env.PUBLIC_BASE_URL));
+  return a && a === b && a.includes('.') ? a : null;
+}
+
+/** The cookie's end, at Meta's answer: on Toran's own name, and on the shared domain in case /admin set it there. */
+export function clearNonce(env: Record<string, string | undefined>, secure: boolean): string[] {
+  const tail = `; Path=/meta/oauth; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+  const domain = adminCookieDomain(env);
+  return [`${NONCE_COOKIE}=${tail}`, ...(domain ? [`${NONCE_COOKIE}=; Domain=${domain}${tail}`] : [])];
+}
+
 /** The button: Meta's login address for this store, and the cookie this browser keeps until Meta sends it back. */
-export async function beginConnect(app: App, storeId: number, channel: Social, user: { id: number; name: string }, { secure }: { secure: boolean }) {
+export async function beginConnect(app: App, storeId: number, channel: Social, user: { id: number; name: string }, { secure, domain = null }: { secure: boolean; domain?: string | null }) {
   if (!socialReady(app.env, channel)) throw new ConnectError(`${channel} is not ready (TORAN_CHANNELS, the Meta settings, PUBLIC_BASE_URL or TORAN_SECRETS_KEY)`, `החיבור ל${CHANNEL_NAME[channel]} עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.`);
   const state = randomBytes(24).toString('base64url');
   const nonce = randomBytes(24).toString('base64url');
   await app.db.query("DELETE FROM channel_connects WHERE created_at < now() - interval '1 day'");
   await app.db.query('INSERT INTO channel_connects (state, store_id, channel, user_id, by_name, nonce_hash) VALUES ($1, $2, $3, $4, $5, $6)', [state, storeId, channel, user.id, user.name, hash(nonce)]);
   // Lax: the browser sends it when Meta's page sends it back here, a top-level navigation.
-  const cookie = `${NONCE_COOKIE}=${nonce}; Path=/meta/oauth; Max-Age=${CONNECT_MINUTES * 60}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+  const cookie = `${NONCE_COOKIE}=${nonce}${domain ? `; Domain=${domain}` : ''}; Path=/meta/oauth; Max-Age=${CONNECT_MINUTES * 60}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
   return { url: authorizeUrl(app.env, channel, state), cookie };
 }
 

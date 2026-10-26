@@ -75,6 +75,8 @@ export function underBase(text: string, type: string, base: string): string {
   if (/css/.test(type)) return text.replace(/url\((['"]?)\/(?!\/)/g, `url($1${base}/`);
   return text;
 }
+/** Did this request come through accounts' /admin? */
+export const viaAdminReq = (req: IncomingMessage) => BASE.has(req);
 const atBase = (req: IncomingMessage, location: string) => {
   const base = BASE.get(req);
   return base && location.startsWith('/') && !location.startsWith('//') ? `${base}${location}` : location;

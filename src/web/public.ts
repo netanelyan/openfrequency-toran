@@ -11,7 +11,7 @@ import { ownsStore, scopeOf } from './workspace.ts';
 import { enabledChannels, publicChannels } from '../channels/config.ts';
 import { metaSettings, parseWebhook, signatureOk } from '../channels/meta.ts';
 import { parseSocial, socialSettings, type Social } from '../channels/social.ts';
-import { finishConnect, NONCE_COOKIE } from '../channels/socialStore.ts';
+import { clearNonce, finishConnect, NONCE_COOKIE } from '../channels/socialStore.ts';
 import type { Out, Req, Route } from './server.ts';
 import { J } from '../db/index.ts';
 import { secretOf, verify } from '../owners/teder.ts';
@@ -256,7 +256,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       if (!enabledChannels(app.env).has(channel)) return { status: 404, text: '' };
       const q = r.url.searchParams;
       const out = await finishConnect(app, channel, { state: q.get('state') || '', code: q.get('code') || '', error: q.get('error') || '', nonce: cookies(r.req)[NONCE_COOKIE] || '' });
-      const headers = { 'set-cookie': `${NONCE_COOKIE}=; Path=/meta/oauth; Max-Age=0; HttpOnly; SameSite=Lax${r.secure ? '; Secure' : ''}`, 'referrer-policy': 'no-referrer' };
+      const headers = { 'set-cookie': clearNonce(app.env, r.secure), 'referrer-policy': 'no-referrer' };
       if (!out.storeId) return { status: 400, html: '<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><title>תורן</title><p>הקישור הזה כבר לא עובד. חוזרים לתורן ומחברים שוב.</p></html>', headers };
       const done = out.outcome === 'pick' ? `pick=${encodeURIComponent(out.state!)}` : out.outcome === 'connected' ? 'connected=1' : `error=${out.why}`;
       return { redirect: `/lead/${out.storeId}/${channel}?${done}`, headers };

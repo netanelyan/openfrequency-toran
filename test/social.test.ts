@@ -356,6 +356,45 @@ test('disconnecting: Meta stops sending, the token is gone, and a message to the
   }
 });
 
+test('our company store\'s Page and Instagram: the operator connects them from /admin, the cookie on the domain both sites share; any other store\'s stays the store\'s', async () => {
+  const { s, a } = await shop();
+  const ADMIN = { 'x-of-admin-prefix': '/admin/toran' };
+  try {
+    await s.app.db.query("UPDATE stores SET platform = 'company' WHERE id = $1", [a]);
+    s.login();
+    // accounts.test and the public name share no domain: no button, and why.
+    let html = await (await s.get(`/admin/toran/lead/${a}/messenger`, ADMIN)).text();
+    assert.match(html, /באותו דומיין/);
+    assert.ok(!/messenger\/connect/.test(html));
+
+    Object.assign(s.app.env, { OF_ACCOUNTS_URL: 'https://accounts.shop.test', PUBLIC_BASE_URL: 'https://toran.shop.test' });
+    html = await (await s.get(`/admin/toran/lead/${a}/messenger`, ADMIN)).text();
+    assert.match(html, /action="\/admin\/toran\/lead\/\d+\/messenger\/connect"/);
+    assert.match(await (await s.get(`/lead/${a}/messenger`)).text(), /מחברים מ־\/admin/, 'off /admin, no button');
+    const csrf = /name="_csrf" value="([^"]+)"/.exec(html)![1];
+    const r = await s.post(`/admin/toran/lead/${a}/messenger/connect`, { _csrf: csrf }, { ...ADMIN, origin: 'https://accounts.test' });
+    assert.equal(r.status, 303);
+    const meta = new URL(String(r.headers.get('location')));
+    assert.equal(meta.origin, 'https://www.facebook.com');
+    assert.equal(meta.searchParams.get('redirect_uri'), 'https://toran.shop.test/meta/oauth/messenger');
+    const set = r.headers.getSetCookie().find((c) => c.startsWith('tn_meta='))!;
+    assert.match(set, /; Domain=shop\.test; Path=\/meta\/oauth;/, 'Toran\'s own name, where Meta comes back, sees it');
+    const back = await fetch(`${s.base}/meta/oauth/messenger?code=good-code&state=${encodeURIComponent(meta.searchParams.get('state')!)}`, { headers: { cookie: `tn_meta=${/tn_meta=([^;]+)/.exec(set)![1]}` }, redirect: 'manual' });
+    assert.equal(back.headers.get('location'), `/lead/${a}/messenger?connected=1`);
+    assert.ok(back.headers.getSetCookie().some((c) => /^tn_meta=; Domain=shop\.test;.*Max-Age=0/.test(c)), 'and the shared one is cleared');
+    assert.equal((await s.app.db.one<any>("SELECT status FROM channel_accounts WHERE channel = 'messenger' AND store_id = $1", [a]))?.status, 'active');
+
+    // Any other store: the operator sees no button and the connect is refused.
+    const b = (await s.app.db.one<{ id: number }>("SELECT id FROM stores WHERE domain = 'shaked-jewelry.example'"))!.id;
+    assert.match(await (await s.get(`/admin/toran/lead/${b}/instagram`, ADMIN)).text(), /מהדשבורד שלה/);
+    const no = await s.post(`/admin/toran/lead/${b}/instagram/connect`, { _csrf: csrf }, { ...ADMIN, origin: 'https://accounts.test', 'x-tn-ajax': '1' });
+    assert.equal((await no.json()).ok, false);
+    assert.ok(!no.headers.getSetCookie().some((c) => c.startsWith('tn_meta=')));
+  } finally {
+    await s.close();
+  }
+});
+
 test('without the Instagram app\'s settings, or the public address, the page says the connection is not open, and the button is refused', async () => {
   const { s, a } = await shop();
   try {

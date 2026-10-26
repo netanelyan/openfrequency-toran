@@ -341,8 +341,9 @@ takes it only in the browser that pressed the button, within 15 minutes.
 **What you set up once, at Meta** (the same app as step 2, items 1 and 2):
 1. **Messenger.** Add the **Messenger** product. Under Facebook Login for Business, Settings:
    - Add `https://toran.openfrequency.co.il/meta/oauth/messenger` to the valid OAuth redirect URIs.
-   - Optionally create a configuration with `pages_show_list`, `pages_messaging` and `pages_manage_metadata`, and put
-     its id in `META_FB_CONFIG_ID`. Without it, the login asks for those permissions itself.
+   - A configuration with `pages_show_list`, `pages_messaging` and `pages_manage_metadata` (General, user access
+     token), its id in `META_FB_CONFIG_ID`. Ours is **Toran Messenger**, `1132581012852683`. Without one, the login
+     asks for those permissions itself.
 2. **Instagram.** Add the **Instagram** product with "API setup with Instagram login":
    - Copy the **Instagram app ID** and **Instagram app secret**. They are not the Meta app's.
    - Under "Set up Instagram business login", add the redirect URL `https://toran.openfrequency.co.il/meta/oauth/instagram`.
@@ -368,13 +369,16 @@ takes it only in the browser that pressed the button, within 15 minutes.
    ```
    `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` and `TORAN_SECRETS_KEY` are step 2's, and needed here too.
 7. **Try it** with the test Page and account, from a customer's dashboard (a store with a workspace). The operator's
-   view under /admin shows the page without the button: the store connects its own accounts.
+   view under /admin shows the page without the button: the store connects its own accounts. Our company store is the
+   exception: the operator connects its Page and Instagram from /admin, and the login's cookie is set for the domain
+   accounts and Toran share (`OF_ACCOUNTS_URL` and `PUBLIC_BASE_URL` under one domain).
 
 **App Review** is yours to submit, never Claude's. It covers:
 - `pages_messaging`, `pages_manage_metadata` and `pages_show_list` for Messenger
 - `instagram_business_basic` and `instagram_business_manage_messages` for Instagram
 
 Check the exact names in the App Review screen. Meta asks for a screen recording of the connect and of a reply.
+[app-review.md](app-review.md) has the preparation, the two videos step by step, and the text for each permission.
 
 **Past 24 hours.** Meta allows only a person's answer, tagged `HUMAN_AGENT`, up to 7 days after the customer's last
 message. Once Meta approves Human Agent for the app, set `META_HUMAN_AGENT=1`, and the owner's answers from the inbox go

@@ -2,15 +2,17 @@ import type { App } from '../../app.ts';
 import { displayName } from '../../ingest/brand.ts';
 import { enabledChannels } from '../../channels/config.ts';
 import { socialReady, type Social } from '../../channels/social.ts';
-import { beginConnect, CHANNEL_NAME, disconnectSocial, pagesToPick, pickPage } from '../../channels/socialStore.ts';
+import { adminCookieDomain, beginConnect, CHANNEL_NAME, disconnectSocial, pagesToPick, pickPage } from '../../channels/socialStore.ts';
+import { isCompany } from '../../company.ts';
 import { ConnectError } from '../../channels/waStore.ts';
 import { GraphError } from '../../channels/meta.ts';
 import { SecretError } from '../../core/secrets.ts';
-import { ActionError, DASH_CSP, type DashReq, type Route } from '../server.ts';
+import { ActionError, DASH_CSP, viaAdminReq, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, layout, postButton, stamp, storeBadge } from '../ui.ts';
 
 // A store connects its Facebook Page (Messenger) or Instagram account (channels/social.ts, socialStore.ts): the page
-// under /lead/<id>/messenger and /lead/<id>/instagram, which server.ts opens to the store's own workspace only, and
+// under /lead/<id>/messenger and /lead/<id>/instagram, which server.ts opens to the store's own workspace (and our
+// company store's to the operator, on /admin: operatorConnects), and
 // 404 while TORAN_CHANNELS does not list the channel. Before the button, what to check so Meta's login does not stop
 // halfway; the button sends the browser to Meta's login, which comes back to /meta/oauth/<channel> (public.ts) and
 // then here, with what happened. Someone who manages more than one Page picks the store's here.
@@ -70,7 +72,7 @@ const OWN_REPLY: Record<Social, string> = {
 const WINDOW = 'Meta מאפשרת לענות רק עד 24 שעות מההודעה האחרונה של הלקוח. אחרי זה תורן לא עונה, ומה שנשאר פתוח מחכה לכם בשיחות.';
 
 async function page(app: App, r: DashReq, id: number, channel: Social) {
-  const s = await app.db.one<any>('SELECT id, name, domain, brand, brand_override FROM stores WHERE id = $1', [id]);
+  const s = await app.db.one<any>('SELECT id, name, domain, platform, brand, brand_override FROM stores WHERE id = $1', [id]);
   if (!s) return null;
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   const a = await socialAccountOf(app, id, channel);
@@ -96,8 +98,8 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
 
   const button = ro
     ? '<p class="muted mt12 m0">במצב צפייה אי אפשר לחבר.</p>'
-    : r.scope.operator
-      ? '<p class="muted mt12 m0">את זה מחברת החנות מהדשבורד שלה, עם החשבון שמנהל את הדף או את האינסטגרם.</p>'
+    : r.scope.operator && !operatorConnects(app, r, s)
+      ? `<p class="muted mt12 m0">${!isCompany(s) ? 'את זה מחברת החנות מהדשבורד שלה, עם החשבון שמנהל את הדף או את האינסטגרם.' : viaAdminReq(r.req) ? 'כדי לחבר מכאן, OF_ACCOUNTS_URL ו־PUBLIC_BASE_URL צריכים להיות באותו דומיין.' : 'את החנות שלנו מחברים מ־/admin באתר של החשבונות.'}</p>`
       : ready
         ? `<form class="mt16" method="post" action="/lead/${id}/${channel}/connect">${csrfField(r.ctx)}<button class="btn primary" type="submit">${icon('chat')}לחבר ${esc(WHAT[channel])}</button></form>`
         : '<p class="muted mt12 m0">החיבור עוד לא פתוח בשרת. כתבו לנו, ונחבר יחד.</p>';
@@ -128,6 +130,12 @@ ${state}`;
   return layout({ ...r.ctx, title: `${ch} של ${name}`, active: 'settings' }, body);
 }
 
+/**
+ * Our company store's Page and Instagram are ours: the operator connects them, from /admin, where the cookie can be
+ * set for the domain Toran's own name shares (socialStore.ts adminCookieDomain). Every other store connects its own.
+ */
+const operatorConnects = (app: App, r: DashReq, s: { platform?: string | null }) => isCompany(s) && viaAdminReq(r.req) && Boolean(adminCookieDomain(app.env));
+
 const channelOf = (app: App, raw: string): Social => {
   const c = raw as Social;
   if (!enabledChannels(app.env).has(c)) throw new ActionError('לא נמצא', 404);
@@ -144,8 +152,14 @@ export function socialRoutes(app: App): Route<DashReq>[] {
     ['POST', /^\/lead\/(\d+)\/(messenger|instagram)\/connect$/, async (r, m) => {
       const id = Number(m[1]);
       const channel = channelOf(app, m[2]);
+      let domain: string | null = null;
+      if (r.scope.operator) {
+        const s = await app.db.one<{ platform: string | null }>('SELECT platform FROM stores WHERE id = $1', [id]);
+        if (!s || !operatorConnects(app, r, s)) throw new ActionError('את זה מחברת החנות מהדשבורד שלה.', 403);
+        domain = adminCookieDomain(app.env);
+      }
       try {
-        const { url, cookie } = await beginConnect(app, id, channel, r.user, { secure: r.secure });
+        const { url, cookie } = await beginConnect(app, id, channel, r.user, { secure: r.secure, domain });
         return { redirect: url, headers: { 'set-cookie': cookie } };
       } catch (e: any) {
         if (e instanceof ConnectError) throw new ActionError(e.he);
