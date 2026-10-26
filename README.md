@@ -61,7 +61,7 @@ copy the message, mark it sent, see the chats.
 | `src/ops` | the operator's dashboard: who to write to today, the conversations, the funnels, the money (docs/operator.md) |
 | `src/owners` | the owner line: one WhatsApp number for business owners, about Toran and Teder (docs/owner-line.md) |
 | `src/orders.ts` | a store's own orders (Shopify, WooCommerce, Wix) with the owner's read-only key, for get_order_status |
-| `src/auto` | the store's automatic messages: its platform's webhooks and readings, consent and "הסר", quiet time, the WhatsApp templates on the store's own account |
+| `src/auto` | the store's automatic messages: its platform's webhooks and readings, consent and the quiet link to stop the reminders (`/u/<token>`, src/web/unsubscribe.ts), quiet time, the WhatsApp templates on the store's own account |
 | `src/company.ts` | a company store: Toran answering our own support from the site's export, and on our one WhatsApp number as owner line, demo number and support (docs/company.md) |
 | `src/web` | the dashboard (Teder's look), auth, the public routes |
 | `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape) |

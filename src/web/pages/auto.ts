@@ -1,7 +1,7 @@
 import type { App } from '../../app.ts';
 import { displayName } from '../../ingest/brand.ts';
 import { orderAccessOf, ordersPlatform } from '../../orders.ts';
-import { emailText, isKind, KIND_KEYS, KINDS, MESSAGES, SAMPLE, waText, type Kind } from '../../auto/messages.ts';
+import { emailText, isKind, KIND_KEYS, KINDS, LEGACY, MESSAGES, publicBase, SAMPLE, SETTINGS_BUTTON, waText, type Kind, type MessageKey } from '../../auto/messages.ts';
 import { setupSource, sourceOf, type Source } from '../../auto/platforms.ts';
 import { AutoError, saveSetting, settingsOf, storeEmail, type Setting } from '../../auto/send.ts';
 import { approvedFor, storeWa, submitTemplates, templatesOf, type TemplateRow } from '../../auto/templates.ts';
@@ -39,7 +39,7 @@ export function whyHe(why: string | null): string {
     [/^opted_out$|opted out/, 'הלקוח ביקש להסיר'],
     [/^paid$/, 'התשלום עבר בינתיים'],
     [/^delivered$/, 'ההזמנה כבר נמסרה'],
-    [/no consent/, 'הלקוח לא הסכים לקבל הודעות שיווקיות'],
+    [/no consent/, 'הלקוח לא הסכים לקבל הודעות שיווקיות, או ביקש להפסיק'],
     [/no phone/, 'אין טלפון בהזמנה'],
     [/no address/, 'אין מייל בהזמנה'],
     [/template not approved/, 'התבנית בוואטסאפ עוד לא אושרה'],
@@ -72,11 +72,13 @@ const CONSENT_HE: Record<string, string> = {
   wix: 'ב-Wix ההסכמה נקראת מאיש הקשר של הלקוח, אם הוא נרשם לדיוור במייל או בטלפון.',
 };
 
-function previews(kind: Kind, store: string): string {
+function previews(kind: Kind, store: string, base: string): string {
+  const marketing = KINDS[kind].marketing;
   return KINDS[kind].messages.map((m) => {
     const wa = waText(m, store, SAMPLE).text;
-    const mail = emailText(m, store, SAMPLE);
-    return `<h4 class="small mt12 m0">${esc(MESSAGES[m].he)}</h4><p class="small muted m0">בוואטסאפ:</p><blockquote class="q mt8" dir="rtl">${esc(wa).replace(/\n/g, '<br>')}</blockquote><p class="small muted mt8 m0">במייל, עם הנושא "${esc(mail.subject)}":</p><blockquote class="q mt8" dir="rtl">${esc(mail.text).replace(/\n/g, '<br>')}</blockquote>`;
+    const mail = emailText(m, store, SAMPLE, `${base}/u/...`);
+    const button = marketing ? `<p class="small muted mt8 m0">ומתחת להודעה כפתור "${esc(SETTINGS_BUTTON)}", שמוביל לדף שבו הלקוח יכול להפסיק לקבל מכם תזכורות כאלה. הודעות על תשלום ומשלוח ממשיכות להגיע אליו.</p>` : '';
+    return `<h4 class="small mt12 m0">${esc(MESSAGES[m].he)}</h4><p class="small muted m0">בוואטסאפ:</p><blockquote class="q mt8" dir="rtl">${esc(wa).replace(/\n/g, '<br>')}</blockquote>${button}<p class="small muted mt8 m0">במייל, עם הנושא "${esc(mail.subject)}":</p><blockquote class="q mt8" dir="rtl">${esc(mail.text).replace(/\n/g, '<br>')}</blockquote>`;
   }).join('');
 }
 
@@ -100,8 +102,13 @@ export async function autoPanel(app: App, r: DashReq, s: { id: number; name: str
   const secretForm = platform === 'shopify' && may && !src?.can?.webhooks ? `<form method="post" action="/lead/${id}/auto/secret" class="mt8">${csrfField(r.ctx)}<label class="f">API secret key<small>מתחיל ב-shpss_. תורן בודק איתו שכל עדכון באמת הגיע מ-Shopify.</small><input type="text" name="secret" dir="ltr" autocomplete="off" spellcheck="false" maxlength="200" required placeholder="shpss_..."></label><button class="btn sm mt8" type="submit">${icon('check')}לחבר עדכונים מיידיים</button></form>` : '';
   const source = `<h3 class="small mt16">מאיפה תורן יודע מה קרה</h3>${sourceLines(platform, src).map((l) => `<p class="small m0 mt8">${esc(l)}</p>`).join('')}${secretForm}`;
 
-  const tLine = (t: TemplateRow | undefined, m: keyof typeof MESSAGES) => {
-    const [cls, he] = t ? T_STATE[t.status] || ['ghost', t.status] : ['ghost', 'עוד לא נשלחה'];
+  // A marketing template Meta approved in its old wording ("כתבו הסר") still goes out until the new one is approved.
+  const oldOk = (m: MessageKey) => byName.get(LEGACY[m]?.template || '')?.status === 'APPROVED';
+  const tLine = (t: TemplateRow | undefined, m: MessageKey) => {
+    const waiting = Boolean(t && ['PENDING', 'IN_APPEAL'].includes(t.status));
+    const [cls, he] = t?.status !== 'APPROVED' && oldOk(m)
+      ? ['ok', waiting ? 'אושרה בנוסח הקודם, והחדש מחכה לאישור של Meta' : 'אושרה בנוסח הקודם. צריך לשלוח את הנוסח החדש']
+      : t ? T_STATE[t.status] || ['ghost', t.status] : ['ghost', 'עוד לא נשלחה'];
     const moved = t?.category && t.category !== t.asked ? ` <span class="chip warn">Meta סיווגה אותה ${t.category === 'MARKETING' ? 'כשיווקית' : 'כהודעת שירות'}</span>` : '';
     return `<li><span>${esc(MESSAGES[m].he)}</span><span class="end"><span class="chip ${cls}">${esc(he)}</span>${moved}${t?.why && t.status !== 'APPROVED' ? ` <small class="muted">${esc(t.why.slice(0, 120))}</small>` : ''}</span></li>`;
   };
@@ -124,14 +131,14 @@ export async function autoPanel(app: App, r: DashReq, s: { id: number; name: str
     const dis = (ok: boolean, checked: boolean) => `${checked ? ' checked' : ''}${ok && may ? '' : ' disabled'}`;
     const delay = def.delay ? `<label class="f mt8">${esc(def.delay.he)}<select name="delay"${may ? '' : ' disabled'}>${def.delay.options.map((o) => `<option value="${o.minutes}"${o.minutes === set.delay_minutes ? ' selected' : ''}>${esc(o.he)}</option>`).join('')}</select></label>` : '';
     const link = k === 'review' ? `<label class="f mt8">הלינק לכתיבת ביקורת<small>למשל הדף של החנות בגוגל, או דף הביקורות באתר. מתחיל ב-https://</small><input type="url" name="link" dir="ltr" maxlength="500" value="${esc(set.link || '')}" placeholder="https://"${may ? '' : ' readonly'}></label>` : '';
-    const consent = def.marketing ? `<p class="small muted mt8 m0">זו הודעה שיווקית, אז היא נשלחת רק ללקוח שהסכים לקבל מכם הודעות. ${esc(CONSENT_HE[platform])} בכל הודעה כתוב איך מפסיקים: עונים "הסר".</p>` : '';
+    const consent = def.marketing ? `<p class="small muted mt8 m0">זו הודעה שיווקית, אז היא נשלחת רק ללקוח שהסכים לקבל מכם הודעות. ${esc(CONSENT_HE[platform])} בכל הודעה יש לינק קטן שבו הלקוח יכול להפסיק לקבל מכם תזכורות כאלה.</p>` : '';
     return `<form method="post" action="/lead/${id}/auto/${k}" class="mt16">${csrfField(r.ctx)}
   <div class="row"><h3 class="small m0">${esc(def.he)}</h3><span class="end chip ${on ? 'ok' : 'ghost'}">${on ? 'פעיל' : 'כבוי'}</span></div>
   <p class="small m0 mt8">${esc(def.what)}</p>
   <div class="row mt8"><label class="small"><input type="checkbox" name="whatsapp" value="1"${dis(waOk, set.whatsapp)}> בוואטסאפ${waNote && !set.whatsapp ? ` <span class="muted">(${esc(waNote)})</span>` : ''}</label><label class="small"><input type="checkbox" name="email" value="1"${dis(Boolean(mail), set.email)}> במייל${mailNote ? ` <span class="muted">(${esc(mailNote)})</span>` : ''}</label></div>
   <p class="small muted m0 mt8">כשאפשר, ההודעה יוצאת בוואטסאפ, ואם לא, במייל.</p>
   ${delay}${link}${consent}
-  <details class="mt8"><summary class="small">איך ההודעה נראית</summary>${previews(k, store)}</details>
+  <details class="mt8"><summary class="small">איך ההודעה נראית</summary>${previews(k, store, publicBase(app.env))}</details>
   ${may ? '<button class="btn sm mt8" type="submit">לשמור</button>' : ''}</form>`;
   };
 

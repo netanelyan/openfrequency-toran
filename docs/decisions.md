@@ -839,3 +839,66 @@ delivery and the review's time, and Wix's readers. Nothing reaches a platform, M
   word "פרסומת" at its start) is a lawyer's question. Toran sends it only with consent, names the store, and says how
   to stop, and the text does not start with "פרסומת".
 - SMS consent at a Shopify checkout is taken as consent for WhatsApp; the docs ask the store to word its checkbox so.
+
+## 2026-10-26: the reminders stop with a quiet link, not "כתבו הסר"
+
+**The owner's decision:** the marketing automatic messages (the cart and the review) must not advertise "הסר", as a
+reply button or as a footer. Each now carries one quiet link to a page of message settings.
+
+**WhatsApp.** The two marketing templates lose the footer "לא רוצים עוד הודעות כאלה? כתבו הסר" and the quick reply
+"הסר", and get one URL button, "הגדרות הודעות", whose address is `<PUBLIC_BASE_URL>/u/{{1}}` (Meta's dynamic URL
+suffix, with an example of a real token's shape). Each send fills the suffix with the customer's token (`components:
+[{ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: <token> }] }]`, channels/meta.ts).
+The text kept in the inbox is the body alone. The utility templates do not change.
+
+**Templates already submitted.** A changed template goes back to Meta's review either way, so the new ones have new
+names (`toran_cart_reminder_v2`, `toran_review_request_v2`) and the old ones (`LEGACY` in auto/messages.ts) are never
+submitted again. `approvedFor` counts an approved old one as approved and lists it, so a store keeps sending its old
+template, as it was and kept with its footer, until the new one is approved; then the new one, with the button. The
+worker submits the new ones once for every store whose old ones are approved (`scheduleResubmit`, job
+`wa_templates_new`), so nobody has to come back to Settings; the page says "אושרה בנוסח הקודם" meanwhile. A marketing
+template is not submitted without an https `PUBLIC_BASE_URL`, since the address is written into it.
+
+**Email.** The last line is "לא רוצים לקבל מאיתנו תזכורות כאלה? אפשר להפסיק כאן:" and the link, in place of "reply
+הסר". The headers: `List-Unsubscribe: <https://.../u/<token>>, <mailto:<reply address>?subject=הסר>` and
+`List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), so a mail client's own "unsubscribe" works in one
+click. The one-click POST goes to the same address and is answered with the confirmation.
+
+**The page, `/u/<token>`** (src/web/unsubscribe.ts): public, `noindex` (meta and `X-Robots-Tag`), `Referrer-Policy:
+no-referrer` (the store's logo comes from its CDN), its own CSP with no script, in the store's colour (from
+`/u/<token>/theme.css`, as the pitch page's) and logo, phone first, RTL. The store's name, "לא לקבל יותר תזכורות
+מ<store>?", one button; then "סגור, לא נשלח לכם יותר תזכורות מ<store>. עדכונים על הזמנות שעשיתם (תשלום ומשלוח)
+ימשיכו להגיע." and "בעצם כן, להמשיך לקבל". A GET changes nothing, so a mail scanner that opens the link stops nothing;
+the buttons POST to the same URL and redirect back. A wrong token, of any shape, gets one polite page with no store in
+it. Each request is one lookup by primary key, and one address may make 30 a minute.
+
+**The token** (`auto_links`, migration `019_message_settings_link.sql`): 18 random bytes in base64url, one for each
+store, channel and address, made at the first marketing send and the same after, never expiring (a message from last
+year still opens its page). Nothing personal is in the URL; the row says whom it is about.
+
+**What stopping does** (auto/consent.ts): a consent row `marketing`, `out`, source `link`, for the token's address and
+for the customer's other one where one of the store's orders or checkouts carried both, so the cart and the review stop
+on every channel; what was waiting of them is dropped. Payment and shipping go on. The undo writes `marketing`, `in`,
+source `link`, which `consentOf` reads as "give back the yes the stop put aside", so it never makes a "yes" the
+customer did not give, and never undoes a "הסר". A later checkout's "yes" counts again, as after "הסר".
+
+**"הסר" and "STOP"** still work exactly as before (every automatic message stops, one line back); nothing says so any
+more. The dashboard's line under each marketing kind says the customer has a small link to stop.
+
+- **Alternatives:** the same names, edited in place (an approved template sent back to review cannot be relied on to
+  keep sending meanwhile, and Meta limits edits); a signed token with the address encrypted in it (longer URLs, and
+  nothing to revoke); a link that stops on GET (a mail scanner or a link preview would stop it for the customer).
+
+**Tested** (test/auto.test.ts, three new tests and the old ones updated): the template's shape (one URL button, no
+footer, no quick reply, a valid example), the send's button parameter and its token's binding, the email's last line
+and headers, the one-click POST, the page's GET, stop, undo and its noindex, wrong tokens, the review not sent on
+either channel after a stop while a payment is, an undo that gives back only what was there, and a store with the old
+templates approved (sent as they were, the new ones submitted once, then used). test/rules.test.ts is unchanged: the
+send path still checks the kind, the quiet time, the consent and the template's approval before each send.
+
+**Not done here:**
+- Meta's review of a URL button with a dynamic suffix on these templates was not tried live; the shape is from its docs.
+- The old templates stay on each store's WhatsApp account, unused once the new ones are approved; Toran does not
+  delete them.
+- A mail client's mailto unsubscribe (an email with the subject "הסר" and no body) reaches the store's inbox as before;
+  only a body that says "הסר" is taken as one.

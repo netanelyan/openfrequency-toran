@@ -1,15 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { seal } from '../src/core/secrets.ts';
-import { afterQuiet, customerQuiet, israelHoliday, setNow } from '../src/core/clock.ts';
+import { afterQuiet, customerQuiet, israelHoliday, now, setNow } from '../src/core/clock.ts';
+import { displayName } from '../src/ingest/brand.ts';
 import { simEmail } from '../src/channels/email.ts';
 import { signBody } from '../src/channels/meta.ts';
 import { handleInbound } from '../src/channels/route.ts';
 import { counted, monthOf } from '../src/plans.ts';
 import { drain } from '../src/jobs/worker.ts';
 import { pollStore, scheduleAuto } from '../src/auto/jobs.ts';
-import { consentOf } from '../src/auto/consent.ts';
-import { firstName, KINDS, MESSAGES, templateRequest, waText } from '../src/auto/messages.ts';
+import { consentOf, stopToken } from '../src/auto/consent.ts';
+import { categoryOf, emailText, firstName, KINDS, LEGACY, MESSAGES, templateRequest, waText } from '../src/auto/messages.ts';
 import { shopifyOrderRead, shopifySign, wixCheckoutRead, wixOrderRead, wooSign } from '../src/auto/platforms.ts';
 import { AutoError, record, saveSetting, sendDue } from '../src/auto/send.ts';
 import { approvedFor, submitTemplates } from '../src/auto/templates.ts';
@@ -80,7 +81,7 @@ function fakePlatforms() {
 /** Meta's Graph API: the store's templates and its sends. */
 function fakeGraph() {
   const sent: any[] = [];
-  const templates = new Map<string, { id: string; status: string; category: string }>();
+  const templates = new Map<string, { id: string; status: string; category: string; body: any }>();
   const f = (async (input: any, init: any = {}) => {
     const url = new URL(String(input));
     const method = String(init.method || 'GET');
@@ -90,14 +91,14 @@ function fakeGraph() {
     if ((init.headers as any)?.authorization !== `Bearer ${TOKEN}`) return json({ error: { message: 'Error validating access token', code: 190 } }, 401);
     if (path === `${WABA}/message_templates` && method === 'POST') {
       if (templates.has(body.name)) return json({ error: { message: 'Invalid parameter', code: 100, error_subcode: 2388024, error_user_msg: 'Content in this language already exists' } }, 400);
-      const t = { id: `tpl-${templates.size + 1}`, status: 'PENDING', category: body.category };
+      const t = { id: `tpl-${templates.size + 1}`, status: 'PENDING', category: body.category, body };
       templates.set(body.name, t);
-      return json(t);
+      return json({ id: t.id, status: t.status, category: t.category });
     }
     if (path === `${WABA}/message_templates` && method === 'GET') {
       const name = url.searchParams.get('name') || '';
       const t = templates.get(name);
-      return json({ data: t ? [{ ...t, name, language: 'he', rejected_reason: 'NONE' }] : [] });
+      return json({ data: t ? [{ id: t.id, status: t.status, category: t.category, name, language: 'he', rejected_reason: 'NONE' }] : [] });
     }
     if (path === `${PHONE_ID}/messages` && method === 'POST') {
       sent.push(body);
@@ -178,20 +179,37 @@ test('quiet time in Israel: the night, Shabbat from Friday afternoon, the holida
 
 // ---- the words
 
-test('the messages: every template has words on both sides of each variable, the marketing ones say how to stop, a missing name reads "שלום לכם"', () => {
+test('the messages: every template has words on both sides of each variable, the marketing ones have one quiet "הגדרות הודעות" link and no "הסר", a missing name reads "שלום לכם"', () => {
   for (const [key, m] of Object.entries(MESSAGES)) {
     const body = m.body('כלי חרס');
     assert.ok(!/^\s*\{\{|\}\}\s*$/.test(body), `${key}: a variable at the start or the end`);
     assert.equal((body.match(/\{\{\d\}\}/g) || []).length, m.vars.length, `${key}: one variable for each value`);
-    assert.ok(!/[—–]|את\/ה|ניתן|במידה ו/.test(body + m.email('כלי חרס', { name: 'דנה', order: '#1', link: 'https://x.example/' })), `${key}: plain Hebrew`);
-    const req = templateRequest(key as any, 'כלי חרס');
+    const mail = emailText(key as any, 'כלי חרס', { name: 'דנה', order: '#1', link: 'https://x.example/' }, 'https://toran.test/u/t').text;
+    assert.ok(!/[—–]|את\/ה|ניתן|במידה ו/.test(body + mail), `${key}: plain Hebrew`);
+    assert.doesNotMatch(body + mail, /הסר/, `${key}: nothing says to write "הסר"`);
+    const req = templateRequest(key as any, 'כלי חרס', 'https://toran.test');
     assert.equal(req.language, 'he');
     assert.equal(req.components[0].example!.body_text[0].length, m.vars.length);
+    assert.ok(!req.components.some((c) => c.type === 'FOOTER'), `${key}: no footer`);
+    if (categoryOf(key as any) === 'MARKETING') {
+      // One URL button to the customer's page, its token Meta's dynamic suffix, with an example Meta can open.
+      const b = (req.components[1] as any).buttons;
+      assert.deepEqual(req.components.slice(1), [{ type: 'BUTTONS', buttons: [{ type: 'URL', text: 'הגדרות הודעות', url: 'https://toran.test/u/{{1}}', example: [b[0].example[0]] }] }]);
+      assert.match(b[0].example[0], /^https:\/\/toran\.test\/u\/[\w-]{24}$/);
+      assert.match(mail, /\n\nכלי חרס\n\nלא רוצים לקבל מאיתנו תזכורות כאלה\? אפשר להפסיק כאן:\nhttps:\/\/toran\.test\/u\/t$/);
+    } else {
+      assert.equal(req.components.length, 1, `${key}: a body and nothing else`);
+      assert.doesNotMatch(mail, /להפסיק/, `${key}: an update on an order has no link to stop`);
+    }
   }
-  assert.equal(templateRequest('cart', 'כלי חרס').category, 'MARKETING');
-  assert.equal(templateRequest('shipped', 'כלי חרס').category, 'UTILITY');
-  assert.match(waText('cart', 'כלי חרס', { name: 'דנה', order: '', link: 'https://kli-cheres.example/c' }).text, /^שלום דנה, נשארו לכם מוצרים בעגלה בכלי חרס\. .*https:\/\/kli-cheres\.example\/c\n.*\n\nלא רוצים עוד הודעות כאלה\? כתבו הסר$/s);
-  assert.doesNotMatch(waText('paid', 'כלי חרס', { name: 'דנה', order: '#1042', link: '' }).text, /הסר/, 'a payment says nothing about stopping marketing');
+  assert.equal(templateRequest('cart', 'כלי חרס', 'https://toran.test').category, 'MARKETING');
+  assert.equal(templateRequest('shipped', 'כלי חרס', 'https://toran.test').category, 'UTILITY');
+  assert.ok(!JSON.stringify(templateRequest('review', 'כלי חרס', 'https://toran.test')).includes('QUICK_REPLY'), 'no "הסר" button');
+  const cart = { name: 'דנה', order: '', link: 'https://kli-cheres.example/c' };
+  assert.match(waText('cart', 'כלי חרס', cart).text, /^שלום דנה, נשארו לכם מוצרים בעגלה בכלי חרס\. .*https:\/\/kli-cheres\.example\/c\nיש שאלה על מוצר או על המשלוח\? אפשר לכתוב לנו כאן\.$/s);
+  // An old template (approved before the button) is kept as the customer reads it, with its footer.
+  assert.match(waText('cart', 'כלי חרס', cart, { legacy: true }).text, /\n\nלא רוצים עוד הודעות כאלה\? כתבו הסר$/);
+  assert.doesNotMatch(waText('paid', 'כלי חרס', { name: 'דנה', order: '#1042', link: '' }, { legacy: true }).text, /הסר/, 'a payment says nothing about stopping marketing');
   assert.match(waText('paid', 'Kli Shop', { name: firstName(''), order: '#1042', link: '' }).text, /^שלום לכם, קיבלנו את התשלום על הזמנה #1042 ב-Kli Shop\./);
   assert.equal(firstName('דנה כהן'), 'דנה');
   assert.equal(firstName('<script>'), 'לכם');
@@ -212,7 +230,10 @@ test('templates: submitted to the store\'s own WhatsApp account, approved throug
     const res = await s.post(`/lead/${id}/auto/templates`, { _csrf: await s.csrf('/settings') });
     assert.equal(res.status, 303);
     assert.equal(g.templates.size, ALL_TEMPLATES.length, 'one template a message, on the store\'s WABA');
-    assert.equal(g.templates.get('toran_cart_reminder')!.category, 'MARKETING');
+    assert.equal(g.templates.get(MESSAGES.cart.template)!.category, 'MARKETING');
+    assert.ok(!g.templates.has(LEGACY.cart!.template), 'the old shape is never submitted');
+    assert.deepEqual(g.templates.get(MESSAGES.cart.template)!.body.components.map((c: any) => c.type), ['BODY', 'BUTTONS']);
+    assert.equal(g.templates.get(MESSAGES.cart.template)!.body.components[1].buttons[0].url, 'https://toran.test/u/{{1}}');
     assert.equal(g.templates.get('toran_order_shipped')!.category, 'UTILITY');
     page = await (await s.get('/settings')).text();
     assert.match(page, /מחכה לאישור של Meta/);
@@ -349,13 +370,20 @@ test('Shopify: an abandoned checkout reminded once, after the delay, only to a c
     assert.equal((await consentOf(app.db, id, 'whatsapp', OTHER)).source, 'shopify:sms_marketing_consent');
 
     await sendDue(app);
-    assert.equal(g.sent.filter((b) => b.template.name === 'toran_cart_reminder').length, 0, 'not before the hour');
+    assert.equal(g.sent.filter((b) => b.template.name === MESSAGES.cart.template).length, 0, 'not before the hour');
     setNow(T0 + 61 * MIN);
     await sendDue(app);
-    const carts = g.sent.filter((b) => b.template.name === 'toran_cart_reminder');
+    const carts = g.sent.filter((b) => b.template.name === MESSAGES.cart.template);
     assert.equal(carts.length, 1, 'one reminder: the customer who agreed');
     assert.equal(carts[0].to, OTHER);
     assert.deepEqual(carts[0].template.components[0].parameters.map((x: any) => x.text), ['נועה', 'https://kli-cheres.example/checkouts/tok-9002/recover?key=k2']);
+    // The button's variable is the customer's own token, bound to this store, channel and phone.
+    const button = carts[0].template.components[1];
+    assert.deepEqual([button.type, button.sub_type, button.index], ['button', 'url', '0']);
+    const token = button.parameters[0].text;
+    assert.match(token, /^[\w-]{24}$/);
+    assert.deepEqual(await app.db.one('SELECT store_id, channel, address FROM auto_links WHERE token = $1', [token]), { store_id: id, channel: 'whatsapp', address: OTHER });
+    assert.doesNotMatch((await app.db.one<any>("SELECT text FROM messages WHERE auto = 'cart'")).text, /הסר/, 'the text in the inbox has no footer');
     const rows = await events(app, id);
     const by = (k: string) => rows.find((e: any) => e.key === k);
     assert.equal(by('shopify:checkout:tok-9001:cart').why, 'whatsapp: no consent');
@@ -367,7 +395,7 @@ test('Shopify: an abandoned checkout reminded once, after the delay, only to a c
     await drain(app, { kinds: ['auto_hook'] });
     setNow(T0 + 3 * 60 * MIN);
     await sendDue(app);
-    assert.equal(g.sent.filter((b) => b.template.name === 'toran_cart_reminder').length, 1);
+    assert.equal(g.sent.filter((b) => b.template.name === MESSAGES.cart.template).length, 1);
 
     // A reminder still waiting is dropped when the customer writes to the store first.
     await shopifyHook(s, id, 'checkouts/create', { ...agreed, id: 9004, token: 'tok-9004', created_at: iso(T0 + 3 * 60 * MIN) });
@@ -543,6 +571,189 @@ test('a shipment: shipped with its tracking link, delivered as the carrier says,
     const ab = wixCheckoutRead({ id: 'a-1', checkoutId: 'ck-2', status: 'ABANDONED', createdDate: iso(T0), buyerInfo: { email: 'gal@example.test' }, checkoutUrl: 'https://quiet-candles.example/checkout?id=ck-2' });
     assert.equal(ab.happenings[0].key, 'wix:checkout:ck-2:cart');
     assert.equal(wixCheckoutRead({ id: 'a-2', checkoutId: 'ck-3', status: 'RECOVERED', createdDate: iso(T0) }).placed.length, 1);
+  } finally {
+    await done(s);
+  }
+});
+
+// ---- the link to stop the reminders: the page, the email's headers, the old templates
+
+const DANA = 'dana@example.test';
+const yes = (channel: 'whatsapp' | 'email', address: string, at = T0 - 5 * MIN) => ({ channel, address, scope: 'marketing' as const, state: 'in' as const, source: channel === 'whatsapp' ? 'shopify:sms_marketing_consent' : 'shopify:email_marketing_consent', at: iso(at) });
+const happening = (message: 'cart' | 'review' | 'paid', ref: string, at: number, contact: { name: string | null; phone: string | null; email: string | null }) => ({
+  happenings: [{ key: `shopify:${message === 'cart' ? 'checkout' : 'order'}:${ref}:${message}`, message, ref, at: iso(at), contact, vars: message === 'cart' ? { link: `https://kli-cheres.example/checkouts/${ref}/recover` } : { order: `#${ref}` } }],
+  consent: [],
+  placed: [],
+});
+const page = (s: Awaited<ReturnType<typeof serve>>, p: string, init: RequestInit = {}) => fetch(`${s.base}${p}`, { redirect: 'manual', ...init });
+const form = (body: string) => ({ method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body });
+
+test('the link in a reminder: a quiet page in the store\'s colour, stop and undo; the cart and the review stop on every channel, payment and shipping go on; a wrong token gets one polite page', async () => {
+  const { s, app, id, g } = await shopifyOn();
+  try {
+    const dana = { name: 'דנה', phone: CUSTOMER, email: DANA };
+    await record(app, id, 'shopify', { happenings: [], placed: [], consent: [yes('whatsapp', CUSTOMER), yes('email', DANA)] }, 'poll');
+    await record(app, id, 'shopify', happening('cart', 'tok-a', T0, dana), 'webhook');
+    setNow(T0 + 61 * MIN);
+    await sendDue(app);
+    const sent = g.sent.find((b) => b.template?.name === MESSAGES.cart.template);
+    const token = sent.template.components[1].parameters[0].text;
+    const st = await app.db.one<any>('SELECT name, brand, brand_override FROM stores WHERE id = $1', [id]);
+    const name = displayName(st.brand_override?.name, st.brand?.name, st.name)!;
+
+    // The page: the store's name, one question, one button. Never indexed, and the token never leaves in a Referer.
+    let res = await page(s, `/u/${token}`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('x-robots-tag')!, /noindex/);
+    assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+    let html = await res.text();
+    assert.match(html, /<html lang="he" dir="rtl">/);
+    assert.match(html, /<meta name="robots" content="noindex/);
+    assert.ok(html.includes(`<bdi>${name}</bdi>`), 'the store\'s name');
+    assert.match(html, /לא לקבל יותר תזכורות מ(-)?<bdi>[^<]+<\/bdi>\?/);
+    assert.match(html, new RegExp(`<form method="post" action="/u/${token}"><input type="hidden" name="do" value="stop"><button class="stop-btn" type="submit">כן, להפסיק</button>`));
+    assert.ok(html.includes(`href="/u/${token}/theme.css"`));
+    assert.match(await (await page(s, `/u/${token}/theme.css`)).text(), /^:root\{--store:#[0-9a-f]{6};--store-ink:#[0-9a-f]{6}\}$/);
+    assert.equal((await consentOf(app.db, id, 'whatsapp', CUSTOMER)).marketing, true, 'opening the page stops nothing');
+
+    // Stop: recorded with source "link" for the phone and for the email the same order carried.
+    res = await page(s, `/u/${token}`, form('do=stop'));
+    assert.deepEqual([res.status, res.headers.get('location')], [303, `/u/${token}`]);
+    html = await (await page(s, `/u/${token}`)).text();
+    assert.match(html, /סגור, לא נשלח לכם יותר תזכורות מ(-)?<bdi>[^<]+<\/bdi>\./);
+    assert.match(html, /עדכונים על הזמנות שעשיתם \(תשלום ומשלוח\) ימשיכו להגיע\./);
+    assert.match(html, /name="do" value="undo"><button class="grey" type="submit">בעצם כן, להמשיך לקבל<\/button>/);
+    assert.deepEqual(await app.db.query("SELECT channel, address, scope, state FROM auto_consent WHERE store_id = $1 AND source = 'link' ORDER BY channel", [id]), [
+      { channel: 'email', address: DANA, scope: 'marketing', state: 'out' },
+      { channel: 'whatsapp', address: CUSTOMER, scope: 'marketing', state: 'out' },
+    ]);
+    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, marketing: false, source: null });
+    assert.equal((await consentOf(app.db, id, 'email', DANA)).marketing, false, 'on every channel');
+    // Twice is once.
+    await page(s, `/u/${token}`, form('do=stop'));
+    assert.equal((await app.db.one<any>("SELECT COUNT(*)::int AS n FROM auto_consent WHERE store_id = $1 AND source = 'link'", [id])).n, 2);
+
+    // Later: a review request is not sent on either channel; a payment is.
+    await record(app, id, 'shopify', happening('review', '5050', T0 + 61 * MIN, dana), 'webhook');
+    setNow(T0 + 3 * 24 * 60 * MIN + 62 * MIN); // a Friday, 12:02 in Israel
+    await record(app, id, 'shopify', happening('paid', '5051', now(), dana), 'webhook');
+    const before = g.sent.length;
+    await sendDue(app);
+    const rows = await events(app, id);
+    assert.equal(rows.find((e: any) => e.message === 'review').why, 'whatsapp: no consent; email: no consent');
+    assert.equal(rows.find((e: any) => e.message === 'paid').status, 'sent');
+    assert.deepEqual(g.sent.slice(before).map((b) => b.template.name), ['toran_order_paid']);
+    assert.equal(g.sent.at(-1).template.components.length, 1, 'an update on an order has no button');
+
+    // Undo: the "yes" the stop put aside comes back, with its own source.
+    res = await page(s, `/u/${token}`, form('do=undo'));
+    assert.deepEqual([res.status, res.headers.get('location')], [303, `/u/${token}?kept=1`]);
+    html = await (await page(s, `/u/${token}?kept=1`)).text();
+    assert.match(html, /בסדר, התזכורות מ(-)?<bdi>[^<]+<\/bdi> ימשיכו להגיע\./);
+    assert.match(html, /כן, להפסיק/);
+    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, marketing: true, source: 'shopify:sms_marketing_consent' });
+    assert.equal((await consentOf(app.db, id, 'email', DANA)).marketing, true);
+    // An undo never gives a "yes" nobody gave: a customer with no consent who stops and undoes still has none.
+    const t2 = (await stopToken(app.db, id, 'whatsapp', OTHER))!;
+    assert.equal(await stopToken(app.db, id, 'whatsapp', '050-000-0322'), t2, 'one token an address');
+    await page(s, `/u/${t2}`, form('do=stop'));
+    await page(s, `/u/${t2}`, form('do=undo'));
+    assert.equal((await consentOf(app.db, id, 'whatsapp', OTHER)).marketing, false);
+    // "הסר" still works, though nothing says it: it stops everything, the undo of the link does not bring it back.
+    await handleInbound(app, { channel: 'whatsapp', from: CUSTOMER, text: 'הסר', id: 'wamid.in-l1', account: PHONE_ID, at: Date.now() });
+    await page(s, `/u/${token}`, form('do=stop'));
+    await page(s, `/u/${token}`, form('do=undo'));
+    assert.equal((await consentOf(app.db, id, 'whatsapp', CUSTOMER)).updates, false);
+
+    // A token that is not ours, of any shape: one polite page, nothing about any store.
+    for (const bad of ['A'.repeat(24), 'short', `${token.slice(0, 23)}${token.endsWith('x') ? 'y' : 'x'}`]) {
+      const r = await page(s, `/u/${bad}`);
+      assert.equal(r.status, 404);
+      const h = await r.text();
+      assert.match(h, /הקישור הזה לא עובד/);
+      assert.ok(!h.includes(name), 'no store\'s name');
+      assert.equal((await page(s, `/u/${bad}`, form('do=stop'))).status, 404);
+    }
+  } finally {
+    await done(s);
+  }
+});
+
+test('email: a reminder ends with its link, List-Unsubscribe names the page and the reply, and a mail client\'s one-click POST stops it (RFC 8058)', async () => {
+  const { s, app, id } = await shopifyOn({ whatsapp: false });
+  try {
+    await record(app, id, 'shopify', { happenings: [], placed: [], consent: [yes('email', DANA)] }, 'poll');
+    await record(app, id, 'shopify', happening('cart', 'tok-m', T0, { name: 'דנה', phone: null, email: DANA }), 'webhook');
+    setNow(T0 + 61 * MIN);
+    await sendDue(app);
+    const out = app.mail!.outbox!.filter((m) => !m.notice).at(-1)!;
+    assert.equal(out.to, DANA);
+    const m = /\n\nלא רוצים לקבל מאיתנו תזכורות כאלה\? אפשר להפסיק כאן:\nhttps:\/\/toran\.test\/u\/([\w-]{24})$/.exec(out.text);
+    assert.ok(m, 'the last line is the link');
+    assert.doesNotMatch(out.text, /הסר/);
+    const token = m![1];
+    const h = out.headers as Record<string, string>;
+    assert.equal(h['List-Unsubscribe'], `<https://toran.test/u/${token}>, <mailto:kli@mail.toran.test?subject=${encodeURIComponent('הסר')}>`);
+    assert.equal(h['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
+    assert.deepEqual(await app.db.one('SELECT channel, address FROM auto_links WHERE token = $1', [token]), { channel: 'email', address: DANA });
+
+    // The one-click POST: no cookie, no Origin, no page to read; answered with the confirmation.
+    const res = await fetch(`${s.base}/u/${token}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' });
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /סגור, לא נשלח לכם יותר תזכורות/);
+    assert.deepEqual(await consentOf(app.db, id, 'email', DANA), { updates: true, marketing: false, source: null });
+    assert.equal((await app.db.one<any>("SELECT source FROM auto_consent WHERE store_id = $1 AND state = 'out'", [id])).source, 'link');
+    assert.equal((await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'auto_link_stop'", [id])).data.via, 'one-click');
+
+    // A payment by email is not marketing: no link, no List-Unsubscribe.
+    await record(app, id, 'shopify', happening('paid', '5060', now(), { name: 'דנה', phone: null, email: DANA }), 'webhook');
+    await sendDue(app);
+    const paid = app.mail!.outbox!.filter((x) => !x.notice).at(-1)!;
+    assert.match(String(paid.subject), /קיבלנו את התשלום/);
+    assert.ok(!('List-Unsubscribe' in (paid.headers as any)) && !('List-Unsubscribe-Post' in (paid.headers as any)));
+    assert.doesNotMatch(paid.text, /\/u\//);
+  } finally {
+    await done(s);
+  }
+});
+
+test('a store whose old marketing templates ("כתבו הסר") Meta approved: they go out as they were until the new ones are approved; the worker submits the new ones once', async () => {
+  const { s, app, id, g, wa } = await shop({ email: false });
+  try {
+    for (const [key, m] of Object.entries(MESSAGES)) {
+      const name = LEGACY[key as keyof typeof LEGACY]?.template || m.template;
+      await app.db.query("INSERT INTO wa_templates (account_id, store_id, name, message, asked, category, meta_id, status, body) VALUES ($1, $2, $3, $4, $5, $5, $6, 'APPROVED', 'x')", [wa, id, name, key, categoryOf(key as any), `old-${key}`]);
+    }
+    assert.deepEqual(await approvedFor(app, wa, 'cart'), { ok: true, missing: [], legacy: ['cart'] });
+    await saveSetting(app, id, 'cart', { whatsapp: true, email: false }, 'owner');
+    assert.match(await (await s.get('/settings')).text(), /אושרה בנוסח הקודם\. צריך לשלוח את הנוסח החדש/);
+
+    await record(app, id, 'shopify', { happenings: [], placed: [], consent: [yes('whatsapp', OTHER), yes('whatsapp', CUSTOMER)] }, 'poll');
+    await record(app, id, 'shopify', happening('cart', 'tok-o', T0, { name: 'נועה', phone: OTHER, email: null }), 'webhook');
+    setNow(T0 + 61 * MIN);
+    await sendDue(app);
+    assert.equal(g.sent.length, 1);
+    assert.equal(g.sent[0].template.name, 'toran_cart_reminder', 'the old one, approved');
+    assert.deepEqual(g.sent[0].template.components.map((c: any) => c.type), ['body'], 'no button parameter for a template that has none');
+    assert.match((await app.db.one<any>("SELECT text FROM messages WHERE auto = 'cart'")).text, /כתבו הסר$/, 'kept as the customer read it');
+
+    // The worker submits the new marketing ones, once, and nothing else.
+    await scheduleAuto(app);
+    await drain(app, { kinds: ['wa_templates_new'] });
+    assert.deepEqual([...g.templates.keys()].sort(), [MESSAGES.cart.template, MESSAGES.review.template].sort());
+    await scheduleAuto(app);
+    assert.equal((await app.db.one<any>("SELECT COUNT(*)::int AS n FROM jobs WHERE kind = 'wa_templates_new'")).n, 1);
+    assert.match(await (await s.get('/settings')).text(), /אושרה בנוסח הקודם, והחדש מחכה לאישור של Meta/);
+
+    // Approved: the new one, with its button, from then on.
+    await approveAll(s, [MESSAGES.cart.template, MESSAGES.review.template]);
+    assert.deepEqual((await approvedFor(app, wa, 'cart')).legacy, []);
+    await record(app, id, 'shopify', happening('cart', 'tok-p', T0 + 2 * 60 * MIN, { name: 'דנה', phone: CUSTOMER, email: null }), 'webhook');
+    setNow(T0 + 3 * 60 * MIN + MIN);
+    await sendDue(app);
+    const last = g.sent.at(-1);
+    assert.equal(last.template.name, MESSAGES.cart.template);
+    assert.equal(last.template.components[1].sub_type, 'url');
   } finally {
     await done(s);
   }

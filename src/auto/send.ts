@@ -10,8 +10,8 @@ import { needsReconnect } from '../channels/waStore.ts';
 import { ownAddress } from '../channels/mailDomain.ts';
 import { enabledChannels } from '../channels/config.ts';
 import { orderAccessOf } from '../orders.ts';
-import { addressOf, consentOf, recordConsent } from './consent.ts';
-import { complete, emailText, firstName, isKind, KIND_KEYS, KINDS, kindOf, MESSAGES, waText, type Kind, type MessageKey } from './messages.ts';
+import { addressOf, consentOf, recordConsent, stopToken } from './consent.ts';
+import { complete, emailText, firstName, isKind, KIND_KEYS, KINDS, kindOf, LEGACY, MESSAGES, stopUrl, waText, type Kind, type MessageKey } from './messages.ts';
 import type { Happening, Placed, Read } from './platforms.ts';
 import { approvedFor, storeWa } from './templates.ts';
 
@@ -33,6 +33,9 @@ import { approvedFor, storeWa } from './templates.ts';
 //     number), every template of the kind is approved, the order has a phone, and the customer allows it (marketing:
 //     their "yes" from the checkout; anything: no "הסר")
 //   - else email: turned on, the store's email connected, an address on the order, not bounced, allowed the same way
+// A cart or a review carries the customer's link to stop them (consent.ts stopToken): the template's URL button on
+// WhatsApp (an old template, approved before the button, goes out as it was until the new one is approved), a line at
+// the end of the email with List-Unsubscribe and its one-click POST (RFC 8058) to the same page.
 // What goes out is kept in the customer's conversation on that channel (role agent, messages.auto says which), so the
 // inbox shows it and an answer to it lands beside it. It is the store's side of the conversation, so it counts
 // nothing in the plan until the customer answers (plans.ts counts the customers' messages).
@@ -243,11 +246,14 @@ async function deliver(app: App, ev: any): Promise<Outcome> {
     else if (marketing && !allowed!.marketing) no.push('whatsapp: no consent');
     else if (!complete(m, vars)) no.push('whatsapp: no link');
     else {
-      const { params, text } = waText(m, store, vars);
-      const name = MESSAGES[m].template;
+      const legacy = ok!.legacy.includes(m);
+      const { params, text } = waText(m, store, vars, { legacy });
+      const name = legacy ? LEGACY[m]!.template : MESSAGES[m].template;
+      // The button's address is <PUBLIC_BASE_URL>/u/{{1}}: the token fills it in.
+      const token = marketing && !legacy ? await stopToken(app.db, ev.store_id, 'whatsapp', phone) : null;
       let id: string;
       try {
-        id = (await cloudSend(app.env, app.graph, wa.external_id, open(app.env, wa.secret!), phone, { template: { name, sid: name, vars: params } })).id;
+        id = (await cloudSend(app.env, app.graph, wa.external_id, open(app.env, wa.secret!), phone, { template: { name, sid: name, vars: params, ...(token ? { url: token } : {}) } })).id;
       } catch (e: any) {
         if (e instanceof GraphError && e.code === TOKEN_GONE) await needsReconnect(app, wa.id, 'token');
         return { status: 'failed', why: `whatsapp: ${String(e?.message || e).slice(0, 240)}` };
@@ -269,10 +275,17 @@ async function deliver(app: App, ev: any): Promise<Outcome> {
     else if (marketing && !allowed!.marketing) no.push('email: no consent');
     else if (m !== 'shipped' && !complete(m, vars)) no.push('email: no link');
     else {
-      const { subject, text } = emailText(m, store, vars);
+      const link = marketing ? stopUrl(app.env, (await stopToken(app.db, ev.store_id, 'email', to))!) : '';
+      const { subject, text } = emailText(m, store, vars, link);
       const own = await ownAddress(app, ev.store_id);
       const replyTo = own?.replyTo || account.external_id;
-      const headers: Record<string, string> = { 'Auto-Submitted': 'auto-generated', ...(marketing ? { 'List-Unsubscribe': `<mailto:${replyTo}?subject=${encodeURIComponent('הסר')}>` } : {}) };
+      // The page's address first, then the reply; the one-click POST only where the page is on https (RFC 8058).
+      const oneClick = link.startsWith('https://');
+      const headers: Record<string, string> = {
+        'Auto-Submitted': 'auto-generated',
+        ...(marketing ? { 'List-Unsubscribe': `${oneClick ? `<${link}>, ` : ''}<mailto:${replyTo}?subject=${encodeURIComponent('הסר')}>` } : {}),
+        ...(marketing && oneClick ? { 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } : {}),
+      };
       const sent = await app.mail!.send(to, text, { channel: 'email', from: to, text: '', id: `auto-${ev.id}`, account: account.external_id, subject }, { who: 'agent', storeName: store, ...(own || {}), subject, headers });
       const conversationId = await keep(app, ev, 'email', account.id, to, text, sent.id, subject);
       await usage(app.db, { storeId: ev.store_id, conversationId, kind: 'mail', backend: app.mail!.kind, units: 1, usd: 0, apiUsd: 0, tag: 'mail_auto' });

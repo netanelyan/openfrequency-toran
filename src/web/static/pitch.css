@@ -226,3 +226,18 @@ ul.logos li.more .plus { font-size: 30px; font-weight: 300; line-height: 1; marg
 .links-note p { margin: 0; color: var(--ink-2); font-size: 15px; line-height: 1.65; }
 @media (max-width: 520px) { ul.logos { gap: 8px; } ul.logos li { min-width: 56px; height: 56px; padding: 0 12px; border-radius: 16px; } ul.logos li svg { width: 28px; height: 28px; } ul.logos li.more { flex-basis: 100%; } }
 ul.logos li[title='WooCommerce'] svg { width: 46px; }
+
+/* The customer's page of message settings, /u/<token> (web/unsubscribe.ts): the store's name and colour, one card. */
+.stop { max-width: 520px; padding-top: 28px; }
+.stop-store { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.stop-store b { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.stop-logo { display: block; max-width: 180px; max-height: 64px; width: auto; height: auto; object-fit: contain; }
+.stop-card { margin: 22px 0 0; padding: 26px 22px 24px; text-align: center; }
+.stop-card h1 { font-size: clamp(24px, 6.6vw, 30px); margin: 0 auto 12px; }
+.stop-card .lede { font-size: 16px; }
+.stop-card form { margin: 22px 0 0; }
+.stop-card .grey { min-height: 46px; font-size: 16px; border: 0; cursor: pointer; }
+.stop-btn { display: inline-flex; align-items: center; justify-content: center; width: 100%; max-width: 320px; min-height: 52px; padding: 0 24px; border: 0; border-radius: 999px; background: var(--store); color: var(--store-ink); font: 600 17px/1 var(--font); cursor: pointer; transition: transform 0.15s; }
+.stop-btn:active { transform: scale(0.98); }
+.stop-btn:focus-visible, .stop-card .grey:focus-visible { outline: 3px solid rgba(0, 102, 204, 0.45); outline-offset: 3px; }
+.stop-note { margin: 0 0 14px; padding: 8px 14px; border-radius: 14px; background: var(--grey-pill); font-size: 14px; color: var(--ink-2); }

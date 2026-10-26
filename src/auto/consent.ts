@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { App } from '../app.ts';
 import type { Db } from '../db/index.ts';
 import { event } from '../db/log.ts';
@@ -9,13 +10,21 @@ import { now } from '../core/clock.ts';
 //   marketing   the cart and the review (messages.ts). Only with the customer's "yes" from the store's checkout:
 //               Shopify's email and SMS marketing consent (the phone's counts for WhatsApp), WooCommerce's from the
 //               consent plugins that keep it on the order, Wix's contact's subscription. Each row keeps its source and
-//               the platform's own time of it.
-//   all         every automatic message. Only ever "out": the customer wrote "הסר" or "STOP" (or pressed the
-//               template's "הסר" button), on the channel they wrote on.
+//               the platform's own time of it. "out" from the link in every marketing message (source 'link'):
+//               the page /u/<token> (web/unsubscribe.ts), or a mail client's one-click unsubscribe (RFC 8058).
+//   all         every automatic message. Only ever "out": the customer wrote "הסר" or "STOP" (or pressed the old
+//               templates' "הסר" button), on the channel they wrote on. Nothing says to write it any more; it still
+//               works.
 //
 // Payment and shipping need no "yes": they are about an order the customer placed with that phone or email. They
-// stop with "הסר" like the rest. The rows are read in time order: a later "yes" at a checkout counts again after an
-// earlier "הסר", and a later "הסר" beats every earlier "yes".
+// stop with "הסר" like the rest, never with the link. The rows are read in time order: a later "yes" at a checkout
+// counts again after an earlier "הסר" or link, and a later "הסר" beats every earlier "yes". The link's undo ("in",
+// source 'link') gives back only the "yes" its "out" put aside, never one the customer did not give.
+//
+// The link's token (auto_links, migration 019) is random and bound to one store, channel and address, so the page
+// knows whom it is about with nothing personal in the URL. Its "out" is recorded for that address and for the
+// customer's other one, where an order or checkout of this store carried both, so the cart and the review stop on
+// every channel.
 
 export type Channel = 'whatsapp' | 'email';
 export type Consent = { channel: Channel; address: string; scope: 'marketing' | 'all'; state: 'in' | 'out'; source: string; at: string };
@@ -43,16 +52,83 @@ export async function consentOf(db: Db, storeId: number, channel: Channel, raw: 
   const rows = await db.query<{ scope: string; state: string; source: string }>('SELECT scope, state, source FROM auto_consent WHERE store_id = $1 AND channel = $2 AND address = $3 ORDER BY at, id', [storeId, channel, address]);
   let out = false;
   let marketing: string | null = null;
+  // The "yes" the latest link "out" put aside, while nothing came after it, for the link's undo.
+  let aside: { source: string | null } | null = null;
   for (const r of rows) {
     if (r.scope === 'all' && r.state === 'out') {
       out = true;
       marketing = null;
+      aside = null;
+    } else if (r.scope === 'marketing' && r.state === 'in' && r.source === LINK) {
+      if (aside) marketing = aside.source;
+      aside = null;
     } else if (r.scope === 'marketing' && r.state === 'in') {
       out = false;
       marketing = r.source;
-    } else if (r.scope === 'marketing' && r.state === 'out') marketing = null;
+      aside = null;
+    } else if (r.scope === 'marketing' && r.state === 'out') {
+      if (r.source === LINK) aside ??= { source: marketing };
+      else aside = null;
+      marketing = null;
+    }
   }
   return { updates: !out, marketing: !out && Boolean(marketing), source: marketing };
+}
+
+/** The source of a consent row from the link in a marketing message: its page, or a mail client's one-click. */
+export const LINK = 'link';
+
+const TOKEN = /^[A-Za-z0-9_-]{24}$/;
+export const isToken = (s: string) => TOKEN.test(s);
+
+/** The link's token for this address at this store: made once (18 random bytes), the same one every time after. */
+export async function stopToken(db: Db, storeId: number, channel: Channel, raw: string): Promise<string | null> {
+  const address = addressOf(channel, raw);
+  if (!address) return null;
+  const r = await db.one<{ token: string }>(
+    'INSERT INTO auto_links (token, store_id, channel, address) VALUES ($1, $2, $3, $4) ON CONFLICT (store_id, channel, address) DO UPDATE SET address = EXCLUDED.address RETURNING token',
+    [randomBytes(18).toString('base64url'), storeId, channel, address],
+  );
+  return r!.token;
+}
+
+export type StopLink = { token: string; store_id: number; channel: Channel; address: string; stopped_at: string | null };
+
+export const linkOf = (db: Db, token: string) => (isToken(token) ? db.one<StopLink>('SELECT token, store_id, channel, address, stopped_at FROM auto_links WHERE token = $1', [token]) : Promise.resolve(null));
+
+/** The link's address and the customer's other one, where one of this store's orders or checkouts carried both. */
+async function addressesOf(db: Db, l: StopLink): Promise<{ channel: Channel; address: string }[]> {
+  const [field, otherField] = l.channel === 'whatsapp' ? ['phone', 'email'] : ['email', 'phone'];
+  const other: Channel = l.channel === 'whatsapp' ? 'email' : 'whatsapp';
+  const rows = await db.query<{ a: string }>(`SELECT DISTINCT contact->>'${otherField}' AS a FROM auto_events WHERE store_id = $1 AND lower(contact->>'${field}') = $2 AND contact->>'${otherField}' IS NOT NULL LIMIT 5`, [l.store_id, l.address]);
+  const out = [{ channel: l.channel, address: l.address }];
+  for (const r of rows) {
+    const a = addressOf(other, r.a);
+    if (a && !out.some((x) => x.channel === other && x.address === a)) out.push({ channel: other, address: a });
+  }
+  return out;
+}
+
+/** The customer stopped the store's reminders from the link: the cart and the review, on every channel; payment and shipping go on. */
+export async function stopFromLink(app: App, l: StopLink, via: 'page' | 'one-click') {
+  const at = new Date(now()).toISOString();
+  const who = await addressesOf(app.db, l);
+  await recordConsent(app.db, l.store_id, who.map((w) => ({ ...w, scope: 'marketing' as const, state: 'out' as const, source: LINK, at })));
+  for (const w of who) {
+    const field = w.channel === 'whatsapp' ? 'phone' : 'email';
+    await app.db.query(`UPDATE auto_events SET status = 'skipped', why = 'opted_out' WHERE store_id = $1 AND status = 'waiting' AND kind IN ('cart', 'review') AND lower(contact->>'${field}') = $2`, [l.store_id, w.address]);
+  }
+  await app.db.query('UPDATE auto_links SET stopped_at = $2 WHERE token = $1', [l.token, at]);
+  await event(app.db, l.store_id, 'auto_link_stop', { channel: l.channel, via, channels: who.map((w) => w.channel) });
+}
+
+/** "בעצם כן": the link's stop undone, giving back the "yes" it put aside, on the same addresses. */
+export async function undoFromLink(app: App, l: StopLink) {
+  const at = new Date(now()).toISOString();
+  const who = await addressesOf(app.db, l);
+  await recordConsent(app.db, l.store_id, who.map((w) => ({ ...w, scope: 'marketing' as const, state: 'in' as const, source: LINK, at })));
+  await app.db.query('UPDATE auto_links SET stopped_at = NULL WHERE token = $1', [l.token]);
+  await event(app.db, l.store_id, 'auto_link_undo', { channel: l.channel });
 }
 
 /** A whole message that asks to stop: "הסר", "הסירו אותי", "STOP", "unsubscribe". */

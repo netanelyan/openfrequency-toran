@@ -22,7 +22,7 @@ import type { ChannelAdapter, ChannelLimits, Inbound, Sent } from './types.ts';
 export type { Inbound, Sent };
 
 /** One message push() sends: text, an image (with its caption), or an approved template with its variables. */
-export type WaOut = { text?: string; mediaUrl?: string; template?: { name: string; sid: string; vars: string[] }; from?: string | null };
+export type WaOut = { text?: string; mediaUrl?: string; template?: { name: string; sid: string; vars: string[]; url?: string }; from?: string | null };
 
 export interface WaProvider extends ChannelAdapter {
   channel: 'whatsapp';

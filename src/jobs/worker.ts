@@ -14,7 +14,7 @@ import { deliverRequested } from '../ops/actions.ts';
 import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
 import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialStore.ts';
 import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
-import { handleHook, pollStore, scheduleAuto, sendDue, setupSource } from '../auto/jobs.ts';
+import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } from '../auto/jobs.ts';
 import { checkTemplates, templateStatus } from '../auto/templates.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
@@ -41,6 +41,7 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 //                store's webhooks registered, one webhook, a reading of its orders and checkouts, the messages due
 //                (auto/jobs.ts)
 //   wa_templates, wa_template_status   a store's WhatsApp templates at Meta, read again or as the webhook says
+//   wa_templates_new   the new marketing templates (the URL button) for a store whose old ones are approved
 //
 // Scheduled each minute: a rescrape for every store with a built page that is not
 // skipped and was last ingested over 20 hours ago; expired WhatsApp bindings cleaned up; the link to each demo asked
@@ -110,6 +111,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return sendDue(app);
     case 'wa_templates':
       return checkTemplates(app, Number(p.accountId));
+    case 'wa_templates_new':
+      return submitNew(app, Number(p.storeId));
     case 'wa_template_status':
       return templateStatus(app, p);
     case 'teder_event':

@@ -15,7 +15,7 @@ repository, unused.
 | Email | Built: Resend, signed webhook, threads, bounces, owner replies, attachments both ways (the owner's only), a store's own address on its domain | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
 | WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox, the token's end watched and renewed or asked for again | The Meta app is set; App Review for advanced access is submitted (step 2) |
 | WhatsApp, our own number (owner line, demo number, support) | Built: our one number, on as soon as the company store's WhatsApp page connects it (step 3); also Twilio's code, and Meta by `META_DEMO_PHONE_ID` and `META_OWNER_PHONE_ID` for separate numbers | On the simulator: the number is not connected yet (step 3, after App Review) |
-| A store's automatic messages (cart, payment, shipping, review) | Built: the store's platform by webhook or a reading every 15 minutes, its own WhatsApp templates submitted and tracked, email, consent and "הסר", quiet time (step 5) | Off for every store until its owner turns a kind on |
+| A store's automatic messages (cart, payment, shipping, review) | Built: the store's platform by webhook or a reading every 15 minutes, its own WhatsApp templates submitted and tracked, email, consent and the link to stop the reminders, quiet time (step 5) | Off for every store until its owner turns a kind on |
 | Instagram, Messenger | Built, behind the flag: login at Meta, `/meta/oauth/<channel>`, the same `/meta/webhook`, replies through the Send API inside the 24 hours, the owner's own answers in the inbox | Off: `TORAN_CHANNELS` does not list them (step 4) |
 
 ## How to change a setting on the server
@@ -403,15 +403,27 @@ its email (step 1). Never our demo number.
 
    | Template | Category | Variables |
    | --- | --- | --- |
-   | `toran_cart_reminder` | Marketing, with the footer and a "הסר" button | name, cart link |
+   | `toran_cart_reminder_v2` | Marketing, with one URL button "הגדרות הודעות" | name, cart link; the button's token |
    | `toran_order_paid` | Utility | name, order number |
    | `toran_payment_pending` | Utility | name, order number |
    | `toran_payment_failed` | Utility | name, order number, link to pay again |
    | `toran_order_shipped` | Utility | name, order number, tracking link |
    | `toran_order_delivered` | Utility | name, order number |
-   | `toran_review_request` | Marketing, with the footer and a "הסר" button | name, order number, review link |
+   | `toran_review_request_v2` | Marketing, with one URL button "הגדרות הודעות" | name, order number, review link; the button's token |
 
-   The words are in `src/auto/messages.ts`, and the page shows each one as the customer will read it. Each template's
+   The words are in `src/auto/messages.ts`, and the page shows each one as the customer will read it. The two
+   marketing ones have no footer and no "הסר" button: their one button opens
+   `<PUBLIC_BASE_URL>/u/{{1}}`, Meta's dynamic URL suffix, and each send fills in the customer's own token. The page
+   there (`src/web/unsubscribe.ts`) asks "לא לקבל יותר תזכורות מ<store>?", with one button and an undo. So
+   **`PUBLIC_BASE_URL` must be the https address before the templates are submitted**: it is written into the
+   template, and Toran refuses to submit a marketing one without https (the page shows why).
+
+   **A store that submitted before 2026-10-26** has `toran_cart_reminder` and `toran_review_request`, with the
+   footer "כתבו הסר" and a quick reply "הסר". A changed template goes back to Meta's review either way, and a new
+   name lets the old one keep sending while the new one waits, so the new ones have new names. While the old ones are approved they keep going out as they were (the inbox shows them with their footer),
+   and the page says "אושרה בנוסח הקודם". Within the minute the worker submits the two new ones for that store by
+   itself, once (`wa_templates_new`); the owner can also press the button. Once Meta approves a new one, every send
+   uses it. The old ones stay on the store's WhatsApp account, unused; the owner may delete them in WhatsApp Manager. Each template's
    state shows on the page; a kind turns on for WhatsApp only once all of its templates are approved. Meta may approve
    a utility template as marketing (the page says so); it then costs as marketing.
 2. **A payment method** on the store's WhatsApp account, in WhatsApp Manager, under billing. Meta bills every template
@@ -433,8 +445,19 @@ one counts for WhatsApp, so the store's checkbox text should say messages may co
 consent plugins that keep it on the order (Mailchimp for WooCommerce and a few common keys), Wix's from the contact's
 subscription. Each is kept with its source and time in `auto_consent`.
 
+**Stopping the cart and the review** is a quiet link, never a "write הסר" line: the WhatsApp button above, and by
+email a last line "לא רוצים לקבל מאיתנו תזכורות כאלה? אפשר להפסיק כאן:" with the link, plus `List-Unsubscribe:
+<https://.../u/<token>>, <mailto:<the store's reply address>?subject=הסר>` and `List-Unsubscribe-Post:
+List-Unsubscribe=One-Click` (RFC 8058), so Gmail's and Apple Mail's own "unsubscribe" stops them in one click. The
+token (`auto_links`, migration 019) is random, bound to the store, the channel and the phone or email, never expires,
+and carries nothing personal. Stopping is kept in `auto_consent` with source `link`, for that address and the
+customer's other one where an order carried both; payment and shipping go on. A customer who writes "הסר" or "STOP"
+is still heard (it stops every automatic message), though nothing says to. Nothing to set up in Caddy: `/u/` is
+public like `/s/`.
+
 To check a store's source from the server: `SELECT store_id, platform, can, hooks, polled_at FROM auto_sources;`, and
-its messages: `SELECT key, status, why, channel FROM auto_events WHERE store_id = <id> ORDER BY id DESC LIMIT 20;`.
+its messages: `SELECT key, status, why, channel FROM auto_events WHERE store_id = <id> ORDER BY id DESC LIMIT 20;`,
+and who stopped from the link: `SELECT channel, address, state, at FROM auto_consent WHERE store_id = <id> AND source = 'link' ORDER BY at DESC;`.
 
 ## When a channel is live
 

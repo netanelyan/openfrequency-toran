@@ -62,8 +62,14 @@ state shows. Else email, from the store's email channel. The phone or the email 
 - the cart and the review only to a customer who agreed at the store's checkout (`auto_consent`, with its source);
   payment and shipping to the order's own phone or email
 - never at night (21:00 to 09:00 Israel time), on Shabbat or a holiday, or the afternoon before one: it waits
-- "הסר" or "STOP" from the customer stops all of them, answered with one line; a message from the customer drops a
-  cart reminder or a review request still waiting
+- the cart and the review carry a quiet link to stop them: on WhatsApp the template's one button "הגדרות הודעות",
+  by email a last line and `List-Unsubscribe` with its one-click POST. It opens `/u/<token>`
+  (`src/web/unsubscribe.ts`), a page in the store's colour and logo: "לא לקבל יותר תזכורות מ<store>?", one button,
+  then "סגור, לא נשלח לכם יותר תזכורות מ<store>. עדכונים על הזמנות שעשיתם (תשלום ומשלוח) ימשיכו להגיע." with
+  "בעצם כן, להמשיך לקבל" to undo it. It stops the cart and the review from that store on every channel (source
+  `link`); payment and shipping go on. Nothing says "write הסר" any more
+- "הסר" or "STOP" from the customer still stops all of them, answered with one line; a message from the customer
+  drops a cart reminder or a review request still waiting
 - one cart reminder a checkout, none once an order is placed, nothing twice for the same event, no cart or review to
   the same person twice in a day
 

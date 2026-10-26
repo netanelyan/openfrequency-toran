@@ -3,6 +3,8 @@ import { now } from '../core/clock.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { poll, readHook, setupSource, sourceOf } from './platforms.ts';
 import { anyOn, record, sendDue, settingsOf } from './send.ts';
+import { LEGACY, type MessageKey } from './messages.ts';
+import { scheduleResubmit, submitTemplates } from './templates.ts';
 
 // The automatic messages' work in the worker (jobs/worker.ts):
 //
@@ -11,6 +13,7 @@ import { anyOn, record, sendDue, settingsOf } from './send.ts';
 //   auto_poll    a store's orders and checkouts read since the last reading
 //   auto_send    every message whose time has come (send.ts sendDue)
 //   wa_templates a store's WhatsApp templates read again at Meta while one is pending (templates.ts)
+//   wa_templates_new  the new marketing templates (the URL button) for a store whose old ones are approved, once
 //
 // scheduleAuto() runs each minute with the rest of the schedule.
 
@@ -50,6 +53,10 @@ export async function scheduleAuto(app: App) {
   if (await app.db.one("SELECT 1 FROM auto_events WHERE status = 'waiting' AND due_at <= $1 LIMIT 1", [new Date(now()).toISOString()])) await enqueue(app.db, 'auto_send', {}, { dedupeKey: 'auto_send', maxAttempts: 1 });
   const pending = await app.db.query<{ account_id: number }>("SELECT DISTINCT account_id FROM wa_templates WHERE status IN ('PENDING', 'IN_APPEAL') AND COALESCE(checked_at, submitted_at) < now() - interval '1 hour'");
   for (const t of pending) await enqueue(app.db, 'wa_templates', { accountId: t.account_id }, { dedupeKey: `wa_templates:${t.account_id}`, maxAttempts: 1 });
+  for (const storeId of await scheduleResubmit(app)) await enqueue(app.db, 'wa_templates_new', { storeId }, { dedupeKey: `wa_templates_new:${storeId}`, maxAttempts: 1 });
 }
+
+/** The new marketing templates, for a store whose old ones Meta approved (templates.ts scheduleResubmit). */
+export const submitNew = (app: App, storeId: number) => submitTemplates(app, storeId, 'toran', { only: Object.keys(LEGACY) as MessageKey[] });
 
 export { sendDue, setupSource };

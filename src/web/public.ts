@@ -18,6 +18,7 @@ import { secretOf, verify } from '../owners/teder.ts';
 import { EVENT_TYPES } from '../owners/events.ts';
 import { opsRoutes } from '../ops/api.ts';
 import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
+import { unsubscribeRoutes } from './unsubscribe.ts';
 
 // The public routes, answered without a session:
 //
@@ -28,6 +29,9 @@ import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.t
 //                              410 for everyone else
 //   GET  /s/<slug>/theme.css   its colours
 //   POST /t                    the page's beacon (scroll depth, demo taps), rate-limited
+//   GET  /u/<token>            a store's customer's page of message settings, from the link in a cart reminder or
+//   POST /u/<token>            a review request: stop them, or undo it; a mail client's one-click unsubscribe
+//                              (RFC 8058) posts here too. noindex, rate-limited (unsubscribe.ts)
 //   POST /wa/twilio            Twilio's webhook: signature checked, acknowledged at once,
 //                              the message handled by the worker (channels/route.ts)
 //   POST /wa/sim               the simulator's webhook (development only)
@@ -94,6 +98,7 @@ function limiter(max: number, windowMs: number) {
 export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
   const beaconOk = limiter(120, 3_600_000);
   const hookOk = limiter(600, 60_000);
+  const stopOk = limiter(30, 60_000);
   // The owner: a session accounts vouches for, whose workspace has this store. A visitor with no cookie never asks
   // accounts, and a check that fails makes anyone a visitor, so the page stays as public as it is.
   const session = async (r: Req): Promise<Session | null> => {
@@ -131,6 +136,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       return d ? { text: themeCss(d), type: 'text/css; charset=utf-8', headers: { 'cache-control': 'public, max-age=300' } } : { status: 404, text: '' };
     }],
     ['GET', /^\/s\/([\w-]{3,40})\/?$/, pitch],
+    ...unsubscribeRoutes(app, stopOk),
     ['POST', /^\/t$/, async (r) => {
       if (!beaconOk(r.ip)) return { status: 429, text: '' };
       let body: any = {};

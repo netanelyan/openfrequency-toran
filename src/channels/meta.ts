@@ -256,13 +256,18 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
 
 /**
  * The Cloud API's body for one message: text, an image with its caption, or an approved template (Hebrew, its body's
- * variables in order). A template is named by the name Meta approved, which WaOut carries in `sid` (Twilio's word).
+ * variables in order, and the end of its URL button's address, `url`, where it has one). A template is named by the
+ * name Meta approved, which WaOut carries in `sid` (Twilio's word).
  */
 export function outBody(to: string, msg: WaOut): Record<string, unknown> {
   const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to };
   if (msg.template) {
     const vars = msg.template.vars.map((text) => ({ type: 'text', text }));
-    return { ...base, type: 'template', template: { name: msg.template.sid, language: { code: 'he' }, ...(vars.length ? { components: [{ type: 'body', parameters: vars }] } : {}) } };
+    const components = [
+      ...(vars.length ? [{ type: 'body', parameters: vars }] : []),
+      ...(msg.template.url ? [{ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: msg.template.url }] }] : []),
+    ];
+    return { ...base, type: 'template', template: { name: msg.template.sid, language: { code: 'he' }, ...(components.length ? { components } : {}) } };
   }
   if (msg.mediaUrl) return { ...base, type: 'image', image: { link: msg.mediaUrl, ...(msg.text ? { caption: msg.text } : {}) } };
   return { ...base, type: 'text', text: { body: msg.text || '', preview_url: false } };

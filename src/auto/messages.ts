@@ -14,7 +14,10 @@
 // is submitted per store (templates.ts); the variables are the customer's first name, the order number and a link.
 // Meta refuses a body that starts or ends with a variable, so every body has words on both sides of each.
 //
-// Email needs no template: the same words, with a subject. A marketing message says how to stop, on both channels.
+// Email needs no template: the same words, with a subject. A marketing message carries a quiet way to stop, on both
+// channels: a link to the customer's own page of message settings (/u/<token>, web/unsubscribe.ts), as the
+// template's one URL button "הגדרות הודעות" on WhatsApp and as a line at the end of the email (with List-Unsubscribe,
+// send.ts). Neither says "write הסר", though writing it still works (consent.ts).
 
 export const KIND_KEYS = ['cart', 'payment', 'shipping', 'review'] as const;
 export type Kind = (typeof KIND_KEYS)[number];
@@ -69,7 +72,7 @@ const ASK = 'אם יש שאלה, אפשר לכתוב לנו כאן.';
 export const MESSAGES: Record<MessageKey, MessageDef> = {
   cart: {
     he: 'תזכורת על עגלה',
-    template: 'toran_cart_reminder',
+    template: 'toran_cart_reminder_v2',
     body: (s) => `שלום {{1}}, נשארו לכם מוצרים בעגלה ${pre('ב', s)}. אפשר להמשיך מאיפה שעצרתם כאן: {{2}}\nיש שאלה על מוצר או על המשלוח? אפשר לכתוב לנו כאן.`,
     vars: ['name', 'link'],
     needs: ['link'],
@@ -123,7 +126,7 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
   },
   review: {
     he: 'בקשה לביקורת',
-    template: 'toran_review_request',
+    template: 'toran_review_request_v2',
     body: (s) => `שלום {{1}}, מקווים שהזמנה {{2}} ${pre('מ', s)} הגיעה בשלום. נשמח לשמוע מה דעתכם כאן: {{3}}\nתודה שקניתם אצלנו.`,
     vars: ['name', 'order', 'link'],
     needs: ['order', 'link'],
@@ -134,10 +137,22 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
 
 export const categoryOf = (m: MessageKey): Category => (KINDS[kindOf(m)].marketing ? 'MARKETING' : 'UTILITY');
 
-/** A marketing template's footer and its one button: the way to stop, which a press of sends as "הסר" (consent.ts). */
-export const STOP_FOOTER = 'לא רוצים עוד הודעות כאלה? כתבו הסר';
-export const STOP_BUTTON = 'הסר';
-const STOP_EMAIL = 'לא רוצים עוד מיילים כאלה? אפשר לענות למייל הזה במילה הסר.';
+/** A marketing template's one button: a link to the customer's page of message settings, its token the variable. */
+export const SETTINGS_BUTTON = 'הגדרות הודעות';
+/** The settings page's address for a token: PUBLIC_BASE_URL, or this machine in development (as pitch links are). */
+export const publicBase = (env: Record<string, string | undefined>) => String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '') || `http://localhost:${env.PORT || 4710}`;
+export const stopUrl = (env: Record<string, string | undefined>, token: string) => `${publicBase(env)}/u/${token}`;
+const STOP_EMAIL = 'לא רוצים לקבל מאיתנו תזכורות כאלה? אפשר להפסיק כאן:';
+
+/**
+ * The marketing templates as first submitted, with a footer "כתבו הסר" and a quick reply "הסר" (until 2026-10-26). A
+ * store whose old one Meta approved keeps sending it until the new one (under a new name, with the URL button) is
+ * approved too; the old one is never submitted again (templates.ts approvedFor, send.ts).
+ */
+export const LEGACY: Partial<Record<MessageKey, { template: string; footer: string }>> = {
+  cart: { template: 'toran_cart_reminder', footer: 'לא רוצים עוד הודעות כאלה? כתבו הסר' },
+  review: { template: 'toran_review_request', footer: 'לא רוצים עוד הודעות כאלה? כתבו הסר' },
+};
 
 /** The customer's first name for "שלום ...", or "לכם" ("שלום לכם,") when the order has none worth using. */
 export function firstName(s: unknown): string {
@@ -147,37 +162,49 @@ export function firstName(s: unknown): string {
 
 export const SAMPLE: Vars = { name: 'דנה', order: '#1042', link: 'https://your-store.example/...' };
 
-/** What one message says on WhatsApp: the template's parameters in order, and the text as the customer reads it. */
-export function waText(m: MessageKey, store: string, v: Vars): { params: string[]; text: string } {
+/**
+ * What one message says on WhatsApp: the template's parameters in order, and the text as the customer reads it. The
+ * button is not text; an old marketing template (LEGACY) still ends with its footer.
+ */
+export function waText(m: MessageKey, store: string, v: Vars, { legacy = false }: { legacy?: boolean } = {}): { params: string[]; text: string } {
   const d = MESSAGES[m];
   const params = d.vars.map((k) => v[k]);
   let text = d.body(store).replace(/\{\{(\d+)\}\}/g, (_, i) => params[Number(i) - 1] ?? '');
-  if (KINDS[kindOf(m)].marketing) text = `${text}\n\n${STOP_FOOTER}`;
+  const old = legacy ? LEGACY[m] : undefined;
+  if (old) text = `${text}\n\n${old.footer}`;
   return { params, text };
 }
 
-/** What one message says by email: its subject and text, signed with the store's name. */
-export function emailText(m: MessageKey, store: string, v: Vars): { subject: string; text: string } {
+/** What one message says by email: its subject and text, signed with the store's name; a marketing one ends with the link to stop. */
+export function emailText(m: MessageKey, store: string, v: Vars, stop = ''): { subject: string; text: string } {
   const d = MESSAGES[m];
-  const stop = KINDS[kindOf(m)].marketing ? `\n\n${STOP_EMAIL}` : '';
-  return { subject: d.subject(store, v), text: `${d.email(store, v)}\n\n${store}${stop}` };
+  const tail = KINDS[kindOf(m)].marketing && stop ? `\n\n${STOP_EMAIL}\n${stop}` : '';
+  return { subject: d.subject(store, v), text: `${d.email(store, v)}\n\n${store}${tail}` };
 }
 
 /** Is every variable this message needs there? (A shipment with no tracking link has nothing to put in {{3}}.) */
 export const complete = (m: MessageKey, v: Partial<Vars>) => MESSAGES[m].needs.every((k) => String(v[k] || '').trim());
 
-/** The template as it is submitted to the store's WhatsApp account (Graph API, POST /<WABA>/message_templates). */
-export function templateRequest(m: MessageKey, store: string) {
+/** A token as the example of the button's variable: the length and the letters of a real one (consent.ts stopToken). */
+const SAMPLE_TOKEN = 'Xk3vQ9rTa1Lm7ZpW2sYb8NcD';
+
+/**
+ * The template as it is submitted to the store's WhatsApp account (Graph API, POST /<WABA>/message_templates). A
+ * marketing one has one URL button whose address ends with a variable (Meta's dynamic URL suffix): `base`/u/{{1}},
+ * the recipient's token filled in at each send.
+ */
+export function templateRequest(m: MessageKey, store: string, base: string) {
   const d = MESSAGES[m];
   const marketing = categoryOf(m) === 'MARKETING';
   const example = d.vars.map((k) => SAMPLE[k]).map((x, i) => (d.vars[i] === 'link' ? 'https://www.example.com/c/1042' : x));
+  const button = { type: 'URL', text: SETTINGS_BUTTON, url: `${base}/u/{{1}}`, example: [`${base}/u/${SAMPLE_TOKEN}`] };
   return {
     name: d.template,
     language: 'he',
     category: categoryOf(m),
     components: [
       { type: 'BODY', text: d.body(store), example: { body_text: [example] } },
-      ...(marketing ? [{ type: 'FOOTER', text: STOP_FOOTER }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: STOP_BUTTON }] }] : []),
+      ...(marketing ? [{ type: 'BUTTONS', buttons: [button] }] : []),
     ],
   };
 }
