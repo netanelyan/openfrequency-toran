@@ -146,7 +146,10 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
     items.push({ key: c.key, product: c.product, id: c.id, reason: 'next_step', rank: 90, name: c.name, domain: c.domain, why: `הצעד הבא: ${c.next_step || 'לחזור אליהם'}`, message: null, target: c.target, direct: false, mark: 'next', page: c.page, at: c.next_step_at });
   }
 
-  items.sort((a, b) => b.rank - a.rank || String(a.at || '').localeCompare(String(b.at || '')));
+  // Within a rank the one waiting longer comes first. `at` arrives as a Date from the database and as an ISO string from
+  // Teder, so it is compared as a time: as text, "Mon Oct 26" sorted before "Sun Oct 25".
+  const time = (at: unknown) => (at ? new Date(at as string).getTime() || Infinity : Infinity);
+  items.sort((a, b) => b.rank - a.rank || time(a.at) - time(b.at));
   // A store that fits two reasons (it tried the demo and was never sent the page) is listed once, for the first.
   const seen = new Set<string>();
   return { items: items.filter((i) => !seen.has(i.key) && seen.add(i.key)), noContact };
