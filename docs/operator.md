@@ -149,3 +149,43 @@ what the action takes.
 
 It answers `200 { "ok": true, "message": "<Hebrew line for the operator>" }`, or `400 { "ok": false, "error":
 "<Hebrew line>" }` for an action the rules refuse (a second reminder, a link past its 24 hours).
+
+## 5. The setup checklist: `GET /internal/setup?workspace=<id>`
+
+A new customer signs up on accounts (accounts.openfrequency.co.il), and accounts has one checklist page for the new
+workspace, `/setup`. It asks each product for the workspace's steps and shows them; each step's button opens the
+product's own page, where the customer does it (the session cookie is shared across `*.openfrequency.co.il`, so the
+link arrives signed in). Teder answers the same contract. Toran's is `src/setup.ts`, under the same checks as
+`/internal/ops` (the token, loopback, no `X-Forwarded-For`); a workspace id that is not a positive integer is 400.
+
+```json
+{
+  "product": "toran",
+  "ready": false,
+  "steps": [
+    { "key": "store", "title": "מוסיפים את החנות", "status": "done", "detail": "",
+      "href": "https://toran.openfrequency.co.il/lead/12/knowledge", "required": true },
+    { "key": "whatsapp", "title": "מחברים את הוואטסאפ", "status": "working",
+      "detail": "המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.",
+      "href": "https://toran.openfrequency.co.il/lead/12/whatsapp", "required": true }
+  ]
+}
+```
+
+- `status` is one of `todo`, `working`, `done`, `attention`, `soon`. `detail` is one short Hebrew line, or "".
+  `href` is absolute, on `PUBLIC_BASE_URL`, or null when there is nothing to open yet.
+- `ready` is true when every `required` step is `done`: the store and WhatsApp.
+- The steps, in this order, about the workspace's first store (a workspace has one for now):
+
+| key | required | from |
+|---|---|---|
+| `store` | yes | none yet: todo, href `/start`. Its add or its reading queued or running: working. Read: done. A platform Toran cannot read, or the last try failed: attention (href `/start` while there is no store) |
+| `knowledge` | no | "בודקים את התשובות", `/lead/<id>/knowledge`: done once someone of the workspace opened it after the site was read (`stores.knowledge_seen_at`, migration 021; not the operator, not view-as), or wrote an answer of their own |
+| `whatsapp` | yes | the store's Meta account: pending working, active done, error or reconnect attention; soon while the server cannot connect a number (`waConnectReady`) |
+| `email` | no | only when `TORAN_CHANNELS` lists it; soon without a mail provider; Settings `#channels` |
+| `messenger`, `instagram` | no | only when `TORAN_CHANNELS` lists them; soon until `socialReady`; `/lead/<id>/<channel>` |
+| `orders` | no | the order key on the knowledge page (`#orders`): active done, refused attention; soon on a platform whose orders Toran does not read |
+| `auto` | no | Settings `#auto`: done once any automatic message is on |
+
+Until the store exists, every step after it is `todo` with `href: null` and the detail "אחרי שהחנות מוכנה". A
+workspace Toran has never heard of is a brand-new one and answers that way too: it is never an error.

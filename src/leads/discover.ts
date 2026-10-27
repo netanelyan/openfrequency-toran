@@ -60,7 +60,7 @@ export async function discover(
       log(`  · ${domain}: ${s.reject}`);
       return;
     }
-    const saved = await saveLead(db, d, s, c.source, c.detail);
+    const saved = await saveLead(db, d, s, c.source, c.detail, c.workspaceId ?? null);
     if (!saved.created) stats.merged++;
     else stats.leads++;
     if (s.qualified) stats.qualified++;

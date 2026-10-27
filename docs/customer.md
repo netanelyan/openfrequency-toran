@@ -104,3 +104,25 @@ it. Email costs the store nothing more.
 - The export is for `client_owner` (and the superadmin); a `client_member` gets 403 and no link.
 - Connecting and disconnecting the store's orders is the same: a `client_member` sees whether they are connected.
 - So are the automatic messages: a `client_member` sees each kind and its text, and changes none of it.
+
+## Adding the store: `/start`
+
+`src/web/pages/start.ts`. A new customer signs up on accounts, and accounts' `/setup` checklist (`GET /internal/setup`,
+docs/operator.md section 5) sends them here first. While the workspace has no store, Today, the plan and Settings say
+"החנות שלכם עוד בהקמה" with a "להוסיף את החנות" button to `/start`: one field, the site's address, as the customer
+types it ("store.co.il" is enough). `POST /start`:
+
+- refuses what is not a website: http or https only, a host name with a dot, no IP, no localhost or local name
+- sends a workspace that has a store, or whose site is being read, back to Today (one store a workspace, for now)
+- refuses a domain that is another workspace's store: "החנות הזאת כבר מחוברת לחשבון אחר. כתבו לנו ונבדוק."
+- takes one add a minute per workspace (the audit's `start_store`)
+- makes an operator's lead with that domain the workspace's, and reads its site again
+- otherwise queues `add_store` with the workspace id (`jobs/worker.ts`): the store is born in the workspace
+  (`stores.source = 'signup'`), read, and its pitch page built, as for any store
+
+Then Today says "קוראים את האתר שלכם" and reloads itself when the job ends; a site that could not be read gets
+"לא הצלחנו לקרוא את האתר" with a way to try again. The operator has no `/start` (404); they add stores from `/leads`.
+
+A store in a workspace is never a lead to sell to: the review queue, the pages ready to send, the reminders and the
+outreach list (`/internal/ops`) read only stores with no workspace (`web/workspace.ts` `selling`). `/leads` still
+lists every store.

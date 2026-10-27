@@ -6,7 +6,7 @@ import { leadRoutes } from './pages/leads.ts';
 import { reviewRoutes } from './pages/review.ts';
 import { assistantRoutes } from './pages/assistant.ts';
 import { storeColor } from '../ingest/brand.ts';
-import { storeIdIn, storesOf, type Scope } from './workspace.ts';
+import { selling, storeIdIn, storesOf, type Scope } from './workspace.ts';
 import { messagingSql } from '../channels/config.ts';
 import { counted, planOf, usageOf } from '../plans.ts';
 import { WAITING_SQL } from './inbox.ts';
@@ -16,6 +16,7 @@ import { socialRoutes } from './pages/social.ts';
 import { mailDomainRoutes } from './pages/mailDomain.ts';
 import { ordersRoutes } from './pages/orders.ts';
 import { autoRoutes } from './pages/auto.ts';
+import { startRoutes } from './pages/start.ts';
 
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
@@ -23,8 +24,8 @@ import { autoRoutes } from './pages/auto.ts';
 export async function headerCounts(app: App, sc: Scope) {
   const r = await app.db.one<{ review: number; followups: number; chats: number; usd: number }>(
     `SELECT
-       (SELECT COUNT(*)::int FROM stores WHERE status = 'page_ready' AND approved_at IS NULL AND ${storesOf(sc)}) AS review,
-       (SELECT COUNT(*)::int FROM stores WHERE followup_due_at <= now() AND followup_sent_at IS NULL AND status IN ('sent','opened') AND ${storesOf(sc)}) AS followups,
+       (SELECT COUNT(*)::int FROM stores WHERE status = 'page_ready' AND approved_at IS NULL AND ${storesOf(sc)} AND ${selling()}) AS review,
+       (SELECT COUNT(*)::int FROM stores WHERE followup_due_at <= now() AND followup_sent_at IS NULL AND status IN ('sent','opened') AND ${storesOf(sc)} AND ${selling()}) AS followups,
        (SELECT COUNT(*)::int FROM conversations c WHERE ${messagingSql('c.channel')} AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storeIdIn(sc, 'c.store_id')}) AS chats,
        (SELECT COALESCE(SUM(CASE WHEN backend = 'claude-cli' THEN api_usd ELSE usd END), 0)::float FROM usage WHERE at >= date_trunc('month', now()) AND ${storeIdIn(sc, 'store_id')}) AS usd`,
   );
@@ -49,6 +50,7 @@ export async function storesCss(app: App, sc: Scope): Promise<string> {
 export function dashboardRoutes(app: App): Route<DashReq>[] {
   return [
     ...customerRoutes(app),
+    ...startRoutes(app),
     ...whatsappRoutes(app),
     ...socialRoutes(app),
     ...mailDomainRoutes(app),

@@ -24,6 +24,7 @@ import { ordersOn, ordersPanel } from './orders.ts';
 import { autoPanel } from './auto.ts';
 import { KIND_KEYS, KINDS } from '../../auto/messages.ts';
 import { settingsOf } from '../../auto/send.ts';
+import { setupStoreOf, storeState } from '../../setup.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -79,14 +80,41 @@ function firstWeeks(stores: Store[]): number | null {
   return ends.length ? Math.max(...ends) : null;
 }
 
-const setupPage = (app: App, r: DashReq, title: string, active: string) => layout({ ...r.ctx, title, active }, `<div class="head"><h1>${esc(title)}</h1></div>
-<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>כשנחבר אותה, תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.${support(app) ? `<p class="mt12 m0">${writeUs(app)}</p>` : ''}</div>`);
+/** May this session add its workspace's store from /start (pages/start.ts)? A customer's own, not view-as, not the operator. */
+const mayStart = (r: DashReq) => !r.scope.operator && !r.ctx.readOnly && Number(r.scope.workspaceId) > 0;
+
+/**
+ * A workspace with no store yet: its site being read (the page reloads itself when the job ends, static/app.js), a try
+ * that failed, or nothing yet, with the way to add it at /start. View-as sees the words without the button.
+ */
+async function setupPage(app: App, r: DashReq, title: string, active: string) {
+  const st = Number(r.scope.workspaceId) > 0 ? storeState(await setupStoreOf(app, Number(r.scope.workspaceId))) : null;
+  const add = mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a>` : '';
+  const actions = (first: string) => (first || support(app) ? `<p class="mt12 m0">${first}${writeUs(app)}</p>` : '');
+  const box = st?.status === 'working'
+    ? `<div class="empty" data-wait-job="${st.job}">${icon('clock')}<b>קוראים את האתר שלכם</b>תורן קורא את המוצרים, המחירים ודפי המדיניות. זה לוקח דקה או שתיים, והדף יתעדכן לבד.</div>`
+    : st?.status === 'attention'
+      ? `<div class="empty">${icon('alert')}<b>לא הצלחנו לקרוא את האתר</b>כדאי לבדוק שהכתובת נכונה ולנסות שוב. אם זה חוזר, כתבו לנו.${actions(mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('refresh')}לנסות שוב</a>` : '')}</div>`
+      : `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>${add ? 'כותבים את הכתובת של האתר, ותורן קורא ממנו את המוצרים ואת דפי המדיניות. אחר כך תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.' : 'כשהחנות תתחבר, תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.'}${actions(add)}</div>`;
+  return layout({ ...r.ctx, title, active }, `<div class="head"><h1>${esc(title)}</h1></div>
+${box}`);
+}
+
+/** On Today while the store's site is read for the first time, or cannot be: a banner above the rest. */
+async function readingBanner(app: App, r: DashReq): Promise<string> {
+  if (!(Number(r.scope.workspaceId) > 0)) return '';
+  const st = storeState(await setupStoreOf(app, Number(r.scope.workspaceId)));
+  if (st.status === 'working') return `<div class="banner info" data-wait-job="${st.job}">${icon('clock')}<div><b>קוראים את האתר שלכם</b><p>זה לוקח דקה או שתיים. אחר כך תראו ב<a href="/knowledge">מה תורן יודע</a> את המוצרים ואת דפי המדיניות שנקראו.</p></div></div>`;
+  if (st.status === 'attention') return `<div class="banner warn">${icon('alert')}<div><b>לא הצלחנו לקרוא את האתר</b><p>${esc(st.detail)}</p></div>${writeUs(app)}</div>`;
+  return '';
+}
 
 // ---- Today
 
 async function today(app: App, r: DashReq) {
   const stores = await myStores(app, r.scope);
   if (!stores.length) return setupPage(app, r, 'היום', 'today');
+  const reading = await readingBanner(app, r);
   const ids = stores.map((s) => s.id).join(', ');
   const many = stores.length > 1;
   const nameOf = new Map(stores.map((s) => [s.id, s.name]));
@@ -105,7 +133,7 @@ async function today(app: App, r: DashReq) {
   const reconnect = (await Promise.all(stores.map(async (s) => waBanner(await waAccountOf(app, s.id), s.id)))).join('');
 
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(dayHe(now()))}${many ? '' : ` · ${esc(stores[0].name)}`}</p></div>
-${reconnect}
+${reading}${reconnect}
 ${weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
 <div class="kpis">
   <a class="kpi lead" href="/chats?state=waiting"><span class="l">${waitingAll === 1 ? 'שאלה מחכה לכם' : 'שאלות מחכות לכם'}</span><span class="v">${waitingAll}</span><span class="s">${waitingAll ? 'מה שאין עליו תשובה באתר, ותורן העביר אליכם' : 'כל מה שנשאל קיבל תשובה'}</span></a>
@@ -147,6 +175,9 @@ const POLICY_HE: Record<string, string> = { shipping: 'משלוחים', returns:
 async function knowledge(app: App, r: DashReq, id: number) {
   const s = (await myStores(app, r.scope)).find((x) => x.id === id);
   if (!s) return null;
+  // The setup checklist's "בודקים את התשובות" (src/setup.ts): the owner has looked, once there is something to see.
+  // Only the store's own people count: not the operator, not view-as.
+  if (!r.scope.operator && !r.ctx.readOnly && s.ingested_at) await app.db.query('UPDATE stores SET knowledge_seen_at = now() WHERE id = $1 AND knowledge_seen_at IS NULL', [id]);
   const pack = await app.db.one<any>('SELECT (SELECT COUNT(*)::int FROM products WHERE store_id = $1 AND gone_at IS NULL) AS products, (SELECT COUNT(*)::int FROM products WHERE store_id = $1 AND gone_at IS NULL AND available) AS available', [id]);
   const policies = await app.db.query<any>('SELECT id, kind, title, url, text, override_text FROM policies WHERE store_id = $1 ORDER BY kind, id', [id]);
   const mine = await app.db.query<any>('SELECT id, question, answer, site_answer, conversation_id, created_at FROM faqs WHERE store_id = $1 AND answer IS NOT NULL ORDER BY id DESC', [id]);
@@ -282,7 +313,7 @@ export async function customerSettings(app: App, r: DashReq) {
   }));
   const body = `<div class="head"><h1>הגדרות</h1></div>
 <div class="cols">
-  <div class="grid12">${panels.join('') || `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>הערוצים יופיעו כאן כשנחבר אותה.</div>`}</div>
+  <div class="grid12">${panels.join('') || `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>הערוצים יופיעו כאן כשהחנות תתחבר.${mayStart(r) ? `<p class="mt12 m0"><a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a></p>` : ''}</div>`}</div>
   <div class="grid12">
     <section class="panel"><header><h2>החשבון</h2></header><p class="small m0">מי בחשבון, מספרי הוואטסאפ שמהם כותבים לעוזר, החבילה והחשבוניות נמצאים בחשבון שלכם ב-OpenFrequency.</p><div class="row mt12"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></section>
     <a class="btn ghost" href="${esc(r.ctx.logout || '/')}">${icon('logout')}יציאה</a>
@@ -320,7 +351,7 @@ async function exportCsv(app: App, r: DashReq) {
 async function pick(app: App, r: DashReq, path: string, title: string, active: string) {
   const stores = await myStores(app, r.scope);
   if (stores.length === 1) return { redirect: `/lead/${stores[0].id}/${path}` };
-  if (!stores.length) return { html: setupPage(app, r, title, active) };
+  if (!stores.length) return { html: await setupPage(app, r, title, active) };
   return { html: layout({ ...r.ctx, title, active }, `<div class="head"><h1>${esc(title)}</h1></div><div class="list">${stores.map((s) => `<a href="/lead/${s.id}/${path}">${storeBadge({ id: s.id, name: s.name, domain: s.domain })}<span class="t"><b>${esc(s.name)}</b><small class="ltr">${esc(s.domain)}</small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div>`) };
 }
 

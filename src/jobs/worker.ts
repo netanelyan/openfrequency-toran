@@ -31,7 +31,8 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 //   ig_refresh   an Instagram token's 60 days, renewed before they end
 //   mail_domain_check  a store's own mail domain read again at Resend, until it is verified (channels/mailDomain.ts)
 //   add_store    "add by URL" from the dashboard, or a demo asked for on the website: detect and score, ingest, build
-//                the page
+//                the page. With workspaceId, a customer's own store from /start: the same, the store born in their
+//                workspace (never a lead to sell to)
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
 //   rescrape     the daily refresh of a store whose demo is open
 //   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts)
@@ -76,14 +77,23 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
     case 'add_store': {
       await say('בודק את האתר');
       const domain = canonicalDomain(p.url);
+      // A customer's own store, from /start (web/pages/start.ts): workspaceId is theirs, and the store is born in it.
+      // The operator's "add by URL" carries none, and its store is a lead as before.
+      const workspaceId = Number.isInteger(p.workspaceId) && p.workspaceId > 0 ? Number(p.workspaceId) : null;
       const gen = (async function* () {
-        yield { url: p.url, source: 'manual', detail: { by: p.by || null } };
+        yield { url: p.url, source: workspaceId ? 'signup' : 'manual', detail: { by: p.by || null, ...(workspaceId ? { workspace: workspaceId } : {}) }, workspaceId };
       })();
-      const r = await discover(app.db, gen, { fetcher: app.fetcher, render: app.render, limit: 1 }, 'manual');
-      const store = await app.db.one<{ id: number; platform: string; reject_reason: string | null }>('SELECT id, platform, reject_reason FROM stores WHERE domain = $1', [domain]);
+      const r = await discover(app.db, gen, { fetcher: app.fetcher, render: app.render, limit: 1 }, workspaceId ? 'signup' : 'manual');
+      const store = await app.db.one<{ id: number; platform: string; reject_reason: string | null; workspace_id: number | null }>('SELECT id, platform, reject_reason, workspace_id FROM stores WHERE domain = $1', [domain]);
       if (!store) {
         const seen = await app.db.one<{ reason: string | null }>('SELECT reason FROM seen_domains WHERE domain = $1', [domain]);
         throw new Error(seen?.reason ? `האתר לא נכנס כליד: ${seen.reason}` : 'האתר לא נמצא או לא ענה');
+      }
+      // The domain was nobody's when the customer asked (start.ts checks), but a lead found in between is merged, not
+      // made: an operator's lead becomes theirs, another workspace's store is never handed over.
+      if (workspaceId && store.workspace_id !== workspaceId) {
+        const mine = await app.db.one('UPDATE stores SET workspace_id = $2, updated_at = now() WHERE id = $1 AND workspace_id IS NULL RETURNING id', [store.id, workspaceId]);
+        if (!mine) throw new Error('the store is already another workspace\'s');
       }
       // Asked for on the website: the number that asked is the one to send the page to.
       if (/^9725\d{8}$/.test(String(p.whatsapp || ''))) await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [store.id, p.whatsapp]);

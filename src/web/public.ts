@@ -17,6 +17,7 @@ import { J } from '../db/index.ts';
 import { secretOf, verify } from '../owners/teder.ts';
 import { EVENT_TYPES } from '../owners/events.ts';
 import { opsRoutes } from '../ops/api.ts';
+import { setupRoutes } from '../setup.ts';
 import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
 import { unsubscribeRoutes } from './unsubscribe.ts';
 
@@ -60,6 +61,8 @@ import { unsubscribeRoutes } from './unsubscribe.ts';
 //                              to the demo number with that code is the store added (channels/request.ts).
 //   GET  /internal/ops         the operator's dashboard as data, for accounts' /admin (ops/api.ts); its POSTs are
 //                              the dashboard's buttons. From this machine only, with OF_INTERNAL_TOKEN
+//   GET  /internal/setup       a workspace's setup steps, for accounts' /setup checklist (src/setup.ts): the same
+//                              checks as /internal/ops
 //   POST /internal/teder/events Teder's news for an owner (Teder's docs/assistant-api.md): from this machine only, no
 //                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET in the direction teder->toran
 //                              (owners/teder.ts). Kept once by its id and handled by the worker (owners/events.ts).
@@ -285,6 +288,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       return { json: { ok: true } };
     }],
     ...opsRoutes(app),
+    ...setupRoutes(app),
     ['POST', /^\/internal\/lead$/, async (r) => {
       if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
       let body: any = {};

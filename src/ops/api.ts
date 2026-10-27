@@ -18,7 +18,8 @@ import { later, markLost, markReconnectTold, markReminded, markReplied, markSent
 //
 // From this machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For, like /internal/lead.
 
-function local(app: App, r: Req): boolean {
+/** The caller is accounts (or Teder) on this machine: the shared token, a loopback socket, and not through Caddy. */
+export function local(app: App, r: Req): boolean {
   const token = String(app.env.OF_INTERNAL_TOKEN || '').trim();
   if (token.length < 32 || r.req.headers['x-forwarded-for']) return false;
   if (!/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(r.req.socket.remoteAddress || '')) return false;

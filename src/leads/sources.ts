@@ -22,7 +22,8 @@ import { readHome } from './signals.ts';
 //
 // No Instagram, by rule: Instagram stays manual.
 
-export type Candidate = { url: string; source: string; detail: Record<string, unknown> };
+/** A site to look at. workspaceId: a customer's own store, added from /start (web/pages/start.ts): created in that workspace. */
+export type Candidate = { url: string; source: string; detail: Record<string, unknown>; workspaceId?: number | null };
 
 // ---------------------------------------------------------------- StoreCensus
 export async function* storecensus(fetcher: Fetcher, { fromPage = 1, pages = 3 }: { fromPage?: number; pages?: number } = {}): AsyncGenerator<Candidate> {

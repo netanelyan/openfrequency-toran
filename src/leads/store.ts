@@ -25,7 +25,11 @@ export function makeSlug(domain: string): string {
   return `${base}-${randomBytes(3).toString('base64url').toLowerCase().replace(/[^a-z0-9]/g, 'x').slice(0, 4)}`;
 }
 
-export async function saveLead(db: Db, d: Detection, s: Score, source: string, detail: Record<string, unknown> = {}): Promise<SavedLead> {
+/**
+ * workspaceId: the customer's own store, added from /start: a new row is born in that workspace, so it is never an
+ * operator's lead for a moment. A find that merges into a store already known keeps that store's workspace as it is.
+ */
+export async function saveLead(db: Db, d: Detection, s: Score, source: string, detail: Record<string, unknown> = {}, workspaceId: number | null = null): Promise<SavedLead> {
   const keys = leadKeys({ domain: d.domain, email: d.email, whatsapp: d.whatsapp, phone: d.phone });
   const signals = {
     url: d.url,
@@ -67,9 +71,9 @@ export async function saveLead(db: Db, d: Detection, s: Score, source: string, d
       return { id: hit.store_id, created: false, mergedBy: hit.key };
     }
     const row = await t.one<{ id: number }>(
-      `INSERT INTO stores (domain, url, name, platform, score, score_breakdown, qualified, reject_reason, signals, source, source_detail, contact_email, contact_whatsapp, contact_phone, slug, brand)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb) RETURNING id`,
-      [d.domain, d.url, d.name, d.platform, s.score, J(s.breakdown), s.qualified, s.reject, J(signals), source, J(detail), d.email, d.whatsapp, d.phone, makeSlug(d.domain), J({ name: d.name, logo: d.home.logo, themeColor: d.home.themeColor })],
+      `INSERT INTO stores (domain, url, name, platform, score, score_breakdown, qualified, reject_reason, signals, source, source_detail, contact_email, contact_whatsapp, contact_phone, slug, brand, workspace_id)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb,$17) RETURNING id`,
+      [d.domain, d.url, d.name, d.platform, s.score, J(s.breakdown), s.qualified, s.reject, J(signals), source, J(detail), d.email, d.whatsapp, d.phone, makeSlug(d.domain), J({ name: d.name, logo: d.home.logo, themeColor: d.home.themeColor }), workspaceId],
     );
     const id = row!.id;
     for (const k of keys) await t.query('INSERT INTO lead_keys (key, store_id) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [k, id]);

@@ -9,7 +9,7 @@ import { getOffer, offerReady, priceSentence, setOffer, type Offer } from '../..
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { ago, csrfField, esc, icon, layout, postButton, stamp, storeBadge, tokenNum, usd } from '../ui.ts';
 import { addForm, leadRow } from './leads.ts';
-import { storeIdIn, storesOf } from '../workspace.ts';
+import { selling, storeIdIn, storesOf } from '../workspace.ts';
 import { ALL_CHANNELS, CHANNEL_HE, channelStates, enabledChannels, MESSAGING, messagingSql, setChannelState, type ChannelState } from '../../channels/config.ts';
 import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../../channels/owner.ts';
 import { questionOf } from '../../assistant/index.ts';
@@ -28,7 +28,8 @@ import { MESSAGES } from '../../auto/messages.ts';
 async function today(app: App, r: DashReq) {
   // A customer's Today is what openfrequency.co.il sells them (pages/customer.ts); this one is the operator's.
   if (!r.scope.operator) return customerToday(app, r);
-  const w = storesOf(r.scope);
+  // What there is to sell is leads only: a customer's own store (workspace.ts selling) is not one of them.
+  const w = `${storesOf(r.scope)} AND ${selling()}`;
   const c = await app.db.one<any>(`SELECT
     (SELECT COUNT(*)::int FROM stores WHERE status = 'page_ready' AND approved_at IS NULL AND ${w}) AS review,
     (SELECT COUNT(*)::int FROM stores WHERE approved_at IS NOT NULL AND sent_at IS NULL AND status <> 'skipped' AND ${w}) AS ready,
@@ -38,7 +39,7 @@ async function today(app: App, r: DashReq) {
     (SELECT COUNT(*)::int FROM stores WHERE demo_started_at > now() - interval '7 days' AND ${w}) AS demos`);
   const ready = await app.db.query<any>(`SELECT * FROM stores WHERE approved_at IS NOT NULL AND sent_at IS NULL AND status <> 'skipped' AND ${w} ORDER BY score DESC LIMIT 8`);
   const fresh = await app.db.query<any>(`SELECT * FROM stores WHERE qualified AND status = 'new' AND ${w} ORDER BY score DESC LIMIT 6`);
-  const down = await app.db.query<any>(`SELECT * FROM stores WHERE takedown_asked_at IS NOT NULL AND taken_down_at IS NULL AND ${w} ORDER BY takedown_asked_at DESC`);
+  const down = await app.db.query<any>(`SELECT * FROM stores WHERE takedown_asked_at IS NOT NULL AND taken_down_at IS NULL AND ${storesOf(r.scope)} ORDER BY takedown_asked_at DESC`);
   const hand = await app.db.query<any>(`SELECT c.id, c.handoffs, c.misses, c.last_at, s.id AS store_id, s.name, s.domain, s.brand, (SELECT handoff->>'summary' FROM messages WHERE conversation_id = c.id AND handoff IS NOT NULL ORDER BY id DESC LIMIT 1) AS summary FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${messagingSql('c.channel')} AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storesOf(r.scope, 's')} ORDER BY c.last_at DESC LIMIT 6`);
   const lead = c.review ? { n: c.review, l: c.review === 1 ? 'דף מחכה לבדיקה' : 'דפים מחכים לבדיקה', href: '/review', s: 'דף שמאשרים עובר לשליחה' } : c.ready ? { n: c.ready, l: c.ready === 1 ? 'מוכן לשליחה' : 'מוכנים לשליחה', href: '#ready', s: 'שולחים ידנית ומסמנים שנשלח' } : { n: c.fresh, l: c.fresh === 1 ? 'ליד חדש שמתאים' : 'לידים חדשים שמתאימים', href: '/leads?status=new', s: 'אפשר לבנות להם דף' };
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(now())))}</p></div>
@@ -194,8 +195,8 @@ async function customerPanel(app: App, r: DashReq, id: number) {
 }
 
 async function followups(app: App, r: DashReq) {
-  const due = await app.db.query<any>(`SELECT * FROM stores WHERE sent_at IS NOT NULL AND followup_sent_at IS NULL AND status IN ('sent', 'opened') AND ${storesOf(r.scope)} ORDER BY followup_due_at`);
-  const done = await app.db.query<any>(`SELECT * FROM stores WHERE followup_sent_at IS NOT NULL AND ${storesOf(r.scope)} ORDER BY followup_sent_at DESC LIMIT 20`);
+  const due = await app.db.query<any>(`SELECT * FROM stores WHERE sent_at IS NOT NULL AND followup_sent_at IS NULL AND status IN ('sent', 'opened') AND ${storesOf(r.scope)} AND ${selling()} ORDER BY followup_due_at`);
+  const done = await app.db.query<any>(`SELECT * FROM stores WHERE followup_sent_at IS NOT NULL AND ${storesOf(r.scope)} AND ${selling()} ORDER BY followup_sent_at DESC LIMIT 20`);
   const row = (s: any) => {
     const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
     const isDue = s.followup_due_at && new Date(s.followup_due_at).getTime() <= now();

@@ -8,7 +8,7 @@ import { brandColor, normHex } from '../../ingest/brand.ts';
 import { pitchUrl } from '../../outreach.ts';
 import { pitchGaps, type Gap } from '../../pitch/ready.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
-import { storesOf } from '../workspace.ts';
+import { selling, storesOf } from '../workspace.ts';
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, storeBadge } from '../ui.ts';
 
 // The review queue: Teder's approval flow, for pitch pages. Each store whose page is
@@ -51,7 +51,7 @@ function chatBubbles(chat: { role: string; text: string }[]) {
 }
 
 async function reviewQueue(app: App, r: DashReq) {
-  const rows = await app.db.query<any>(`SELECT s.*, p.sample_chat FROM stores s LEFT JOIN pitches p ON p.store_id = s.id WHERE s.status = 'page_ready' AND s.approved_at IS NULL AND ${storesOf(r.scope, 's')} ORDER BY s.score DESC, s.page_built_at`);
+  const rows = await app.db.query<any>(`SELECT s.*, p.sample_chat FROM stores s LEFT JOIN pitches p ON p.store_id = s.id WHERE s.status = 'page_ready' AND s.approved_at IS NULL AND ${storesOf(r.scope, 's')} AND ${selling('s')} ORDER BY s.score DESC, s.page_built_at`);
   const cards = [];
   const ready: number[] = [];
   for (const s of rows) {

@@ -46,8 +46,12 @@ export const RECONNECT_AGAIN_DAYS = 3;
 
 /** Not answered, not lost, not put off: still someone to write to. */
 const open = (t = '') => `${t}lost_at IS NULL AND ${t}replied_at IS NULL AND (${t}snoozed_until IS NULL OR ${t}snoozed_until <= now())`;
-/** A Toran store still in the outreach: not skipped, not a pilot or a customer, its page not taken down. */
-const live = (t = '') => `${t}status NOT IN ('skipped', 'pilot', 'paid') AND ${t}taken_down_at IS NULL AND ${open(t)}`;
+/**
+ * A Toran store still in the outreach: not skipped, not a pilot or a customer, its page not taken down, and nobody's
+ * own store. A store in a workspace (web/workspace.ts) is a customer's, added from /start or given by the operator:
+ * its pitch page may be built, but it is never a lead to write to.
+ */
+const live = (t = '') => `${t}status NOT IN ('skipped', 'pilot', 'paid') AND ${t}taken_down_at IS NULL AND ${t}workspace_id IS NULL AND ${open(t)}`;
 const storeName = (s: any) => displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
 const waTarget = (phone: string | null) => (phone ? { kind: 'whatsapp' as const, href: `https://wa.me/${phone}`, label: 'להעתיק ולפתוח וואטסאפ' } : { kind: null, href: null, label: 'להעתיק' });
 const DIRECT_HOURS = 23;
