@@ -157,4 +157,123 @@
     lastTap = t;
     if (taps >= 7) line.submit();
   });
+
+  // Loading: a tap never sits still. ~120ms after a link or a form is used (and not handled above), a bar runs along
+  // the top; a link also turns the page under the header into the skeleton of the page that is coming, and a form's
+  // button spins, until the next page paints. A quick page never shows any of it. Downloads, new tabs, other sites,
+  // in-page anchors and the background forms (data-ajax) are left alone; Back to a page kept in memory gets it as it was.
+  const root = document.documentElement;
+  const main = document.getElementById('main');
+  const base = root.dataset.base || '';
+  const SHAPES = [
+    [/^\/$/, 'today'],
+    [/^\/(leads|chats|followups)$/, 'list'],
+    [/^\/review$/, 'cards'],
+    [/^\/(chat\/\d+|assistant|lead\/\d+\/assistant)$/, 'thread'],
+    [/^\/(lead\/\d+(\/(knowledge|review))?|knowledge|settings|plan|brand)$/, 'cols'],
+  ];
+  const DOWNLOAD = /\.(csv|json|pdf|zip|png|jpe?g|webp|gif|svg)$|\/file\/\d+$/i;
+  const shapeOf = (path) => {
+    const p = base && path.startsWith(base) ? path.slice(base.length) || '/' : path;
+    return (SHAPES.find(([re]) => re.test(p)) || [null, 'page'])[1];
+  };
+  const div = (cls, ...kids) => {
+    const d = document.createElement('div');
+    d.className = cls;
+    d.append(...kids);
+    return d;
+  };
+  const W = [78, 52, 88, 40, 66, 82, 46, 70];
+  const line = (i, cls = '') => {
+    const s = div(`sk ${cls}`);
+    s.style.width = `${W[i % W.length]}%`;
+    return s;
+  };
+  const lines = (n, from = 0) => div('sk-lines', ...Array.from({ length: n }, (_, i) => line(from + i)));
+  const row = (i) => div('sk-row', div('sk dot'), div('sk-lines', line(i), line(i + 3, 'sub')), div('sk pill'));
+  const rows = (n) => div('list', ...Array.from({ length: n }, (_, i) => row(i)));
+  const panel = (n, from = 0) => div('panel', lines(n, from));
+  const BUILD = {
+    today: () => [div('kpis', div('kpi lead', line(1), line(4, 'big')), div('kpi side', line(3), line(6, 'big'))), rows(4)],
+    list: () => [div('sk-tabs', div('sk'), div('sk'), div('sk')), rows(7)],
+    cards: () => [div('cards', ...[0, 1, 2, 3].map((i) => div('card panel', lines(4, i), div('sk-acts', div('sk btn'), div('sk btn')))))],
+    thread: () => [div('panel sk-thread', ...['in', 'out', 'in', 'out', 'in'].map((side, i) => line(i, side)))],
+    cols: () => [div('cols', div('grid12', panel(6), panel(4, 2)), div('grid12', panel(5, 1)))],
+    page: () => [panel(5), panel(3, 3)],
+  };
+  const skeleton = (shape) => {
+    const page = div('sk-page', div('sk-head', line(0, 'h1'), line(5, 'sub')), ...BUILD[shape]());
+    page.setAttribute('role', 'status');
+    page.prepend(Object.assign(document.createElement('span'), { className: 'sk-say', textContent: 'טוען…' }));
+    return page;
+  };
+
+  let bar = null;
+  let timer = 0;
+  let busy = null;
+  let navWas = null;
+  let scrolled = null;
+  const stop = () => {
+    clearTimeout(timer);
+    root.classList.remove('is-loading', 'sk-on');
+    main?.querySelector(':scope > .sk-page')?.remove();
+    main?.removeAttribute('aria-busy');
+    busy?.removeAttribute('aria-busy');
+    busy = null;
+    if (navWas) for (const [a, cur] of navWas) cur ? a.setAttribute('aria-current', cur) : a.removeAttribute('aria-current');
+    navWas = null;
+    if (scrolled != null) window.scrollTo(0, scrolled);
+    scrolled = null;
+  };
+  const start = (shape, button) => {
+    stop();
+    if (button) setTimeout(() => button.setAttribute('aria-busy', 'true')); // after the submit, so its name still goes
+    busy = button;
+    timer = setTimeout(() => {
+      bar ??= document.body.appendChild(div('loadbar'));
+      root.classList.add('is-loading');
+      if (!shape || !main) return;
+      main.prepend(skeleton(shape));
+      main.setAttribute('aria-busy', 'true');
+      root.classList.add('sk-on');
+      scrolled = window.scrollY;
+      window.scrollTo(0, 0);
+    }, 120);
+  };
+  const leaves = (url) => url.origin === location.origin && !DOWNLOAD.test(url.pathname) && !(url.pathname === location.pathname && url.search === location.search && url.hash);
+
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if ((a.target && a.target !== '_self') || a.hasAttribute('download') || a.hasAttribute('data-no-wait')) return;
+    const url = new URL(a.href, location.href);
+    if (!leaves(url)) return;
+    // The tab you tapped lights up now, not when its page arrives.
+    const nav = a.closest('nav.nav, nav.tabbar');
+    if (nav) {
+      navWas = [...document.querySelectorAll('nav.nav a, nav.tabbar a')].map((x) => [x, x.getAttribute('aria-current')]);
+      const keep = navWas;
+      start(shapeOf(url.pathname));
+      navWas = keep;
+      for (const [x] of navWas) x.toggleAttribute('aria-current', x.getAttribute('href') === a.getAttribute('href'));
+      for (const [x] of navWas) if (x.hasAttribute('aria-current')) x.setAttribute('aria-current', 'page');
+    } else start(shapeOf(url.pathname));
+  });
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (e.defaultPrevented || (form.target && form.target !== '_self') || form.hasAttribute('data-no-wait')) return;
+    const url = new URL(form.getAttribute('action') || location.href, location.href);
+    if (url.origin !== location.origin || DOWNLOAD.test(url.pathname)) return;
+    if ((form.getAttribute('method') || 'get').toLowerCase() === 'get') start(shapeOf(url.pathname));
+    else start(null, e.submitter || form.querySelector('[type=submit], button:not([type])'));
+  });
+  window.addEventListener('pageshow', (e) => e.persisted && stop());
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && root.classList.contains('is-loading') && stop());
+
+  // Images on their way keep their box (style.css) until they are in.
+  const mark = (img) => img.classList.add('ok');
+  for (const img of document.querySelectorAll('main img')) {
+    if (img.complete) mark(img);
+    else for (const ev of ['load', 'error']) img.addEventListener(ev, () => mark(img), { once: true });
+  }
 })();

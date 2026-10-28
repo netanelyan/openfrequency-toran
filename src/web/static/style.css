@@ -664,3 +664,61 @@ body.ro form[method="post"] { display: none; }
 
 /* The WhatsApp connect page (pages/whatsapp.ts): what Meta's window answered. */
 [data-msg].bad { color: var(--bad); }
+
+/* ------------------------------------------------------------ loading
+   A tap never sits still (app.js): ~120ms after a link or a form is used, a thin bar runs along the top, and after a
+   link the page under the header becomes the skeleton of the page that is coming, until it paints. After a form the
+   button spins instead. The skeleton is built from the same tiles as the pages (.panel, .card, .list), so the next
+   page lands where its outline was. Shimmer and bar are CSS animations, which keep moving while the browser is busy
+   fetching; with reduced motion both stay, still (the rule above turns every animation off). */
+:root { --sk-hi: rgba(255, 255, 255, 0.6); --sk-ease: cubic-bezier(0.23, 1, 0.32, 1); }
+@media (prefers-color-scheme: dark) { :root { --sk-hi: rgba(255, 255, 255, 0.07); } }
+
+.loadbar { position: fixed; inset-inline: 0; top: 0; height: 3px; z-index: 60; pointer-events: none; opacity: 0; transition: opacity 0.15s ease-out; }
+.loadbar::before { content: ''; position: absolute; inset: 0; background: var(--accent-fill); transform: scaleX(0); transform-origin: right; }
+html:not([dir='rtl']) .loadbar::before { transform-origin: left; }
+html.is-loading .loadbar { opacity: 1; }
+/* Not real progress: it covers most of the way fast, then crawls, so a slow page still looks alive. */
+html.is-loading .loadbar::before { animation: load-creep 14s var(--sk-ease) forwards; }
+@keyframes load-creep { from { transform: scaleX(0.06); } to { transform: scaleX(0.94); } }
+
+html.sk-on #main > :not(.sk-page) { display: none; }
+.sk-page { display: grid; gap: 20px; animation: sk-in 0.15s var(--sk-ease) both; }
+@keyframes sk-in { from { opacity: 0; } }
+.sk-say { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.sk { display: block; height: 12px; border-radius: 6px; background: var(--fill); position: relative; overflow: hidden; }
+.sk::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--sk-hi), transparent); transform: translateX(100%); animation: sk-shine 1.4s linear infinite; }
+@keyframes sk-shine { to { transform: translateX(-100%); } }
+.sk.h1 { height: 30px; border-radius: 9px; }
+.sk.sub { height: 13px; margin-top: 12px; }
+.sk.big { height: 46px; border-radius: 10px; margin-top: 10px; }
+.sk.dot { width: 30px; height: 30px; border-radius: 50%; flex: none; }
+.sk.pill { width: 64px; height: 22px; border-radius: 999px; flex: none; }
+.sk.btn { width: 112px; height: 40px; border-radius: 999px; }
+.sk-head { margin-bottom: 8px; }
+.sk-head .sk.h1 { max-width: 340px; }
+.sk-head .sk.sub { max-width: 520px; }
+.sk-lines { display: grid; gap: 12px; }
+.sk-row { display: flex; align-items: center; gap: 14px; padding: 14px 18px; }
+.sk-row + .sk-row { border-top: 1px solid var(--line); }
+.sk-row .sk-lines { flex: 1; gap: 8px; }
+.sk-tabs { display: flex; gap: 8px; }
+.sk-tabs .sk { width: 76px; height: 32px; border-radius: 999px; }
+.sk-acts { display: flex; gap: 10px; margin-top: 18px; }
+.sk-thread { display: grid; gap: 14px; }
+.sk-thread .sk { height: 42px; border-radius: 18px; }
+.sk-thread .sk.in { justify-self: start; }
+.sk-thread .sk.out { justify-self: end; }
+.sk-page .kpi { min-height: 108px; }
+.sk-page .cards > .panel { margin-top: 0; }
+
+/* A button whose form was sent: it spins until the answer comes (the ajax forms set the same aria-busy). */
+.btn[aria-busy='true'] { position: relative; color: transparent !important; opacity: 0.85; }
+.btn[aria-busy='true'] > * { visibility: hidden; }
+.btn[aria-busy='true']::after { content: ''; position: absolute; inset: 0; margin: auto; width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-color: var(--ink-3) var(--ink-3) var(--ink-3) transparent; animation: spin 0.7s linear infinite; }
+.btn.primary[aria-busy='true']::after { border-color: var(--accent-ink) var(--accent-ink) var(--accent-ink) transparent; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn[aria-busy='true']::after { border-color: var(--ink-3); opacity: 0.6; } }
+
+/* An image on its way (a chat's attachment): its box shimmers until it is in (app.js marks .ok). */
+.js .chat img:not(.ok) { background: var(--fill); min-height: 120px; min-width: 120px; }
