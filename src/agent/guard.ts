@@ -46,9 +46,10 @@ export type GuardResult = { text: string; redactions: Redaction[]; needsHandoff:
 // numbers: every number a tool or the customer gave; toolNumbers: the tools' alone (what money, a percentage, an offer
 // and a delivery time may use); policyNumbers: the store's own passages' (a percentage beside a discount); products: each
 // product a tool listed, its name's words and its numbers; otherNumbers: the tools' numbers that are no product's (a
-// policy, a plan, an order); promiseWords: the promise concepts (PROMISE_CONCEPTS) the store's passages back.
+// policy, a plan, an order); promiseWords: the promise concepts (PROMISE_CONCEPTS) the store's passages back; hosts: the
+// sites a link may point to (the tools' links and the store's own address, ownLinks).
 export type ProductBlock = { terms: Set<string>; numbers: Set<string> };
-export type Allow = { numbers: Set<string>; toolNumbers: Set<string>; policyNumbers: Set<string>; products: ProductBlock[]; otherNumbers: Set<string>; customerNumbers: Set<string>; stockKnown: boolean; promiseWords: Set<string>; relativeTimes: boolean; claims?: ClaimEvidence };
+export type Allow = { hosts: Set<string>; numbers: Set<string>; toolNumbers: Set<string>; policyNumbers: Set<string>; products: ProductBlock[]; otherNumbers: Set<string>; customerNumbers: Set<string>; stockKnown: boolean; promiseWords: Set<string>; relativeTimes: boolean; claims?: ClaimEvidence };
 
 const CURRENCY = new RegExp(`₪|ש"ח|ש״ח|${heWord('שקלים', 'שקל', 'אירו', 'דולרים', 'דולר')}|\\bILS\\b|\\bNIS\\b|\\$|€|\\bshekels?\\b`, 'i');
 const MONEY_WORD = new RegExp(`${heWord('מחירים', 'מחיר', 'עולים', 'עולה', 'עלות', 'לשלם', 'משלמים', 'תשלום', 'בתוספת')}|\\b(price|prices|costs?|pay)\\b`, 'i');
@@ -108,6 +109,26 @@ export const stripMeta = (t: string) =>
     .replace(/\[(?:id|variant) \d+\]/g, ' ')
     .replace(/\b\d+ matching products?\b|\(the \d+ closest\)|\b\d+ answered questions\b/g, ' ');
 
+// A link in a reply (PRA-AI-002): an address with a scheme, or a bare domain ending in a top-level domain people use.
+// Its host must be one the tools gave in this conversation, or the store's own: a link only the model or the customer
+// wrote is cut and handed off, so a steered reply cannot send a customer to a look-alike payment page.
+const LINK = /\bhttps?:\/\/[^\s<>"'()]+|(?<![@\w.-])(?:www\.)?(?:[a-z0-9-]+\.)+(?:co\.il|org\.il|net\.il|ac\.il|gov\.il|com|net|org|il|io|ly|me|co|shop|store|info|biz|app|link|site|online|to|gl)\b(?:\/[^\s<>"'()]*)?/gi;
+/** The hosts of every link in a text, lowercased, without www. */
+export function hostsIn(text: string): string[] {
+  const out: string[] = [];
+  for (const m of String(text || '').matchAll(LINK)) {
+    const raw = m[0].replace(/[.,;:!?]+$/, '');
+    try {
+      out.push(new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase().replace(/^www\./, ''));
+    } catch {
+      /* not an address after all */
+    }
+  }
+  return out;
+}
+/** A link's host is allowed when it is one of the allowed hosts or under one (shop.example under example). */
+const linkAllowed = (host: string, hosts: Set<string>) => [...hosts].some((h) => host === h || host.endsWith(`.${h}`));
+
 /** A word's forms worth matching a product by: three letters or more, not a number. */
 const termsOf = (text: string) => new Set(termGroups(text).flat().filter((t) => t.length >= 3 && !/^\d/.test(t)));
 
@@ -138,7 +159,7 @@ function productsOf(text: string): { products: { title: string; text: string }[]
 
 // factTexts: what the app itself holds true and gave the model outside a tool (a company store's "works today" list):
 // evidence for a claim, never a source of numbers.
-export function buildAllow({ toolTexts, customerTexts, factTexts = [] }: { toolTexts: string[]; customerTexts: string[]; factTexts?: string[] }): Allow {
+export function buildAllow({ toolTexts, customerTexts, factTexts = [], ownLinks = [] }: { toolTexts: string[]; customerTexts: string[]; factTexts?: string[]; ownLinks?: string[] }): Allow {
   const toolNumbers = new Set<string>();
   const policyNumbers = new Set<string>();
   const otherNumbers = new Set<string>();
@@ -166,7 +187,8 @@ export function buildAllow({ toolTexts, customerTexts, factTexts = [] }: { toolT
   const numbers = new Set([...toolNumbers, ...customerNumbers]);
   const tools = toolTexts.join('\n');
   const stockKnown = /במלאי|אזל מהמלאי/.test(tools);
-  return { numbers, toolNumbers, policyNumbers, products, otherNumbers, customerNumbers, stockKnown, promiseWords, relativeTimes: RELATIVE.test(tools), claims: claimEvidence({ toolTexts: [...toolTexts, ...factTexts], customerTexts }) };
+  const hosts = new Set([...toolTexts, ...factTexts, ...ownLinks].flatMap(hostsIn));
+  return { hosts, numbers, toolNumbers, policyNumbers, products, otherNumbers, customerNumbers, stockKnown, promiseWords, relativeTimes: RELATIVE.test(tools), claims: claimEvidence({ toolTexts: [...toolTexts, ...factTexts], customerTexts }) };
 }
 
 /** Sentence ends: . ! ? : or a line break, followed by space or the end, outside parentheses, so "9:00" and "19.90" stay whole. */
@@ -217,6 +239,7 @@ function ofItsProduct(plain: string, money: string[], allow: Allow): boolean {
 /** The rule a sentence breaks, or null. */
 export function violation(sentence: string, allow: Allow): string | null {
   const s = sentence;
+  if (hostsIn(s).some((h) => !linkAllowed(h, allow.hosts))) return 'link';
   if (SUPERLATIVE.test(s)) return 'superlative';
   const plain = s.replace(QUANTITY, ' ');
   // No source at all, neither a tool nor the customer: a number with no business in a checked sentence.
@@ -252,6 +275,7 @@ const REPLACE: Record<string, string> = {
   promise: 'הנחה או החזר מאשרים רק בחנות. העברתי להם את הבקשה, ויחזרו אליך כאן.',
   superlative: '',
   claim: 'את זה אני בודק עם החנות, ואחזור אליך כאן.',
+  link: 'את הקישור אני בודק עם החנות, ואחזור אליך כאן.',
 };
 const REPLACE_EN: Record<string, string> = {
   price: "I'm checking the exact price with the store and will update you here.",
@@ -260,8 +284,9 @@ const REPLACE_EN: Record<string, string> = {
   promise: 'Discounts, refunds and exceptions are approved by the store itself. I passed your request on, and they will get back to you here.',
   superlative: '',
   claim: "I'm checking this with the store and will update you here.",
+  link: "I'm checking the link with the store and will update you here.",
 };
-const HANDOFF_REASON: Record<string, string> = { price: 'unknown', stock: 'unknown', delivery: 'unknown', promise: 'discount', claim: 'unknown' };
+const HANDOFF_REASON: Record<string, string> = { price: 'unknown', stock: 'unknown', delivery: 'unknown', promise: 'discount', claim: 'unknown', link: 'unknown' };
 // A company store (our own support, src/company.ts) is not a store: the honest line says someone from us answers.
 const REPLACE_COMPANY: Record<string, string> = {
   price: 'את המחיר המדויק אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
@@ -270,6 +295,7 @@ const REPLACE_COMPANY: Record<string, string> = {
   promise: 'הנחה או הסדר מיוחד מאשרים רק אצלנו. העברתי את הבקשה, ויחזרו אליך כאן.',
   superlative: '',
   claim: 'את זה אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
+  link: 'את הקישור אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
 };
 const REPLACE_COMPANY_EN: Record<string, string> = {
   price: "I'm checking the exact price, and someone from our team will get back to you here.",
@@ -278,6 +304,7 @@ const REPLACE_COMPANY_EN: Record<string, string> = {
   promise: 'Discounts and exceptions are approved by our team. I passed your request on, and they will get back to you here.',
   superlative: '',
   claim: "I'm checking this, and someone from our team will get back to you here.",
+  link: "I'm checking the link, and someone from our team will get back to you here.",
 };
 /** The honest line when nothing is left to say, for a store or for a company. */
 export const checkingLine = (english: boolean, company = false) =>

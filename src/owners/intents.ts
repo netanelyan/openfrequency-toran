@@ -73,12 +73,16 @@ function targetsIn(clause: string, size: number): Targets {
   return { nums: [...new Set(numbersIn(head, size))], all: ALL.test(head), rest: REST.test(head), except: [...new Set(numbersIn(tail, size))] };
 }
 
-/** The post numbers a message names, for checking the model's actions: every number, or all of them for "all". */
+/**
+ * The post numbers a message names, for checking the model's actions: every number, or all of them for "all". A list of
+ * one is named only by the owner asking for something in this message (approve, send back, change, send it), never by
+ * the list alone (the audit's PRA-AI-003): "מה קורה בחנות?" with one post waiting acts on nothing.
+ */
 export function mentioned(text: string, size: number): Set<number> {
   const s = normalize(text);
   const t = targetsIn(s, size);
   const all = Array.from({ length: size }, (_, i) => i + 1);
-  if (size === 1) return new Set([1]);
+  if (size === 1) return t.nums.includes(1) || t.all || t.rest || [APPROVE, REJECT, BUNDLE, ...REASONS.map(([, re]) => re)].some((re) => re.test(s)) ? new Set([1]) : new Set();
   if (t.all || t.rest) return new Set(all.filter((n) => !t.except.includes(n)));
   return new Set([...t.nums, ...t.except].filter((n) => n >= 1 && n <= size));
 }

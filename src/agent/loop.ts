@@ -201,7 +201,9 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
 
   // A company's "works today" list sits in its prompt, not in a tool result: it backs a claim as a tool would.
   const factTexts = company ? [String(store.config?.company?.status || '')].filter(Boolean) : [];
-  const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts });
+  // A link may point to what the tools gave or to the store itself: its site and its WhatsApp (guard.ts, PRA-AI-002).
+  const ownLinks = [store.url, store.domain, store.contact_whatsapp ? `https://wa.me/${String(store.contact_whatsapp).replace(/\D/g, '')}` : ''].filter(Boolean);
+  const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts, ownLinks });
   // A service has no stock: "not available yet" is about a feature, never an invented stock level.
   if (company) allow.stockKnown = true;
   let g = guardReply(raw, allow, { company });

@@ -281,3 +281,15 @@ test('the inbox over HTTP: connect the store\'s email, mail arrives through the 
   }
 });
 
+
+test('a mail whose sender fails DMARC, or SPF with no passing DKIM, in the email provider\'s own verdict is held for the owner and never answered (PRA-AI-002)', () => {
+  const from = 'noa@a.example';
+  assert.equal(automated({}, from, DOMAIN, { spf: 'pass', dkim: 'pass', dmarc: 'pass' }), null);
+  assert.equal(automated({}, from, DOMAIN, { spf: 'pass', dkim: 'gray', dmarc: 'fail' }), 'sender not verified (dmarc=fail)');
+  assert.equal(automated({}, from, DOMAIN, { spf: 'fail', dkim: 'gray', dmarc: 'gray' }), 'sender not verified (spf=fail, no dkim pass)');
+  assert.equal(automated({}, from, DOMAIN, { spf: 'fail', dkim: 'pass', dmarc: 'pass' }), null, 'a forwarded mail keeps its DKIM');
+  assert.equal(automated({}, from, DOMAIN, { spf: 'gray', dkim: 'gray', dmarc: 'gray' }), null, 'no policy says nothing against the sender');
+  assert.equal(automated({}, from, DOMAIN, null), null, 'mail from before the field existed');
+  // The message's own header is the sender's to write, and is never read.
+  assert.equal(automated({ 'authentication-results': 'x; dmarc=fail' }, from, DOMAIN), null);
+});

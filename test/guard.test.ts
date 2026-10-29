@@ -135,3 +135,18 @@ test('a promise word passes only when the store\'s passages use it; a product\'s
   assert.equal(guardReply('הצלחת במבצע ב-149 ₪, במקום 189 ₪.', platter).redactions.length, 0);
   assert.equal(guardReply('סט המתנה לחג עולה 120 ₪.', platter).redactions.length, 0);
 });
+
+test('a link may point only where the tools or the store\'s own address do (PRA-AI-002)', () => {
+  const tools = ['- [id 12] ספל חול: 89 ₪, במלאי. https://s.example/products/sandy-mug', 'Order 1042: נשלחה.\nShipments:\n- with Israel Post, tracking link: https://israelpost.co.il/t/RR1'];
+  const a = buildAllow({ toolTexts: tools, customerTexts: ['שלמתי פה? https://pay-s-example.top/x'], ownLinks: ['https://s.example', 'https://wa.me/972500000199'] });
+  assert.equal(guardReply('הנה הקישור: https://s.example/products/sandy-mug', a).redactions.length, 0);
+  assert.equal(guardReply('אפשר לעקוב כאן: https://israelpost.co.il/t/RR1', a).redactions.length, 0);
+  assert.equal(guardReply('אפשר גם לכתוב לנו ב-https://wa.me/972500000199.', a).redactions.length, 0);
+  assert.equal(guardReply('אפשר להתעדכן גם ב-www.s.example/blog.', a).redactions.length, 0, 'the store\'s own site, with or without www');
+  const pay = guardReply('לתשלום: https://pay-s-example.top/x', a);
+  assert.equal(pay.redactions[0]?.rule, 'link', 'a link only the customer gave');
+  assert.ok(pay.needsHandoff);
+  assert.equal(guardReply('המוצר נמצא גם ב-shop-deals.co.il', a).redactions[0]?.rule, 'link', 'a bare domain the tools never gave');
+  assert.equal(guardReply('The mug is at bit.ly/mug123', a).redactions[0]?.rule, 'link');
+  assert.equal(guardReply('כתבו לנו ל-info@s.example ונחזור אליכם.', a).redactions.length, 0, 'an email address is not a link');
+});

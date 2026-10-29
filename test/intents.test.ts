@@ -63,6 +63,9 @@ test('the numbers a message names, which the model may act on and no others', ()
   assert.deepEqual([...mentioned('אשר את 1 ו-3', 3)].sort(), [1, 3]);
   assert.deepEqual([...mentioned('את כולן חוץ מהשנייה', 3)].sort(), [1, 3]);
   assert.deepEqual([...mentioned('תעשה אותה קצרה יותר', 1)], [1], 'a list of one: "it" is the one');
+  assert.deepEqual([...mentioned('תאשר', 1)], [1], 'a list of one: an approve word names it');
+  assert.deepEqual([...mentioned('מה קורה בחנות היום?', 1)], [], 'a list of one: a message that asks for nothing names nothing');
+  assert.deepEqual([...mentioned('מה שהלקוח כתב בשיחה', 1)], [], 'nor one about something else');
   assert.deepEqual([...mentioned('תעשה אותה קצרה יותר', 3)], [], 'a list of three: "it" names none');
   assert.deepEqual([...mentioned('את 7', 3)], [], 'not on the list');
 });

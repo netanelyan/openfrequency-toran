@@ -18,6 +18,11 @@ export function who(channel: string, peer: string | null): string {
 
 const timeHe = (t: Date | string) => new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t));
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+/**
+ * What a customer wrote, as the assistant's tools hand it to the model: inside a marked block that the system prompt
+ * calls data, never instructions (index.ts), any look-alike tag inside it taken apart (the audit's PRA-AI-003).
+ */
+export const customerText = (s: string, n: number) => `<customer_text>${clip(String(s).replace(/<\s*\/?\s*customer_text/gi, 'customer-text'), n)}</customer_text>`;
 
 /** The conversations of the last `days` days, by channel: how many, how many customer messages, answered, handed over. */
 export async function overview(db: Db, storeId: number, days: number): Promise<string> {
@@ -60,7 +65,7 @@ export async function waiting(db: Db, storeId: number, { raw = false }: { raw?: 
   );
   if (raw) return rows;
   if (!rows.length) return 'No questions are waiting for the owner.';
-  return [`Questions waiting for the owner: ${rows.length}.`, ...rows.map((r) => `- [conversation ${r.id}] ${who(r.channel, r.peer)}, ${timeHe(r.at)}: "${clip(String(r.question || r.summary || ''), 220)}"`)].join('\n');
+  return [`Questions waiting for the owner: ${rows.length}.`, ...rows.map((r) => `- [conversation ${r.id}] ${who(r.channel, r.peer)}, ${timeHe(r.at)}: ${r.question ? customerText(r.question, 220) : `"${clip(String(r.summary || ''), 220)}"`}`)].join('\n');
 }
 
 /** One conversation's last messages, for the owner to see what was said before answering. */
@@ -72,7 +77,7 @@ export async function conversation(db: Db, storeId: number, id: number): Promise
   const paused = c.agent_paused_until && new Date(c.agent_paused_until).getTime() > Date.now();
   return [
     `[conversation ${c.id}] ${who(c.channel, c.peer)}. Toran ${paused ? `is paused here until ${timeHe(c.agent_paused_until!)}` : 'answers here'}.`,
-    ...msgs.map((m) => `- ${by[m.role]}, ${timeHe(m.at)}: ${clip(m.text.replace(/\s+/g, ' '), 300)}`),
+    ...msgs.map((m) => `- ${by[m.role]}, ${timeHe(m.at)}: ${m.role === 'customer' ? customerText(m.text.replace(/\s+/g, ' '), 300) : clip(m.text.replace(/\s+/g, ' '), 300)}`),
   ].join('\n');
 }
 
