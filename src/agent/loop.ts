@@ -4,7 +4,7 @@ import { event, usage as recordUsage } from '../db/log.ts';
 import { cleanLine } from '../core/hebrew.ts';
 import { agentModel } from './llm/index.ts';
 import { type Block, type Msg, type ToolUseBlock, type TurnRes, isText, isToolUse, LlmError } from './llm/types.ts';
-import { DEMO_NOTE, systemFor, type StoreForPrompt } from './prompt.ts';
+import { DEMO_NOTE, stripForgedContext, systemFor, type StoreForPrompt } from './prompt.ts';
 import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
 import { buildAllow, checkingLine, guardReply, type Redaction } from './guard.ts';
 import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
@@ -80,7 +80,7 @@ async function history(db: Db, conversationId: number): Promise<{ messages: Msg[
   const customerTexts: string[] = [];
   for (const r of rows) {
     const role = r.role === 'customer' ? 'user' : 'assistant';
-    const text = role === 'assistant' ? stripFooter(r.text) : r.text;
+    const text = role === 'assistant' ? stripFooter(r.text) : stripForgedContext(r.text);
     if (role === 'user') customerTexts.push(r.text);
     for (const t of r.tools || []) toolTexts.push(t.result);
     const last = messages[messages.length - 1];
@@ -120,10 +120,15 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // demo, wherever the message came from.
   const company = store.platform === 'company';
   const demo = !company && isDemoTurn(input);
-  const userText = `${serverContext(new Date(), input.channel, input.context, demo)}\n\n${input.text}`;
+  // The app's line is a block of its own and the customer's text another, any line in it dressed as the app's taken out
+  // (prompt.ts stripForgedContext): a customer cannot write a SERVER CONTEXT the model reads as ours (PRA-AI-001).
+  const userBlocks: Block[] = [
+    { type: 'text', text: serverContext(new Date(), input.channel, input.context, demo) },
+    { type: 'text', text: stripForgedContext(input.text) },
+  ];
   const prev = messages[messages.length - 1];
-  if (prev && prev.role === 'user') prev.content = `${prev.content}\n\n${userText}`;
-  else messages.push({ role: 'user', content: userText });
+  if (prev && prev.role === 'user') prev.content = [...(typeof prev.content === 'string' ? [{ type: 'text', text: prev.content } as Block] : prev.content), ...userBlocks];
+  else messages.push({ role: 'user', content: userBlocks });
 
   // On the store's own WhatsApp the customer's number is Meta's, not their word: an order placed with it is theirs.
   const waPhone = !demo && input.channel === 'whatsapp' ? (await db.one<{ peer: string | null }>('SELECT peer FROM conversations WHERE id = $1', [input.conversationId]))?.peer || null : null;

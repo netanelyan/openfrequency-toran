@@ -36,7 +36,7 @@ const sample = (): CompanyExport => ({
 
 const firstUserText = (req: TurnReq) => {
   const m = req.messages[0];
-  return typeof m.content === 'string' ? m.content : '';
+  return typeof m.content === 'string' ? m.content : m.content.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('\n\n');
 };
 const lastToolResult = (req: TurnReq) => {
   const m = req.messages[req.messages.length - 1];

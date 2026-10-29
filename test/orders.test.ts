@@ -191,7 +191,7 @@ test('the email or phone must be the customer\'s own words, and a few guesses in
   let n = 0;
   const script: Script = (req) => {
     const m = req.messages[req.messages.length - 1];
-    if (typeof m.content === 'string') return [{ type: 'tool_use', id: `t${++n}`, name: 'get_order_status', input: { order_number: '1042' } }];
+    if (typeof m.content === 'string' || !m.content.some((b) => b.type === 'tool_result')) return [{ type: 'tool_use', id: `t${++n}`, name: 'get_order_status', input: { order_number: '1042' } }];
     return [{ type: 'text', text: 'בודק.' }];
   };
   const s = await store(EXAMPLE_DOMAIN, script);
