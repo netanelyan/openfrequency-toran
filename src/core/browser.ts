@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { hostAllowed } from './http.ts';
 
 // The headless fallback, for the stores whose home page is an empty shell that
 // JavaScript fills in (Wix, some custom builds). Optional: playwright-core is a dev
@@ -37,13 +38,31 @@ export async function renderHtml(url: string, { timeoutMs = 25_000, userAgent }:
   }
   const exe = chromiumPath();
   if (!exe) return null;
-  browserP ??= pw.chromium.launch({ executablePath: exe, headless: true });
-  const browser = await browserP;
+  // Chromium's own sandbox stays on (PRA-OPS-009): a page we render was chosen by a stranger. A kernel that will not give
+  // the service user the namespaces it needs is the one reason to turn it off (TORAN_CHROMIUM_SANDBOX=0), and then a
+  // failed launch only means detection works from the raw HTML.
+  browserP ??= pw.chromium.launch({ executablePath: exe, headless: true, chromiumSandbox: process.env.TORAN_CHROMIUM_SANDBOX !== '0' }).catch((e: any) => {
+    browserP = null;
+    throw e;
+  });
+  let browser: any;
+  try {
+    browser = await browserP;
+  } catch {
+    return null;
+  }
   if (idle) clearTimeout(idle);
   const ctx = await browser.newContext({ userAgent, locale: 'he-IL' });
   try {
     const page = await ctx.newPage();
-    await page.route('**/*', (route: any) => (['image', 'media', 'font'].includes(route.request().resourceType()) ? route.abort() : route.continue()));
+    // Every request the page makes is held to http.ts's address rule: a script or a redirect that reaches for our own
+    // machine or a private network is aborted (PRA-SEC-001).
+    await page.route('**/*', async (route: any) => {
+      const req = route.request();
+      if (['image', 'media', 'font'].includes(req.resourceType())) return route.abort();
+      return (await hostAllowed(req.url())) ? route.continue() : route.abort('blockedbyclient');
+    });
+    if (!(await hostAllowed(url))) return null;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     await page.waitForTimeout(1500);
     return await page.content();
