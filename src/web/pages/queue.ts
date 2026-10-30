@@ -18,6 +18,7 @@ const KIND_HE: Record<string, string> = {
   add_store: 'הוספת חנות',
   ingest: 'קריאת האתר',
   rescrape: 'קריאה יומית של האתר',
+  teder_lead: 'בקשת דמו שעוברת לתדר',
 };
 
 const who = (p: any) => [p?.from, p?.storeId ? `חנות ${p.storeId}` : null].filter(Boolean).join(' · ');

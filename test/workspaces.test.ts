@@ -150,6 +150,32 @@ test('a demo asked for on the website: only with the shared token and never thro
   }
 });
 
+test("a demo asked for on the website is of one product: none is Toran's, teder is Teder's, anything else is refused", async () => {
+  const s = await serve();
+  try {
+    const token = String(s.app.env.OF_INTERNAL_TOKEN);
+    const send = (body: unknown, headers: Record<string, string> = {}) =>
+      fetch(`${s.base}/internal/lead`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...headers }, body: JSON.stringify(body) });
+    const url = 'https://teder-shop.co.il/';
+    assert.equal((await send({ url, code: 'REQ-PRD001' })).status, 200);
+    assert.equal((await send({ url, code: 'REQ-PRD002', product: 'teder' })).status, 200);
+    assert.equal((await send({ url, code: 'REQ-PRD003', product: 'toran' })).status, 200);
+    for (const product of ['Teder', 'nope', '', null, 1, ['teder']]) {
+      const r = await send({ url, code: 'REQ-PRD004', product });
+      assert.equal(r.status, 400, `product ${JSON.stringify(product)}`);
+      assert.deepEqual(await r.json(), { ok: false, error: 'bad' });
+    }
+    assert.equal((await send({ url, code: 'REQ-PRD005', product: 'teder' }, { 'x-forwarded-for': '203.0.113.9' })).status, 403, 'the same checks for Teder');
+    const rows = await s.app.db.query<any>("SELECT code, product FROM demo_requests WHERE code LIKE 'REQ-PRD%' ORDER BY code");
+    assert.deepEqual(rows.map((r) => [r.code, r.product]), [['REQ-PRD001', 'toran'], ['REQ-PRD002', 'teder'], ['REQ-PRD003', 'toran']]);
+    assert.deepEqual((await s.app.db.one<any>("SELECT detail FROM audit WHERE action = 'demo_request' AND detail->>'code' = 'REQ-PRD002'")).detail, { url, code: 'REQ-PRD002', product: 'teder' });
+    // Written down only, as Toran's: nothing goes to Teder before the number writes.
+    assert.equal((await s.app.db.query("SELECT 1 FROM jobs WHERE kind = 'teder_lead'")).length, 0);
+  } finally {
+    await s.close();
+  }
+});
+
 test('a workspace without Toran, a closed workspace, and accounts down: refused, never let through', async () => {
   const s = await serve();
   try {

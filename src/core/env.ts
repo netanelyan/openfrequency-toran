@@ -64,7 +64,7 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'SESSION_SECRET', group: 'website', he: 'חתימה על אסימוני ה־CSRF בטפסים' },
   { name: 'OF_INTERNAL_TOKEN', group: 'website', he: 'המפתח המשותף עם openfrequency-accounts, שבודק מי מחובר. אותו ערך בכל השירותים' },
   { name: 'OF_ASSISTANT_SECRET', group: 'website', he: 'החתימה על הבקשות בין תורן לתדר, לפחות 32 תווים. אותו ערך גם בתדר' },
-  { name: 'TEDER_SITE_INTERNAL', group: 'website', he: 'האתר של תדר בשרת הזה, ללוח שלך: ממנו מגיעות המצגות של תדר. ברירת המחדל http://127.0.0.1:4700' },
+  { name: 'TEDER_SITE_INTERNAL', group: 'website', he: 'האתר של תדר בשרת הזה: ממנו מגיעות המצגות של תדר ללוח שלך, ואליו עוברות בקשות הדמו של תדר מהוואטסאפ. ברירת המחדל http://127.0.0.1:4700' },
   { name: 'TORAN_CHANNELS', group: 'channels', he: 'הערוצים שהקוד שלהם פועל, למשל whatsapp,email. וואטסאפ תמיד פועל' },
   { name: 'RESEND_API_KEY', group: 'channels', he: 'Resend: שליחת תשובות במייל וקריאת המיילים שמגיעים' },
   { name: 'RESEND_WEBHOOK_SECRET', group: 'channels', he: 'Resend: הסוד (whsec_...) שבודק את החתימה על ה־webhook' },

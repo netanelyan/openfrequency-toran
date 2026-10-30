@@ -17,7 +17,8 @@ import { reconnectWhatsapp, requestedLink, requestedLinkLater, tederFirst, teder
 //   100  tried_demo      a Toran store that tried the demo: asking how it went takes the reminder's place
 //    90  next_step        someone in a conversation whose next step is due
 //    85  asked_toran      a Toran page someone asked for on the website, ready and not sent: they are waiting
-//    85  asked_teder      the same for a Teder demo
+//    85  asked_teder      the same for a Teder demo: one asked for with a code goes out by itself inside its 23 hours
+//                         (ops/actions.ts deliverTeder), and is listed here when it did not
 //  55-70 reminder         the one reminder, due; a page that was opened goes first
 //  40-50 first_send       a Toran page found by discovery, ready to send, by its score
 // A page with nothing to send it to is listed apart (noContact), to find a contact for.
@@ -56,18 +57,37 @@ const storeName = (s: any) => displayName(s.brand_override?.name, s.brand?.name,
 const waTarget = (phone: string | null) => (phone ? { kind: 'whatsapp' as const, href: `https://wa.me/${phone}`, label: 'להעתיק ולפתוח וואטסאפ' } : { kind: null, href: null, label: 'להעתיק' });
 const DIRECT_HOURS = 23;
 
-/** A demo asked for on the website (the number proven) that has no page to send yet, and why: the operator answers them. */
+/**
+ * A demo asked for on the website (the number proven) that has no page to send yet, and why: the operator answers them.
+ * A Teder request's why names Teder, and it has no store here (storeId null).
+ */
 export type Stuck = { domain: string; phone: string; at: string; why: string; storeId: number | null };
+
+/** Why a Teder request has no link yet: Teder has not taken it, or its demo is not up (Teder's statuses, src/demos/build.js). */
+const tederWhy = (r: any) =>
+  !r.teder_id ? (r.job === 'queued' || r.job === 'running' ? 'הבקשה בדרך לתדר' : 'תדר לא קיבל את הבקשה')
+  : r.status === 'failed' ? 'תדר לא הצליח לבנות את הדמו'
+  : r.status === 'removed' || r.removed_at ? 'הדמו של תדר הוסר'
+  : r.status === 'ready' ? 'הדמו של תדר מחכה לבדיקה בתדר'
+  : 'הדמו של תדר בבנייה';
 
 export async function stuckRequests(app: App): Promise<Stuck[]> {
   const rows = await app.db.query<any>(
     `SELECT r.domain, r.phone, r.claimed_at, s.id, s.platform, s.page_built_at, s.approved_at, s.sent_at, s.status,
             (SELECT status FROM jobs WHERE dedupe_key = 'add:' || r.domain ORDER BY id DESC LIMIT 1) AS job
        FROM demo_requests r LEFT JOIN stores s ON s.domain = r.domain
-      WHERE r.claimed_at > now() - interval '14 days' AND (s.id IS NULL OR (s.sent_at IS NULL AND (s.approved_at IS NULL OR s.page_built_at IS NULL)))
+      WHERE r.product = 'toran' AND r.claimed_at > now() - interval '14 days' AND (s.id IS NULL OR (s.sent_at IS NULL AND (s.approved_at IS NULL OR s.page_built_at IS NULL)))
       ORDER BY r.claimed_at`,
   );
-  return rows.map((r) => ({
+  // A Teder request whose demo has no public page yet (teder_leads, as last read from Teder), its link not sent.
+  const teder = await app.db.query<any>(
+    `SELECT r.domain, r.phone, r.claimed_at, r.teder_id, t.status, t.removed_at,
+            (SELECT status FROM jobs WHERE dedupe_key = 'teder_lead:' || r.id ORDER BY id DESC LIMIT 1) AS job
+       FROM demo_requests r LEFT JOIN teder_leads t ON t.id = r.teder_id
+      WHERE r.product = 'teder' AND r.claimed_at > now() - interval '14 days' AND r.delivered_at IS NULL AND t.page_url IS NULL
+      ORDER BY r.claimed_at`,
+  );
+  const toran: Stuck[] = rows.map((r) => ({
     domain: r.domain,
     phone: r.phone,
     at: r.claimed_at,
@@ -78,6 +98,8 @@ export async function stuckRequests(app: App): Promise<Stuck[]> {
       : !r.page_built_at ? 'הדף לא נבנה'
       : 'הדף מחכה לבדיקה, חסר בו משהו',
   }));
+  const time = (at: unknown) => new Date(at as string).getTime();
+  return [...toran, ...teder.map((r) => ({ domain: r.domain, phone: r.phone, at: r.claimed_at, storeId: null, why: tederWhy(r) }))].sort((a, b) => time(a.at) - time(b.at));
 }
 
 export async function queue(app: App): Promise<{ items: Item[]; noContact: any[] }> {
@@ -106,7 +128,7 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
   // Asked on the website: the request was claimed from their number, so the page goes to that number.
   const asked = await db.query<any>(
     `SELECT s.*, r.phone AS req_phone, r.claimed_at AS req_at, r.code AS req_code FROM stores s
-       JOIN demo_requests r ON r.domain = s.domain AND r.claimed_at IS NOT NULL
+       JOIN demo_requests r ON r.domain = s.domain AND r.product = 'toran' AND r.claimed_at IS NOT NULL
       WHERE ${live('s.')} AND s.approved_at IS NOT NULL AND s.page_built_at IS NOT NULL AND s.sent_at IS NULL
       ORDER BY r.claimed_at`,
   );

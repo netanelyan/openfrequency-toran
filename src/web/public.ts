@@ -58,8 +58,10 @@ import { unsubscribeRoutes } from './unsubscribe.ts';
 //                              any store
 //   POST /internal/lead        a demo asked for on openfrequency.co.il (openfrequency-web/server/lead.mjs): from this
 //                              machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (so never through Caddy).
+//                              { url, code, product? }: product toran (the default) or teder, anything else 400 bad.
 //                              It is written down with its code (REQ-XXXXXX) and waits: only when the person writes
-//                              to the demo number with that code is the store added (channels/request.ts).
+//                              to the demo number with that code is the store added, or the request handed to Teder
+//                              (channels/request.ts).
 //   GET  /internal/ops         the operator's dashboard as data, for accounts' /admin (ops/api.ts); its POSTs are
 //                              the dashboard's buttons. From this machine only, with OF_INTERNAL_TOKEN
 //   GET  /internal/setup       a workspace's setup steps, for accounts' /setup checklist (src/setup.ts): the same
@@ -305,10 +307,12 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       const url = homeUrl(String(body.url || ''));
       const domain = url ? canonicalDomain(url) : null;
       const code = String(body.code || '').toUpperCase();
-      if (!url || !domain || !/^REQ-[A-Z0-9]{6}$/.test(code)) return { status: 400, json: { ok: false, error: 'bad' } };
+      // The product the demo is of: none is Toran's, as every request before Teder's came.
+      const product = body.product === undefined ? 'toran' : body.product;
+      if (!url || !domain || !/^REQ-[A-Z0-9]{6}$/.test(code) || (product !== 'toran' && product !== 'teder')) return { status: 400, json: { ok: false, error: 'bad' } };
       // Only written down: nothing happens until the person writes to the demo number with this code.
-      await app.db.query('INSERT INTO demo_requests (code, url, domain) VALUES ($1, $2, $3) ON CONFLICT (code) DO NOTHING', [code, url, domain]);
-      await audit(app.db, { actor: 'website', action: 'demo_request', detail: { url, code } });
+      await app.db.query('INSERT INTO demo_requests (code, url, domain, product) VALUES ($1, $2, $3, $4) ON CONFLICT (code) DO NOTHING', [code, url, domain, product]);
+      await audit(app.db, { actor: 'website', action: 'demo_request', detail: { url, code, product } });
       return { json: { ok: true } };
     }],
   ];

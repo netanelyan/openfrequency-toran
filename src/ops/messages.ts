@@ -23,7 +23,12 @@ export const triedDemo = (o: { storeName: string }) =>
 
 אם זה לא רלוונטי, אפשר לענות "לא" ולא נכתוב שוב.`;
 
-/** A Teder demo someone asked for on the website: its page. */
+/** The link to a Teder demo someone asked for on the website, sent on the demo number where they asked (request.ts). */
+export const tederRequestedLink = (o: { storeName: string; url: string }) =>
+  `הדמו של תדר ${le(o.storeName)} מוכן. הכנו לחנות מצגת לדוגמה על נושא מהתחום שלה, בגדלים של טיקטוק ואינסטגרם:
+${o.url}`;
+
+/** A Teder demo someone asked for on the website: its page, from the operator's own WhatsApp. */
 export const tederFirst = (o: { storeName: string; url: string }) =>
   `היי, כאן OpenFrequency. ביקשתם באתר דמו של תדר, אז הכנו ${le(o.storeName)} מצגת לדוגמה על נושא מהתחום של החנות, בגדלים של טיקטוק ואינסטגרם:
 ${o.url}

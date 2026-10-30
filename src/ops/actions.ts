@@ -7,7 +7,8 @@ import { reply } from '../channels/send.ts';
 import { demoWa } from '../channels/lines.ts';
 import { J } from '../db/index.ts';
 import { reconnectSql } from './queue.ts';
-import { LOST_REASONS, requestedLink } from './messages.ts';
+import { LOST_REASONS, requestedLink, tederRequestedLink } from './messages.ts';
+import { syncTeder } from './sources.ts';
 
 // What the operator's buttons record, for a Toran store (stores) or a Teder demo (teder_leads), every one in the audit
 // log with the operator as its actor:
@@ -16,7 +17,8 @@ import { LOST_REASONS, requestedLink } from './messages.ts';
 //              whose WhatsApp has to be connected again: they were told (markReconnectTold)
 //   reminded   the reminder (or, for a store that tried the demo, the question in its place) went out: the last one
 //   direct     the link to a demo someone asked for, sent now on the demo number where they asked (inside its 24
-//              hours), then recorded as sent
+//              hours), then recorded as sent. A Toran page by this button or by itself (deliverRequested); a Teder
+//              demo by itself only (deliverTeder), with "auto" as its actor
 //   replied    they answered: they leave the list for "in conversation"
 //   next       the next step in a conversation, and when
 //   later      off the list for a day or a week
@@ -93,7 +95,7 @@ export async function sendDirect(app: App, id: string, by: string): Promise<void
   const s = await row(app, 'toran', id);
   if (s.sent_at) throw new OpsError('כבר סומן שנשלח');
   if (!s.approved_at || !s.page_built_at) throw new OpsError('הדף עוד לא מוכן');
-  const req = await app.db.one<{ code: string; phone: string; claimed_at: string }>('SELECT code, phone, claimed_at FROM demo_requests WHERE domain = $1 AND claimed_at IS NOT NULL ORDER BY claimed_at DESC LIMIT 1', [s.domain]);
+  const req = await app.db.one<{ code: string; phone: string; claimed_at: string }>("SELECT code, phone, claimed_at FROM demo_requests WHERE domain = $1 AND product = 'toran' AND claimed_at IS NOT NULL ORDER BY claimed_at DESC LIMIT 1", [s.domain]);
   if (!req) throw new OpsError('לא ביקשו את הדמו הזה באתר');
   if (now() - new Date(req.claimed_at).getTime() >= 24 * HOUR) throw new OpsError('עברו 24 שעות מההודעה שלהם, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.');
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
@@ -155,7 +157,7 @@ export async function deliverRequested(app: App): Promise<number> {
   const { pitchGaps, isPublic } = await import('../pitch/ready.ts');
   const due = await app.db.query<any>(
     `SELECT DISTINCT s.* FROM demo_requests r JOIN stores s ON s.domain = r.domain
-      WHERE r.claimed_at > now() - interval '23 hours' AND s.approved_at IS NOT NULL AND s.page_built_at IS NOT NULL AND s.sent_at IS NULL
+      WHERE r.product = 'toran' AND r.claimed_at > now() - interval '23 hours' AND s.approved_at IS NOT NULL AND s.page_built_at IS NOT NULL AND s.sent_at IS NULL
         AND s.taken_down_at IS NULL AND s.status <> 'skipped' AND s.lost_at IS NULL`,
   );
   let n = 0;
@@ -167,6 +169,44 @@ export async function deliverRequested(app: App): Promise<number> {
     } catch (e: any) {
       app.log(`[ops] the requested demo for store ${s.id} was not sent: ${e?.message || e}`);
     }
+  }
+  return n;
+}
+
+/**
+ * The link to every Teder demo asked for on the website, sent by itself once Teder has its page up: the worker runs
+ * this each minute, beside deliverRequested. A request Teder took (channels/request.ts handToTeder) waits for its demo
+ * in Teder's GET /internal/demos (read again here, into teder_leads, only while one waits): public once it has a pageUrl,
+ * which Teder gives an approved demo alone. The link goes on the demo number to the number that asked, inside the 23
+ * hours after it wrote, once (demo_requests.delivered_at, set before the send and given back if it did not go). Two
+ * numbers that asked for the same store each get its one demo. The first send marks the Teder lead sent, as the
+ * operator's "שלחתי" would, so its one reminder comes due; past the 23 hours it stays on the operator's list
+ * (queue.ts, asked_teder).
+ */
+export async function deliverTeder(app: App): Promise<number> {
+  const waiting = await app.db.query<{ id: number; code: string; phone: string; claimed_at: string; teder_id: string }>(
+    `SELECT id, code, phone, claimed_at, teder_id FROM demo_requests
+      WHERE product = 'teder' AND teder_id IS NOT NULL AND delivered_at IS NULL AND claimed_at > now() - interval '23 hours' ORDER BY claimed_at`,
+  );
+  if (!waiting.length) return 0;
+  // Teder not answering leaves the copy from before, which may already have the page.
+  await syncTeder(app);
+  let n = 0;
+  for (const r of waiting) {
+    const d = await app.db.one<any>('SELECT * FROM teder_leads WHERE id = $1 AND page_url IS NOT NULL AND removed_at IS NULL AND lost_at IS NULL', [r.teder_id]);
+    if (!d) continue;
+    if (!(await app.db.one('UPDATE demo_requests SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL RETURNING id', [r.id]))) continue;
+    try {
+      const out = await reply(app, await demoWa(app), { from: r.phone, text: '', id: `req-${r.code}`, at: new Date(r.claimed_at).getTime(), channel: 'whatsapp' }, tederRequestedLink({ storeName: d.name || d.domain, url: d.page_url }), null, null);
+      if (!out.ok) throw new Error(out.reason);
+    } catch (e: any) {
+      await app.db.query('UPDATE demo_requests SET delivered_at = NULL WHERE id = $1', [r.id]);
+      app.log(`[ops] the requested Teder demo ${r.teder_id} was not sent: ${e?.message || e}`);
+      continue;
+    }
+    if (!d.sent_at) await markSent(app, 'teder', String(d.id), 'auto');
+    await log(app, 'teder', String(d.id), 'direct', 'auto', { code: r.code });
+    n++;
   }
   return n;
 }

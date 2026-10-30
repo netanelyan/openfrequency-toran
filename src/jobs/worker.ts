@@ -16,7 +16,8 @@ import { dailyRetention } from './retention.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { interruptedSends } from '../auto/send.ts';
 import { handleTederEvent, handleTederReady } from '../owners/events.ts';
-import { deliverRequested } from '../ops/actions.ts';
+import { deliverRequested, deliverTeder } from '../ops/actions.ts';
+import { handToTeder } from '../channels/request.ts';
 import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
 import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialStore.ts';
 import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
@@ -41,6 +42,8 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 //                workspace (never a lead to sell to)
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
 //   rescrape     the daily refresh of a store whose demo is open
+//   teder_lead   a Teder demo asked for on the website, its code just sent from WhatsApp: handed to Teder (its POST
+//                /internal/lead, channels/request.ts handToTeder), tried again while Teder does not take it
 //   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts)
 //   teder_ready  the posts waiting for a workspace's approval, as one numbered list, a moment after Teder's post.ready
 //                events stop coming
@@ -53,9 +56,9 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 // Scheduled each minute: a rescrape for every store with a built page that is not
 // skipped and was last ingested over 20 hours ago, each at its own offset of up to six hours so the stores' re-scrapes
 // do not all start in the same minute; expired WhatsApp bindings cleaned up; the link to each demo asked for on the
-// website whose page is now ready, sent on the demo number; the automatic messages' readings and sends, and any left
-// "sending" by a restart marked as not sent; the operator told when a customer's message has waited in the queue over
-// five minutes; and once a day the retention pass (jobs/retention.ts).
+// website whose page is now ready, Toran's or Teder's, sent on the demo number; the automatic messages' readings and
+// sends, and any left "sending" by a restart marked as not sent; the operator told when a customer's message has waited
+// in the queue over five minutes; and once a day the retention pass (jobs/retention.ts).
 //
 // The loops (startWorker): TORAN_MESSAGE_LOOPS (2) take customers' messages and nothing else, so a re-scrape or an
 // ingest never stands between a customer and their answer; TORAN_BACKGROUND_LOOPS (1) take everything else. A message
@@ -140,6 +143,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return submitNew(app, Number(p.storeId));
     case 'wa_template_status':
       return templateStatus(app, p);
+    case 'teder_lead':
+      return handToTeder(app, Number(p.requestId));
     case 'teder_event':
       return handleTederEvent(app, String(p.id || ''));
     case 'teder_ready':
@@ -178,8 +183,10 @@ export async function schedule(app: App) {
   );
   for (const s of due) await enqueue(app.db, 'rescrape', { storeId: s.id }, { dedupeKey: `ingest:${s.id}`, runAt: new Date(Date.now() + rescrapeOffsetMs(s.id)) });
   await app.db.query("DELETE FROM wa_users WHERE expires_at < now() - interval '1 day'");
-  // A demo asked for on the website whose page is ready: its link, on the demo number (ops/actions.ts).
+  // A demo asked for on the website whose page is ready: its link, on the demo number (ops/actions.ts). Teder's are
+  // read from Teder only while one waits.
   await deliverRequested(app);
+  await deliverTeder(app);
   // A store's own WhatsApp number waiting at Meta: read again every ten minutes, so it turns on by itself.
   const pending = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status = 'pending' AND COALESCE((meta->>'checked_at')::timestamptz, 'epoch') < now() - interval '10 minutes'");
   for (const a of pending) await enqueue(app.db, 'wa_check', { accountId: a.id }, { dedupeKey: `wa_check:${a.id}`, maxAttempts: 1 });
