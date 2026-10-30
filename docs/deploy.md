@@ -49,9 +49,16 @@ Until it is done the server runs from a plain checkout in `/opt/toran` (`git pul
 restart; `private/` and the database stay where they are. Checked on the server on 2026-10-29: `toran.service` runs as
 `toran` from `/opt/toran` with `/opt/node24/bin/node`, `TORAN_HOME=/opt/toran/private`, `PORT=4710` in `private/.env`,
 `MemoryMax=1100M` and no `After=docker.service`; the dump job is `/usr/local/bin/toran-backup` (gzipped plain SQL) run
-by `toran-backup.service` as root at 03:45. Not checked yet, and needed by `deploy.sh`:
-`command -v runuser flock git tar && ls -l /opt/node24/bin/npm` (UNVERIFIED until that answers). The memory numbers in
-the new unit are a proposal for the owner to settle (`deploy/toran.service` has the figures). As root:
+by `toran-backup.service` as root at 03:45. Checked on 2026-10-30:
+- The tools `deploy.sh` needs are all there: `/usr/sbin/runuser`, `/usr/bin/flock`, `/usr/bin/git`, `/usr/bin/tar`
+  and `/opt/node24/bin/npm`.
+- The live unit, read in full, already has the same hardening lines and `ReadWritePaths=/opt/toran/private
+  /var/lib/toran`. `/var/lib/toran` is the toran user's home, and the service writes there (its `.npm`). It stays
+  writable.
+- The new unit keeps `MemoryMax=1100M` until the owner decides. The proposal and the figures are in
+  `deploy/toran.service`.
+
+As root:
 
 ```sh
 cd /opt/toran
@@ -83,7 +90,7 @@ from `releases/`, the old checkout's files at the top of `/opt/toran` (everythin
 
 1. **The user, the folders, the code.** Node 24 or later in `/opt/node24`.
    ```sh
-   useradd --system --no-create-home --home-dir /opt/toran/private --shell /usr/sbin/nologin toran
+   useradd --system --home-dir /var/lib/toran --create-home --shell /usr/sbin/nologin toran   # as on the live server
    mkdir -p /opt/toran/private && chown toran:toran /opt/toran/private && chmod 700 /opt/toran/private
    git clone --mirror https://github.com/netanelyan/openfrequency-toran /opt/toran/repo.git
    ```

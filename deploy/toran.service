@@ -4,7 +4,7 @@
 # front of it (deploy/Caddyfile.example), Postgres runs in Docker beside it (deploy/docker-compose.yml). The code runs
 # from /opt/toran/current, a release folder deploy/deploy.sh switches; the service writes only to /opt/toran/private.
 #
-#   sudo useradd --system --no-create-home --home-dir /opt/toran/private --shell /usr/sbin/nologin toran
+#   sudo useradd --system --home-dir /var/lib/toran --create-home --shell /usr/sbin/nologin toran
 #   sudo cp deploy/toran.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable toran
 #
 # Keys go in /opt/toran/private/.env, mode 600, owned by toran; PORT=4710 is set there too (checked on the server
@@ -12,10 +12,13 @@
 # not applied it refuses to start (TORAN_MIGRATE=check): migrations are the deploy's own step, after a backup
 # (docs/deploy.md).
 #
-# What changes against the unit installed on 2026-10-29 (user toran, /opt/toran, the same ExecStart, NODE_ENV,
-# TORAN_ENV, TORAN_HOME, MemoryMax=1100M, no After=docker.service, no OnFailure): the working directory becomes the
-# release link, After/Wants docker.service, TORAN_MIGRATE=check, OnFailure, the memory numbers below, and the
-# hardening. Its other lines were not read: `systemctl cat toran` and diff before replacing it.
+# The unit installed today, read in full on 2026-10-30 (`systemctl cat toran`), already has every hardening line below,
+# Restart=on-failure, RestartSec=5, TimeoutStopSec=20, MemoryMax=1100M and ReadWritePaths=/opt/toran/private
+# /var/lib/toran. /var/lib/toran is the toran user's home (getent passwd toran), and the service writes there: its .npm
+# folder was changed at 10:14 on 2026-10-27, the minute Toran last started. So it stays writable here. What this file
+# changes against it: the working directory becomes the release link, After/Wants docker.service, the start limit and
+# OnFailure, TORAN_MIGRATE=check, TimeoutStopSec=30 and OOMScoreAdjust. The memory cap is unchanged until the owner
+# decides (below).
 
 [Unit]
 Description=Toran: the dashboard, the pitch pages, the webhooks and the worker
@@ -45,20 +48,19 @@ TimeoutStopSec=30
 
 # Memory on a shared 4 GB server (3.9 GB and 2 GB of swap): past MemoryHigh the kernel reclaims hard, past MemoryMax
 # the process is killed and restarted, and under pressure from outside Toran and its database are the last to go.
-# THE OWNER'S DECISION, proposed here: the unit today has MemoryMax=1100M; Toran was killed for memory at that cap on
-# 2026-10-25 08:38 UTC, its peak per run from 10-23 to 10-25 was 0.83 to 1.0 GB, and the run since 2026-10-27 sits at
-# the cap. 1200M before reclaiming hard and 1400M before a kill give it room; keep 1100M if the server cannot spare it.
-MemoryHigh=1200M
-MemoryMax=1400M
+# THE OWNER'S DECISION, not taken yet, so this file keeps today's cap. The facts: the unit has MemoryMax=1100M; Toran
+# was killed for memory at that cap on 2026-10-25 08:38 UTC, its peak per run from 10-23 to 10-25 was 0.83 to 1.0 GB,
+# and the run since 2026-10-27 sits at the cap. Proposed: MemoryHigh=1200M and MemoryMax=1400M. Once the owner
+# decides, change the two lines here (or the openfrequency-ops drop-in, docs/apply.md step 4).
+MemoryMax=1100M
 OOMScoreAdjust=-500
 
-# Hardening, as Teder's: the process writes only to its private folder. New for Toran: after installing, look for
-# EACCES or EROFS in `journalctl -u toran` (anything it writes outside private/ would show there).
+# Hardening, the same lines as the unit running today: the process writes only to its private folder and its home.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/toran/private
+ReadWritePaths=/opt/toran/private /var/lib/toran
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
