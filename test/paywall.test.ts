@@ -4,7 +4,7 @@ import { createHmac } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { createHandler } from '../src/web/server.ts';
 import { conversationFor, runTurn } from '../src/agent/loop.ts';
-import { entitlementClient, FRESH_MS, STALE_MS, storeAllowed } from '../src/billing/entitlement.ts';
+import { entitlementClient, FRESH_MS, planAccess, refreshWorkspaces, STALE_MS, storeAllowed } from '../src/billing/entitlement.ts';
 import { customer, INTERNAL_TOKEN, viewingAs } from './helpers.ts';
 import { serve } from './serve.ts';
 
@@ -61,6 +61,9 @@ test('a store of a workspace that has not paid gets no model call and the owner 
     assert.equal(calls, 0, 'no model call');
     assert.match(out.handoff?.summary || '', /not paid for/);
     assert.equal(await storeAllowed(s.app, a), false);
+    // The 30-day clock on a stopped store's chats hangs off the same answer (planAccess, refreshWorkspaces).
+    assert.deepEqual(await planAccess(s.app.db, 7, false), [a]);
+    assert.equal(await refreshWorkspaces(s.app), 1);
     s.accounts.paid(7, null);
     await s.app.db.query("DELETE FROM settings WHERE key = 'entitlement:7'");
     assert.equal(await storeAllowed(s.app, a), true, 'paid again: answered again');

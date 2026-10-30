@@ -99,6 +99,7 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
     }
     failedAt.delete(workspaceId);
     await keep(db, workspaceId, next);
+    await planAccess(db, workspaceId, next.allowed);
     return view(workspaceId, next, 'fresh', t);
   }
 
@@ -116,6 +117,35 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
       return p;
     },
   };
+}
+
+/**
+ * What accounts answered, for the 30-day clock on a stopped store's chats (the retention pass of the message path,
+ * toran-path's src/jobs/retention.ts): each store of a workspace that is not allowed has its service stopped for 'plan',
+ * each store of one that is allowed has it resumed. Called on every fresh answer. MERGE: this branch does not have
+ * retention.ts; at the merge the two marked lines call markServiceStopped(db, id, 'plan') and
+ * markServiceResumed(db, id, 'plan') from it.
+ */
+export async function planAccess(db: Db, workspaceId: number, allowed: boolean): Promise<number[]> {
+  const ids = (await db.query<{ id: number }>('SELECT id FROM stores WHERE workspace_id = $1', [workspaceId])).map((r) => r.id);
+  for (const id of ids) {
+    if (allowed) await serviceResumed(db, id); // MERGE: await markServiceResumed(db, id, 'plan');
+    else await serviceStopped(db, id); // MERGE: await markServiceStopped(db, id, 'plan');
+  }
+  return ids;
+}
+// The seams the merge points at retention.ts (see planAccess). Until then they record nothing.
+async function serviceStopped(_db: Db, _storeId: number) {}
+async function serviceResumed(_db: Db, _storeId: number) {}
+
+/**
+ * Ask afresh about every workspace that has a store: a store nobody writes to is asked about nowhere else, and its
+ * clock must still start when its workspace stops paying. MERGE: the daily retention pass calls this before it deletes.
+ */
+export async function refreshWorkspaces(app: { db: Db; env: Env; log?: (line: string) => void }): Promise<number> {
+  const rows = await app.db.query<{ ws: number }>('SELECT DISTINCT workspace_id AS ws FROM stores WHERE workspace_id IS NOT NULL');
+  for (const r of rows) await entitlementOf(app).check(Number(r.ws));
+  return rows.length;
 }
 
 // One client per database, so the dashboard and the answer path share its in-flight questions and its retry clock.
