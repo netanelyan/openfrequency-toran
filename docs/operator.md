@@ -110,7 +110,9 @@ Toran reads `GET /internal/demos` again, and once the demo has a `pageUrl` (Tede
 only) its link goes to the number on the demo number, inside the 23 hours after it wrote, once
 (`demo_requests.delivered_at`, `deliverTeder`). The first such send marks the Teder lead sent, as "שלחתי" does, so
 its one reminder comes due in four days. Two numbers that asked for the same store each get its one demo. Past the 23
-hours the demo stays on the list as `asked_teder`, to send by hand.
+hours the demo stays on the list as `asked_teder`, to send by hand. Inside them, its card can also go from the demo
+number at once (`direct`, `sendTederDirect`), as a Toran card can; a Teder demo asked for with a typed number (the
+website's other form, straight to Teder) never can.
 
 **Only from a number that reaches people.** The demo number sends through Meta (our number), Twilio, or the
 simulator (`src/channels/lines.ts` `demoLine`). The simulator reaches nobody, so on the VPS (`TORAN_ENV=prod`) it means
@@ -200,7 +202,7 @@ what the action takes.
 |---|---|
 | sent | the first message went out |
 | reminded | the one reminder (or the question after a demo) went out |
-| direct | Toran only: sends the demo link on the demo number now, then records sent |
+| direct | sends the demo link on the demo number now, then records sent: a Toran page asked for on the website inside its 24 hours, or a Teder demo asked for with a code inside the 23 hours after its number wrote; never a Teder demo asked for with a typed number (that number never wrote to us); only while our number is connected |
 | replied | they answered |
 | next | `text` and `days`: the next step |
 | later | `days` 1 or 7 |

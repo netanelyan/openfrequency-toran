@@ -6,7 +6,7 @@ import { syncTeder, tederUrl } from './sources.ts';
 import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests, tederDemos } from './queue.ts';
 import { funnels } from './funnel.ts';
 import { demoLine, oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
-import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, setNext, type Kind } from './actions.ts';
+import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, sendTederDirect, setNext, type Kind } from './actions.ts';
 import { queueState } from '../jobs/queue.ts';
 
 // The operator's dashboard, as data for accounts' /admin, where it is shown (docs/operator.md section 4). Toran's
@@ -115,10 +115,8 @@ export function opsRoutes(app: App): Route<Req>[] {
         if (what === 'sent' && kind === 'toran' && (await markReconnectTold(app, id, by))) said = TOLD;
         else if (what === 'sent') await markSent(app, kind, id, by);
         else if (what === 'reminded') await markReminded(app, kind, id, by);
-        else if (what === 'direct') {
-          if (kind !== 'toran') throw new OpsError('אפשר לשלוח מהמספר של הדמו רק את תורן');
-          await sendDirect(app, id, by);
-        } else if (what === 'replied') await markReplied(app, kind, id, by);
+        else if (what === 'direct') await (kind === 'toran' ? sendDirect(app, id, by) : sendTederDirect(app, id, by));
+        else if (what === 'replied') await markReplied(app, kind, id, by);
         else if (what === 'next') await setNext(app, kind, id, String(b.text || ''), Number(b.days) || 1, by);
         else if (what === 'later') await later(app, kind, id, Number(b.days) || 1, by);
         else if (what === 'lost') await markLost(app, kind, id, String(b.reason || ''), by);

@@ -310,6 +310,64 @@ test("past the 23 hours a Teder demo is not sent by itself: it waits on the oper
   }
 });
 
+test("a Teder card can go now from the demo number like Toran's: inside the 23 hours of a code's message and while our number is connected; never past them, nor for a demo asked for with a typed number", async () => {
+  const { serve } = await import('./serve.ts');
+  const { NOT_LIVE } = await import('../src/ops/actions.ts');
+  const s = await serve();
+  const { app } = s;
+  const teder = await fakeTeder();
+  Object.assign(app.env, teder.env);
+  const direct = (id: string) => fetch(`${s.base}/internal/ops/teder/${id}/direct`, { method: 'POST', headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json' }, body: '{"by":"op"}' }).then(async (r) => [r.status, await r.json()]);
+  const card = async (id: string) => (await queue(app)).items.find((i) => i.key === `teder:${id}`)!;
+  try {
+    for (const [code, domain] of [['REQ-TDIR01', 'teder-now.co.il'], ['REQ-TDIR02', 'teder-late.co.il']]) {
+      await app.db.query("INSERT INTO demo_requests (code, url, domain, product) VALUES ($1, $2, $3, 'teder')", [code, `https://${domain}/`, domain]);
+    }
+    await handleInbound(app, msg(P1, 'REQ-TDIR01'));
+    await handleInbound(app, msg(P2, 'REQ-TDIR02'));
+    await handoffs(app);
+    teder.approve('teder-now.co.il', 'חנות עכשיו');
+    teder.approve('teder-late.co.il', 'חנות מאוחרת');
+    await app.db.query("UPDATE demo_requests SET claimed_at = now() - interval '25 hours' WHERE code = 'REQ-TDIR02'");
+    // A demo asked for with a typed number on the website: Teder has it, and nobody wrote to us.
+    await app.db.query("INSERT INTO teder_leads (id, domain, name, status, whatsapp, page_url, approved_at) VALUES ('77', 'typed.co.il', 'חנות מוקלדת', 'approved', '972500000303', 'https://teder.example/s/typed-x1', now())");
+    assert.equal(await syncTeder(app), true);
+    const [now_, late] = ['40', '41'];
+
+    // Our number not connected: no button, and the button's action says why; nothing goes.
+    app.env.TORAN_ENV = 'prod';
+    assert.equal((await card(now_)).direct, false);
+    assert.deepEqual(await direct(now_), [400, { ok: false, error: NOT_LIVE }]);
+    delete app.env.TORAN_ENV;
+
+    const c = await card(now_);
+    assert.equal(c.direct, true, 'inside the 23 hours, our number connected');
+    assert.equal(c.message, 'הדמו של תדר לחנות עכשיו מוכן. הכנו לחנות מצגת לדוגמה על נושא מהתחום שלה, בגדלים של טיקטוק ואינסטגרם:\nhttps://teder.example/s/teder-now-a1b2c3', "the demo number's message");
+    assert.equal(c.target.href, `https://wa.me/${P1}?text=${encodeURIComponent(c.message!)}`, 'to the number that wrote');
+    const before = app.wa.outbox!.length;
+    assert.deepEqual(await direct(now_), [200, { ok: true, message: 'נשלח מהמספר של הדמו, וסומן שנשלח.' }]);
+    assert.deepEqual(app.wa.outbox!.slice(before).map((o) => [o.to, o.text]), [[P1, c.message]]);
+    assert.ok((await app.db.one<any>("SELECT delivered_at FROM demo_requests WHERE code = 'REQ-TDIR01'")).delivered_at, 'delivered once');
+    assert.ok((await app.db.one<any>('SELECT sent_at FROM teder_leads WHERE id = $1', [now_])).sent_at, 'marked sent: its one reminder comes due');
+    assert.equal((await app.db.one<any>("SELECT actor FROM audit WHERE action = 'ops_direct'")).actor, 'op');
+    assert.ok(!(await card(now_)), 'off the list');
+    assert.deepEqual(await direct(now_), [400, { ok: false, error: 'כבר סומן שנשלח' }]);
+
+    // Past the 23 hours: from the operator's own WhatsApp only.
+    assert.equal((await card(late)).direct, false);
+    assert.match((await card(late)).message!, /^היי, כאן OpenFrequency\. ביקשתם באתר דמו של תדר/);
+    assert.deepEqual(await direct(late), [400, { ok: false, error: 'עברו 23 שעות מההודעה שלהם, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.' }]);
+    // Asked for with a typed number: no window at all.
+    const typed = await card('77');
+    assert.deepEqual([typed.direct, typed.target.href?.startsWith('https://wa.me/972500000303?text=')], [false, true]);
+    assert.deepEqual(await direct('77'), [400, { ok: false, error: 'את הדמו הזה ביקשו באתר עם מספר שהקלידו, והם לא כתבו לנו בוואטסאפ, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.' }]);
+    assert.equal(app.wa.outbox!.length, before + 1, 'only the one in its window went');
+  } finally {
+    await teder.close();
+    await s.close();
+  }
+});
+
 test("a Teder request is never taken for Toran's: a store Toran has on that domain gets neither the number nor a Toran link", async () => {
   const { app } = await withRequests();
   try {

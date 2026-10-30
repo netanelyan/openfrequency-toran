@@ -17,8 +17,10 @@ import { syncTeder } from './sources.ts';
 //              whose WhatsApp has to be connected again: they were told (markReconnectTold)
 //   reminded   the reminder (or, for a store that tried the demo, the question in its place) went out: the last one
 //   direct     the link to a demo someone asked for, sent now on the demo number where they asked (inside its 24
-//              hours), then recorded as sent. A Toran page by this button or by itself (deliverRequested); a Teder
-//              demo by itself only (deliverTeder), with "auto" as its actor. Only while our number is connected
+//              hours; a Teder demo inside its 23), then recorded as sent. A Toran page by this button (sendDirect) or by
+//              itself (deliverRequested); a Teder demo asked for with a code the same way (sendTederDirect,
+//              deliverTeder, with "auto" as its actor), never one asked for with a typed number, who never wrote to
+//              us and so has no window to answer in. Only while our number is connected
 //              (channels/lines.ts demoLine): until then the button is refused, nothing is sent or marked, and the
 //              links that go out by themselves wait
 //   replied    they answered: they leave the list for "in conversation"
@@ -110,6 +112,57 @@ export async function sendDirect(app: App, id: string, by: string): Promise<void
   if (!d.ok) throw new OpsError('ההודעה לא יצאה: עברו 24 שעות מההודעה שלהם. אפשר לשלוח מהוואטסאפ שלך.');
   await markSent(app, 'toran', id, by);
   await log(app, 'toran', id, 'direct', by, { code: req.code });
+}
+
+/** A Teder demo's link goes on the demo number only this long after the number wrote (queue.ts DIRECT_HOURS). */
+export const TEDER_DIRECT_HOURS = 23;
+
+/** A Teder demo's request by a code, still to get its link: the newest, with when its number wrote (its window). */
+const tederRequest = (app: App, tederId: string) =>
+  app.db.one<{ id: number; code: string; phone: string; claimed_at: string }>(
+    "SELECT id, code, phone, claimed_at FROM demo_requests WHERE product = 'teder' AND teder_id = $1 AND claimed_at IS NOT NULL AND delivered_at IS NULL ORDER BY claimed_at DESC LIMIT 1",
+    [tederId],
+  );
+
+/**
+ * A Teder demo's link to the number of one request, on the demo number, once: delivered_at is set before the send and
+ * given back if it did not go (then this throws). False when it was sent already.
+ */
+async function tederLink(app: App, wa: Awaited<ReturnType<typeof demoLine>>['wa'], r: { id: number; code: string; phone: string; claimed_at: string }, d: any): Promise<boolean> {
+  if (!(await app.db.one('UPDATE demo_requests SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL RETURNING id', [r.id]))) return false;
+  try {
+    const out = await reply(app, wa, { from: r.phone, text: '', id: `req-${r.code}`, at: new Date(r.claimed_at).getTime(), channel: 'whatsapp' }, tederRequestedLink({ storeName: d.name || d.domain, url: d.page_url }), null, null);
+    if (!out.ok) throw new Error(out.reason);
+  } catch (e) {
+    await app.db.query('UPDATE demo_requests SET delivered_at = NULL WHERE id = $1', [r.id]);
+    throw e;
+  }
+  return true;
+}
+
+/**
+ * "Send now" on a Teder demo asked for with a code: its link, on the demo number to the number that wrote, inside the 23
+ * hours after it wrote (Meta's window), as deliverTeder sends it by itself. A demo asked for with a typed number has
+ * no window, since that number never wrote to us: the operator sends it from their own WhatsApp.
+ */
+export async function sendTederDirect(app: App, id: string, by: string): Promise<void> {
+  const d = await row(app, 'teder', id);
+  if (d.sent_at) throw new OpsError('כבר סומן שנשלח');
+  if (!d.page_url || d.removed_at) throw new OpsError('הדמו של תדר עוד לא באוויר');
+  const req = await tederRequest(app, String(d.id));
+  if (!req) throw new OpsError('את הדמו הזה ביקשו באתר עם מספר שהקלידו, והם לא כתבו לנו בוואטסאפ, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.');
+  if (now() - new Date(req.claimed_at).getTime() >= TEDER_DIRECT_HOURS * HOUR) throw new OpsError('עברו 23 שעות מההודעה שלהם, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.');
+  const line = await demoLine(app);
+  if (!line.live) throw new OpsError(NOT_LIVE);
+  try {
+    if (!(await tederLink(app, line.wa, req, d))) throw new OpsError('כבר נשלח');
+  } catch (e: any) {
+    if (e instanceof OpsError) throw e;
+    app.log(`[ops] the Teder demo ${id} was not sent: ${e?.message || e}`);
+    throw new OpsError('ההודעה לא יצאה, ושום דבר לא סומן. אפשר לנסות שוב, או לשלוח מהוואטסאפ שלך.');
+  }
+  await markSent(app, 'teder', id, by);
+  await log(app, 'teder', id, 'direct', by, { code: req.code });
 }
 
 export async function markReplied(app: App, kind: Kind, id: string, by: string) {
@@ -207,12 +260,9 @@ export async function deliverTeder(app: App): Promise<number> {
   for (const r of waiting) {
     const d = await app.db.one<any>('SELECT * FROM teder_leads WHERE id = $1 AND page_url IS NOT NULL AND removed_at IS NULL AND lost_at IS NULL', [r.teder_id]);
     if (!d) continue;
-    if (!(await app.db.one('UPDATE demo_requests SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL RETURNING id', [r.id]))) continue;
     try {
-      const out = await reply(app, line.wa, { from: r.phone, text: '', id: `req-${r.code}`, at: new Date(r.claimed_at).getTime(), channel: 'whatsapp' }, tederRequestedLink({ storeName: d.name || d.domain, url: d.page_url }), null, null);
-      if (!out.ok) throw new Error(out.reason);
+      if (!(await tederLink(app, line.wa, r, d))) continue;
     } catch (e: any) {
-      await app.db.query('UPDATE demo_requests SET delivered_at = NULL WHERE id = $1', [r.id]);
       app.log(`[ops] the requested Teder demo ${r.teder_id} was not sent: ${e?.message || e}`);
       continue;
     }

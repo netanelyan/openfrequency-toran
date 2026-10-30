@@ -6,7 +6,7 @@ import { PLATFORM_HE, shortDate } from '../web/ui.ts';
 import { contactTarget, firstMessage, pitchUrl, reminderMessage, waLink } from '../outreach.ts';
 import { reconnectUrl, WARN_DAYS } from '../channels/waStore.ts';
 import { demoLine } from '../channels/lines.ts';
-import { reconnectWhatsapp, requestedLink, requestedLinkLater, stuckFailed, stuckPlatform, stuckWaiting, tederFirst, tederReminder, triedDemo } from './messages.ts';
+import { reconnectWhatsapp, requestedLink, requestedLinkLater, stuckFailed, stuckPlatform, stuckWaiting, tederFirst, tederReminder, tederRequestedLink, triedDemo } from './messages.ts';
 
 // Who the operator writes to today, about Toran or Teder, most urgent first (docs/operator.md section 4), and who is
 // already in a conversation. Every entry carries its message and where to send it: a wa.me or mailto: link with the
@@ -20,7 +20,8 @@ import { reconnectWhatsapp, requestedLink, requestedLinkLater, stuckFailed, stuc
 //    90  next_step        someone in a conversation whose next step is due
 //    85  asked_toran      a Toran page someone asked for on the website, ready and not sent: they are waiting
 //    85  asked_teder      the same for a Teder demo: one asked for with a code goes out by itself inside its 23 hours
-//                         (ops/actions.ts deliverTeder), and is listed here when it did not
+//                         (ops/actions.ts deliverTeder), and is listed here when it did not; inside them it can go
+//                         now from the demo number too (direct). One asked for with a typed number never can
 //  55-70 reminder         the one reminder, due; a page that was opened goes first
 //  40-50 first_send       a Toran page found by discovery, ready to send, by its score
 // A page with nothing to send it to is listed apart (noContact), to find a contact for.
@@ -215,10 +216,17 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
   }
 
   const tbase = `removed_at IS NULL AND won_at IS NULL AND ${open()}`;
-  for (const d of await db.query<any>(`SELECT * FROM teder_leads WHERE ${tbase} AND page_url IS NOT NULL AND sent_at IS NULL ORDER BY approved_at`)) {
+  // A Teder demo asked for with a code (its request's number wrote to us) can go from the demo number inside the 23
+  // hours after that, to that number, with the demo number's message; one asked for with a typed number cannot.
+  for (const d of await db.query<any>(
+    `SELECT t.*, r.phone AS req_phone, r.claimed_at AS req_at FROM teder_leads t
+       LEFT JOIN LATERAL (SELECT phone, claimed_at FROM demo_requests WHERE product = 'teder' AND teder_id = t.id AND claimed_at IS NOT NULL AND delivered_at IS NULL ORDER BY claimed_at DESC LIMIT 1) r ON true
+      WHERE ${tbase} AND t.page_url IS NOT NULL AND t.sent_at IS NULL ORDER BY t.approved_at`,
+  )) {
     const name = d.name || d.domain;
-    const message = tederFirst({ storeName: name, url: d.page_url });
-    items.push({ key: `teder:${d.id}`, product: 'teder', id: String(d.id), reason: 'asked_teder', rank: 85, name, domain: d.domain, why: 'ביקשו דמו של תדר באתר, המצגת מוכנה', message, target: waTarget(d.whatsapp, message), direct: false, mark: 'sent', page: d.page_url, at: d.approved_at });
+    const direct = connected && Boolean(d.req_at) && now() - new Date(d.req_at).getTime() < DIRECT_HOURS * HOUR;
+    const message = direct ? tederRequestedLink({ storeName: name, url: d.page_url }) : tederFirst({ storeName: name, url: d.page_url });
+    items.push({ key: `teder:${d.id}`, product: 'teder', id: String(d.id), reason: 'asked_teder', rank: 85, name, domain: d.domain, why: 'ביקשו דמו של תדר באתר, המצגת מוכנה', message, target: waTarget(direct ? d.req_phone : d.whatsapp || d.req_phone, message), direct, mark: 'sent', page: d.page_url, at: d.approved_at });
   }
   for (const d of await db.query<any>(`SELECT * FROM teder_leads WHERE ${tbase} AND page_url IS NOT NULL AND sent_at IS NOT NULL AND reminded_at IS NULL AND reminder_due_at <= now() ORDER BY opens = 0, reminder_due_at`)) {
     const name = d.name || d.domain;
