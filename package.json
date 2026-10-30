@@ -11,6 +11,7 @@
   "scripts": {
     "test": "node --test --test-concurrency=1 \"test/*.test.ts\" && node scripts/check-public.ts",
     "typecheck": "tsc --noEmit -p .",
+    "release-check": "node scripts/release-check.ts",
     "check:public": "node scripts/check-public.ts",
     "prepare": "node scripts/hooks.ts",
     "init-private": "node scripts/init-private.ts",

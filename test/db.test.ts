@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
-import { J, JSON_TYPE, openDb } from '../src/db/index.ts';
+import { J, JSON_TYPE } from '../src/db/index.ts';
 import { enqueue } from '../src/jobs/queue.ts';
+import { testDb } from './helpers.ts';
 
-// The database layer (db/index.ts): Postgres in production, PGlite here. Nothing here reaches a Postgres server.
+// The database layer (db/index.ts): Postgres in production, PGlite here, or the Postgres CI runs (TORAN_TEST_DATABASE_URL).
 
 test('json and jsonb parameters go to Postgres as the JSON text callers pass, not that text JSON-encoded again', () => {
   // The driver's own serializer, kept only for what is not text yet.
@@ -20,7 +21,7 @@ test('json and jsonb parameters go to Postgres as the JSON text callers pass, no
 });
 
 test('migration 020 gives back what a doubly encoded value meant, and leaves a true string alone', async () => {
-  const db = await openDb({ memory: true });
+  const db = await testDb();
   try {
     const job = await enqueue(db, 'rescrape', { storeId: 95 });
     // As the driver wrote them, from the move to Postgres until the fix.
