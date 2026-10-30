@@ -45,21 +45,24 @@ export async function customers(app: App): Promise<{ today: string; workspaces: 
 /** Teder's site on this machine, where its /internal/demos and /internal/lead are. */
 export const tederSite = (env: Record<string, string | undefined>) => String(env.TEDER_SITE_INTERNAL || 'http://127.0.0.1:4700').trim().replace(/\/+$/, '');
 
+/** Teder's public address (TEDER_URL, as accounts names it), where the operator opens a demo's page: /demos/<id>. */
+export const tederUrl = (env: Record<string, string | undefined>) => String(env.TEDER_URL || 'https://teder.openfrequency.co.il').trim().replace(/\/+$/, '');
+
 const iso = (v: unknown) => (v && !Number.isNaN(Date.parse(String(v))) ? new Date(String(v)).toISOString() : null);
 
-/** Teder's store demos, copied into teder_leads (Teder's columns only); false when Teder did not answer. */
+/** Teder's store demos, copied into teder_leads (Teder's columns only, its reason a demo failed among them); false when Teder did not answer. */
 export async function syncTeder(app: App): Promise<boolean> {
   const b = await get(app, tederSite(app.env), '/internal/demos');
   if (!b || !Array.isArray(b.demos)) return false;
   for (const d of b.demos as Demo[]) {
     if (d?.id == null || typeof d.domain !== 'string') continue;
     await app.db.query(
-      `INSERT INTO teder_leads (id, domain, url, name, whatsapp, status, page_url, created_at, ready_at, approved_at, removed_at, opens, visitors, last_open_at, synced_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
+      `INSERT INTO teder_leads (id, domain, url, name, whatsapp, status, page_url, created_at, ready_at, approved_at, removed_at, opens, visitors, last_open_at, error, synced_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
        ON CONFLICT (id) DO UPDATE SET domain = EXCLUDED.domain, url = EXCLUDED.url, name = EXCLUDED.name, whatsapp = EXCLUDED.whatsapp, status = EXCLUDED.status,
          page_url = EXCLUDED.page_url, created_at = EXCLUDED.created_at, ready_at = EXCLUDED.ready_at, approved_at = EXCLUDED.approved_at, removed_at = EXCLUDED.removed_at,
-         opens = EXCLUDED.opens, visitors = EXCLUDED.visitors, last_open_at = EXCLUDED.last_open_at, synced_at = now()`,
-      [String(d.id), d.domain, d.url ?? null, d.name ?? null, d.whatsapp ? String(d.whatsapp).replace(/\D/g, '') : null, String(d.status || ''), d.pageUrl ?? null, iso(d.createdAt), iso(d.readyAt), iso(d.approvedAt), iso(d.removedAt), Number(d.opens) || 0, Number(d.visitors) || 0, iso(d.lastOpenAt)],
+         opens = EXCLUDED.opens, visitors = EXCLUDED.visitors, last_open_at = EXCLUDED.last_open_at, error = EXCLUDED.error, synced_at = now()`,
+      [String(d.id), d.domain, d.url ?? null, d.name ?? null, d.whatsapp ? String(d.whatsapp).replace(/\D/g, '') : null, String(d.status || ''), d.pageUrl ?? null, iso(d.createdAt), iso(d.readyAt), iso(d.approvedAt), iso(d.removedAt), Number(d.opens) || 0, Number(d.visitors) || 0, iso(d.lastOpenAt), d.error ? String(d.error).slice(0, 1000) : null],
     );
   }
   return true;

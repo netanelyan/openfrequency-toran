@@ -74,6 +74,8 @@ store demo, newest first, at most 500:
   otherwise.
 - `opens` counts the page's views by anyone who is not signed in to OpenFrequency.
 - `visitors` counts the distinct browsers among them, by a cookie, the way Toran counts its pitch pages.
+- `error` is Teder's reason a `failed` demo was not built. Toran keeps it with the rest (`teder_leads.error`, migration
+  042), for the dashboard's list of Teder demos not up yet (section 4).
 
 ## 3. The website: a demo request by its code, one per number per product
 
@@ -146,6 +148,8 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
   "noContact": [{ "id": 31, "name": "...", "domain": "...", "score": 71, "leadUrl": "..." }],
   "stuck": [{ "product": "toran", "domain": "...", "phone": "9725...", "at": "...", "why": "...", "storeId": 7, "message": "...",
     "target": { "kind": "whatsapp", "href": "https://wa.me/9725...?text=...", "label": "להעתיק ולפתוח וואטסאפ" }, "leadUrl": "..." }],
+  "tederDemos": [{ "id": "14", "domain": "...", "name": "...", "status": "failed", "why": "לא נבנה", "error": "...",
+    "whatsapp": "9725...", "at": "...", "message": "...", "target": { ... }, "leadUrl": "https://teder.openfrequency.co.il/demos/14" }],
   "conversations": [{ "key": "teder:7", "product": "teder", "id": "7", "name": "...", "domain": "...", "replied_at": "...",
     "next_step": "...", "next_step_at": "...", "target": { ... }, "page": "...", "status": "...", "leadUrl": null }],
   "funnels": { "toran": [{ "key": "found", "label": "נמצאו", "all": 12, "month": 3 }], "teder": [ ... ] },
@@ -171,7 +175,16 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
 - Each `stuck` request has a `message` for its reason, from the operator's own WhatsApp (`src/ops/messages.ts`): still
   being built ("...הוא עוד בבנייה, ונשלח לכם את הלינק כשיהיה מוכן."), could not be built, Teder included ("...ולא
   הצלחנו לבנות אותו. אם יש שאלה, אפשר לענות כאן."), or a platform Toran does not read; null for a Teder demo taken
-  down. Its `target` is the number that asked, with the message written in.
+  down. Its `target` is the number that asked, with the message written in. A Teder one's `leadUrl` is its demo in Teder
+  once Teder took it.
+- `tederDemos` is every Teder demo of the last 30 days that is not up yet (`src/ops/queue.ts` `tederDemos`), failed ones
+  first: `status` new or building ("בבנייה"), ready ("מחכה לבדיקה בתדר": drawn, waiting for the operator in Teder) or
+  failed ("לא נבנה", with Teder's `error`). A failed one with a number has the message "היי, כאן OpenFrequency. ביקשתם
+  באתר דמו של תדר ל<store>, ולא הצלחנו לבנות אותו. אם יש שאלה, אפשר לענות כאן." and a `target` with it; the others
+  open the chat alone (or nothing, with no number). `leadUrl` is the demo's page in Teder, `TEDER_URL`/demos/<id>
+  (`TEDER_URL` is Teder's public address, default `https://teder.openfrequency.co.il`, the same setting as accounts').
+  A demo a `stuck` request already lists (asked with a code, its link not sent) is left out, and an approved one is an
+  `asked_teder` card once it has its page.
 - The funnels' last stage, `customers`, comes with `all` and `month` as null: accounts fills it from its
   subscriptions.
 - `ourNumber` is our one WhatsApp number once our company store connected it, and null before. `demoLine` is the demo

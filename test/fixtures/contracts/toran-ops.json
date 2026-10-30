@@ -71,6 +71,25 @@
                 "leadUrl": "https://toran.openfrequency.co.il/lead/40"
               }
             ],
+            "tederDemos": [
+              {
+                "id": "14",
+                "domain": "kelim.example",
+                "name": "חנות הכלים",
+                "status": "failed",
+                "why": "לא נבנה",
+                "error": "לא הצלחנו לקרוא את החנות",
+                "whatsapp": "972500000208",
+                "at": "2026-10-23T09:00:00.000Z",
+                "message": "היי, כאן OpenFrequency. ביקשתם באתר דמו של תדר לחנות הכלים, ולא הצלחנו לבנות אותו. אם יש שאלה, אפשר לענות כאן.",
+                "target": {
+                  "kind": "whatsapp",
+                  "href": "https://wa.me/972500000208?text=%D7%94%D7%99%D7%99%2C%20%D7%9B%D7%90%D7%9F%20OpenFrequency.%20%D7%91%D7%99%D7%A7%D7%A9%D7%AA%D7%9D%20%D7%91%D7%90%D7%AA%D7%A8%20%D7%93%D7%9E%D7%95%20%D7%A9%D7%9C%20%D7%AA%D7%93%D7%A8%20%D7%9C%D7%97%D7%A0%D7%95%D7%AA%20%D7%94%D7%9B%D7%9C%D7%99%D7%9D%2C%20%D7%95%D7%9C%D7%90%20%D7%94%D7%A6%D7%9C%D7%97%D7%A0%D7%95%20%D7%9C%D7%91%D7%A0%D7%95%D7%AA%20%D7%90%D7%95%D7%AA%D7%95.%20%D7%90%D7%9D%20%D7%99%D7%A9%20%D7%A9%D7%90%D7%9C%D7%94%2C%20%D7%90%D7%A4%D7%A9%D7%A8%20%D7%9C%D7%A2%D7%A0%D7%95%D7%AA%20%D7%9B%D7%90%D7%9F.",
+                  "label": "להעתיק ולפתוח וואטסאפ"
+                },
+                "leadUrl": "https://teder.openfrequency.co.il/demos/14"
+              }
+            ],
             "conversations": [
               {
                 "key": "toran:9",
@@ -135,7 +154,11 @@
             "ourNumber",
             "number",
             "next_step",
-            "storeId"
+            "storeId",
+            "error",
+            "whatsapp",
+            "href",
+            "kind"
           ]
         },
         {

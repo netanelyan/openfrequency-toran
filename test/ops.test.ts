@@ -94,6 +94,48 @@ test('who to write to today, in order: tried the demo, asked on the website, the
   }
 });
 
+test("every Teder demo not up yet, at its stage, with Teder's reason and a link to it in Teder; a failed one has a message; one a request lists, or that is up, is not here twice", async () => {
+  const { tederDemos } = await import('../src/ops/queue.ts');
+  const { opsData } = await import('../src/ops/api.ts');
+  const demo = (id: number, domain: string, status: string, more: Record<string, unknown> = {}) => ({ id, domain, url: `https://${domain}/`, name: null, status, whatsapp: '972500000351', pageUrl: null, createdAt: ago(id), readyAt: null, approvedAt: null, removedAt: null, error: null, opens: 0, visitors: 0, lastOpenAt: null, ...more });
+  const app = await testApp();
+  const svc = await fakeServices([
+    demo(1, 'building.example', 'building'),
+    demo(2, 'fresh.example', 'new', { whatsapp: null }),
+    demo(3, 'check-me.example', 'ready', { name: 'בדיקה' }),
+    demo(4, 'broken.example', 'failed', { name: 'חנות שבורה', error: 'לא הצלחנו לקרוא את החנות: 404' }),
+    demo(5, 'up.example', 'approved', { pageUrl: 'https://teder.example/s/up-x1', approvedAt: ago(4) }),
+    demo(6, 'gone.example', 'removed', { removedAt: ago(5) }),
+    demo(7, 'asked.example', 'failed', { error: 'המצגת לא עברה את הבדיקות' }),
+    demo(900, 'old.example', 'failed', { createdAt: ago(31 * 24) }),
+  ], []);
+  Object.assign(app.env, svc.env);
+  try {
+    // Demo 7 was asked for with a code: its request is listed with nothing to send, so it is not here again.
+    await app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at, product, teder_id) VALUES ('REQ-TDEMO7', 'https://asked.example/', 'asked.example', '972500000352', $1, 'teder', '7')", [ago(2)]);
+    assert.equal(await syncTeder(app), true);
+    const list = await tederDemos(app);
+    assert.deepEqual(list.map((d) => [d.id, d.status, d.why]), [['4', 'failed', 'לא נבנה'], ['1', 'building', 'בבנייה'], ['2', 'new', 'בבנייה'], ['3', 'ready', 'מחכה לבדיקה בתדר']], 'failed first, then the newest; not the one up, taken down, asked with a code, or older than 30 days');
+    const failed = list[0];
+    assert.equal(failed.error, 'לא הצלחנו לקרוא את החנות: 404', "Teder's reason");
+    assert.equal(failed.message, 'היי, כאן OpenFrequency. ביקשתם באתר דמו של תדר לחנות שבורה, ולא הצלחנו לבנות אותו. אם יש שאלה, אפשר לענות כאן.');
+    assert.equal(failed.target.href, `https://wa.me/972500000351?text=${encodeURIComponent(failed.message!)}`);
+    assert.deepEqual(list.slice(1).map((d) => [d.message, d.target.href]), [[null, 'https://wa.me/972500000351'], [null, null], [null, 'https://wa.me/972500000351']], 'the others open the chat alone, when there is a number');
+
+    // In the dashboard's data, each links to its page in Teder: TEDER_URL, else Teder's address on our domain.
+    let d = await opsData(app);
+    assert.deepEqual(d.tederDemos.map((x) => x.leadUrl), ['4', '1', '2', '3'].map((id) => `https://teder.openfrequency.co.il/demos/${id}`));
+    app.env.TEDER_URL = 'https://teder.example/';
+    d = await opsData(app);
+    assert.equal(d.tederDemos[0].leadUrl, 'https://teder.example/demos/4');
+    const asked = d.stuck.find((s) => s.domain === 'asked.example')!;
+    assert.deepEqual([asked.why, asked.leadUrl, 'tederId' in asked], ['תדר לא הצליח לבנות את הדמו', 'https://teder.example/demos/7', false], "a Teder request links to its demo in Teder");
+  } finally {
+    await svc.close();
+    await app.db.close();
+  }
+});
+
 test('one approach and one reminder: "sent" sets the reminder four days on (never on Shabbat), and a second reminder is refused', async () => {
   const app = await testApp();
   try {

@@ -2,8 +2,8 @@ import { timingSafeEqual } from 'node:crypto';
 import type { App } from '../app.ts';
 import type { Out, Req, Route } from '../web/server.ts';
 import { accountsLinks, ADMIN } from '../web/accounts.ts';
-import { syncTeder } from './sources.ts';
-import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests } from './queue.ts';
+import { syncTeder, tederUrl } from './sources.ts';
+import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests, tederDemos } from './queue.ts';
 import { funnels } from './funnel.ts';
 import { demoLine, oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
 import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, setNext, type Kind } from './actions.ts';
@@ -47,6 +47,8 @@ export function internalRefusal(app: App, r: Req): Out | null {
 
 /** A lead's page, where the operator opens it: Toran's dashboard under accounts' /admin (web/server.ts, ADMIN). */
 const leadUrl = (app: App, id: number | string | null) => (id == null ? null : `${accountsLinks(app.env).home}${ADMIN}/lead/${id}`);
+/** A Teder demo's page, where the operator opens it: Teder's own /demos/<id>, on its public address (TEDER_URL). */
+const tederDemoUrl = (app: App, id: string) => `${tederUrl(app.env)}/demos/${encodeURIComponent(id)}`;
 
 const ACTIONS = ['sent', 'reminded', 'direct', 'replied', 'next', 'later', 'lost', 'reopen', 'pilot', 'paid', 'won'] as const;
 const SAID: Record<(typeof ACTIONS)[number], string> = {
@@ -66,14 +68,17 @@ const TOLD = `סומן שאמרת להם לחבר מחדש את הוואטסאפ
 
 export async function opsData(app: App) {
   const ok = await syncTeder(app);
-  const [q, convs, stuck, f, one, line] = await Promise.all([queue(app), conversations(app), stuckRequests(app), funnels(app, null), oneNumberRoles(app), demoLine(app)]);
+  const [q, convs, stuck, f, one, line, teder] = await Promise.all([queue(app), conversations(app), stuckRequests(app), funnels(app, null), oneNumberRoles(app), demoLine(app), tederDemos(app)]);
   // The last stage, customers, is accounts' word: it fills it from its subscriptions.
   for (const s of [...f.toran, ...f.teder]) if (s.key === 'customers') Object.assign(s, { all: null, month: null });
   return {
     teder: { ok },
     items: q.items.map((i) => ({ ...i, leadUrl: i.product === 'toran' ? leadUrl(app, i.id) : null })),
     noContact: q.noContact.map((s) => ({ id: s.id, name: s.brand?.name || s.name || s.domain, domain: s.domain, score: s.score, leadUrl: leadUrl(app, s.id) })),
-    stuck: stuck.map((s) => ({ ...s, leadUrl: leadUrl(app, s.storeId) })),
+    // A Teder request links to its demo in Teder, once Teder took it.
+    stuck: stuck.map(({ tederId, ...s }) => ({ ...s, leadUrl: s.storeId != null ? leadUrl(app, s.storeId) : tederId ? tederDemoUrl(app, tederId) : null })),
+    // Every Teder demo not up yet, each linking to its page in Teder (queue.ts tederDemos).
+    tederDemos: teder.map((d) => ({ ...d, leadUrl: tederDemoUrl(app, d.id) })),
     conversations: convs.map((c) => ({ ...c, leadUrl: c.product === 'toran' ? leadUrl(app, c.id) : null })),
     funnels: f,
     // Our one WhatsApp number (channels/lines.ts) and what it does now, in the order its messages are read; null

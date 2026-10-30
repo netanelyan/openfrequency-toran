@@ -231,6 +231,9 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
     await s.app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-CNTRC1', 'https://wix-store.example/', 'wix-store.example', '972500000204', $1)", [ago(6)]);
     await s.app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-CNTRC2', 'https://unread.example/', 'unread.example', '972500000206', $1)", [ago(2)]);
     await store(s, 'bakery.example', { status: 'pilot', approved_at: ago(300), page_built_at: ago(300), sent_at: ago(250), replied_at: ago(48), next_step: 'לקבוע שיחה', next_step_at: new Date(Date.now() + 5 * 86_400_000).toISOString(), contact_whatsapp: '972500000205' });
+    // Teder's demos not up yet: one that failed, with Teder's reason and the number that asked, and one just asked for
+    // with no number (copied from Teder's /internal/demos as syncTeder does).
+    await s.app.db.query("INSERT INTO teder_leads (id, domain, name, status, whatsapp, error, created_at) VALUES ('14', 'kelim.example', 'חנות הכלים', 'failed', '972500000208', 'לא הצלחנו לקרוא את החנות', $1), ('15', 'new-teder.example', NULL, 'new', NULL, NULL, $1)", [ago(3)]);
     const answered = await store(s, 'answered.example', { status: 'sent', approved_at: ago(300), page_built_at: ago(300), sent_at: ago(250), contact_whatsapp: '972500000207' });
     assert.equal((await act(s, `toran/${answered}/replied`, { by: 'Admin' })).status, 200);
     return { 'the dashboard': await ops(s) };

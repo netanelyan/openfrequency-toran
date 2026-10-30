@@ -65,7 +65,7 @@ const DIRECT_HOURS = 23;
  * with the message for the reason (messages.ts) written in the link to their number. A Teder request's why names
  * Teder, and it has no store here (storeId null). A demo Teder took down has nothing to say (message null).
  */
-export type Stuck = { product: 'toran' | 'teder'; domain: string; phone: string; at: string; why: string; storeId: number | null; message: string | null; target: Item['target'] };
+export type Stuck = { product: 'toran' | 'teder'; domain: string; phone: string; at: string; why: string; storeId: number | null; tederId: string | null; message: string | null; target: Item['target'] };
 
 /** Why a Teder request has no link yet, and whether it waits or failed: Teder has not taken it, or its demo is not up (Teder's statuses, src/demos/build.js). */
 const tederWhy = (r: any): { why: string; state: 'waiting' | 'failed' | 'removed' } =>
@@ -105,6 +105,7 @@ export async function stuckRequests(app: App): Promise<Stuck[]> {
       phone: r.phone,
       at: r.claimed_at,
       storeId: r.id ?? null,
+      tederId: null,
       why: building ? 'הדף בבנייה'
         : other ? `האתר על ${other}, ותורן בונה דמו רק לחנויות ${INGESTIBLE_HE}`
         : !r.id ? 'לא הצלחנו לקרוא את האתר'
@@ -118,10 +119,36 @@ export async function stuckRequests(app: App): Promise<Stuck[]> {
     const { why, state } = tederWhy(r);
     const name = r.name || r.domain;
     const message = state === 'waiting' ? stuckWaiting({ product: 'teder', storeName: name }) : state === 'failed' ? stuckFailed({ product: 'teder', storeName: name }) : null;
-    return { product: 'teder' as const, domain: r.domain, phone: r.phone, at: r.claimed_at, storeId: null, why, message, target: waTarget(r.phone, message) };
+    return { product: 'teder' as const, domain: r.domain, phone: r.phone, at: r.claimed_at, storeId: null, tederId: r.teder_id ?? null, why, message, target: waTarget(r.phone, message) };
   });
   const time = (at: unknown) => new Date(at as string).getTime();
   return [...toran, ...tederRows].sort((a, b) => time(a.at) - time(b.at));
+}
+
+/**
+ * A Teder demo that is not up yet, at any stage (teder_leads, as last read from Teder; Teder's statuses,
+ * src/demos/build.js): new or building, drawn and waiting for the operator's check in Teder, or failed, with Teder's
+ * reason. A failed one has a message to the number that asked, from the operator's own WhatsApp. One that a request
+ * with nothing to send already lists (stuckRequests: asked with a code, its link not sent) is left out, so nobody is
+ * written to twice; an approved one, with its page, is a card (asked_teder). The last 30 days, failed ones first.
+ */
+export type TederDemo = { id: string; domain: string; name: string; status: string; why: string; error: string | null; whatsapp: string | null; at: string; message: string | null; target: Item['target'] };
+
+const TEDER_STAGE: Record<string, string> = { new: 'בבנייה', building: 'בבנייה', ready: 'מחכה לבדיקה בתדר', failed: 'לא נבנה' };
+
+export async function tederDemos(app: App): Promise<TederDemo[]> {
+  const rows = await app.db.query<any>(
+    `SELECT t.*, COALESCE(t.created_at, t.synced_at) AS at FROM teder_leads t
+      WHERE t.page_url IS NULL AND t.removed_at IS NULL AND t.status IN ('new', 'building', 'ready', 'failed') AND t.lost_at IS NULL AND t.won_at IS NULL
+        AND COALESCE(t.created_at, t.synced_at) > now() - interval '30 days'
+        AND NOT EXISTS (SELECT 1 FROM demo_requests r WHERE r.product = 'teder' AND r.teder_id = t.id AND r.delivered_at IS NULL AND r.claimed_at > now() - interval '14 days')
+      ORDER BY t.status = 'failed' DESC, at DESC`,
+  );
+  return rows.map((d) => {
+    const name = d.name || d.domain;
+    const message = d.status === 'failed' && d.whatsapp ? stuckFailed({ product: 'teder', storeName: name }) : null;
+    return { id: String(d.id), domain: d.domain, name, status: d.status, why: TEDER_STAGE[d.status], error: d.status === 'failed' ? d.error || null : null, whatsapp: d.whatsapp || null, at: d.at, message, target: waTarget(d.whatsapp, message) };
+  });
 }
 
 export async function queue(app: App): Promise<{ items: Item[]; noContact: any[] }> {
