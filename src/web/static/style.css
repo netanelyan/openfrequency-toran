@@ -280,6 +280,8 @@ h3 { font-size: 14px; margin: 0; font-weight: 600; }
 .chip.ok { color: var(--ok); }
 .chip.warn { color: var(--warn); }
 .chip.bad { color: var(--bad); }
+/* a form's own failure, said inside it (the inbox reply, app.js data-error) */
+[data-error] { color: var(--bad); }
 .chip.sig { color: var(--accent); }
 .chip.ghost { color: var(--ink-3); }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }

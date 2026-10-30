@@ -97,16 +97,26 @@
     const submit = form.querySelector('button[type=submit]');
     submit?.setAttribute('aria-busy', 'true');
     try {
+      // A form with a file goes as it is (multipart); every other as a plain form.
+      const multipart = form.enctype === 'multipart/form-data';
       const res = await fetch(form.action, {
         method: 'POST',
-        headers: { 'x-tn-ajax': '1', 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams(new FormData(form)),
+        headers: multipart ? { 'x-tn-ajax': '1' } : { 'x-tn-ajax': '1', 'content-type': 'application/x-www-form-urlencoded' },
+        body: multipart ? new FormData(form) : new URLSearchParams(new FormData(form)),
         credentials: 'same-origin',
       });
       const out = await res.json().catch(() => ({ ok: false, message: 'תשובה לא צפויה מהשרת' }));
+      const kind = form.dataset.ajax;
+      // An answer to a customer that did not go: the reason inside its box, and the text left where it was typed.
+      const err = form.querySelector('[data-error]');
+      if (kind === 'reply' && err) {
+        err.hidden = out.ok;
+        err.textContent = out.ok ? '' : out.message || 'לא נשלח.';
+        if (!out.ok) return;
+      }
       say(out.message, !out.ok);
       if (!out.ok) return;
-      const kind = form.dataset.ajax;
+      if (kind === 'reply') location.href = out.redirect || location.href;
       if (kind === 'remove') {
         const card = form.closest('[data-item]');
         if (card) {
@@ -124,26 +134,84 @@
     }
   });
 
+  // A file over the size a form takes is refused before it is sent (data-max, in bytes), with the form's own words.
+  document.addEventListener('change', (e) => {
+    const input = e.target.closest('input[type=file][data-max]');
+    if (!input) return;
+    const big = [...(input.files || [])].some((f) => f.size > Number(input.dataset.max));
+    input.setCustomValidity(big ? input.dataset.tooBig || '' : '');
+    if (big) input.reportValidity();
+  });
+
   document.addEventListener('click', (e) => {
     const a = e.target.closest('a[href^="#"]');
     const target = a && a.getAttribute('href').length > 1 ? document.querySelector(a.getAttribute('href')) : null;
     if (target?.tagName === 'DETAILS') target.open = true;
   });
 
-  // A page that waits for a job (ingest, page build) refreshes itself until the job is done.
+  // A page that waits for a job (ingest, page build) loads itself again when the job ends (PRA-FE-006). It asks every 2
+  // seconds for the first minute, then every 10; after 3 minutes it says the reading takes longer than usual, with the
+  // job's own progress line; after 15 it stops asking and says so, with the way to write to us (data-help). Nothing is
+  // asked while the tab is hidden. A job that is gone, a session that ended or a redirect end the waiting too, with a
+  // link to load the page again.
   const wait = document.querySelector('[data-wait-job]');
   if (wait) {
+    const started = Date.now();
+    let timer = null;
+    let over = false;
+    const note = document.createElement('p');
+    note.className = 'small mt8 m0';
+    note.setAttribute('role', 'status');
+    const tell = (text, { reload = false, help = false } = {}) => {
+      note.textContent = text;
+      if (reload) {
+        const a = document.createElement('a');
+        a.href = location.href;
+        a.textContent = ' לטעון את הדף מחדש';
+        note.append(a);
+      }
+      if (help && wait.dataset.help) {
+        const a = document.createElement('a');
+        a.href = wait.dataset.help;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = ' לכתוב לנו';
+        note.append(a);
+      }
+      if (!note.isConnected) (wait.querySelector('div') || wait).append(note);
+    };
+    const stop = (text, opts) => {
+      over = true;
+      clearTimeout(timer);
+      tell(text, opts);
+    };
+    const next = () => {
+      if (over || document.hidden) return;
+      const spent = Date.now() - started;
+      if (spent > 15 * 60_000) return stop('זה לוקח הרבה יותר מהרגיל, אז הדף הפסיק לבדוק לבד.', { reload: true, help: true });
+      timer = setTimeout(poll, spent < 60_000 ? 2000 : 10_000);
+    };
     const poll = async () => {
+      if (over || document.hidden) return;
       try {
-        const r = await fetch(`${document.documentElement.dataset.base || ''}/jobs/${wait.dataset.waitJob}.json`, { credentials: 'same-origin' });
+        const r = await fetch(`${document.documentElement.dataset.base || ''}/jobs/${wait.dataset.waitJob}.json`, { credentials: 'same-origin', redirect: 'manual' });
+        if (r.type === 'opaqueredirect' || r.redirected || r.status === 401 || r.status === 403) return stop('החיבור לדף נקטע.', { reload: true });
         const j = await r.json();
+        if (j.status === 'missing') return stop('העבודה הזו כבר לא כאן.', { reload: true });
+        if (j.status === 'done' || j.status === 'failed') return location.reload();
         const line = wait.querySelector('[data-progress]');
         if (line && j.progress) line.textContent = j.progress;
-        if (j.status === 'done' || j.status === 'failed') return location.reload();
+        if (Date.now() - started > 3 * 60_000) tell(`הקריאה לוקחת יותר מהרגיל. אפשר להשאיר את הדף פתוח, הוא יתעדכן לבד.${!line && j.progress ? ` עכשיו: ${j.progress}` : ''}`);
       } catch {}
-      setTimeout(poll, 2000);
+      next();
     };
-    setTimeout(poll, 1500);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && !over) {
+        clearTimeout(timer);
+        poll();
+      }
+    });
+    timer = setTimeout(poll, 1500);
   }
 
   // Developer mode opens from the settings' version line, tapped seven times in a row.

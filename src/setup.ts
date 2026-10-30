@@ -58,7 +58,7 @@ export async function setupStoreOf(app: App, workspaceId: number): Promise<{ sto
 }
 
 /** Where the store stands: the first step, and what Today and /start say while it is not done (pages/start.ts). */
-export function storeState({ store, add, read, claim = null }: Awaited<ReturnType<typeof setupStoreOf>>): { status: StepStatus; detail: string; job: number | null } {
+export function storeState({ store, add, read, claim = null }: Awaited<ReturnType<typeof setupStoreOf>>): { status: StepStatus; detail: string; job: number | null; verify?: string } {
   const live = [add, read].find((j) => j && LIVE.includes(j.status)) || null;
   if (store?.ingested_at) return { status: 'done', detail: '', job: null };
   if (live) return { status: 'working', detail: 'קוראים את האתר. זה לוקח דקה או שתיים.', job: live.id };
@@ -67,7 +67,7 @@ export function storeState({ store, add, read, claim = null }: Awaited<ReturnTyp
   const last = [add, read].filter(Boolean).sort((a, b) => b!.id - a!.id)[0];
   if (last?.status === 'failed') return { status: 'attention', detail: store ? 'לא הצלחנו לקרוא את האתר. כתבו לנו ונבדוק.' : 'לא הצלחנו לקרוא את האתר. אפשר לנסות שוב, או לכתוב לנו.', job: null };
   if (store) return { status: 'todo', detail: 'האתר עוד לא נקרא.', job: null };
-  if (claim) return { status: 'attention', detail: `צריך לאמת שהאתר ${claim.domain} שלכם, ואז תורן קורא אותו. ההוראות בדף הוספת החנות.`, job: null };
+  if (claim) return { status: 'attention', detail: `צריך לאמת שהאתר ${claim.domain} שלכם, ואז תורן קורא אותו. ההוראות בדף הוספת החנות.`, job: null, verify: claim.domain };
   return { status: 'todo', detail: 'כותבים את הכתובת של האתר, ותורן קורא ממנו את המוצרים ואת דפי המדיניות.', job: null };
 }
 

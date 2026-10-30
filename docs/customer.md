@@ -115,6 +115,11 @@ types it ("store.co.il" is enough). `POST /start`:
 - refuses what is not a website: http or https only, a host name with a dot, no IP, no localhost or local name
 - sends a workspace that has a store, or whose site is being read, back to Today (one store a workspace, for now)
 - refuses a domain that is another workspace's store: "החנות הזאת כבר מחוברת לחשבון אחר. כתבו לנו ונבדוק."
+- keeps a claim on a domain this workspace has not proven yet (`src/domainProof.ts`, `domain_claims`) and shows how to
+  prove it: a DNS TXT record `toran-verify=<token>` on the domain or on `_toran-verify.<domain>`, or
+  `<meta name="toran-verify" content="<token>">` on the home page. `POST /start/verify` looks (once every 10 seconds),
+  and only a proven domain goes on to the steps below. Until then Today and accounts' `/setup` say "צריך לאמת שהאתר
+  שלכם". The operator releases a disputed domain from the lead's page ("לשחרר את האתר מהחשבון")
 - takes one add a minute per workspace (the audit's `start_store`)
 - makes an operator's lead with that domain the workspace's, and reads its site again
 - otherwise queues `add_store` with the workspace id (`jobs/worker.ts`): the store is born in the workspace

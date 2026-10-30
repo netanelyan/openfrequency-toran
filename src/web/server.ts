@@ -10,7 +10,7 @@ import { clientIp, cookies, csrfFor, csrfOk, isHttps, sessionSecret } from './au
 import { accountsClient, accountsLinks, ADMIN, operatorFrom, refusal, sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
 import { ownsConversation, ownsJob, ownsStore, scopeOf, type Scope } from './workspace.ts';
 import type { PageCtx } from './ui.ts';
-import { notFoundPage, refusalPage } from './pages/basic.ts';
+import { errorPage, notFoundPage, refusalPage } from './pages/basic.ts';
 import { dashboardRoutes, headerCounts, storesCss } from './routes.ts';
 import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
@@ -47,6 +47,8 @@ export type DashReq = Req & { user: { id: number; name: string; role: string; em
 const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add|review\/approve-all|ops\/.*|lead\/\d+\/(build|approve|unapprove|takedown|sent|followup-sent|skip|status|notes|sample|brand|plan|release))$/;
 /** The operator's pages. A customer who reaches one goes to their own: a store's page to what Toran knows about it. */
 const OPERATOR_PAGES = /^\/(leads|review|followups|brand|job\/\d+|lead\/\d+(\/review)?)$/;
+/** A waiting page's poll (static/app.js): answered without the header's counts, which it never shows (PRA-FE-006). */
+const JOB_POLL = /^\/jobs\/\d+\.json$/;
 export type Route<R> = [method: 'GET' | 'POST', re: RegExp, fn: (r: R, m: RegExpExecArray) => Promise<Out> | Out];
 
 export class ActionError extends Error {
@@ -180,9 +182,9 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
   return async function handler(req: IncomingMessage, res: ServerResponse) {
     try {
       const host = String(req.headers.host || '').toLowerCase();
-      if (!hosts.has(host) && !(env.TORAN_ANY_HOST === '1')) return send(req, res, 421, 'wrong host', 'text/plain; charset=utf-8');
+      if (!hosts.has(host) && !(env.TORAN_ANY_HOST === '1')) return send(req, res, 421, errorPage(421, 'הכתובת הזו לא מגיעה לתורן.'), 'text/html; charset=utf-8');
       const secure = isHttps(req);
-      if ((host === publicHost || host === pitchHost) && !secure && env.TORAN_ENV === 'prod') return send(req, res, 403, 'HTTPS only', 'text/plain; charset=utf-8');
+      if ((host === publicHost || host === pitchHost) && !secure && env.TORAN_ENV === 'prod') return send(req, res, 403, errorPage(403, 'תורן נפתח רק בחיבור מאובטח, בכתובת שמתחילה ב־https.'), 'text/html; charset=utf-8');
       let url = new URL(req.url || '/', `http://${host}`);
       // Under accounts' /admin (its proxy, from this machine): the prefix comes off, and goes back on the way out.
       const viaAdmin = req.headers['x-of-admin-prefix'] === ADMIN && (url.pathname === ADMIN || url.pathname.startsWith(`${ADMIN}/`)) && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(String(req.socket?.remoteAddress));
@@ -194,11 +196,11 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       try {
         p = decodeURIComponent(url.pathname);
       } catch {
-        return send(req, res, 400, 'bad path', 'text/plain; charset=utf-8');
+        return send(req, res, 400, errorPage(400, 'הכתובת של הדף לא תקינה.'), 'text/html; charset=utf-8');
       }
       const method = req.method === 'HEAD' ? 'GET' : (req.method as 'GET' | 'POST');
       // Never the machine-to-machine routes or the providers' webhooks under the admin prefix.
-      if (viaAdmin && /^\/(internal|wa|mail|meta|hooks)\//.test(p)) return send(req, res, 404, 'not found', 'text/plain; charset=utf-8');
+      if (viaAdmin && /^\/(internal|wa|mail|meta|hooks)\//.test(p)) return send(req, res, 404, errorPage(404, 'אין דף כזה.'), 'text/html; charset=utf-8');
 
       // ---- static files and brand assets, no session
       if (method === 'GET') {
@@ -251,11 +253,11 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const session = who.body as Session;
       const scope = scopeOf(session);
       // /admin/toran is the operator's alone; Toran's own name shows the product, so the operator is sent to /admin.
-      if (viaAdmin && !scope.operator) return send(req, res, 404, 'not found', 'text/plain; charset=utf-8');
+      if (viaAdmin && !scope.operator) return send(req, res, 404, errorPage(404, 'אין דף כזה.'), 'text/html; charset=utf-8');
       if (!viaAdmin && scope.operator && publicHost && host === publicHost && adminOrigin) {
         const there = `${adminOrigin}${ADMIN}${p === '/' ? '/' : p}${url.search}`;
         if (method === 'GET') return reply(req, res, { redirect: there });
-        return ajax ? json(409, { ok: false, message: 'הניהול של תורן עבר ל־/admin.', redirect: there }) : send(req, res, 409, 'the operator manages Toran at /admin/toran', 'text/plain; charset=utf-8');
+        return ajax ? json(409, { ok: false, message: 'הניהול של תורן עבר ל־/admin.', redirect: there }) : send(req, res, 409, errorPage(409, 'הניהול של תורן עבר ל־/admin.', there), 'text/html; charset=utf-8');
       }
       // ---- the paywall (billing/entitlement.ts, PRA-SEC-002): a customer whose workspace has not paid for Toran gets the
       // pay page, and posts nothing. The operator, and the operator viewing as the customer, are never asked about.
@@ -274,8 +276,9 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const flash = jar.tn_flash || null;
       if (flash) setCookies.push('tn_flash=; Path=/; Max-Age=0; SameSite=Strict');
       const viewAs = session.viewAs ? { name: String(session.workspace?.name || session.workspace?.slug || ''), admin: links.admin } : null;
-      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, ...(await headerCounts(app, scope)) };
-      const notFound = () => (method === 'GET' ? send(req, res, 404, notFoundPage({ ...ctx, title: 'לא נמצא' }), 'text/html; charset=utf-8') : ajax ? json(404, { ok: false, message: 'לא נמצא' }) : send(req, res, 404, 'not found', 'text/plain; charset=utf-8'));
+      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope)) };
+      const back = () => refererPath(req.headers.referer, viaAdmin ? adminOrigin : `http://${host}`, viaAdmin) || '/';
+      const notFound = () => (method === 'GET' ? send(req, res, 404, notFoundPage({ ...ctx, title: 'לא נמצא' }), 'text/html; charset=utf-8') : ajax ? json(404, { ok: false, message: 'לא נמצא' }) : send(req, res, 404, errorPage(404, 'מה שחיפשתם לא נמצא כאן. אולי הקישור ישן.', back()), 'text/html; charset=utf-8'));
 
       // One store, chat or job: only inside its workspace. Another workspace's is "not found", as one that never was.
       const idOf = (re: RegExp) => Number(re.exec(p)?.[1] || 0);
@@ -293,17 +296,17 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       if (method === 'POST') {
         const origin = req.headers.origin;
         if (origin && !origins.has(origin)) return json(403, { ok: false, message: 'בקשה מאתר אחר נחסמה.' });
-        if (scope.readOnly) return ajax ? json(403, { ok: false, message: 'במצב צפייה אי אפשר לשנות כלום.' }) : send(req, res, 403, 'read-only: view-as changes nothing', 'text/plain; charset=utf-8');
-        if (OPERATOR_ONLY.test(p) && !scope.operator) return ajax ? json(403, { ok: false, message: 'את זה משנים רק אנחנו, ב־OpenFrequency.' }) : send(req, res, 403, 'only the operator changes this', 'text/plain; charset=utf-8');
+        if (scope.readOnly) return ajax ? json(403, { ok: false, message: 'במצב צפייה אי אפשר לשנות כלום.' }) : send(req, res, 403, errorPage(403, 'במצב צפייה אי אפשר לשנות כלום.', back()), 'text/html; charset=utf-8');
+        if (OPERATOR_ONLY.test(p) && !scope.operator) return ajax ? json(403, { ok: false, message: 'את זה משנים רק אנחנו, ב־OpenFrequency.' }) : send(req, res, 403, errorPage(403, 'את זה משנים רק אנחנו, ב־OpenFrequency.', back()), 'text/html; charset=utf-8');
         const type = String(req.headers['content-type'] || '');
         if (/^multipart\/form-data/i.test(type)) {
           const boundary = boundaryOf(type);
-          if (!UPLOAD.test(p) || !boundary) return send(req, res, 415, 'a file goes only with an answer in a conversation', 'text/plain; charset=utf-8');
+          if (!UPLOAD.test(p) || !boundary) return send(req, res, 415, errorPage(415, 'קובץ אפשר לצרף רק לתשובה ללקוח בשיחה.', back()), 'text/html; charset=utf-8');
           const parsed = parseMultipart(await readBytes(req, MAX_BYTES + 100_000, `הקובץ גדול מדי. אפשר לצרף עד ${MAX_BYTES / 1024 / 1024}MB.`), boundary);
           form = parsed.fields;
           files = parsed.files;
         } else form = Object.fromEntries(new URLSearchParams(await readBody(req)));
-        if (!csrfOk(form._csrf, basis, secret)) return ajax ? json(403, { ok: false, message: 'הדף ישן. צריך לרענן אותו.' }) : send(req, res, 403, 'stale page, reload it', 'text/plain; charset=utf-8');
+        if (!csrfOk(form._csrf, basis, secret)) return ajax ? json(403, { ok: false, message: 'הדף ישן. צריך לרענן אותו.' }) : send(req, res, 403, errorPage(403, 'הדף ישן. רעננו אותו ונסו שוב.', back()), 'text/html; charset=utf-8');
         if (p === '/settings/dev') {
           const on = form.on === '1';
           const c = `tn_dev=${on ? '1' : ''}; Path=/; Max-Age=${on ? 31536000 : 0}; SameSite=Strict; HttpOnly${secure ? '; Secure' : ''}`;
@@ -331,16 +334,19 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
           return reply(req, res, out, setCookies.length ? { 'set-cookie': setCookies } : {});
         } catch (e) {
           if (!(e instanceof ActionError)) throw e;
-          if (ajax || method === 'GET') return reply(req, res, { status: e.status, json: { ok: false, message: e.message, problems: e.problems } });
+          if (ajax) return reply(req, res, { status: e.status, json: { ok: false, message: e.message, problems: e.problems } });
+          if (method === 'GET') return send(req, res, e.status, errorPage(e.status, e.problems.length ? `${e.message} ${e.problems.join(' ')}` : e.message, back()), 'text/html; charset=utf-8');
           return reply(req, res, { redirect: req.headers.referer ? new URL(req.headers.referer).pathname : '/' }, { 'set-cookie': flashCookie(e.problems.length ? `${e.message} ${e.problems.join(' ')}` : e.message) });
         }
       }
       return send(req, res, 404, notFoundPage({ ...ctx, title: 'לא נמצא' }), 'text/html; charset=utf-8');
     } catch (e: any) {
-      // The stack goes to the log, never to the page.
+      // The stack goes to the log, never to the page; only an ActionError's words are ours to show (PRA-FE-005).
       app.log(`[web] ${req.method} ${req.url}: ${e?.stack || e?.message || e}`);
-      const status = e?.status || 500;
-      return send(req, res, status, status === 500 ? 'משהו השתבש. הפרטים ביומן.' : String(e.message), 'text/plain; charset=utf-8');
+      const status = e instanceof ActionError ? e.status : 500;
+      const text = e instanceof ActionError ? e.message : 'משהו השתבש אצלנו. הפרטים נשמרו ביומן, ואפשר לנסות שוב בעוד רגע.';
+      if (req.headers['x-tn-ajax'] === '1') return send(req, res, status, JSON.stringify({ ok: false, message: text }), 'application/json; charset=utf-8');
+      return send(req, res, status, errorPage(status, text), 'text/html; charset=utf-8');
     }
   };
 }

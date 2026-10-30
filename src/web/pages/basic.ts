@@ -1,4 +1,4 @@
-import { iconLinks, toranMark } from '../../brand.ts';
+import { accessibilityLink, iconLinks, toranMark } from '../../brand.ts';
 import { esc, icon, layout, type PageCtx } from '../ui.ts';
 
 /** Why accounts let nobody in, in OpenFrequency's voice. No redirect from any of them, so no loop with accounts. */
@@ -31,6 +31,7 @@ ${iconLinks()}
   <h1>${esc(r.h)}</h1>
   <p>${esc(r.text)}</p>
   <a class="btn primary" href="${esc(href)}">${esc(r.link)}</a>
+  <p class="small muted mt12 m0">${accessibilityLink()}</p>
 </main>
 </body>
 </html>`;
@@ -38,4 +39,36 @@ ${iconLinks()}
 
 export function notFoundPage(ctx: PageCtx): string {
   return layout({ ...ctx, title: 'לא נמצא' }, `<div class="empty">${icon('alert')}<b>הדף הזה לא קיים</b>אולי הקישור ישן. <a href="/">חזרה להיום</a></div>`);
+}
+
+const ERROR_TITLE: Record<number, string> = { 400: 'הבקשה לא הובנה', 403: 'אי אפשר לעשות את זה מכאן', 404: 'הדף הזה לא קיים', 409: 'זה כבר לא כאן', 413: 'הקובץ גדול מדי', 415: 'אי אפשר לצרף את זה כאן', 421: 'הכתובת הזו לא שלנו', 429: 'רגע, מהר מדי' };
+
+/**
+ * An error a browser gets, as Toran's own page in Hebrew with the way back (the audit's PRA-FE-005): the page before
+ * and Today. The words are ours, never an exception's: what went wrong in code goes to the log.
+ */
+export function errorPage(status: number, text: string, back = '/'): string {
+  const title = ERROR_TITLE[status] || 'משהו לא עבד';
+  return `<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>${esc(title)} · תורן</title>
+<link rel="stylesheet" href="/static/brand.css">
+<link rel="stylesheet" href="/static/style.css">
+${iconLinks()}
+</head>
+<body class="login">
+<main class="card" data-error-status="${status}">
+  <div class="hero">${toranMark(72, { label: null })}<b>תורן</b></div>
+  <h1>${esc(title)}</h1>
+  <p>${esc(text)}</p>
+  <div class="row">${back !== '/' ? `<a class="btn primary" href="${esc(back)}">חזרה לדף הקודם</a>` : ''}<a class="btn${back === '/' ? ' primary' : ''}" href="/">להיום</a></div>
+  <p class="small muted mt12 m0">${accessibilityLink()}</p>
+</main>
+</body>
+</html>`;
 }

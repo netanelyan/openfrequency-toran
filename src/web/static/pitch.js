@@ -11,6 +11,18 @@
     if (img.complete && !img.naturalWidth) hide();
     else img.addEventListener('error', hide);
   });
+  // The strip goes round for as long as the page is open only with a button to stop it (PRA-FE-002).
+  const shelf = document.querySelector('.shelf');
+  const pause = document.querySelector('.shelf-pause');
+  if (shelf && pause && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    shelf.classList.add('loop');
+    pause.hidden = false;
+    pause.addEventListener('click', () => {
+      const stopped = shelf.classList.toggle('paused');
+      pause.setAttribute('aria-pressed', String(stopped));
+      pause.textContent = stopped ? 'להפעיל את התנועה' : 'לעצור את התנועה';
+    });
+  }
   const send = (kind, data = {}) => {
     const body = JSON.stringify({ slug, kind, ...data });
     try {

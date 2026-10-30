@@ -1,5 +1,5 @@
 import type { App } from '../app.ts';
-import { iconLinks } from '../brand.ts';
+import { accessibilityLink, iconLinks } from '../brand.ts';
 import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
 import { linkOf, stopFromLink, undoFromLink, type StopLink } from '../auto/consent.ts';
 import { esc } from './ui.ts';
@@ -56,6 +56,7 @@ ${iconLinks()}
 <body>
 <div class="wrap stop">
 ${body}
+<footer class="foot">${accessibilityLink()}</footer>
 </div>
 </body>
 </html>`;
