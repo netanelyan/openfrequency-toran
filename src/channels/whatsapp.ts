@@ -50,6 +50,8 @@ export function twilioProvider({ accountSid, authToken, from, webhookUrl, fetchI
       method: 'POST',
       headers: { authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`, 'content-type': 'application/x-www-form-urlencoded' },
       body,
+      // A send that hangs holds a worker loop: 15 seconds, then it is an error and the job is retried.
+      signal: AbortSignal.timeout(15_000),
     });
     const out: any = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(`Twilio refused the message (${res.status}${out?.code ? `, code ${out.code}` : ''}): ${String(out?.message || '').slice(0, 200)}`);

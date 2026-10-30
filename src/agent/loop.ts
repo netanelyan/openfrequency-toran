@@ -8,6 +8,8 @@ import { DEMO_NOTE, systemFor, type StoreForPrompt } from './prompt.ts';
 import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
 import { buildAllow, checkingLine, guardReply, type Redaction } from './guard.ts';
 import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
+import { openConversation } from '../channels/conversations.ts';
+import { capFor, watchHour } from './spend.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
@@ -25,11 +27,33 @@ import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
 // allowlist, so "and the blue one?" can still quote a price read two turns ago.
 //
 // Turns of one conversation run one at a time (two WhatsApp messages sent a second
-// apart are answered in order, each seeing the other).
+// apart are answered in order, each seeing the other). The worker never takes the second
+// while the first runs (jobs/queue.ts claim), so this lock rarely waits.
+//
+// A customer is waiting, so a turn has a deadline (TURN_DEADLINE_MS, TORAN_TURN_DEADLINE_MS):
+// each model call gets what is left of it, at most MODEL_TIMEOUT_MS, and one retry; past it
+// the customer gets the honest "checking" line and the owner a handoff. What reaches the
+// model is cut to MAX_TEXT characters, the new message and each one replayed (an email can
+// be a book); the customer's message is kept whole for the owner. Before the first call, the
+// caps on spend (agent/spend.ts): past the store's, or everyone's, no call is made.
 
 const MAX_ROUNDS = 6;
 const HISTORY = 16; // messages replayed: 8 exchanges is a long WhatsApp chat
 export const DEMO_FOOTER = '_דמו של תורן_';
+export const TURN_DEADLINE_MS = 60_000;
+export const MODEL_TIMEOUT_MS = 30_000;
+export const MAX_TEXT = 4000;
+
+/** Text as the model is given it: at most MAX_TEXT characters, and a mark where it was cut. */
+export const forModel = (t: string, max = MAX_TEXT) => (t.length > max ? `${t.slice(0, max)}\n[... the rest of this message, ${t.length - max} characters, is not shown]` : t);
+
+/** The same customer message (its ext_id) was already answered: found inside the conversation's lock. */
+export class DuplicateTurn extends Error {
+  constructor(extId: string) {
+    super(`message ${extId} was already answered`);
+    this.name = 'DuplicateTurn';
+  }
+}
 
 // channel names where the reply goes (absent: the WhatsApp demo); context is a line from the app for this turn only
 // (the files an email carried), shown to the model and never stored as the customer's words. demo overrides what the
@@ -43,9 +67,11 @@ function serialized<T>(key: number, fn: () => Promise<T>): Promise<T> {
   const prev = locks.get(key) || Promise.resolve();
   const run = prev.catch(() => {}).then(fn);
   locks.set(key, run);
-  run.finally(() => {
-    if (locks.get(key) === run) locks.delete(key);
-  });
+  run
+    .finally(() => {
+      if (locks.get(key) === run) locks.delete(key);
+    })
+    .catch(() => {}); // the caller hears the error from run itself
   return run;
 }
 
@@ -80,7 +106,7 @@ async function history(db: Db, conversationId: number): Promise<{ messages: Msg[
   const customerTexts: string[] = [];
   for (const r of rows) {
     const role = r.role === 'customer' ? 'user' : 'assistant';
-    const text = role === 'assistant' ? stripFooter(r.text) : r.text;
+    const text = forModel(role === 'assistant' ? stripFooter(r.text) : r.text);
     if (role === 'user') customerTexts.push(r.text);
     for (const t of r.tools || []) toolTexts.push(t.result);
     const last = messages[messages.length - 1];
@@ -112,6 +138,9 @@ export function runTurn(app: App, input: TurnInput): Promise<TurnOutput> {
 
 async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const { db } = app;
+  const started = Date.now();
+  // Checked again inside the lock: a second job for the same message (a webhook delivered twice) found it answered.
+  if (input.extId && (await db.one('SELECT 1 FROM messages WHERE ext_id = $1', [input.extId]))) throw new DuplicateTurn(input.extId);
   const store = await loadStore(db, input.storeId);
   const system = await systemOf(db, store);
   const past = await history(db, input.conversationId);
@@ -120,7 +149,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // demo, wherever the message came from.
   const company = store.platform === 'company';
   const demo = !company && isDemoTurn(input);
-  const userText = `${serverContext(new Date(), input.channel, input.context, demo)}\n\n${input.text}`;
+  const userText = `${serverContext(new Date(), input.channel, input.context, demo)}\n\n${forModel(input.text)}`;
   const prev = messages[messages.length - 1];
   if (prev && prev.role === 'user') prev.content = `${prev.content}\n\n${userText}`;
   else messages.push({ role: 'user', content: userText });
@@ -148,18 +177,26 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     await recordUsage(db, { storeId: store.id, conversationId: input.conversationId, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag });
   };
 
-  // The monthly cap on paid API spend (TORAN_MONTHLY_CAP_USD): past it, no model call is made; the customer gets the
-  // honest "checking" line and the owner a handoff. The subscription (claude-cli) costs nothing per call and is not capped.
-  const cap = Number(app.env.TORAN_MONTHLY_CAP_USD) || 0;
-  const capped = cap > 0 && app.llm.backend === 'api' && Number((await db.one<{ usd: number }>("SELECT COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE at >= date_trunc('month', now())"))?.usd) >= cap;
-  if (capped) {
-    handoff = { reason: 'other', summary: `the monthly spend cap ($${cap}) is reached: ${cleanLine(input.text, 120)}` };
-    app.log(`[agent] monthly cap $${cap} reached; store ${store.id} handed off without a model call`);
+  // The caps on paid API spend (agent/spend.ts): the store's own, from its plan, and everyone's (TORAN_MONTHLY_CAP_USD).
+  // Past either, no model call is made; the customer gets the honest "checking" line and the owner a handoff. The
+  // subscription (claude-cli) costs nothing per call and is not capped.
+  const cap = await capFor(app, store);
+  const capped = Boolean(cap);
+  if (cap) {
+    handoff = { reason: 'other', summary: `the ${cap.by === 'store' ? "store's" : 'monthly'} spend cap ($${cap.cap}) is reached: ${cleanLine(input.text, 120)}` };
+    app.log(`[agent] ${cap.by} cap $${cap.cap} reached ($${cap.spent.toFixed(2)}); store ${store.id} handed off without a model call`);
   }
+  const deadline = Number(app.env.TORAN_TURN_DEADLINE_MS) || TURN_DEADLINE_MS;
   try {
     for (; rounds < MAX_ROUNDS && !capped; ) {
+      const left = deadline - (Date.now() - started);
+      if (left <= 1000) {
+        handoff ??= { reason: 'other', summary: `no answer within ${Math.round(deadline / 1000)} seconds: ${cleanLine(input.text, 120)}` };
+        raw = '';
+        break;
+      }
       rounds++;
-      const res = await app.llm.turn({ system, messages, tools: toolDefs, model, maxTokens: 1500, effort: 'low', tag: `turn store ${store.id}` });
+      const res = await app.llm.turn({ system, messages, tools: toolDefs, model, maxTokens: 1500, effort: 'low', tag: `turn store ${store.id}`, timeoutMs: Math.min(MODEL_TIMEOUT_MS, left), maxRetries: 1, signal: AbortSignal.timeout(left) });
       await spend(res, 'agent');
       if (res.stopReason === 'refusal') {
         handoff = { reason: 'other', summary: 'the model declined to answer' };
@@ -224,21 +261,23 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   let agentMessageId: number | null = null;
   await db.tx(async (t) => {
     await t.query('INSERT INTO messages (conversation_id, role, text, ext_id) VALUES ($1, $2, $3, $4) ON CONFLICT (ext_id) DO NOTHING', [input.conversationId, 'customer', input.text, input.extId || null]);
-    const row = await t.one<{ id: number }>('INSERT INTO messages (conversation_id, role, text, raw_text, tools, guard, handoff, miss) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8) RETURNING id', [input.conversationId, 'agent', reply, raw !== g.text ? raw : null, J(tools), J(g.redactions), handoff ? J(handoff) : null, miss]);
+    // reply_to: the customer message this answers, so a job run again after a failed send finds it (channels/store.ts).
+    const row = await t.one<{ id: number }>('INSERT INTO messages (conversation_id, role, text, raw_text, tools, guard, handoff, miss, reply_to) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9) RETURNING id', [input.conversationId, 'agent', reply, raw !== g.text ? raw : null, J(tools), J(g.redactions), handoff ? J(handoff) : null, miss, input.extId || null]);
     agentMessageId = row!.id;
     await t.query('UPDATE conversations SET last_at = now(), handoffs = handoffs + $2, misses = misses + $3 WHERE id = $1', [input.conversationId, handoff ? 1 : 0, miss ? 1 : 0]);
     if (handoff) await event(t, store.id, 'handoff', { conversationId: input.conversationId, ...(handoff as object) });
     if (g.redactions.length) await event(t, store.id, 'guard_cut', { conversationId: input.conversationId, rules: g.redactions.map((r) => r.rule) });
   });
+  if (apiUsd > 0) await watchHour(app, store.id).catch((e) => app.log(`[agent] store ${store.id}: the hourly spend check failed: ${e?.message || e}`));
   return { reply, rawReply: raw, tools, redactions: g.redactions, handoff, miss, rounds, usd, apiUsd, tokens, agentMessageId };
 }
 
-/** The conversation a message belongs to: for WhatsApp, the latest with this phone and store within 7 days; else a new one. */
+/**
+ * The conversation a message belongs to: for WhatsApp, the latest with this phone and store within 7 days, found or
+ * started in one step (channels/conversations.ts); with no phone (the pitch page's sample chat), a new one.
+ */
 export async function conversationFor(db: Db, storeId: number, channel: string, peer: string | null): Promise<number> {
-  if (peer) {
-    const c = await db.one<{ id: number }>("SELECT id FROM conversations WHERE store_id = $1 AND peer = $2 AND channel = $3 AND last_at > now() - interval '7 days' AND closed_at IS NULL ORDER BY last_at DESC LIMIT 1", [storeId, peer, channel]);
-    if (c) return c.id;
-  }
+  if (peer) return (await openConversation(db, { storeId, channel, peer })).id;
   const r = await db.one<{ id: number }>('INSERT INTO conversations (store_id, channel, peer) VALUES ($1, $2, $3) RETURNING id', [storeId, channel, peer]);
   return r!.id;
 }

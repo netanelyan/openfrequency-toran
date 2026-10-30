@@ -7,6 +7,7 @@ import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests } from './que
 import { funnels } from './funnel.ts';
 import { oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
 import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, setNext, type Kind } from './actions.ts';
+import { queueState } from '../jobs/queue.ts';
 
 // The operator's dashboard, as data for accounts' /admin, where it is shown (docs/operator.md section 4). Toran's
 // own site shows Toran only; this is the work behind the dashboard: who to write to today, the conversations, the
@@ -62,6 +63,8 @@ export async function opsData(app: App) {
     // Our one WhatsApp number (channels/lines.ts) and what it does now, in the order its messages are read; null
     // until our company store connects it.
     ourNumber: one ? { number: one.one.number, status: one.one.status, roles: one.roles.map((key) => ({ key, he: ROLE_HE[key] })), leadUrl: leadUrl(app, one.one.storeId) } : null,
+    // The job queue (web/pages/queue.ts): what waits, how long the oldest customer message has waited, what failed.
+    jobs: await queueState(app.db).then((s) => ({ queued: s.queued, running: s.running, messages: s.messages, oldestAt: s.oldestAt, failed: s.failed.length, url: `${accountsLinks(app.env).home}${ADMIN}/queue` })),
   };
 }
 

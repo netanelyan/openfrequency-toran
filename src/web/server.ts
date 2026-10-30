@@ -43,9 +43,9 @@ export type DashReq = Req & { user: { id: number; name: string; role: string; em
  * them (a lead's page, its pitch and its outreach, the review queue, the follow-ups, the plan a store is on). A
  * customer's dashboard is pages/customer.ts; their own store's answers, policies, channels and chats stay theirs.
  */
-const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add|review\/approve-all|ops\/.*|lead\/\d+\/(build|approve|unapprove|takedown|sent|followup-sent|skip|status|notes|sample|brand|plan))$/;
+const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add|review\/approve-all|ops\/.*|queue\/\d+\/again|lead\/\d+\/(build|approve|unapprove|takedown|sent|followup-sent|skip|status|notes|sample|brand|plan))$/;
 /** The operator's pages. A customer who reaches one goes to their own: a store's page to what Toran knows about it. */
-const OPERATOR_PAGES = /^\/(leads|review|followups|brand|job\/\d+|lead\/\d+(\/review)?)$/;
+const OPERATOR_PAGES = /^\/(leads|review|followups|brand|queue|job\/\d+|lead\/\d+(\/review)?)$/;
 export type Route<R> = [method: 'GET' | 'POST', re: RegExp, fn: (r: R, m: RegExpExecArray) => Promise<Out> | Out];
 
 export class ActionError extends Error {

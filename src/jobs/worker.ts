@@ -8,7 +8,11 @@ import { handleInbound } from '../channels/route.ts';
 import { discover } from '../leads/discover.ts';
 import { canonicalDomain } from '../core/urls.ts';
 import { event } from '../db/log.ts';
-import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
+import { BOOT, beat, claim, done, enqueue, fail, MESSAGE_KINDS, progress, requeueOrphans, type Job } from './queue.ts';
+import { lostMessage } from './lost.ts';
+import { dailyRetention } from './retention.ts';
+import { alertOperator } from '../ops/alert.ts';
+import { interruptedSends } from '../auto/send.ts';
 import { handleTederEvent, handleTederReady } from '../owners/events.ts';
 import { deliverRequested } from '../ops/actions.ts';
 import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
@@ -45,8 +49,17 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 //   wa_templates_new   the new marketing templates (the URL button) for a store whose old ones are approved
 //
 // Scheduled each minute: a rescrape for every store with a built page that is not
-// skipped and was last ingested over 20 hours ago; expired WhatsApp bindings cleaned up; the link to each demo asked
-// for on the website whose page is now ready, sent on the demo number; the automatic messages' readings and sends.
+// skipped and was last ingested over 20 hours ago, each at its own offset of up to six hours so the stores' re-scrapes
+// do not all start in the same minute; expired WhatsApp bindings cleaned up; the link to each demo asked for on the
+// website whose page is now ready, sent on the demo number; the automatic messages' readings and sends, and any left
+// "sending" by a restart marked as not sent; the operator told when a customer's message has waited in the queue over
+// five minutes; and once a day the retention pass (jobs/retention.ts).
+//
+// The loops (startWorker): TORAN_MESSAGE_LOOPS (4) take customers' messages and nothing else, so a re-scrape or an
+// ingest never stands between a customer and their answer; TORAN_BACKGROUND_LOOPS (1) take everything else. A message
+// job that fails its last attempt is not lost: the message and a handoff go into its conversation for the owner, and
+// the operator hears of it (jobs/lost.ts). A running job's lease is refreshed every minute; at start every job another
+// boot left running goes back to the queue, and on a stop the loops finish what they hold, for up to STOP_GRACE_MS.
 
 export async function runJob(app: App, job: Job): Promise<unknown> {
   const p = job.payload || {};
@@ -150,12 +163,18 @@ async function ingestAndBuild(app: App, storeId: number, say: (l: string) => Pro
   return { products: s.products, policies: s.policies.length, warnings: s.warnings };
 }
 
+/** A store's own offset for its daily re-scrape, up to six hours, the same every day. */
+export const rescrapeOffsetMs = (storeId: number) => ((Number(storeId) * 2654435761) % 21_600) * 1000;
+
+/** A customer's message waiting this long in the queue is said to the operator. */
+export const QUEUE_ALERT_MINUTES = 5;
+
 export async function schedule(app: App) {
   const due = await app.db.query<{ id: number }>(
     "SELECT id FROM stores WHERE page_built_at IS NOT NULL AND status <> 'skipped' AND platform = ANY($1::text[]) AND (ingested_at IS NULL OR ingested_at < now() - interval '20 hours')",
     [[...INGESTIBLE]],
   );
-  for (const s of due) await enqueue(app.db, 'rescrape', { storeId: s.id }, { dedupeKey: `ingest:${s.id}` });
+  for (const s of due) await enqueue(app.db, 'rescrape', { storeId: s.id }, { dedupeKey: `ingest:${s.id}`, runAt: new Date(Date.now() + rescrapeOffsetMs(s.id)) });
   await app.db.query("DELETE FROM wa_users WHERE expires_at < now() - interval '1 day'");
   // A demo asked for on the website whose page is ready: its link, on the demo number (ops/actions.ts).
   await deliverRequested(app);
@@ -170,8 +189,15 @@ export async function schedule(app: App) {
   for (const a of ending) await enqueue(app.db, 'ig_refresh', { accountId: a.id }, { dedupeKey: `ig_refresh:${a.id}`, maxAttempts: 3 });
   // A store's own mail domain whose DNS records are not verified yet: read again every ten minutes, for three days.
   if (app.mail) for (const storeId of await domainsToCheck(app)) await enqueue(app.db, 'mail_domain_check', { storeId }, { dedupeKey: `mail_domain:${storeId}`, maxAttempts: 1 });
-  // The automatic messages: each store's reading of its platform when due, the messages whose time has come.
+  // The automatic messages: each store's reading of its platform when due, the messages whose time has come, and any a
+  // restart stopped in the middle of its send.
   await scheduleAuto(app);
+  await interruptedSends(app);
+  // A customer waiting on the queue.
+  const old = await app.db.one<{ n: number; at: string | null }>(`SELECT COUNT(*)::int AS n, MIN(run_at) AS at FROM jobs WHERE status = 'queued' AND kind = ANY($1::text[]) AND run_at < now() - interval '${QUEUE_ALERT_MINUTES} minutes'`, [MESSAGE_KINDS]);
+  if (old?.n) await alertOperator(app, 'queue_old', 'הודעות של לקוחות מחכות בתור', `${old.n} הודעות מחכות יותר מ-${QUEUE_ALERT_MINUTES} דקות, הוותיקה מ-${old.at}. כדאי לבדוק שה-worker של תורן רץ, ולהסתכל בדף התור.`, { everyMinutes: 30 });
+  // Once a day, the retention pass.
+  await dailyRetention(app);
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */
@@ -184,41 +210,68 @@ export async function drain(app: App, { kinds = null }: { kinds?: string[] | nul
   return n;
 }
 
-async function runOne(app: App, job: Job) {
+/** How often a running job says it is alive (its lease is LEASE_MINUTES). */
+export const BEAT_MS = 60_000;
+
+export async function runOne(app: App, job: Job, { boot = BOOT }: { boot?: string } = {}) {
+  const heartbeat = setInterval(() => void beat(app.db, job.id, boot).catch(() => {}), BEAT_MS);
+  heartbeat.unref?.();
   try {
     const result = await runJob(app, job);
     await done(app.db, job.id, result ?? null);
   } catch (e: any) {
     app.log(`[job ${job.id} ${job.kind}] ${cleanLine(e?.stack || e?.message || e, 800)}`);
-    await fail(app.db, job, String(e?.message || e));
+    const last = await fail(app.db, job, String(e?.message || e));
+    // A customer's message that failed every attempt: kept in its conversation for the owner, and said to the operator.
+    if (last && MESSAGE_KINDS.includes(job.kind)) await lostMessage(app, job, String(e?.message || e)).catch((x) => app.log(`[job ${job.id}] the lost message could not be kept: ${x?.message || x}`));
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
-/** The long-running worker: messages first (a customer waits on them), then the rest. */
-export function startWorker(app: App, { idleMs = 1000, concurrency = 2 }: { idleMs?: number; concurrency?: number } = {}) {
+/** How long a stop waits for the loops to finish the jobs they hold. */
+export const STOP_GRACE_MS = 25_000;
+
+type WorkerOpts = { idleMs?: number; messageLoops?: number; backgroundLoops?: number; boot?: string; scheduler?: boolean };
+
+/** The long-running worker: its own loops for customers' messages, and the rest beside them. */
+export function startWorker(app: App, { idleMs = 1000, messageLoops = Number(app.env.TORAN_MESSAGE_LOOPS) || 4, backgroundLoops = Number(app.env.TORAN_BACKGROUND_LOOPS) || 1, boot = BOOT, scheduler = true }: WorkerOpts = {}) {
   let stopped = false;
   let lastSchedule = 0;
-  const loop = async () => {
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // Jobs another boot left running are put back first, so a restart costs a customer seconds, not a lease.
+  const ready = requeueOrphans(app.db, boot)
+    .then((n) => (n ? app.log(`[worker] ${n} job(s) left running by the last boot went back to the queue`) : undefined))
+    .catch((e) => app.log(`[worker] could not put back the jobs left running: ${e?.message || e}`));
+  const loop = async (kinds: string[] | null, schedules: boolean) => {
+    await ready;
     while (!stopped) {
       try {
-        if (Date.now() - lastSchedule > 60_000) {
+        if (schedules && Date.now() - lastSchedule > 60_000) {
           lastSchedule = Date.now();
           await schedule(app);
         }
-        const job = (await claim(app.db, ['wa_inbound', 'mail_inbound', 'wa_echo'])) || (await claim(app.db));
-        if (job) await runOne(app, job);
-        else await new Promise((r) => setTimeout(r, idleMs));
+        const job = kinds ? await claim(app.db, kinds, { boot }) : await claim(app.db, null, { except: MESSAGE_KINDS, boot });
+        if (job) await runOne(app, job, { boot });
+        else await pause(idleMs);
       } catch (e: any) {
         app.log(`[worker] ${e?.message || e}`);
-        await new Promise((r) => setTimeout(r, 5000));
+        await pause(5000);
       }
     }
   };
-  const loops = Array.from({ length: concurrency }, loop);
+  const loops = [
+    ...Array.from({ length: Math.max(1, messageLoops) }, () => loop(MESSAGE_KINDS, false)),
+    ...Array.from({ length: Math.max(1, backgroundLoops) }, (_, i) => loop(null, scheduler && i === 0)),
+  ];
   return {
-    stop: async () => {
+    /** Stop taking jobs, give the ones held `graceMs` to finish, and put back whatever still runs. */
+    stop: async ({ graceMs = STOP_GRACE_MS }: { graceMs?: number } = {}) => {
       stopped = true;
-      await Promise.allSettled(loops);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([Promise.allSettled(loops), new Promise((r) => (timer = setTimeout(r, graceMs)))]);
+      clearTimeout(timer);
+      await app.db.query("UPDATE jobs SET status = 'queued', locked_at = NULL, locked_by = NULL, attempts = GREATEST(attempts - 1, 0), run_at = now() WHERE status = 'running' AND locked_by = $1", [boot]).catch(() => {});
     },
   };
 }

@@ -30,13 +30,17 @@ export const defaultScript: Script = (req) => {
   return [{ type: 'tool_use', id: `s_${Date.now()}`, name: 'search_products', input: { query: q } }];
 };
 
-export function scriptedClient(script: Script = defaultScript): Llm {
+/**
+ * `as: 'api'` and `usd` let a test stand in for the paid API: the spend caps apply only to it (agent/spend.ts), and each
+ * call then costs `usd`.
+ */
+export function scriptedClient(script: Script = defaultScript, { as = 'scripted', usd = 0 }: { as?: 'scripted' | 'api'; usd?: number } = {}): Llm {
   let calls = 0;
   return {
-    backend: 'scripted',
+    backend: as,
     async turn(req: TurnReq): Promise<TurnRes> {
       const content = await script(req, calls++);
-      return { content, stopReason: content.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn', usage: emptyUsage(), model: 'scripted', backend: 'scripted', usd: 0, apiUsd: 0 };
+      return { content, stopReason: content.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn', usage: emptyUsage(), model: 'scripted', backend: as, usd, apiUsd: usd };
     },
   };
 }

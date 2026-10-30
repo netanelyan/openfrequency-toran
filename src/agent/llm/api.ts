@@ -43,9 +43,12 @@ export function apiClient({ apiKey, workspaceId, gate }: { apiKey: string; works
         ...(fallback ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
       };
       let msg: any;
+      // The agent's turn has a deadline: its calls pass a shorter timeout, one retry and a signal that ends them.
+      const opts = { ...(req.timeoutMs ? { timeout: req.timeoutMs } : {}), ...(req.maxRetries != null ? { maxRetries: req.maxRetries } : {}), ...(req.signal ? { signal: req.signal } : {}) };
       try {
-        msg = fallback ? await client.beta.messages.create(params as never) : await client.messages.create(params as never);
+        msg = fallback ? await client.beta.messages.create(params as never, opts as never) : await client.messages.create(params as never, opts as never);
       } catch (e: any) {
+        if (e instanceof Anthropic.APIConnectionTimeoutError || e instanceof Anthropic.APIUserAbortError || req.signal?.aborted) throw new LlmError('the call ran past its time', 'timeout');
         if (e instanceof Anthropic.RateLimitError) throw new LlmError('rate limited', 'rate_limit');
         if (e instanceof Anthropic.AuthenticationError) throw new LlmError('the API key was refused', 'auth');
         if (e instanceof Anthropic.BadRequestError) throw new LlmError(`bad request: ${e.message}`, 'bad_request');

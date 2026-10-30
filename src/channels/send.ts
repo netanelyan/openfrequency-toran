@@ -26,7 +26,15 @@ export async function blockedFor(app: App, adapter: ChannelAdapter, to: Inbound,
   return null;
 }
 
-export async function reply(app: App, adapter: ChannelAdapter, to: Inbound, text: string, storeId: number | null, conversationId: number | null, ctx: SendCtx = { who: 'agent' }): Promise<Delivery> {
+/** The parts an answer goes out in on this adapter: the same text always splits the same way. */
+export const partsOf = (adapter: ChannelAdapter, text: string) => fit(text, adapter.limits.maxChars, adapter.limits.maxBytes);
+
+/**
+ * Send an answer, in parts. `skip` leaves out the parts already sent (a job run again after a failed send), and
+ * `onPart` hears each part's id as it goes, with every id so far, so what went out is written down before the next
+ * part can fail.
+ */
+export async function reply(app: App, adapter: ChannelAdapter, to: Inbound, text: string, storeId: number | null, conversationId: number | null, ctx: SendCtx = { who: 'agent' }, { skip = 0, onPart }: { skip?: number; onPart?: (ids: string[]) => Promise<unknown> } = {}): Promise<Delivery> {
   const { tag, kind } = LEDGER[adapter.channel];
   const blocked = await blockedFor(app, adapter, to, ctx.who);
   if (blocked) {
@@ -38,12 +46,14 @@ export async function reply(app: App, adapter: ChannelAdapter, to: Inbound, text
   const plan = sendPlan(adapter.limits, { lastCustomerAt: to.at ?? now(), now: now(), who: ctx.who, humanAgent: humanAgentOn(app.env) });
   let sendCtx: SendCtx = plan.ok && plan.mode === 'human_agent' ? { ...ctx, tag: 'HUMAN_AGENT' } : ctx;
   const ids: string[] = [];
-  for (const [i, part] of fit(text, adapter.limits.maxChars, adapter.limits.maxBytes).entries()) {
-    if (i === 1) sendCtx = { ...sendCtx, files: undefined }; // the owner's files go with the first part only
+  for (const [i, part] of partsOf(adapter, text).entries()) {
+    if (i >= 1) sendCtx = { ...sendCtx, files: undefined }; // the owner's files go with the first part only
+    if (i < skip) continue;
     const sent = await adapter.send(to.from, part, to, sendCtx);
     await usage(app.db, { storeId, conversationId, kind, backend: adapter.kind, units: 1, usd: sent.usd, apiUsd: sent.usd, tag: `${tag}_out` });
     await event(app.db, storeId, `${tag}_out`, { conversationId, id: sent.id });
     ids.push(sent.id);
+    if (onPart) await onPart([...ids]);
   }
   return { ok: true, ids };
 }

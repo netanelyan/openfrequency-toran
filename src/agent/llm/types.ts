@@ -29,6 +29,10 @@ export type TurnReq = {
   maxTokens: number;
   effort?: 'low' | 'medium' | 'high';
   tag?: string;
+  /** This call's own limits (the agent's turn passes them: a customer is waiting). Absent: the client's defaults. */
+  timeoutMs?: number;
+  maxRetries?: number;
+  signal?: AbortSignal;
 };
 
 export type Usage = { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number; cache_write_1h?: number; cache_write_5m?: number };

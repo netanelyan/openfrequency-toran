@@ -7,6 +7,7 @@ import { GraphError } from './meta.ts';
 import { PAUSE_HOURS } from './owner.ts';
 import { LEDGER } from './send.ts';
 import { ConnectError } from './waStore.ts';
+import { openConversation, sentByUs } from './conversations.ts';
 import {
   authorizeUrl, instagramAccount, messengerPages, refreshInstagramToken, socialReady, socialSettings, subscribeInstagram, subscribePage, unsubscribeInstagram, unsubscribePage,
   type DmEcho, type Page, type Social,
@@ -194,14 +195,13 @@ export async function socialEcho(app: App, echo: DmEcho) {
   if (!a) return { action: 'unknown_account' };
   if (echo.appId && echo.appId === socialSettings(app.env).appId) return { action: 'ours' };
   const tag = LEDGER[echo.channel].tag;
-  if (await app.db.one("SELECT 1 FROM messages WHERE ext_id = $1 OR delivery @> $2::jsonb", [`echo:${echo.id}`, J([echo.id])])) return { action: 'duplicate' };
+  if (await sentByUs(app.db, echo.id)) return { action: 'duplicate' };
   if (await app.db.one("SELECT 1 FROM events WHERE kind = $1 AND data->>'id' = $2 AND at > now() - interval '1 day'", [`${tag}_out`, echo.id])) return { action: 'ours' };
-  let c = await app.db.one<{ id: number }>("SELECT id FROM conversations WHERE account_id = $1 AND peer = $2 AND last_at > now() - interval '7 days' AND closed_at IS NULL ORDER BY last_at DESC LIMIT 1", [a.id, echo.to]);
-  c ??= await app.db.one<{ id: number }>('INSERT INTO conversations (store_id, channel, peer, account_id) VALUES ($1, $2, $3, $4) RETURNING id', [a.store_id, echo.channel, echo.to, a.id]);
-  await app.db.query("INSERT INTO messages (conversation_id, role, text, author, ext_id) VALUES ($1, 'owner', $2, $3, $4)", [c!.id, echo.text || '(קובץ)', ECHO_AUTHOR[echo.channel], `echo:${echo.id}`]);
-  await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [c!.id]);
-  await event(app.db, a.store_id, 'owner_reply', { conversationId: c!.id, via: echo.channel });
-  return { action: 'owner_echo', conversationId: c!.id };
+  const c = await openConversation(app.db, { storeId: a.store_id, channel: echo.channel, peer: echo.to, accountId: a.id });
+  await app.db.query("INSERT INTO messages (conversation_id, role, text, author, ext_id) VALUES ($1, 'owner', $2, $3, $4)", [c.id, echo.text || '(קובץ)', ECHO_AUTHOR[echo.channel], `echo:${echo.id}`]);
+  await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [c.id]);
+  await event(app.db, a.store_id, 'owner_reply', { conversationId: c.id, via: echo.channel });
+  return { action: 'owner_echo', conversationId: c.id };
 }
 
 /** Instagram tokens last 60 days: the ones ending within REFRESH_DAYS get a fresh 60. */
