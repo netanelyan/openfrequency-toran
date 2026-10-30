@@ -90,6 +90,29 @@
                 "leadUrl": "https://teder.openfrequency.co.il/demos/14"
               }
             ],
+            "leads": {
+              "ok": true,
+              "waitlist": [
+                {
+                  "id": 31,
+                  "contact": "972500000209",
+                  "store": "soon-shop.example",
+                  "page": "/toran",
+                  "at": "2026-10-23T08:00:00.000Z"
+                }
+              ],
+              "failed": [
+                {
+                  "id": 32,
+                  "product": "teder",
+                  "source": "teder",
+                  "store": "lost-lead.example",
+                  "contact": "972500000210",
+                  "page": "/teder",
+                  "at": "2026-10-23T07:00:00.000Z"
+                }
+              ]
+            },
             "conversations": [
               {
                 "key": "toran:9",
@@ -158,7 +181,9 @@
             "error",
             "whatsapp",
             "href",
-            "kind"
+            "kind",
+            "store",
+            "contact"
           ]
         },
         {

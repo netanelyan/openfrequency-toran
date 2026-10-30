@@ -24,8 +24,8 @@ async function store(app: any, domain: string, cols: Record<string, unknown> = {
 }
 const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
 
-/** A stand-in for Teder's GET /internal/demos and accounts' GET /internal/ops/customers, both behind the token. */
-async function fakeServices(demos: unknown[], workspaces: Customer[] | null) {
+/** A stand-in for Teder's GET /internal/demos, accounts' GET /internal/ops/customers and the website's GET /internal/leads, all behind the token. */
+async function fakeServices(demos: unknown[], workspaces: Customer[] | null, leads: unknown[] | null = []) {
   const server = http.createServer((req, res) => {
     const send = (s: number, b: unknown) => {
       res.writeHead(s, { 'content-type': 'application/json' });
@@ -34,11 +34,12 @@ async function fakeServices(demos: unknown[], workspaces: Customer[] | null) {
     if (req.headers.authorization !== `Bearer ${INTERNAL_TOKEN}`) return send(401, { error: 'bad_token' });
     if (req.url === '/internal/demos') return send(200, { demos });
     if (req.url === '/internal/ops/customers') return workspaces ? send(200, { today: '2026-10-24', workspaces }) : send(500, {});
+    if (req.url === '/internal/leads') return leads ? send(200, { leads }) : send(500, {});
     return send(404, {});
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { env: { OF_INTERNAL_TOKEN: INTERNAL_TOKEN, TEDER_SITE_INTERNAL: base, OF_ACCOUNTS_INTERNAL: base }, close: () => new Promise<void>((r) => server.close(() => r())) };
+  return { env: { OF_INTERNAL_TOKEN: INTERNAL_TOKEN, TEDER_SITE_INTERNAL: base, OF_ACCOUNTS_INTERNAL: base, OF_WEB_INTERNAL: base }, close: () => new Promise<void>((r) => server.close(() => r())) };
 }
 
 const ws = (id: number, name: string, subs: Partial<Customer['subscriptions'][number]>[]): Customer => ({ id, slug: `w${id}`, name, disabled: false, createdAt: ago(100), products: subs.map((s) => s.product!), people: 1, invitesWaiting: 0, lastLoginAt: null, subscriptions: subs.map((s) => ({ product: 'toran', monthly: 590, vat: 'excluded', setup: 990, startedOn: '2026-10-01', paidUntil: null, endsOn: null, state: 'paid', nextChargeOn: null, ...s })) as Customer['subscriptions'], invoices: { count: 0, lastIssuedOn: null } });
@@ -130,6 +131,36 @@ test("every Teder demo not up yet, at its stage, with Teder's reason and a link 
     assert.equal(d.tederDemos[0].leadUrl, 'https://teder.example/demos/4');
     const asked = d.stuck.find((s) => s.domain === 'asked.example')!;
     assert.deepEqual([asked.why, asked.leadUrl, 'tederId' in asked], ['תדר לא הצליח לבנות את הדמו', 'https://teder.example/demos/7', false], "a Teder request links to its demo in Teder");
+  } finally {
+    await svc.close();
+    await app.db.close();
+  }
+});
+
+test("the website's leads that reached only the email: Toran's waitlist, and a hand-off no product took after 10 minutes; the website not answering says so", async () => {
+  const { websiteLeads, siteLeads, webSite } = await import('../src/ops/sources.ts');
+  const lead = (id: number, source: string, minutes: number, more: Record<string, unknown> = {}) => ({ id, source, store: `shop${id}.example`, contact: '972500000361', page: '/teder', createdAt: new Date(Date.now() - minutes * 60_000).toISOString(), handedTo: null, handedAt: null, ...more });
+  const app = await testApp();
+  const svc = await fakeServices([], [], [
+    lead(1, 'waitlist', 5, { store: null, contact: 'wait@shop.example', page: '/toran' }),
+    lead(2, 'teder', 60, { handedTo: 'teder' }), // Teder never took it
+    lead(3, 'teder', 2, { handedTo: 'teder' }), // just came: the website is still handing it over
+    lead(4, 'demo', 60, { contact: null, handedTo: 'toran', handedAt: new Date().toISOString() }), // taken
+    lead(5, 'demo', 90, { contact: null, handedTo: 'toran' }), // a Toran demo with its code, not taken
+    { id: 'x', source: 'teder' }, // not a lead
+  ]);
+  Object.assign(app.env, svc.env);
+  try {
+    assert.equal((await siteLeads(app))!.length, 5);
+    const l = await websiteLeads(app);
+    assert.equal(l.ok, true);
+    assert.deepEqual(l.waitlist.map((x) => [x.id, x.contact, x.store, x.page]), [[1, 'wait@shop.example', null, '/toran']]);
+    assert.deepEqual(l.failed.map((x) => [x.id, x.product, x.source, x.store, x.contact]), [[2, 'teder', 'teder', 'shop2.example', '972500000361'], [5, 'toran', 'demo', 'shop5.example', null]]);
+    assert.deepEqual(Object.keys(l.failed[0]).sort(), ['at', 'contact', 'id', 'page', 'product', 'source', 'store']);
+    // The website down, or the token unset: the section says it could not read them.
+    app.env.OF_WEB_INTERNAL = 'http://127.0.0.1:9';
+    assert.deepEqual(await websiteLeads(app), { ok: false, waitlist: [], failed: [] });
+    assert.equal(webSite({}), 'http://127.0.0.1:4720', "the website's lead service, by default");
   } finally {
     await svc.close();
     await app.db.close();

@@ -1,4 +1,5 @@
 import type { App } from '../app.ts';
+import { now } from '../core/clock.ts';
 
 // What the operator's dashboard reads from the other services on this machine (docs/operator.md), and the one thing
 // Toran hands on:
@@ -9,9 +10,12 @@ import type { App } from '../app.ts';
 //                                            asked for on WhatsApp waits for its link: ops/actions.ts deliverTeder)
 //   Teder      POST /internal/lead           a Teder demo asked for on the website, once the number wrote with its
 //                                            code (channels/request.ts handToTeder): { url, whatsapp }
+//   website    GET /internal/leads           the last 30 days' leads of openfrequency.co.il (openfrequency-web
+//                                            server/lead.mjs): the waitlist, and any lead no product took (read at
+//                                            each load)
 //
-// All take OF_INTERNAL_TOKEN; Teder's two are on its site, TEDER_SITE_INTERNAL. A service that does not answer leaves
-// its part of the dashboard saying so; the rest still works.
+// All take OF_INTERNAL_TOKEN; Teder's two are on its site, TEDER_SITE_INTERNAL, and the website's on its lead service,
+// OF_WEB_INTERNAL. A service that does not answer leaves its part of the dashboard saying so; the rest still works.
 
 const MIN_TOKEN = 32;
 
@@ -44,6 +48,42 @@ export async function customers(app: App): Promise<{ today: string; workspaces: 
 
 /** Teder's site on this machine, where its /internal/demos and /internal/lead are. */
 export const tederSite = (env: Record<string, string | undefined>) => String(env.TEDER_SITE_INTERNAL || 'http://127.0.0.1:4700').trim().replace(/\/+$/, '');
+
+/** The website's lead service on this machine (openfrequency-web server/lead.mjs), where its /internal/leads is. */
+export const webSite = (env: Record<string, string | undefined>) => String(env.OF_WEB_INTERNAL || 'http://127.0.0.1:4720').trim().replace(/\/+$/, '');
+
+/** One lead of the website, as its GET /internal/leads gives it. */
+export type SiteLead = { id: number; source: string; store: string | null; contact: string | null; page: string | null; createdAt: string; handedTo: 'toran' | 'teder' | null; handedAt: string | null };
+
+/** The website's leads of the last 30 days, newest first; null when the website did not answer. */
+export async function siteLeads(app: App): Promise<SiteLead[] | null> {
+  const b = await get(app, webSite(app.env), '/internal/leads');
+  if (!b || !Array.isArray(b.leads)) return null;
+  const text = (v: unknown, max: number) => (typeof v === 'string' && v ? v.slice(0, max) : null);
+  return b.leads
+    .filter((l: any) => Number.isInteger(l?.id) && typeof l.source === 'string' && iso(l.createdAt))
+    .map((l: any) => ({ id: l.id, source: l.source, store: text(l.store, 253), contact: text(l.contact, 254), page: text(l.page, 80), createdAt: iso(l.createdAt)!, handedTo: l.handedTo === 'toran' || l.handedTo === 'teder' ? l.handedTo : null, handedAt: iso(l.handedAt) }));
+}
+
+/** A lead a product should have taken and has not, this long after it came: the website tries again every 5 minutes. */
+const HANDOFF_GRACE_MS = 10 * 60_000;
+
+/**
+ * What the dashboard shows of the website's leads, which until now reached the owner only by email: Toran's waitlist
+ * (a phone or an email, the store when one was given), and every lead whose hand-off to Toran or Teder has not gone
+ * through 10 minutes after it came. ok false when the website did not answer.
+ */
+export async function websiteLeads(app: App) {
+  const all = await siteLeads(app);
+  if (!all) return { ok: false, waitlist: [], failed: [] };
+  return {
+    ok: true,
+    waitlist: all.filter((l) => l.source === 'waitlist').map((l) => ({ id: l.id, contact: l.contact, store: l.store, page: l.page, at: l.createdAt })),
+    failed: all
+      .filter((l) => l.handedTo && !l.handedAt && Date.parse(l.createdAt) < now() - HANDOFF_GRACE_MS)
+      .map((l) => ({ id: l.id, product: l.handedTo, source: l.source, store: l.store, contact: l.contact, page: l.page, at: l.createdAt })),
+  };
+}
 
 /** Teder's public address (TEDER_URL, as accounts names it), where the operator opens a demo's page: /demos/<id>. */
 export const tederUrl = (env: Record<string, string | undefined>) => String(env.TEDER_URL || 'https://teder.openfrequency.co.il').trim().replace(/\/+$/, '');

@@ -10,11 +10,12 @@ their outreach.
 ```
    Toran (the dashboard) ── GET /internal/ops/customers ──▶ accounts  (workspaces, subscriptions, invoices)
                          ── GET /internal/demos ──────────▶ Teder     (the store demos and their opens)
+                         ── GET /internal/leads ──────────▶ the website's lead service (its last 30 days' leads)
    openfrequency.co.il   ── POST /internal/lead {url, code, product?} ▶ Toran  (a demo request, by its REQ- code)
    Toran (the worker)    ── POST /internal/lead {url, whatsapp} ──▶ Teder  (a Teder request, once its number wrote)
 ```
 
-All four routes are local-only. They take `Authorization: Bearer <OF_INTERNAL_TOKEN>` (the same value in every
+All five routes are local-only. They take `Authorization: Bearer <OF_INTERNAL_TOKEN>` (the same value in every
 service's `.env`, 32 characters or more), and they refuse a request that has `X-Forwarded-For`, or that comes from
 a socket that is not loopback. Every answer is JSON with `Cache-Control: no-store`.
 
@@ -152,6 +153,8 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
     "target": { "kind": "whatsapp", "href": "https://wa.me/9725...?text=...", "label": "להעתיק ולפתוח וואטסאפ" }, "leadUrl": "..." }],
   "tederDemos": [{ "id": "14", "domain": "...", "name": "...", "status": "failed", "why": "לא נבנה", "error": "...",
     "whatsapp": "9725...", "at": "...", "message": "...", "target": { ... }, "leadUrl": "https://teder.openfrequency.co.il/demos/14" }],
+  "leads": { "ok": true, "waitlist": [{ "id": 31, "contact": "9725... or an email", "store": null, "page": "/toran", "at": "..." }],
+    "failed": [{ "id": 32, "product": "teder", "source": "teder", "store": "...", "contact": "9725...", "page": "/teder", "at": "..." }] },
   "conversations": [{ "key": "teder:7", "product": "teder", "id": "7", "name": "...", "domain": "...", "replied_at": "...",
     "next_step": "...", "next_step_at": "...", "target": { ... }, "page": "...", "status": "...", "leadUrl": null }],
   "funnels": { "toran": [{ "key": "found", "label": "נמצאו", "all": 12, "month": 3 }], "teder": [ ... ] },
@@ -187,6 +190,12 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
   (`TEDER_URL` is Teder's public address, default `https://teder.openfrequency.co.il`, the same setting as accounts').
   A demo a `stuck` request already lists (asked with a code, its link not sent) is left out, and an approved one is an
   `asked_teder` card once it has its page.
+- `leads` is what reached the owner only by email until now, from the website's `GET /internal/leads` (openfrequency-web
+  `server/lead.mjs`, on `OF_WEB_INTERNAL`, default `http://127.0.0.1:4720`, with the internal token; read at each load,
+  `src/ops/sources.ts` `websiteLeads`): `waitlist`, Toran's waitlist of the last 30 days (a phone or an email, the store
+  when one was given), and `failed`, every lead a product should have taken (`product` toran or teder) and has not, 10
+  minutes after it came (the website tries again every 5). No message for either: Toran is not open, and a hand-off
+  that failed needs the operator first. `ok` is false, with both lists empty, when the website did not answer.
 - The funnels' last stage, `customers`, comes with `all` and `month` as null: accounts fills it from its
   subscriptions.
 - `ourNumber` is our one WhatsApp number once our company store connected it, and null before. `demoLine` is the demo

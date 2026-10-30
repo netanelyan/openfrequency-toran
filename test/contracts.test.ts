@@ -1,6 +1,8 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../src/core/paths.ts';
@@ -236,7 +238,23 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
     await s.app.db.query("INSERT INTO teder_leads (id, domain, name, status, whatsapp, error, created_at) VALUES ('14', 'kelim.example', 'חנות הכלים', 'failed', '972500000208', 'לא הצלחנו לקרוא את החנות', $1), ('15', 'new-teder.example', NULL, 'new', NULL, NULL, $1)", [ago(3)]);
     const answered = await store(s, 'answered.example', { status: 'sent', approved_at: ago(300), page_built_at: ago(300), sent_at: ago(250), contact_whatsapp: '972500000207' });
     assert.equal((await act(s, `toran/${answered}/replied`, { by: 'Admin' })).status, 200);
-    return { 'the dashboard': await ops(s) };
+    // The website's leads (its GET /internal/leads): a waitlist sign-up with no store, and a Toran demo with its code
+    // (no number) that Toran never took.
+    const minutes = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+    const site = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ leads: [
+        { id: 31, source: 'waitlist', store: null, contact: 'soon@shop.example', page: '/toran', createdAt: minutes(30), handedTo: null, handedAt: null },
+        { id: 32, source: 'demo', store: 'lost-lead.example', contact: null, page: '/toran', createdAt: minutes(60), handedTo: 'toran', handedAt: null },
+      ] }));
+    });
+    await new Promise<void>((r) => site.listen(0, '127.0.0.1', r));
+    s.app.env.OF_WEB_INTERNAL = `http://127.0.0.1:${(site.address() as AddressInfo).port}`;
+    try {
+      return { 'the dashboard': await ops(s) };
+    } finally {
+      site.close();
+    }
   },
   [`${OPS} :: no token, or the wrong one`]: (s) => badToken((token) => ops(s, token)),
   [`${OPS} :: OF_INTERNAL_TOKEN unset or short here`]: (s) => unsetHere(s, () => ops(s)),
