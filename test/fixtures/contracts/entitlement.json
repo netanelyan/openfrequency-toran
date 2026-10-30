@@ -1,0 +1,202 @@
+{
+  "name": "entitlement",
+  "doc": "docs/setup.md, \"GET /internal/entitlement\"",
+  "servedBy": [
+    "accounts"
+  ],
+  "calledBy": [
+    "teder",
+    "toran"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/entitlement",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "query": {
+          "workspace": "a positive integer",
+          "product": "teder | toran"
+        }
+      },
+      "notes": "Decide on `allowed` alone; `access` says why. `access` is one of paid, comp, due, unpaid, cancelled, off: a reader must accept every one of them (due is new on 2026-10-29). `plan` is in Teder's answers only. The instants are the ends of Israel days, in UTC.",
+      "answers": [
+        {
+          "case": "paid (Teder, the small plan)",
+          "status": 200,
+          "body": {
+            "workspace": 7,
+            "product": "teder",
+            "enabled": true,
+            "access": "paid",
+            "allowed": true,
+            "paidThrough": "2026-11-21T21:59:59.999Z",
+            "cancelAt": null,
+            "graceUntil": null,
+            "plan": {
+              "name": "small",
+              "slideshows": 15,
+              "redos": 4
+            }
+          },
+          "nullable": [
+            "paidThrough",
+            "cancelAt",
+            "graceUntil"
+          ]
+        },
+        {
+          "case": "due: the paid period is over, the 14 days of grace",
+          "status": 200,
+          "body": {
+            "workspace": 7,
+            "product": "teder",
+            "enabled": true,
+            "access": "due",
+            "allowed": true,
+            "paidThrough": "2026-11-21T21:59:59.999Z",
+            "cancelAt": null,
+            "graceUntil": "2026-12-06T21:59:59.999Z",
+            "plan": {
+              "name": "full",
+              "slideshows": 40,
+              "redos": 10
+            }
+          },
+          "nullable": [
+            "paidThrough",
+            "cancelAt",
+            "graceUntil"
+          ]
+        },
+        {
+          "case": "unpaid: never paid, or the grace is over",
+          "status": 200,
+          "body": {
+            "workspace": 7,
+            "product": "teder",
+            "enabled": true,
+            "access": "unpaid",
+            "allowed": false,
+            "paidThrough": null,
+            "cancelAt": null,
+            "graceUntil": null,
+            "plan": {
+              "name": "full",
+              "slideshows": 40,
+              "redos": 10
+            }
+          },
+          "nullable": [
+            "paidThrough",
+            "cancelAt",
+            "graceUntil"
+          ]
+        },
+        {
+          "case": "cancelled, working until its last day",
+          "status": 200,
+          "body": {
+            "workspace": 7,
+            "product": "teder",
+            "enabled": true,
+            "access": "cancelled",
+            "allowed": true,
+            "paidThrough": "2026-11-21T21:59:59.999Z",
+            "cancelAt": "2026-11-21T21:59:59.999Z",
+            "graceUntil": null,
+            "plan": {
+              "name": "full",
+              "slideshows": 40,
+              "redos": 10
+            }
+          },
+          "nullable": [
+            "paidThrough",
+            "cancelAt",
+            "graceUntil"
+          ]
+        },
+        {
+          "case": "complimentary",
+          "status": 200,
+          "body": {
+            "workspace": 7,
+            "product": "teder",
+            "enabled": true,
+            "access": "comp",
+            "allowed": true,
+            "paidThrough": null,
+            "cancelAt": null,
+            "graceUntil": null,
+            "plan": {
+              "name": "full",
+              "slideshows": 40,
+              "redos": 10
+            }
+          },
+          "nullable": [
+            "paidThrough",
+            "cancelAt",
+            "graceUntil"
+          ]
+        },
+        {
+          "case": "off (Toran: no plan)",
+          "status": 200,
+          "body": {
+            "workspace": 7,
+            "product": "toran",
+            "enabled": false,
+            "access": "off",
+            "allowed": false,
+            "paidThrough": null,
+            "cancelAt": null,
+            "graceUntil": null
+          },
+          "nullable": [
+            "paidThrough",
+            "cancelAt",
+            "graceUntil"
+          ]
+        },
+        {
+          "case": "the workspace is not a positive integer",
+          "status": 400,
+          "body": {
+            "error": "bad_workspace"
+          }
+        },
+        {
+          "case": "a missing or unknown product",
+          "status": 400,
+          "body": {
+            "error": "bad_product"
+          }
+        },
+        {
+          "case": "an id we never had (a deleted one is 200, off)",
+          "status": 404,
+          "body": {
+            "error": "no_workspace"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

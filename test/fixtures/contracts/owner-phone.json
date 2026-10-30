@@ -1,0 +1,318 @@
+{
+  "name": "owner-phone",
+  "doc": "docs/internal-owner-phone.md",
+  "servedBy": [
+    "accounts"
+  ],
+  "calledBy": [
+    "toran"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/owner-phone",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "query": {
+          "phone": "international digits, 8 to 15, no +"
+        }
+      },
+      "answers": [
+        {
+          "case": "the owner",
+          "status": 200,
+          "body": {
+            "phone": "972500000123",
+            "verifiedAt": "2026-10-24T09:00:00.000Z",
+            "user": {
+              "id": 12,
+              "name": "Dana",
+              "email": "dana@example.com"
+            },
+            "workspace": {
+              "id": 3,
+              "slug": "dana-shop",
+              "name": "Dana Shop",
+              "disabled": false
+            },
+            "role": "client_owner",
+            "products": [
+              "teder",
+              "toran"
+            ],
+            "optIn": {
+              "at": "2026-10-24T09:00:00.000Z",
+              "source": "accounts"
+            },
+            "optOut": null
+          },
+          "nullable": [
+            "optIn",
+            "optOut"
+          ]
+        },
+        {
+          "case": "no such number",
+          "status": 404,
+          "body": {
+            "error": "not_linked"
+          }
+        },
+        {
+          "case": "not international digits",
+          "status": 400,
+          "body": {
+            "error": "bad_phone"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/internal/owner-phones",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "query": {
+          "workspace": "a positive integer"
+        }
+      },
+      "answers": [
+        {
+          "case": "every number of the workspace, oldest first",
+          "status": 200,
+          "body": {
+            "phones": [
+              {
+                "phone": "972500000123",
+                "verifiedAt": "2026-10-24T09:00:00.000Z",
+                "user": {
+                  "id": 12,
+                  "name": "Dana",
+                  "email": "dana@example.com"
+                },
+                "workspace": {
+                  "id": 3,
+                  "slug": "dana-shop",
+                  "name": "Dana Shop",
+                  "disabled": false
+                },
+                "role": "client_owner",
+                "products": [
+                  "teder",
+                  "toran"
+                ],
+                "optIn": {
+                  "at": "2026-10-24T09:00:00.000Z",
+                  "source": "accounts"
+                },
+                "optOut": null
+              }
+            ]
+          },
+          "nullable": [
+            "optIn",
+            "optOut"
+          ]
+        },
+        {
+          "case": "not a positive integer",
+          "status": 400,
+          "body": {
+            "error": "bad_workspace"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/owner-phone/claim",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "body": {
+          "code": "LINK-ABCDEF",
+          "phone": "972500000123"
+        }
+      },
+      "answers": [
+        {
+          "case": "linked: the owner",
+          "status": 200,
+          "body": {
+            "phone": "972500000123",
+            "verifiedAt": "2026-10-24T09:00:00.000Z",
+            "user": {
+              "id": 12,
+              "name": "Dana",
+              "email": "dana@example.com"
+            },
+            "workspace": {
+              "id": 3,
+              "slug": "dana-shop",
+              "name": "Dana Shop",
+              "disabled": false
+            },
+            "role": "client_owner",
+            "products": [
+              "teder",
+              "toran"
+            ],
+            "optIn": {
+              "at": "2026-10-24T09:00:00.000Z",
+              "source": "accounts"
+            },
+            "optOut": null
+          },
+          "nullable": [
+            "optIn",
+            "optOut"
+          ]
+        },
+        {
+          "case": "no such code",
+          "status": 404,
+          "body": {
+            "error": "unknown_code"
+          }
+        },
+        {
+          "case": "used already",
+          "status": 409,
+          "body": {
+            "error": "used"
+          }
+        },
+        {
+          "case": "30 minutes have passed, or a newer code was made",
+          "status": 410,
+          "body": {
+            "error": "expired"
+          }
+        },
+        {
+          "case": "the number is someone else's",
+          "status": 409,
+          "body": {
+            "error": "phone_taken"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/owner-phone/consent",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "body": {
+          "phone": "972500000123",
+          "optIn": false,
+          "source": "whatsapp"
+        }
+      },
+      "answers": [
+        {
+          "case": "recorded: the owner",
+          "status": 200,
+          "body": {
+            "phone": "972500000123",
+            "verifiedAt": "2026-10-24T09:00:00.000Z",
+            "user": {
+              "id": 12,
+              "name": "Dana",
+              "email": "dana@example.com"
+            },
+            "workspace": {
+              "id": 3,
+              "slug": "dana-shop",
+              "name": "Dana Shop",
+              "disabled": false
+            },
+            "role": "client_owner",
+            "products": [
+              "teder",
+              "toran"
+            ],
+            "optIn": {
+              "at": "2026-10-24T09:00:00.000Z",
+              "source": "accounts"
+            },
+            "optOut": {
+              "at": "2026-10-25T09:00:00.000Z",
+              "source": "whatsapp"
+            }
+          },
+          "nullable": [
+            "optIn",
+            "optOut"
+          ]
+        },
+        {
+          "case": "no such number",
+          "status": 404,
+          "body": {
+            "error": "not_linked"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

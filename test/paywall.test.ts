@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createHandler } from '../src/web/server.ts';
 import { conversationFor, runTurn } from '../src/agent/loop.ts';
@@ -103,8 +104,9 @@ test('the kept answer: fresh for 5 minutes, standing 24 hours while accounts is 
 });
 
 // accounts' side signs it: openfrequency-accounts src/web/admin-toran.js operatorAssertion, and its contract
-// docs/contracts/admin-toran-operator.json, whose example payload these cases are built from.
-const CONTRACT_EXAMPLE = { id: 1, email: 'admin@example.com', name: 'Admin', ses: 'Qm9vazEyMzQ1Njc4OTBhYmNkZWZnaGlq', exp: 1792832460000 };
+// docs/contracts/admin-toran-operator.json (copied in test/fixtures/contracts), whose example payload these cases are
+// built from.
+const CONTRACT_EXAMPLE = JSON.parse(readFileSync(new URL('./fixtures/contracts/admin-toran-operator.json', import.meta.url), 'utf8')).routes[0].answers[0].body;
 const sign = (claim: Record<string, unknown>, key = INTERNAL_TOKEN) => {
   const payload = Buffer.from(JSON.stringify(claim)).toString('base64url');
   return `${payload}.${createHmac('sha256', key).update(payload).digest('base64url')}`;

@@ -1,0 +1,143 @@
+{
+  "name": "session",
+  "doc": "docs/internal-session.md",
+  "servedBy": [
+    "accounts"
+  ],
+  "calledBy": [
+    "teder",
+    "toran"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/session",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "query": {
+          "product": "teder | toran, optional; always send it"
+        },
+        "headers": {
+          "X-OF-Session": "the session cookie's value"
+        }
+      },
+      "answers": [
+        {
+          "case": "a customer",
+          "status": 200,
+          "body": {
+            "user": {
+              "id": 12,
+              "email": "dana@example.com",
+              "name": "Dana",
+              "superadmin": false
+            },
+            "workspace": {
+              "id": 3,
+              "slug": "dana-shop",
+              "name": "Dana Shop",
+              "disabled": false
+            },
+            "role": "client_owner",
+            "products": [
+              "teder",
+              "toran"
+            ],
+            "readOnly": false,
+            "viewAs": null,
+            "expiresAt": "2026-11-21T10:00:00.000Z"
+          },
+          "nullable": [
+            "workspace",
+            "viewAs"
+          ]
+        },
+        {
+          "case": "the superadmin, viewing a workspace as its customer",
+          "status": 200,
+          "body": {
+            "user": {
+              "id": 1,
+              "email": "admin@example.com",
+              "name": "Admin",
+              "superadmin": true
+            },
+            "workspace": {
+              "id": 3,
+              "slug": "dana-shop",
+              "name": "Dana Shop",
+              "disabled": false
+            },
+            "role": "superadmin",
+            "products": [
+              "teder"
+            ],
+            "readOnly": true,
+            "viewAs": {
+              "by": {
+                "id": 1,
+                "email": "admin@example.com"
+              },
+              "since": "2026-10-22T10:00:00.000Z"
+            },
+            "expiresAt": "2026-10-22T22:00:00.000Z"
+          },
+          "nullable": [
+            "workspace",
+            "viewAs"
+          ]
+        },
+        {
+          "case": "no session, a signed-out, expired or idle one, or a disabled user",
+          "status": 401,
+          "body": {
+            "error": "no_session"
+          }
+        },
+        {
+          "case": "a member of several workspaces who has not picked one",
+          "status": 409,
+          "body": {
+            "error": "choose_workspace"
+          }
+        },
+        {
+          "case": "the workspace was disabled",
+          "status": 403,
+          "body": {
+            "error": "workspace_disabled"
+          }
+        },
+        {
+          "case": "?product= names one the workspace does not have",
+          "status": 403,
+          "body": {
+            "error": "product_disabled"
+          }
+        },
+        {
+          "case": "?product= is not teder or toran",
+          "status": 400,
+          "body": {
+            "error": "bad_product"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

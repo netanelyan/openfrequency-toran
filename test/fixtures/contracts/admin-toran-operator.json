@@ -1,0 +1,33 @@
+{
+  "name": "admin-toran-operator",
+  "doc": "src/web/admin-toran.js; README, \"/admin/toran\"",
+  "servedBy": [
+    "accounts"
+  ],
+  "calledBy": [
+    "toran"
+  ],
+  "kind": "header",
+  "routes": [
+    {
+      "method": "ANY",
+      "path": "/admin/toran/* (accounts' proxy to Toran, X-OF-Admin-Prefix: /admin/toran)",
+      "listener": "OF_TORAN_INTERNAL (127.0.0.1:4710), from accounts on the same machine",
+      "auth": "X-OF-Operator: <payload>.<signature>. payload: base64url of the JSON below. signature: base64url of HMAC-SHA256 of the payload's characters, keyed with OF_INTERNAL_TOKEN. No Cookie header but Toran's own tn_* cookies: the superadmin's session never reaches Toran.",
+      "notes": "Toran accepts it only from a loopback socket with X-OF-Admin-Prefix, a good signature (compared in constant time) and exp in the future. exp is milliseconds since 1970, 60 seconds after accounts signed it. ses is the same for every request of one accounts session and says nothing about it (HMAC-SHA256 of \"ses:<session id>\" under OF_INTERNAL_TOKEN, its first 32 base64url characters): Toran derives its CSRF tokens from it. Without OF_INTERNAL_TOKEN accounts sends no header and Toran sends the browser to sign in.",
+      "answers": [
+        {
+          "case": "the payload of X-OF-Operator",
+          "status": 0,
+          "body": {
+            "id": 1,
+            "email": "admin@example.com",
+            "name": "Admin",
+            "ses": "Qm9vazEyMzQ1Njc4OTBhYmNkZWZnaGlq",
+            "exp": 1792832460000
+          }
+        }
+      ]
+    }
+  ]
+}

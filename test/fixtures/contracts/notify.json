@@ -1,0 +1,82 @@
+{
+  "name": "notify",
+  "doc": "docs/setup.md, \"Product emails: POST /internal/notify\"",
+  "servedBy": [
+    "accounts"
+  ],
+  "calledBy": [
+    "teder",
+    "toran"
+  ],
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/internal/notify",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "body": {
+          "workspace": 7,
+          "product": "teder",
+          "kind": "posts_waiting",
+          "subject": "3 פוסטים מחכים לאישור",
+          "text": "יש 3 פוסטים חדשים.\n\nאפשר לאשר אותם מהטלפון.",
+          "link": "https://teder.openfrequency.co.il/review"
+        }
+      },
+      "notes": "kind: posts_waiting, weekly, monthly, connect_needed or publish_failed. html is optional and never used.",
+      "answers": [
+        {
+          "case": "sent (sent is 0 when nobody wants this kind)",
+          "status": 202,
+          "body": {
+            "ok": true,
+            "sent": 1
+          }
+        },
+        {
+          "case": "a field that breaks its rule",
+          "status": 400,
+          "body": {
+            "error": "bad_kind"
+          }
+        },
+        {
+          "case": "a workspace we do not have, or a deleted one",
+          "status": 404,
+          "body": {
+            "error": "no_workspace"
+          }
+        },
+        {
+          "case": "the product is not on for it",
+          "status": 409,
+          "body": {
+            "error": "product_off"
+          }
+        },
+        {
+          "case": "past 3 of one kind for one product to one workspace in 24 hours",
+          "status": 429,
+          "body": {
+            "error": "rate_limited"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

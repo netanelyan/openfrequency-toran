@@ -1,0 +1,68 @@
+{
+  "name": "workspaces-delete",
+  "doc": "docs/setup.md, \"Deleting a workspace\"",
+  "servedBy": [
+    "teder",
+    "toran"
+  ],
+  "calledBy": [
+    "accounts"
+  ],
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/internal/workspaces/<workspace id>/delete",
+      "listener": "the product's internal address on this machine: OF_TEDER_INTERNAL (127.0.0.1:4700) or OF_TORAN_INTERNAL (127.0.0.1:4710)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "body": {}
+      },
+      "notes": "Idempotent: a workspace the product never saw, or already deleted, answers 200 too. Any status but a 2xx stops the whole deletion, 404 included: a 404 is a product without the route, never \"nothing there\" (ACC-06). The body of a 200 is the product's own count of what it deleted; accounts reads only the status. accounts waits 10 seconds.",
+      "answers": [
+        {
+          "case": "deleted",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "deleted": {
+              "accounts": 1,
+              "posts": 40
+            }
+          }
+        },
+        {
+          "case": "nothing of that workspace here (never seen, or deleted already)",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "deleted": {
+              "accounts": 0,
+              "posts": 0
+            }
+          }
+        },
+        {
+          "case": "no such route: a failure, accounts deletes nothing",
+          "status": 404,
+          "body": {
+            "error": "not_found"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

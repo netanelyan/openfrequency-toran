@@ -1,0 +1,115 @@
+{
+  "name": "setup",
+  "doc": "docs/setup.md, \"The setup page\"; src/web/setup.js",
+  "servedBy": [
+    "teder",
+    "toran"
+  ],
+  "calledBy": [
+    "accounts"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/setup",
+      "listener": "the product's internal address on this machine: OF_TEDER_INTERNAL (127.0.0.1:4700) or OF_TORAN_INTERNAL (127.0.0.1:4710)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "query": {
+          "workspace": "a positive integer"
+        }
+      },
+      "notes": "status: todo, working, done, attention or soon. At most 30 steps, keys unique. href: https on openfrequency.co.il (or a path on the product), or null. An answer that breaks any rule is not used at all. accounts waits 3 seconds.",
+      "answers": [
+        {
+          "case": "the checklist (Teder)",
+          "status": 200,
+          "body": {
+            "product": "teder",
+            "ready": false,
+            "steps": [
+              {
+                "key": "connect",
+                "title": "לחבר את חשבון האינסטגרם",
+                "status": "done",
+                "detail": "",
+                "href": "https://teder.openfrequency.co.il/connect",
+                "required": true
+              },
+              {
+                "key": "first",
+                "title": "לבדוק את התשובה הראשונה",
+                "status": "todo",
+                "detail": "זה לוקח בערך חמש דקות.",
+                "href": "https://teder.openfrequency.co.il/first",
+                "required": true
+              },
+              {
+                "key": "team",
+                "title": "להוסיף עוד מישהו מהצוות",
+                "status": "todo",
+                "detail": "",
+                "href": null,
+                "required": false
+              }
+            ]
+          },
+          "nullable": [
+            "href"
+          ]
+        },
+        {
+          "case": "the checklist (Toran)",
+          "status": 200,
+          "body": {
+            "product": "toran",
+            "ready": false,
+            "steps": [
+              {
+                "key": "connect",
+                "title": "לחבר את האתר של החנות",
+                "status": "done",
+                "detail": "",
+                "href": "https://toran.openfrequency.co.il/connect",
+                "required": true
+              },
+              {
+                "key": "first",
+                "title": "לבדוק את התשובה הראשונה",
+                "status": "todo",
+                "detail": "זה לוקח בערך חמש דקות.",
+                "href": "https://toran.openfrequency.co.il/first",
+                "required": true
+              },
+              {
+                "key": "team",
+                "title": "להוסיף עוד מישהו מהצוות",
+                "status": "todo",
+                "detail": "",
+                "href": null,
+                "required": false
+              }
+            ]
+          },
+          "nullable": [
+            "href"
+          ]
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

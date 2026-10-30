@@ -1,0 +1,89 @@
+{
+  "name": "ops-customers",
+  "doc": "docs/internal-ops.md",
+  "servedBy": [
+    "accounts"
+  ],
+  "calledBy": [
+    "toran"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/ops/customers",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "answers": [
+        {
+          "case": "every workspace, newest first",
+          "status": 200,
+          "body": {
+            "today": "2026-10-24",
+            "workspaces": [
+              {
+                "id": 3,
+                "slug": "dana-shop",
+                "name": "Dana Shop",
+                "disabled": false,
+                "createdAt": "2026-10-01T09:00:00.000Z",
+                "products": [
+                  "teder"
+                ],
+                "people": 2,
+                "invitesWaiting": 1,
+                "lastLoginAt": "2026-10-23T18:00:00.000Z",
+                "subscriptions": [
+                  {
+                    "product": "teder",
+                    "plan": "small",
+                    "monthly": 490,
+                    "vat": "excluded",
+                    "setup": 990,
+                    "startedOn": "2026-10-01",
+                    "paidUntil": "2026-10-31",
+                    "endsOn": null,
+                    "cancelledAt": null,
+                    "comp": false,
+                    "state": "paid",
+                    "nextChargeOn": "2026-11-01"
+                  }
+                ],
+                "invoices": {
+                  "count": 2,
+                  "lastIssuedOn": "2026-10-01"
+                }
+              }
+            ]
+          },
+          "nullable": [
+            "lastLoginAt",
+            "plan",
+            "monthly",
+            "vat",
+            "setup",
+            "startedOn",
+            "paidUntil",
+            "endsOn",
+            "cancelledAt",
+            "nextChargeOn",
+            "lastIssuedOn"
+          ]
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

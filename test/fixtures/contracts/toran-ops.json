@@ -1,0 +1,178 @@
+{
+  "name": "toran-ops",
+  "doc": "docs/internal-ops.md, \"/admin and Toran's /internal/ops\"; Toran's docs/operator.md, section 4",
+  "servedBy": [
+    "toran"
+  ],
+  "calledBy": [
+    "accounts"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/ops",
+      "listener": "OF_TORAN_INTERNAL (127.0.0.1:4710)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "notes": "One element of each list is shown; every element of a list has the same shape. accounts waits 3 seconds.",
+      "answers": [
+        {
+          "case": "the dashboard",
+          "status": 200,
+          "body": {
+            "teder": {
+              "ok": true
+            },
+            "items": [
+              {
+                "key": "toran:12",
+                "product": "toran",
+                "id": "12",
+                "reason": "tried_demo",
+                "rank": 100,
+                "name": "נעלי הגליל",
+                "domain": "galil-shoes.example",
+                "why": "ניסו את הדמו",
+                "message": "היי, ראינו שניסיתם את הדמו של תורן לנעלי הגליל. איך היה?",
+                "target": {
+                  "kind": "whatsapp",
+                  "href": "https://wa.me/972500000201",
+                  "label": "להעתיק ולפתוח וואטסאפ"
+                },
+                "direct": false,
+                "mark": "reminded",
+                "page": "https://toran.openfrequency.co.il/p/galil-shoes",
+                "at": "2026-10-24T07:00:00.000Z",
+                "leadUrl": "https://toran.openfrequency.co.il/lead/12"
+              }
+            ],
+            "noContact": [
+              {
+                "id": 31,
+                "name": "צמחים בבית",
+                "domain": "plants-home.example",
+                "score": 64,
+                "leadUrl": "https://toran.openfrequency.co.il/lead/31"
+              }
+            ],
+            "stuck": [
+              {
+                "domain": "wix-store.example",
+                "phone": "972500000204",
+                "at": "2026-10-24T04:00:00.000Z",
+                "why": "האתר על Wix, ותורן בונה דמו רק לחנויות Shopify",
+                "storeId": 40,
+                "leadUrl": "https://toran.openfrequency.co.il/lead/40"
+              }
+            ],
+            "conversations": [
+              {
+                "key": "toran:9",
+                "product": "toran",
+                "id": "9",
+                "name": "מאפיית השכונה",
+                "domain": "bakery.example",
+                "replied_at": "2026-10-22T10:00:00.000Z",
+                "next_step": "לקבוע שיחה",
+                "next_step_at": "2026-10-25T06:00:00.000Z",
+                "target": {
+                  "kind": "whatsapp",
+                  "href": "https://wa.me/972500000205",
+                  "label": "להעתיק ולפתוח וואטסאפ"
+                },
+                "page": "https://toran.openfrequency.co.il/p/bakery",
+                "status": "pilot",
+                "leadUrl": "https://toran.openfrequency.co.il/lead/9"
+              }
+            ],
+            "funnels": {
+              "toran": [
+                {
+                  "key": "found",
+                  "label": "נמצאו",
+                  "all": 40,
+                  "month": 12
+                }
+              ],
+              "teder": [
+                {
+                  "key": "asked",
+                  "label": "ביקשו באתר",
+                  "all": 8,
+                  "month": 4
+                }
+              ]
+            }
+          },
+          "nullable": [
+            "message",
+            "leadUrl",
+            "all",
+            "month",
+            "page"
+          ]
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/ops/<toran|teder>/<id>/<action>",
+      "listener": "OF_TORAN_INTERNAL (127.0.0.1:4710)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "body": {
+          "by": "the superadmin's name, else the email",
+          "text": "next only",
+          "days": "next (1 to 30) and later (1 or 7) only",
+          "reason": "lost only"
+        }
+      },
+      "notes": "accounts waits 15 seconds.",
+      "answers": [
+        {
+          "case": "recorded: Toran's line for it",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "message": "סומן שנשלח. התזכורת האחת תחכה כאן בעוד ארבעה ימים."
+          }
+        },
+        {
+          "case": "refused by Toran's rules: its own line",
+          "status": 400,
+          "body": {
+            "ok": false,
+            "error": "כבר סומן."
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}
