@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { queue, conversations } from '../src/ops/queue.ts';
-import { markLost, markReminded, markReplied, markSent, markWon, later, sendDirect, setNext, OpsError } from '../src/ops/actions.ts';
+import { markLost, markReminded, markReplied, markSent, markWon, later, NOT_LIVE, sendDirect, setNext, OpsError } from '../src/ops/actions.ts';
 import { customers, syncTeder, type Customer } from '../src/ops/sources.ts';
 import { funnels, money, rate } from '../src/ops/funnel.ts';
 import { israelWeekdayHour } from '../src/core/clock.ts';
-import { customer, INTERNAL_TOKEN, testApp } from './helpers.ts';
+import { customer, fakeMetaSends, INTERNAL_TOKEN, META_DEMO, testApp } from './helpers.ts';
 import { serve } from './serve.ts';
 
 // The operator's dashboard (src/ops/, pages/ops.ts, docs/operator.md): who to write to today and in what order, what
@@ -299,6 +299,56 @@ test('a demo asked for on the website goes out by itself once its page is public
     assert.equal(await deliverRequested(app), 0);
   } finally {
     await app.db.close();
+  }
+});
+
+test("our number not connected (the simulator on the VPS): the send-now button is refused, nothing goes or is marked sent, the links wait; on Meta they go", async () => {
+  const { discover } = await import('../src/leads/discover.ts');
+  const { ingestStore } = await import('../src/ingest/pack.ts');
+  const { buildPitch } = await import('../src/pitch/build.ts');
+  const { setOffer } = await import('../src/offer.ts');
+  const { deliverRequested } = await import('../src/ops/actions.ts');
+  const { demoLine } = await import('../src/channels/lines.ts');
+  const s = await serve();
+  const { app } = s;
+  try {
+    Object.assign(app.env, { OF_INTERNAL_TOKEN: INTERNAL_TOKEN, TORAN_ENV: 'prod', PUBLIC_BASE_URL: 'https://toran.example' });
+    assert.deepEqual(await demoLine(app).then((l) => [l.via, l.live]), ['sim', false], 'prod on the simulator: not live');
+    const asked = await store(app, 'asked.example', { status: 'page_ready', approved_at: ago(1), page_built_at: ago(1), contact_whatsapp: PHONE });
+    await app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-LIVE01', 'https://asked.example/', 'asked.example', $1, $2)", [PHONE, ago(2)]);
+    await setOffer(app.db, { monthly: 199, vat: 'excluded', setup: 0, city: 'אשדוד' });
+    await discover(app.db, (async function* () { yield { url: 'https://kli-cheres.example/', source: 'seed', detail: {} }; })(), { fetcher: app.fetcher, limit: 1 });
+    const auto = (await app.db.one<any>("SELECT id FROM stores WHERE domain = 'kli-cheres.example'"))!.id;
+    await ingestStore(app, auto);
+    await buildPitch(app, auto);
+    await app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-LIVE02', 'https://kli-cheres.example/', 'kli-cheres.example', '972500000341', $1)", [ago(1)]);
+    const outbox = app.wa.outbox!.length;
+
+    await assert.rejects(sendDirect(app, String(asked), 'op'), (e: any) => e instanceof OpsError && e.message === NOT_LIVE);
+    const r = await fetch(`${s.base}/internal/ops/toran/${asked}/direct`, { method: 'POST', headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json' }, body: '{"by":"op"}' });
+    assert.deepEqual([r.status, await r.json()], [400, { ok: false, error: NOT_LIVE }], 'the button says why');
+    assert.equal(await deliverRequested(app), 0, 'the link that goes by itself waits');
+    assert.equal(app.wa.outbox!.length, outbox, 'nothing went into the simulator');
+    assert.deepEqual((await app.db.query<any>('SELECT sent_at FROM stores WHERE id IN ($1, $2)', [asked, auto])).map((x) => x.sent_at), [null, null], 'nothing marked sent');
+    assert.equal((await app.db.query("SELECT 1 FROM audit WHERE action IN ('ops_sent', 'ops_direct')")).length, 0);
+    const card = (await queue(app)).items.find((i) => i.key === `toran:${asked}`)!;
+    assert.equal(card.direct, false, 'no send-now button');
+    assert.match(card.message!, /^היי, כאן OpenFrequency\. ביקשתם באתר דמו של תורן/, 'the message for the operator\'s own WhatsApp');
+
+    // Our number on Meta: the same two go, from it, and are marked sent.
+    const meta = fakeMetaSends();
+    Object.assign(app.env, META_DEMO);
+    app.graph = meta.f;
+    assert.deepEqual(await demoLine(app).then((l) => [l.via, l.live]), ['meta', true]);
+    assert.equal((await queue(app)).items.find((i) => i.key === `toran:${asked}`)!.direct, true);
+    await sendDirect(app, String(asked), 'op');
+    assert.equal(await deliverRequested(app), 1);
+    assert.deepEqual(meta.sent.map((m) => m.to), [PHONE, '972500000341']);
+    assert.match(meta.sent[0].text, /^הדמו של תורן ל־asked מוכן[^]*https:\/\/toran\.example\/s\/asked-x1/);
+    assert.ok((await app.db.query<any>('SELECT sent_at FROM stores WHERE id IN ($1, $2)', [asked, auto])).every((x) => x.sent_at));
+    assert.equal(app.wa.outbox!.length, outbox, 'the simulator still has nothing');
+  } finally {
+    await s.close();
   }
 });
 

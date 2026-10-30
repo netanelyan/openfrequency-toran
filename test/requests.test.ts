@@ -8,7 +8,7 @@ import { drain } from '../src/jobs/worker.ts';
 import { deliverRequested, deliverTeder } from '../src/ops/actions.ts';
 import { queue, stuckRequests } from '../src/ops/queue.ts';
 import { syncTeder } from '../src/ops/sources.ts';
-import { INTERNAL_TOKEN, testApp } from './helpers.ts';
+import { fakeMetaSends, INTERNAL_TOKEN, META_DEMO, testApp } from './helpers.ts';
 
 // A demo asked for on the website counts only once the person writes to the demo number with its code
 // (src/channels/request.ts): the number it came from is the proof, and one number gets one demo of each product,
@@ -245,6 +245,37 @@ test("the Teder demo's link goes out by itself on the demo number once Teder has
     assert.ok(!(await queue(app)).items.some((i) => i.key === 'teder:40'), 'nothing left for the operator to send');
     assert.equal((await app.db.query("SELECT 1 FROM audit WHERE action = 'ops_direct' AND actor = 'auto'")).length, 2);
     assert.deepEqual(await stuckRequests(app), []);
+  } finally {
+    await teder.close();
+    await app.db.close();
+  }
+});
+
+test("our number not connected (the simulator on the VPS): a Teder demo's link waits, nothing is marked; once it is on Meta, it goes", async () => {
+  const { app } = await withRequests();
+  const teder = await fakeTeder();
+  Object.assign(app.env, teder.env, { TORAN_ENV: 'prod' });
+  try {
+    await handleInbound(app, msg(P1, 'REQ-TTTTT1'));
+    await handoffs(app);
+    teder.approve('teder-shop.co.il', 'חנות תדר');
+    const before = app.wa.outbox!.length;
+    assert.equal(await deliverTeder(app), 0);
+    assert.equal(app.wa.outbox!.length, before, 'nothing went into the simulator');
+    assert.equal((await app.db.one<any>("SELECT delivered_at FROM demo_requests WHERE code = 'REQ-TTTTT1'")).delivered_at, null);
+    assert.equal(await syncTeder(app), true);
+    assert.equal((await app.db.one<any>("SELECT sent_at FROM teder_leads WHERE id = '40'")).sent_at, null, 'not marked sent');
+    assert.ok((await queue(app)).items.some((i) => i.key === 'teder:40' && i.reason === 'asked_teder'), "on the operator's list meanwhile");
+
+    const meta = fakeMetaSends();
+    Object.assign(app.env, META_DEMO);
+    app.graph = meta.f;
+    assert.equal(await deliverTeder(app), 1);
+    assert.deepEqual(meta.sent.map((m) => m.to), [P1]);
+    assert.match(meta.sent[0].text, /^הדמו של תדר לחנות תדר מוכן/);
+    assert.ok((await app.db.one<any>("SELECT delivered_at FROM demo_requests WHERE code = 'REQ-TTTTT1'")).delivered_at);
+    assert.ok((await app.db.one<any>("SELECT sent_at FROM teder_leads WHERE id = '40'")).sent_at);
+    assert.equal(app.wa.outbox!.length, before);
   } finally {
     await teder.close();
     await app.db.close();

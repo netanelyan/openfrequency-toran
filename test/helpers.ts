@@ -149,3 +149,22 @@ export const viewingAs = (workspaceId: number) => ({
   viewAs: { by: { id: 1, email: 'operator@example.test' }, since: '2026-10-22T10:00:00.000Z' },
   expiresAt: LATER,
 });
+
+// ---- our demo number on Meta (src/channels/lines.ts), for a test where it is connected
+
+/** The demo number on Meta, with a system token of our own business. Fictional. */
+export const META_DEMO = { META_DEMO_PHONE_ID: '111222333444555', META_SYSTEM_TOKEN: 'test-token-of-our-own-business' };
+
+/** Meta's send for that number only: every message it takes is kept in `sent`; anything else is refused. */
+export function fakeMetaSends() {
+  const sent: { to: string; text: string }[] = [];
+  const f = (async (input: any, init: any = {}) => {
+    const p = new URL(String(input)).pathname.replace(/^\/v\d+\.\d+\//, '');
+    const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } });
+    if ((init.headers as any)?.authorization !== `Bearer ${META_DEMO.META_SYSTEM_TOKEN}` || p !== `${META_DEMO.META_DEMO_PHONE_ID}/messages` || init.method !== 'POST') return json({ error: { message: 'refused', code: 1 } }, 400);
+    const b = JSON.parse(String(init.body));
+    sent.push({ to: b.to, text: b.text?.body || '' });
+    return json({ messaging_product: 'whatsapp', messages: [{ id: `wamid.test-${sent.length}` }] });
+  }) as typeof fetch;
+  return { f, sent };
+}

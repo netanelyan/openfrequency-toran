@@ -110,6 +110,13 @@ only) its link goes to the number on the demo number, inside the 23 hours after 
 its one reminder comes due in four days. Two numbers that asked for the same store each get its one demo. Past the 23
 hours the demo stays on the list as `asked_teder`, to send by hand.
 
+**Only from a number that reaches people.** The demo number sends through Meta (our number), Twilio, or the
+simulator (`src/channels/lines.ts` `demoLine`). The simulator reaches nobody, so on the VPS (`TORAN_ENV=prod`) it means
+our number is not connected yet: the links above wait, nothing is marked sent, the cards offer no `direct`, and the
+`direct` action answers 400 "המספר שלנו עוד לא מחובר, אז ההודעה לא נשלחה ולא סומנה. אפשר להעתיק אותה ולשלוח מהוואטסאפ
+שלך.". Inside the 23 hours, a link that waited goes once the number is connected. In development and the tests the
+simulator is the phone.
+
 A request with nothing to send yet is under `stuck`. A Teder one says why in its own words: "הבקשה בדרך לתדר", "תדר
 לא קיבל את הבקשה" (the handoff failed every try: its job is on the queue page, to run again), "הדמו של תדר בבנייה",
 "הדמו של תדר מחכה לבדיקה בתדר", "תדר לא הצליח לבנות את הדמו" or "הדמו של תדר הוסר"; its `storeId` is null.
@@ -152,7 +159,8 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
   and the card comes back after three days while the number still waits.
 - `mark` says what "שלחתי" records: sent, reminded, or next (a next step: no message; its card offers the next-step
   form).
-- `direct` means the message can go out now from the demo number (the `direct` action).
+- `direct` means the message can go out now from the demo number (the `direct` action): inside the 23 hours, and
+  while our number is connected (section 3).
 - `leadUrl` is the lead's page on Toran's dashboard, and null for a Teder lead.
 - The funnels' last stage, `customers`, comes with `all` and `month` as null: accounts fills it from its
   subscriptions.

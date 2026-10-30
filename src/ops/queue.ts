@@ -5,6 +5,7 @@ import { INGESTIBLE_HE, canIngest } from '../ingest/catalogue.ts';
 import { PLATFORM_HE, shortDate } from '../web/ui.ts';
 import { contactTarget, firstMessage, pitchUrl, reminderMessage } from '../outreach.ts';
 import { reconnectUrl, WARN_DAYS } from '../channels/waStore.ts';
+import { demoLine } from '../channels/lines.ts';
 import { reconnectWhatsapp, requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo } from './messages.ts';
 
 // Who the operator writes to today, about Toran or Teder, most urgent first (docs/operator.md section 4), and who is
@@ -35,7 +36,7 @@ export type Item = {
   why: string; // one Hebrew line: why now
   message: string | null;
   target: { kind: 'whatsapp' | 'email' | null; href: string | null; label: string };
-  direct: boolean; // can go out now from the demo number, where they asked
+  direct: boolean; // can go out now from the demo number, where they asked: inside the hours, and our number connected
   mark: 'sent' | 'reminded' | 'next'; // what "שלחתי" records
   page: string | null;
   at: string | null; // the moment the reason is counted from
@@ -106,6 +107,9 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
   const { db } = app;
   const items: Item[] = [];
   const base = live();
+  // While our number is not connected (channels/lines.ts demoLine) nothing goes from it: the message is the one for
+  // the operator's own WhatsApp.
+  const connected = (await demoLine(app)).live;
 
   // A store whose WhatsApp has to be connected again (channels/waStore.ts) comes first: its customers are waiting.
   // "שלחתי" records that they were told, and the card comes back after RECONNECT_AGAIN_DAYS while it is still so.
@@ -136,7 +140,7 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
   for (const s of asked) {
     const name = storeName(s);
     const url = pitchUrl(app.env, s.slug);
-    const direct = now() - new Date(s.req_at).getTime() < DIRECT_HOURS * HOUR;
+    const direct = connected && now() - new Date(s.req_at).getTime() < DIRECT_HOURS * HOUR;
     items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'asked_toran', rank: 85, name, domain: s.domain, why: 'ביקשו דמו באתר, הדף מוכן', message: direct ? requestedLink({ storeName: name, url }) : requestedLinkLater({ storeName: name, url }), target: waTarget(s.req_phone || s.contact_whatsapp), direct, mark: 'sent', page: url, at: s.req_at });
   }
 

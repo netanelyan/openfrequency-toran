@@ -1,4 +1,5 @@
 import type { App } from '../app.ts';
+import { toranEnv } from '../core/env.ts';
 import { open } from '../core/secrets.ts';
 import { cloudSend } from './meta.ts';
 import { LIMITS } from './policy.ts';
@@ -141,6 +142,23 @@ export function metaLinesAdapter(app: App): WaProvider {
 
 /** What the demo number sends through: Meta when it is on Meta, else the shared provider (Twilio or the simulator). */
 export const demoWa = async (app: App): Promise<WaProvider> => ((await ourLines(app)).demo ? metaLinesAdapter(app) : app.wa);
+
+/**
+ * The demo number as it is now: what it sends through (Meta, Twilio or the simulator), its number when known, and
+ * whether a message on it reaches a person. The simulator reaches nobody: on the VPS (TORAN_ENV=prod) it means our number
+ * is not connected yet, so nothing goes out on it and nothing is marked sent (ops/actions.ts: the "send now" button
+ * says so, and the links that go out by themselves wait). In development and the tests the simulator is the phone.
+ */
+export type DemoLine = { wa: WaProvider; via: 'meta' | 'twilio' | 'sim'; live: boolean; number: string | null };
+
+export async function demoLine(app: App): Promise<DemoLine> {
+  const one = await oneNumber(app);
+  const l = withOne(app.env, one);
+  const wa = l.demo ? metaLinesAdapter(app) : app.wa;
+  const via = wa.kind === 'meta_line' ? 'meta' : wa.kind === 'twilio' ? 'twilio' : 'sim';
+  const number = (l.demo && l.demo === one?.phoneId ? one.number : null) || lineNumber(app.env, 'demo');
+  return { wa, via, live: via !== 'sim' || toranEnv(app.env) !== 'prod', number };
+}
 
 /** What the owner line sends through, the same way: our one number while it is connected and no setting names another. */
 export const ownerWa = async (app: App): Promise<WaProvider> => ((await ourLines(app)).owner ? metaLinesAdapter(app) : app.wa);

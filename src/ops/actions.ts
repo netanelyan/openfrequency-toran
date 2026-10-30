@@ -4,7 +4,7 @@ import { audit, event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
 import { followupDue, pitchUrl } from '../outreach.ts';
 import { reply } from '../channels/send.ts';
-import { demoWa } from '../channels/lines.ts';
+import { demoLine } from '../channels/lines.ts';
 import { J } from '../db/index.ts';
 import { reconnectSql } from './queue.ts';
 import { LOST_REASONS, requestedLink, tederRequestedLink } from './messages.ts';
@@ -18,7 +18,9 @@ import { syncTeder } from './sources.ts';
 //   reminded   the reminder (or, for a store that tried the demo, the question in its place) went out: the last one
 //   direct     the link to a demo someone asked for, sent now on the demo number where they asked (inside its 24
 //              hours), then recorded as sent. A Toran page by this button or by itself (deliverRequested); a Teder
-//              demo by itself only (deliverTeder), with "auto" as its actor
+//              demo by itself only (deliverTeder), with "auto" as its actor. Only while our number is connected
+//              (channels/lines.ts demoLine): until then the button is refused, nothing is sent or marked, and the
+//              links that go out by themselves wait
 //   replied    they answered: they leave the list for "in conversation"
 //   next       the next step in a conversation, and when
 //   later      off the list for a day or a week
@@ -27,6 +29,9 @@ import { syncTeder } from './sources.ts';
 
 export type Kind = 'toran' | 'teder';
 export class OpsError extends Error {}
+
+/** The "send now" button while the demo number goes nowhere (demoLine: the simulator on the VPS). */
+export const NOT_LIVE = 'המספר שלנו עוד לא מחובר, אז ההודעה לא נשלחה ולא סומנה. אפשר להעתיק אותה ולשלוח מהוואטסאפ שלך.';
 
 const ISO = (t: number) => new Date(t).toISOString();
 
@@ -98,8 +103,10 @@ export async function sendDirect(app: App, id: string, by: string): Promise<void
   const req = await app.db.one<{ code: string; phone: string; claimed_at: string }>("SELECT code, phone, claimed_at FROM demo_requests WHERE domain = $1 AND product = 'toran' AND claimed_at IS NOT NULL ORDER BY claimed_at DESC LIMIT 1", [s.domain]);
   if (!req) throw new OpsError('לא ביקשו את הדמו הזה באתר');
   if (now() - new Date(req.claimed_at).getTime() >= 24 * HOUR) throw new OpsError('עברו 24 שעות מההודעה שלהם, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.');
+  const line = await demoLine(app);
+  if (!line.live) throw new OpsError(NOT_LIVE);
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
-  const d = await reply(app, await demoWa(app), { from: req.phone, text: '', id: `req-${req.code}`, at: new Date(req.claimed_at).getTime(), channel: 'whatsapp' }, requestedLink({ storeName: name, url: pitchUrl(app.env, s.slug) }), s.id, null);
+  const d = await reply(app, line.wa, { from: req.phone, text: '', id: `req-${req.code}`, at: new Date(req.claimed_at).getTime(), channel: 'whatsapp' }, requestedLink({ storeName: name, url: pitchUrl(app.env, s.slug) }), s.id, null);
   if (!d.ok) throw new OpsError('ההודעה לא יצאה: עברו 24 שעות מההודעה שלהם. אפשר לשלוח מהוואטסאפ שלך.');
   await markSent(app, 'toran', id, by);
   await log(app, 'toran', id, 'direct', by, { code: req.code });
@@ -152,8 +159,10 @@ export async function markWon(app: App, kind: Kind, id: string, stage: 'pilot' |
  * each minute. A request counts from the moment the person wrote with its code (their number is then proven), and
  * the link goes on the demo number inside the 23 hours after that (send.ts holds the 24-hour line). A page that is not
  * public yet (something missing, held back) waits; one past the 23 hours stays on the operator's list, to send by hand.
+ * While our number is not connected (demoLine) nothing goes, and nothing is marked: the requests wait.
  */
 export async function deliverRequested(app: App): Promise<number> {
+  if (!(await demoLine(app)).live) return 0;
   const { pitchGaps, isPublic } = await import('../pitch/ready.ts');
   const due = await app.db.query<any>(
     `SELECT DISTINCT s.* FROM demo_requests r JOIN stores s ON s.domain = r.domain
@@ -181,9 +190,12 @@ export async function deliverRequested(app: App): Promise<number> {
  * hours after it wrote, once (demo_requests.delivered_at, set before the send and given back if it did not go). Two
  * numbers that asked for the same store each get its one demo. The first send marks the Teder lead sent, as the
  * operator's "שלחתי" would, so its one reminder comes due; past the 23 hours it stays on the operator's list
- * (queue.ts, asked_teder).
+ * (queue.ts, asked_teder). While our number is not connected (demoLine) nothing goes, and nothing is marked: the
+ * requests wait, as Toran's do.
  */
 export async function deliverTeder(app: App): Promise<number> {
+  const line = await demoLine(app);
+  if (!line.live) return 0;
   const waiting = await app.db.query<{ id: number; code: string; phone: string; claimed_at: string; teder_id: string }>(
     `SELECT id, code, phone, claimed_at, teder_id FROM demo_requests
       WHERE product = 'teder' AND teder_id IS NOT NULL AND delivered_at IS NULL AND claimed_at > now() - interval '23 hours' ORDER BY claimed_at`,
@@ -197,7 +209,7 @@ export async function deliverTeder(app: App): Promise<number> {
     if (!d) continue;
     if (!(await app.db.one('UPDATE demo_requests SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL RETURNING id', [r.id]))) continue;
     try {
-      const out = await reply(app, await demoWa(app), { from: r.phone, text: '', id: `req-${r.code}`, at: new Date(r.claimed_at).getTime(), channel: 'whatsapp' }, tederRequestedLink({ storeName: d.name || d.domain, url: d.page_url }), null, null);
+      const out = await reply(app, line.wa, { from: r.phone, text: '', id: `req-${r.code}`, at: new Date(r.claimed_at).getTime(), channel: 'whatsapp' }, tederRequestedLink({ storeName: d.name || d.domain, url: d.page_url }), null, null);
       if (!out.ok) throw new Error(out.reason);
     } catch (e: any) {
       await app.db.query('UPDATE demo_requests SET delivered_at = NULL WHERE id = $1', [r.id]);
