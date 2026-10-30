@@ -19,7 +19,19 @@ test('a workspace deleted in accounts: POST /internal/workspaces/<id>/delete tak
     await enqueue(app.db, 'wa_inbound', { from: '972500000600', account: '1234567', id: 'w1' });
     await usage(app.db, { storeId: store, kind: 'llm', usd: 0.5, tag: 'agent' });
     const del = (id: number, token = app.env.OF_INTERNAL_TOKEN) => fetch(`${s.base}/internal/workspaces/${id}/delete`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}' });
-    assert.equal((await del(42, 'wrong-token-wrong-token-wrong-token-00')).status, 403);
+    // The contract's cases (openfrequency-accounts docs/contracts/workspaces-delete.json).
+    const wrong = await del(42, 'wrong-token-wrong-token-wrong-token-00');
+    assert.equal(wrong.status, 401);
+    assert.equal((await wrong.json()).error, 'bad_token');
+    const none = await fetch(`${s.base}/internal/workspaces/42/delete`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(none.status, 401, 'no token at all');
+    const forwarded = await fetch(`${s.base}/internal/workspaces/42/delete`, { method: 'POST', headers: { authorization: `Bearer ${app.env.OF_INTERNAL_TOKEN}`, 'x-forwarded-for': '203.0.113.9', 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(forwarded.status, 403, 'through Caddy: never');
+    const never = await del(9999);
+    assert.equal(never.status, 200, 'a workspace Toran never saw');
+    const nothing = await never.json();
+    assert.equal(nothing.ok, true);
+    assert.ok(Object.values(nothing.deleted).every((n) => n === 0), 'every count zero');
     const r = await del(42);
     assert.equal(r.status, 200);
     const body = await r.json();
@@ -34,6 +46,12 @@ test('a workspace deleted in accounts: POST /internal/workspaces/<id>/delete tak
     const again = await del(42);
     assert.equal(again.status, 200, 'nothing there: still 200');
     assert.equal((await again.json()).deleted.stores, 0);
+    const token = app.env.OF_INTERNAL_TOKEN;
+    app.env.OF_INTERNAL_TOKEN = 'short';
+    const unset = await del(42, 'short');
+    assert.equal(unset.status, 503);
+    assert.equal((await unset.json()).error, 'not_configured');
+    app.env.OF_INTERNAL_TOKEN = token;
   } finally {
     await s.close();
   }

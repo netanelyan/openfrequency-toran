@@ -3,17 +3,21 @@ import type { Db } from './db/index.ts';
 import { audit } from './db/log.ts';
 import { MESSAGE_KINDS } from './jobs/queue.ts';
 import { sweepFiles } from './jobs/retention.ts';
-import { local } from './ops/api.ts';
+import { timingSafeEqual } from 'node:crypto';
 import type { Out, Req, Route } from './web/server.ts';
 
 // A workspace deleted in openfrequency-accounts (its src/accounts/erase.js asks every product the workspace ever had,
 // before it deletes its own part):
 //
-//   POST /internal/workspaces/<id>/delete     from this machine only, with OF_INTERNAL_TOKEN, no X-Forwarded-For
-//   -> 200 { ok: true, workspace, deleted: { stores, conversations, messages, files, ... } }
+//   POST /internal/workspaces/<id>/delete     Authorization: Bearer <OF_INTERNAL_TOKEN>, body {}
+//   200  { ok: true, workspace, deleted: { stores, conversations, messages, files, ... } }, also when there was
+//        nothing (a workspace that never had a store here, or one deleted before): accounts can ask again
+//   401  { error: "bad_token" }        no token, or the wrong one
+//   503  { error: "not_configured" }   OF_INTERNAL_TOKEN unset here, or shorter than 32 characters
+//   403  { error: "not_local" }        not from this machine, or through Caddy (X-Forwarded-For)
 //
-// 200 also when there was nothing (a workspace that never had a store here, or one deleted before): accounts can ask
-// again. In one transaction: the workspace's stores and everything keyed by them (conversations, messages, files' rows,
+// as accounts' contract has it (openfrequency-accounts docs/contracts/workspaces-delete.json): accounts reads only the
+// status, treats anything but a 2xx (404 included) as a failure and deletes nothing, and waits 10 seconds. In one transaction: the workspace's stores and everything keyed by them (conversations, messages, files' rows,
 // customers, channels, the automatic messages, knowledge, events, the store's spend), and everything keyed by the
 // workspace alone (its owners' numbers, the assistant's messages, the lists and notifications of the owner line,
 // Teder's events), the jobs that carry any of it (a store's id, the workspace, a channel's account, an owner's phone),
@@ -62,10 +66,24 @@ export async function eraseWorkspace(app: App, workspaceId: number) {
   return deleted;
 }
 
+const MIN_TOKEN = 32;
+
+/** Who may ask: this machine, not through Caddy, with the shared token. Null when allowed, else the answer. */
+function refused(app: App, r: Req): Out | null {
+  const token = String(app.env.OF_INTERNAL_TOKEN || '').trim();
+  if (token.length < MIN_TOKEN) return { status: 503, json: { ok: false, error: 'not_configured' } };
+  if (r.req.headers['x-forwarded-for'] || !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(r.req.socket.remoteAddress || '')) return { status: 403, json: { ok: false, error: 'not_local' } };
+  const got = Buffer.from(String(r.req.headers.authorization || ''));
+  const want = Buffer.from(`Bearer ${token}`);
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return { status: 401, json: { ok: false, error: 'bad_token' } };
+  return null;
+}
+
 export function eraseRoutes(app: App): Route<Req>[] {
   return [
     ['POST', /^\/internal\/workspaces\/(\d{1,10})\/delete$/, async (r, m): Promise<Out> => {
-      if (!local(app, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
+      const no = refused(app, r);
+      if (no) return no;
       const id = Number(m[1]);
       if (!Number.isSafeInteger(id) || id <= 0) return { status: 400, json: { ok: false, error: 'bad_workspace' } };
       try {

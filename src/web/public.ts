@@ -64,8 +64,9 @@ import { unsubscribeRoutes } from './unsubscribe.ts';
 //                              the dashboard's buttons. From this machine only, with OF_INTERNAL_TOKEN
 //   GET  /internal/setup       a workspace's setup steps, for accounts' /setup checklist (src/setup.ts): the same
 //                              checks as /internal/ops
-//   POST /internal/workspaces/<id>/delete  a workspace deleted in accounts: everything of it here (src/erase.ts), the
-//                              same checks as /internal/ops
+//   POST /internal/workspaces/<id>/delete  a workspace deleted in accounts: everything of it here (src/erase.ts). From
+//                              this machine, with OF_INTERNAL_TOKEN: 401 bad_token, 503 not_configured, 200 also
+//                              when nothing was there (accounts' docs/contracts/workspaces-delete.json)
 //   POST /internal/teder/events Teder's news for an owner (Teder's docs/assistant-api.md): from this machine only, no
 //                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET in the direction teder->toran
 //                              (owners/teder.ts). Kept once by its id and handled by the worker (owners/events.ts).

@@ -233,5 +233,8 @@ What keeps a customer's message from being lost or delayed without anyone knowin
     lookup gave are taken out of them
   - The 90 days and 13 months are Toran's own; the privacy page (openfrequency-web) states only the leads' 6 months
     and the conversations' 30 days, so it should state these too.
-- **Deleting a workspace**: `POST /internal/workspaces/<id>/delete` (src/erase.ts), the same checks as the other
-  internal routes; 200 with what it deleted, 200 also when nothing was there.
+- **Deleting a workspace**: `POST /internal/workspaces/<id>/delete` (src/erase.ts), as accounts' contract has it
+  (openfrequency-accounts `docs/contracts/workspaces-delete.json`): 200 `{ ok: true, deleted: {...} }` with what it
+  deleted, 200 with every count 0 when nothing was there; 401 `bad_token` without the right token; 503
+  `not_configured` when `OF_INTERNAL_TOKEN` is unset or short here; 403 from anywhere but this machine. accounts reads
+  only the status and treats anything but a 2xx as a failure.
