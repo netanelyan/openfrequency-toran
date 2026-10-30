@@ -78,6 +78,8 @@ export function stripQuoted(text: string): string {
     // Where the quote starts: Gmail and Apple ("On ... wrote:", "בתאריך ... כתב/ה:"), Outlook's header block, a separator.
     if (/^(On\s.+wrote:|בתאריך\s.+(כתב|כתבה|נכתב).*:|-{2,}\s*Original Message\s*-{2,}|_{5,}|From:\s.+|מאת:\s.+)$/i.test(l)) break;
     if (/^-- ?$/.test(line)) break; // the signature separator
+    // A phone's own signature line: what follows it is the signature or the quote.
+    if (/^(Sent from my \w+.*|Get Outlook for \w+.*|נשלח מ(ה-?)?\s?(iPhone|אייפון|Android|אנדרואיד|Samsung|סמסונג|הטלפון|הנייד)(\s.*)?)$/i.test(l)) break;
     if (l.startsWith('>')) continue;
     out.push(line);
   }

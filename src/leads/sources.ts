@@ -70,7 +70,7 @@ export async function* brave(db: Db, { apiKey, queries, perQuery = 20, fetchImpl
     u.searchParams.set('count', String(perQuery));
     u.searchParams.set('search_lang', 'he');
     u.searchParams.set('country', 'ALL'); // Brave rejects country=IL (found in tiyul-social)
-    const res = await fetchImpl(u, { headers: { accept: 'application/json', 'x-subscription-token': apiKey } });
+    const res = await fetchImpl(u, { headers: { accept: 'application/json', 'x-subscription-token': apiKey }, signal: AbortSignal.timeout(15_000) });
     await usage(db, { kind: 'search', backend: 'brave', units: 1, usd: 0.005, tag: 'discovery' });
     if (res.status === 401 || res.status === 403) throw new Error(`Brave refused the key (${res.status})`);
     if (res.status === 429) throw new Error('Brave rate limit reached');

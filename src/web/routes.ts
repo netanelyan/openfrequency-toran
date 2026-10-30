@@ -17,6 +17,7 @@ import { mailDomainRoutes } from './pages/mailDomain.ts';
 import { ordersRoutes } from './pages/orders.ts';
 import { autoRoutes } from './pages/auto.ts';
 import { startRoutes } from './pages/start.ts';
+import { queueRoutes } from './pages/queue.ts';
 
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
@@ -60,6 +61,7 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
     ...leadRoutes(app),
     ...reviewRoutes(app),
     ...assistantRoutes(app),
+    ...queueRoutes(app),
     ['GET', /^\/brand$/, (r) => ({ html: brandPage(r.ctx) })],
     ['GET', /^\/jobs\/(\d+)\.json$/, async (_r, m) => ({ json: (await app.db.one('SELECT id, kind, status, progress, last_error, result FROM jobs WHERE id = $1', [Number(m[1])])) || { status: 'missing' } })],
   ];

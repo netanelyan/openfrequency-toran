@@ -9,6 +9,7 @@ import { hold, PAUSE_HOURS } from './owner.ts';
 import { lineNumber, lineOf, oneNumber, withOne, type Line } from './lines.ts';
 import { isCompany, supportAccount } from '../company.ts';
 import { conversationOf, handOver, type Account } from './store.ts';
+import { openConversation, sentByUs } from './conversations.ts';
 import type { RouteResult } from './demo.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 
@@ -173,13 +174,12 @@ export async function ownerEcho(app: App, echo: Echo) {
   const a = await app.db.one<{ id: number; store_id: number }>("SELECT id, store_id FROM channel_accounts WHERE channel = 'whatsapp' AND external_id = $1 AND status IN ('active', 'pending', 'reconnect')", [echo.account]);
   if (!a) return { action: 'unknown_account' };
   // Meta reports our own API sends as delivery statuses, not echoes; this guards against one arriving as both.
-  if (await app.db.one('SELECT 1 FROM messages WHERE ext_id = $1 OR delivery @> $2::jsonb', [`echo:${echo.id}`, J([echo.id])])) return { action: 'duplicate' };
-  let c = await app.db.one<{ id: number }>("SELECT id FROM conversations WHERE account_id = $1 AND peer = $2 AND last_at > now() - interval '7 days' AND closed_at IS NULL ORDER BY last_at DESC LIMIT 1", [a.id, echo.to]);
-  c ??= await app.db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer, account_id) VALUES ($1, 'whatsapp', $2, $3) RETURNING id", [a.store_id, echo.to, a.id]);
-  await app.db.query("INSERT INTO messages (conversation_id, role, text, author, ext_id) VALUES ($1, 'owner', $2, 'מהטלפון', $3)", [c!.id, echo.text || '(קובץ)', `echo:${echo.id}`]);
-  await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [c!.id]);
-  await event(app.db, a.store_id, 'owner_reply', { conversationId: c!.id, via: 'phone' });
-  return { action: 'owner_echo', conversationId: c!.id };
+  if (await sentByUs(app.db, echo.id)) return { action: 'duplicate' };
+  const c = await openConversation(app.db, { storeId: a.store_id, channel: 'whatsapp', peer: echo.to, accountId: a.id });
+  await app.db.query("INSERT INTO messages (conversation_id, role, text, author, ext_id) VALUES ($1, 'owner', $2, 'מהטלפון', $3)", [c.id, echo.text || '(קובץ)', `echo:${echo.id}`]);
+  await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [c.id]);
+  await event(app.db, a.store_id, 'owner_reply', { conversationId: c.id, via: 'phone' });
+  return { action: 'owner_echo', conversationId: c.id };
 }
 
 type Where = { kind: 'demo' | 'support' | 'owner'; id: number | null; storeId: number | null; workspaceId?: number | null; at: string | null };
@@ -196,8 +196,10 @@ type Where = { kind: 'demo' | 'support' | 'owner'; id: number | null; storeId: n
 async function lineEcho(app: App, echo: Echo, line: Line) {
   const { db } = app;
   // Our own sends come back as delivery reports, not echoes; one that came as both is known by its id.
-  if (await db.one("SELECT 1 FROM messages WHERE ext_id = $1 OR delivery @> $2::jsonb", [`echo:${echo.id}`, J([echo.id])])) return { action: 'duplicate' };
-  if (await db.one("SELECT 1 FROM events WHERE kind IN ('wa_out', 'owner_reply') AND (data->>'id' = $1 OR data->>'echo' = $1) AND at > now() - interval '2 days'", [echo.id])) return { action: 'duplicate' };
+  if (await sentByUs(db, echo.id)) return { action: 'duplicate' };
+  // Each half is its own query, so each reads its own index (migration 022): data->>'id' on the sends, data->>'echo'.
+  if (await db.one("SELECT 1 FROM events WHERE kind IN ('wa_out', 'owner_reply') AND data->>'id' = $1 AND at > now() - interval '2 days'", [echo.id])) return { action: 'duplicate' };
+  if (await db.one("SELECT 1 FROM events WHERE kind = 'owner_reply' AND data->>'echo' = $1 AND at > now() - interval '2 days'", [echo.id])) return { action: 'duplicate' };
   const peer = echo.to;
   const demo = line === 'demo' ? await db.one<Where>(`SELECT 'demo' AS kind, id, store_id AS "storeId", last_at AS at FROM conversations WHERE channel = 'whatsapp' AND peer = $1 AND account_id IS NULL AND closed_at IS NULL AND last_at > now() - interval '7 days' ORDER BY last_at DESC LIMIT 1`, [peer]) : null;
   const support = await db.one<Where>(`SELECT 'support' AS kind, c.id, c.store_id AS "storeId", c.last_at AS at FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE a.channel = 'whatsapp' AND a.status = 'line' AND c.peer = $1 AND c.closed_at IS NULL AND c.last_at > now() - interval '7 days' ORDER BY c.last_at DESC LIMIT 1`, [peer]);
@@ -217,8 +219,8 @@ async function lineEcho(app: App, echo: Echo, line: Line) {
       await event(db, null, 'our_line_echo', { line, echo: echo.id });
       return { action: 'our_line' };
     }
-    const c = await db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer, account_id) VALUES ($1, 'whatsapp', $2, $3) RETURNING id", [account.store_id, peer, account.id]);
-    where = { kind: 'support', id: c!.id, storeId: account.store_id, at: null };
+    const c = await openConversation(db, { storeId: account.store_id, channel: 'whatsapp', peer, accountId: account.id });
+    where = { kind: 'support', id: c.id, storeId: account.store_id, at: null };
   }
   await db.query("INSERT INTO messages (conversation_id, role, text, author, ext_id) VALUES ($1, 'owner', $2, 'מהטלפון', $3)", [where.id, echo.text || '(קובץ)', `echo:${echo.id}`]);
   await db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [where.id]);

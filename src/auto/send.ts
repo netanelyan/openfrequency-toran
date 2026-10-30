@@ -14,6 +14,7 @@ import { addressOf, consentOf, recordConsent, stopToken } from './consent.ts';
 import { complete, emailText, firstName, isKind, KIND_KEYS, KINDS, kindOf, LEGACY, MESSAGES, stopUrl, waText, type Kind, type MessageKey } from './messages.ts';
 import type { Happening, Placed, Read } from './platforms.ts';
 import { approvedFor, storeWa } from './templates.ts';
+import { openConversation } from '../channels/conversations.ts';
 
 // The automatic messages, from what happened at the store to a message in the customer's conversation:
 //
@@ -169,7 +170,7 @@ async function happen(app: App, storeId: number, settings: Record<Kind, Setting>
 /** Deliver every message whose time has come (the worker, each minute). */
 export async function sendDue(app: App, { limit = 50 }: { limit?: number } = {}) {
   const rows = await app.db.query<any>(
-    `UPDATE auto_events SET status = 'sending' WHERE id IN (SELECT id FROM auto_events WHERE status = 'waiting' AND due_at <= $1 ORDER BY due_at, id LIMIT ${Number(limit) || 50}) RETURNING *`,
+    `UPDATE auto_events SET status = 'sending', sending_at = now() WHERE id IN (SELECT id FROM auto_events WHERE status = 'waiting' AND due_at <= $1 ORDER BY due_at, id LIMIT ${Number(limit) || 50}) RETURNING *`,
     [new Date(now()).toISOString()],
   );
   const out: Record<string, number> = {};
@@ -188,6 +189,28 @@ export async function sendDue(app: App, { limit = 50 }: { limit?: number } = {})
     if (r.status !== 'waiting') await event(app.db, ev.store_id, `auto_${r.status}`, { id: ev.id, message: ev.message, ...(r.status === 'sent' ? { channel: r.channel } : { why: r.why }) });
   }
   return out;
+}
+
+/** How long a message may stay "sending" before it is taken to be cut off (a restart in the middle of its send). */
+export const SENDING_MINUTES = 10;
+
+/**
+ * Messages a restart stopped in the middle of their send: marked failed ("interrupted"), never sent again by
+ * themselves, since one may have reached the customer. The page shows them as not sent, and a payment or shipping
+ * message can be sent again by the owner's hand (sendAgain). The worker, each minute.
+ */
+export async function interruptedSends(app: App): Promise<number> {
+  const rows = await app.db.query<{ id: number; store_id: number; message: string }>(`UPDATE auto_events SET status = 'failed', why = 'interrupted' WHERE status = 'sending' AND COALESCE(sending_at, created_at) < now() - interval '${SENDING_MINUTES} minutes' RETURNING id, store_id, message`);
+  for (const r of rows) await event(app.db, r.store_id, 'auto_failed', { id: r.id, message: r.message, why: 'interrupted' });
+  return rows.length;
+}
+
+/** The messages an owner may send again by hand after an interruption: about the order's payment and shipping. */
+export const AGAIN = ['paid', 'pending', 'failed', 'shipped', 'delivered'];
+
+/** The owner sends one interrupted message again: it goes back to the queue, due now. False when it is not one. */
+export async function sendAgain(app: App, storeId: number, id: number): Promise<boolean> {
+  return Boolean(await app.db.one("UPDATE auto_events SET status = 'waiting', why = NULL, due_at = now(), sending_at = NULL WHERE id = $1 AND store_id = $2 AND status = 'failed' AND why = 'interrupted' AND message = ANY($3::text[]) RETURNING id", [id, storeId, AGAIN]));
 }
 
 type Outcome = { status: 'sent'; channel: 'whatsapp' | 'email'; basis: string; conversationId: number } | { status: 'skipped' | 'failed'; why: string } | { status: 'waiting'; until: number };
@@ -297,9 +320,11 @@ async function deliver(app: App, ev: any): Promise<Outcome> {
 
 /** The message, in the customer's conversation on that channel: the open one on WhatsApp, a new thread by email. */
 async function keep(app: App, ev: any, channel: 'whatsapp' | 'email', accountId: number, peer: string, text: string, sentId: string, subject: string | null): Promise<number> {
-  let c = channel === 'whatsapp' ? await app.db.one<{ id: number }>("SELECT id FROM conversations WHERE account_id = $1 AND peer = $2 AND last_at > now() - interval '7 days' AND closed_at IS NULL ORDER BY last_at DESC LIMIT 1", [accountId, peer]) : null;
-  // An email starts a thread of its own; the customer's answer ("Re:" and the same subject) finds it (channels/store.ts).
-  c ??= await app.db.one<{ id: number }>('INSERT INTO conversations (store_id, channel, peer, account_id, meta) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id', [ev.store_id, channel, peer, accountId, J(channel === 'email' ? { subject, bare: String(subject || '').trim().toLowerCase(), ids: [] } : {})]);
+  // On WhatsApp the customer's open conversation, found or started in one step (channels/conversations.ts). An email
+  // starts a thread of its own; the customer's answer ("Re:" and the same subject) finds it (channels/store.ts).
+  const c = channel === 'whatsapp'
+    ? await openConversation(app.db, { storeId: ev.store_id, channel, peer, accountId })
+    : await app.db.one<{ id: number }>('INSERT INTO conversations (store_id, channel, peer, account_id, meta) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id', [ev.store_id, channel, peer, accountId, J({ subject, bare: String(subject || '').trim().toLowerCase(), ids: [] })]);
   await app.db.query("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'agent', $2, 'אוטומטי', $3, $4::jsonb)", [c!.id, text, ev.message, J([sentId])]);
   await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [c!.id]);
   return c!.id;

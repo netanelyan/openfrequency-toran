@@ -6,13 +6,15 @@ import { displayName } from '../ingest/brand.ts';
 import { runTurn } from '../agent/loop.ts';
 import type { RouteResult } from './demo.ts';
 import { hold, isPaused } from './owner.ts';
-import { LEDGER, reply } from './send.ts';
+import { LEDGER, partsOf, reply } from './send.ts';
 import { keepInbound, setAttachments } from './files.ts';
 import { mailDomainOf, ownAddress, ownAddresses } from './mailDomain.ts';
 import { noteCustomer } from './customers.ts';
 import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
 import { customerWrote, OPT_OUT, optOut, optOutReply } from '../auto/consent.ts';
+import { openConversation } from './conversations.ts';
 import { lastAuto } from '../auto/send.ts';
+import { alertOperator } from '../ops/alert.ts';
 
 // A message to a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the
 // store is the account's, so there is no code and no binding. The agent answers as the store, with no demo footer, unless the mail
@@ -25,6 +27,12 @@ import { lastAuto } from '../auto/send.ts';
 // reaches the agent with what the store sent.
 
 const DAILY_REPLIES = 20; // the agent's answers to one customer of one account in a day; past it, the owner's turn
+// A store's whole hour: past STORE_TURNS_PER_HOUR answers (TORAN_STORE_TURNS_PER_HOUR), or NEW_SENDERS_PER_HOUR new email
+// addresses (TORAN_NEW_SENDERS_PER_HOUR), the next messages wait for the owner and the operator hears of it. A sale
+// answers well under it; a flood, a mail list or two bots answering each other do not.
+export const STORE_TURNS_PER_HOUR = 200;
+export const NEW_SENDERS_PER_HOUR = 30;
+const IN_KINDS = Object.values(LEDGER).map((l) => `${l.tag}_in`);
 
 export type Account = { id: number; store_id: number; channel: string; external_id: string; kind: string; secret: string | null; meta: any; status: string };
 
@@ -43,11 +51,13 @@ async function threadFor(app: App, adapter: ChannelAdapter, account: Account, in
   // WhatsApp, Messenger and Instagram have no threads: one customer is one conversation until a week of silence, as on
   // the demo number. On Messenger and Instagram the customer's id means nothing to the owner, so a new conversation
   // keeps the name Meta gives for them.
+  // The lookup and the insert are one step (conversations.ts): two messages of a new customer start one conversation.
   if (account.channel !== 'email') {
-    const c = await app.db.one<{ id: number }>("SELECT id FROM conversations WHERE account_id = $1 AND peer = $2 AND last_at > now() - interval '7 days' AND closed_at IS NULL ORDER BY last_at DESC LIMIT 1", [account.id, inbound.from]);
-    if (c) return c.id;
-    const name = adapter.profile ? await adapter.profile(inbound.from) : null;
-    return (await app.db.one<{ id: number }>('INSERT INTO conversations (store_id, channel, peer, account_id, meta) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id', [account.store_id, account.channel, inbound.from, account.id, J(name ? { name } : {})]))!.id;
+    const meta = async () => {
+      const name = adapter.profile ? await adapter.profile(inbound.from) : null;
+      return name ? { name } : {};
+    };
+    return (await openConversation(app.db, { storeId: account.store_id, channel: account.channel, peer: inbound.from, accountId: account.id, meta })).id;
   }
   const refs = [inbound.thread?.inReplyTo, ...(inbound.thread?.references || [])].filter(Boolean) as string[];
   if (refs.length) {
@@ -140,12 +150,58 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
     return { action: 'limit', storeId: store.id };
   }
 
+  const busy = await busyHour(app, store.id, account, conv, inbound.from);
+  if (busy) {
+    await hold(app, conv, inbound);
+    await handOver(app, store.id, conv, 'limit', busy.summary, busy.text);
+    await alertOperator(app, `busy:${busy.kind}:${store.id}`, `עומס חריג בחנות ${store.id}`, busy.summary, { storeId: store.id });
+    return { action: 'limit', storeId: store.id };
+  }
+
   await event(db, store.id, `${tag}_in`, { conversationId: conv, chars: text.length, preview: cleanLine(text, 60) });
   // An answer to an automatic message (auto/send.ts): the agent is told what the store sent.
   const context = [filesContext(files), await lastAuto(app, conv)].filter(Boolean).join('\n') || undefined;
   const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context });
   await setAttachments(app, inbound.id, files);
-  const d = await reply(app, adapter, inbound, o.reply, store.id, conv, { who: 'agent', storeName, ...(own || {}) });
-  if (d.ok && o.agentMessageId) await db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [o.agentMessageId, J(d.ids)]);
+  // Each part's id is written down as it goes: a job run again after a failed send sends only what did not go out.
+  const delivered = (ids: string[]) => (o.agentMessageId ? db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [o.agentMessageId, J(ids)]) : Promise.resolve());
+  await reply(app, adapter, inbound, o.reply, store.id, conv, { who: 'agent', storeName, ...(own || {}) }, { onPart: delivered });
   return { action: 'answered', storeId: store.id, reply: o.reply };
+}
+
+/** Is the store's hour past its limits? What the owner is told, or null. */
+async function busyHour(app: App, storeId: number, account: Account, conv: number, from: string): Promise<{ kind: string; summary: string; text: string } | null> {
+  const turns = Number(app.env.TORAN_STORE_TURNS_PER_HOUR) || STORE_TURNS_PER_HOUR;
+  const n = await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE store_id = $1 AND kind = ANY($2::text[]) AND at > now() - interval '1 hour'", [storeId, IN_KINDS]);
+  if ((n?.n || 0) >= turns) return { kind: 'turns', summary: `${n!.n} answers in the last hour at store ${storeId}, over ${turns}`, text: `בשעה האחרונה תורן ענה בחנות ${n!.n} פעמים, הרבה יותר מבשעה רגילה. עד שזה נרגע, הודעות חדשות מחכות לך כאן.` };
+  if (account.channel !== 'email') return null;
+  // A new sender: this address never wrote to the store before (this message is not written yet).
+  if (await app.db.one("SELECT 1 FROM conversations c JOIN messages m ON m.conversation_id = c.id WHERE c.store_id = $1 AND c.peer = $2 AND m.role = 'customer' LIMIT 1", [storeId, from])) return null;
+  const senders = Number(app.env.TORAN_NEW_SENDERS_PER_HOUR) || NEW_SENDERS_PER_HOUR;
+  const m = await app.db.one<{ n: number }>("SELECT COUNT(DISTINCT peer)::int AS n FROM conversations WHERE store_id = $1 AND channel = 'email' AND started_at > now() - interval '1 hour'", [storeId]);
+  if ((m?.n || 0) > senders) return { kind: 'senders', summary: `${m!.n} new email senders in the last hour at store ${storeId}, over ${senders}`, text: `בשעה האחרונה כתבו לחנות במייל ${m!.n} כתובות חדשות, הרבה יותר מהרגיל. עד שזה נרגע, תורן לא עונה לכתובות חדשות, וההודעות שלהן מחכות לך.` };
+  return null;
+}
+
+/**
+ * The same message again (the job run again after its answer failed to go out): the answer Toran already wrote is sent,
+ * only the parts that did not go out, with no model call; inside the reply window, as any answer (send.ts). Null when
+ * there is nothing left to send, or the answer is not one of a store's own channels (the demo number keeps no
+ * delivery record, and a webhook delivered twice is only that).
+ */
+export async function resendUndelivered(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult | null> {
+  const m = await app.db.one<{ id: number; text: string; delivery: string[] | null; conversation_id: number; store_id: number }>(
+    "SELECT m.id, m.text, m.delivery, m.conversation_id, c.store_id FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE m.reply_to = $1 AND m.role = 'agent' AND c.account_id IS NOT NULL ORDER BY m.id DESC LIMIT 1",
+    [inbound.id],
+  );
+  if (!m) return null;
+  const sent = Array.isArray(m.delivery) ? m.delivery : [];
+  if (sent.length >= partsOf(adapter, m.text).length) return null;
+  const store = await app.db.one<any>('SELECT id, name, domain, brand, brand_override FROM stores WHERE id = $1', [m.store_id]);
+  if (!store) return null;
+  const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
+  const own = adapter.channel === 'email' ? await ownAddress(app, store.id) : null;
+  const d = await reply(app, adapter, inbound, m.text, store.id, m.conversation_id, { who: 'agent', storeName, ...(own || {}) }, { skip: sent.length, onPart: (ids) => app.db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [m.id, J([...sent, ...ids])]) });
+  await event(app.db, store.id, 'answer_resent', { conversationId: m.conversation_id, parts: d.ok ? d.ids.length : 0, blocked: d.ok ? null : d.reason });
+  return { action: 'resent', storeId: store.id, reply: m.text };
 }

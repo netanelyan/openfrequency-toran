@@ -7,7 +7,8 @@ import { GraphError, TOKEN_GONE } from './meta.ts';
 import { demoNumber, type RouteResult } from './demo.ts';
 import { ownerLine } from '../owners/line.ts';
 import { LEDGER } from './send.ts';
-import { accountFor, storeChannel } from './store.ts';
+import { accountFor, resendUndelivered, storeChannel } from './store.ts';
+import { DuplicateTurn } from '../agent/loop.ts';
 import { receivingAccount } from './mailDomain.ts';
 import { enabledChannels, type AnyChannel } from './config.ts';
 import { isSocial } from './social.ts';
@@ -41,6 +42,16 @@ export function isOwnerLine(env: Record<string, string | undefined>, to: string 
 }
 
 export async function handleInbound(app: App, inbound: Inbound): Promise<RouteResult> {
+  try {
+    return await route(app, inbound);
+  } catch (e) {
+    // Two jobs of the same message: the second found it answered inside the conversation's lock (agent/loop.ts).
+    if (e instanceof DuplicateTurn) return { action: 'duplicate' };
+    throw e;
+  }
+}
+
+async function route(app: App, inbound: Inbound): Promise<RouteResult> {
   // Our own demo number or owner line on Meta (lines.ts): Meta names the number by its id, as it does a store's, but
   // it is ours, so it is routed to that line before any store's account is looked at, and answered through the Cloud
   // API from the same number. It is written to the number the line is known by, so what follows is Twilio's path.
@@ -65,7 +76,9 @@ export async function handleInbound(app: App, inbound: Inbound): Promise<RouteRe
     await event(app.db, null, `mail_${inbound.report}`, { address: inbound.from });
     return { action: 'suppressed' };
   }
-  if (await app.db.one('SELECT 1 FROM messages WHERE ext_id = $1', [inbound.id])) return { action: 'duplicate' };
+  // Handled before: a webhook delivered twice, or this job run again after its answer failed to go out. In the second
+  // case the answer already written is sent, what did not go out of it, with no model call (store.ts).
+  if (await app.db.one('SELECT 1 FROM messages WHERE ext_id = $1', [inbound.id])) return (await resendUndelivered(app, adapter, inbound)) || { action: 'duplicate' };
   const msg = adapter.complete && inbound.pending ? await adapter.complete(inbound) : inbound;
   const { tag, kind } = LEDGER[adapter.channel];
   await usage(app.db, { kind, backend: adapter.kind, units: 1, usd: adapter.inboundUsd, apiUsd: adapter.inboundUsd, tag: `${tag}_in` });

@@ -1,5 +1,6 @@
 import type { App } from '../app.ts';
 import { audit, event } from '../db/log.ts';
+import { J } from '../db/index.ts';
 import { accountsLinks } from '../web/accounts.ts';
 import { replyParts, type Part } from '../channels/send.ts';
 import type { ChannelAdapter, Inbound } from '../channels/types.ts';
@@ -31,6 +32,9 @@ import { storeChannel } from '../channels/store.ts';
 //
 // The first answer to each number starts with the disclosure line. Everything said either way is kept in
 // assistant_messages, and every action in the audit.
+//
+// The answer is kept with the message's row (owner_inbound.reply) before it is sent, and marked when it went out. The
+// same message again (its job run again after the send failed) sends that answer, and acts on nothing twice.
 
 export const OWNER_PER_10_MIN = 20;
 export const OWNER_PER_DAY = 300;
@@ -57,7 +61,7 @@ const say = {
   noText: 'אני קורא כאן רק טקסט. אפשר לכתוב לי במילים?',
 };
 
-export type LineResult = { action: 'duplicate' | 'assistant' | 'support' | 'linked' | 'link_refused' | 'not_linked' | 'unavailable' | 'limit' | 'opt_out' | 'opt_in' | 'no_text' | 'silent' | 'held'; reply?: string; storeId?: number | null };
+export type LineResult = { action: 'duplicate' | 'resent' | 'assistant' | 'support' | 'linked' | 'link_refused' | 'not_linked' | 'unavailable' | 'limit' | 'opt_out' | 'opt_in' | 'no_text' | 'silent' | 'held'; reply?: string; storeId?: number | null };
 
 const textOf = (parts: Part[]) => parts.map((p) => ('text' in p ? p.text : p.caption ? `[${p.caption}]` : '[תמונה]')).join('\n\n');
 
@@ -78,10 +82,17 @@ export async function ownerLine(app: App, adapter: ChannelAdapter, inbound: Inbo
   const phone = inbound.from;
   const text = String(inbound.text || '').trim();
   const send = async (parts: Part[], storeId: number | null = null) => {
-    await replyParts(app, adapter, inbound, parts, storeId);
+    await app.db.query('UPDATE owner_inbound SET reply = $2::jsonb WHERE ext_id = $1', [inbound.id, J({ parts, storeId })]);
+    const d = await replyParts(app, adapter, inbound, parts, storeId);
+    if (d.ok) await app.db.query('UPDATE owner_inbound SET delivered_at = now() WHERE ext_id = $1', [inbound.id]);
   };
-  // A webhook delivered twice is acted on once.
-  if (!(await app.db.one('INSERT INTO owner_inbound (ext_id, phone) VALUES ($1, $2) ON CONFLICT (ext_id) DO NOTHING RETURNING ext_id', [inbound.id, phone]))) return { action: 'duplicate' };
+  // A webhook delivered twice is acted on once. If its answer was kept and did not go out, that answer is sent now.
+  if (!(await app.db.one('INSERT INTO owner_inbound (ext_id, phone) VALUES ($1, $2) ON CONFLICT (ext_id) DO NOTHING RETURNING ext_id', [inbound.id, phone]))) {
+    const kept = await app.db.one<{ reply: { parts: Part[]; storeId: number | null } | null; delivered_at: string | null }>('SELECT reply, delivered_at FROM owner_inbound WHERE ext_id = $1', [inbound.id]);
+    if (!kept?.reply?.parts?.length || kept.delivered_at) return { action: 'duplicate' };
+    await send(kept.reply.parts, kept.reply.storeId ?? null);
+    return { action: 'resent', reply: textOf(kept.reply.parts), storeId: kept.reply.storeId ?? null };
+  }
 
   // 1. A link code proves the number: it was sent from it.
   const code = LINK_CODE.exec(text);

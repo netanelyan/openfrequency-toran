@@ -3,7 +3,8 @@ import { displayName } from '../../ingest/brand.ts';
 import { orderAccessOf, ordersPlatform } from '../../orders.ts';
 import { emailText, isKind, KIND_KEYS, KINDS, LEGACY, MESSAGES, publicBase, SAMPLE, SETTINGS_BUTTON, waText, type Kind, type MessageKey } from '../../auto/messages.ts';
 import { setupSource, sourceOf, type Source } from '../../auto/platforms.ts';
-import { AutoError, saveSetting, settingsOf, storeEmail, type Setting } from '../../auto/send.ts';
+import { AGAIN, AutoError, saveSetting, sendAgain, settingsOf, storeEmail, type Setting } from '../../auto/send.ts';
+import { audit } from '../../db/log.ts';
 import { approvedFor, storeWa, submitTemplates, templatesOf, type TemplateRow } from '../../auto/templates.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, postButton, stamp } from '../ui.ts';
@@ -31,6 +32,7 @@ export function whyHe(why: string | null): string {
   const w = String(why || '');
   const map: [RegExp, string][] = [
     [/^ordered$/, 'הלקוח הזמין'],
+    [/^interrupted$/, 'השליחה נקטעה באמצע, אז ייתכן שההודעה לא הגיעה'],
     [/^replied$/, 'הלקוח כתב לחנות בינתיים'],
     [/^off$/, 'ההודעה כבויה'],
     [/^late$/, 'עבר יותר מדי זמן'],
@@ -142,11 +144,13 @@ export async function autoPanel(app: App, r: DashReq, s: { id: number; name: str
   ${may ? '<button class="btn sm mt8" type="submit">לשמור</button>' : ''}</form>`;
   };
 
-  const recent = await app.db.query<any>("SELECT message, ref, status, why, channel, due_at, sent_at, created_at FROM auto_events WHERE store_id = $1 AND kind <> 'order' ORDER BY id DESC LIMIT 8", [id]);
+  const recent = await app.db.query<any>("SELECT id, message, ref, status, why, channel, due_at, sent_at, created_at FROM auto_events WHERE store_id = $1 AND kind <> 'order' ORDER BY id DESC LIMIT 8", [id]);
   const recentHtml = recent.length ? `<h3 class="small mt16">ההודעות האחרונות</h3><ul class="keys mt8">${recent.map((e) => {
     const what = `${MESSAGES[e.message as keyof typeof MESSAGES]?.he || e.message}${e.ref ? `, ${e.ref}` : ''}`;
-    const state = e.status === 'sent' ? `<span class="chip ok">נשלחה ${e.channel === 'email' ? 'במייל' : 'בוואטסאפ'}, ${esc(stamp(e.sent_at))}</span>` : e.status === 'waiting' || e.status === 'sending' ? `<span class="chip sig">תצא ב-${esc(stamp(e.due_at))}</span>` : `<span class="chip ${e.status === 'failed' ? 'bad' : 'ghost'}">לא נשלחה: ${esc(whyHe(e.why))}</span>`;
-    return `<li><span>${esc(what)}</span><span class="end">${state}</span></li>`;
+    const state = e.status === 'sent' ? `<span class="chip ok">נשלחה ${e.channel === 'email' ? 'במייל' : 'בוואטסאפ'}, ${esc(stamp(e.sent_at))}</span>` : e.status === 'waiting' ? `<span class="chip sig">תצא ב-${esc(stamp(e.due_at))}</span>` : e.status === 'sending' ? '<span class="chip sig">נשלחת עכשיו</span>' : `<span class="chip ${e.status === 'failed' ? 'bad' : 'ghost'}">לא נשלחה: ${esc(whyHe(e.why))}</span>`;
+    // A payment or shipping message cut off in the middle of its send: the owner may send it again (auto/send.ts).
+    const again = may && e.status === 'failed' && e.why === 'interrupted' && AGAIN.includes(e.message) ? `<form method="post" action="/lead/${id}/auto/again/${Number(e.id)}" class="inline">${csrfField(r.ctx)}<button class="btn sm" type="submit">לשלוח שוב</button></form>` : '';
+    return `<li><span>${esc(what)}</span><span class="end">${state}${again}</span></li>`;
   }).join('')}</ul>` : '';
 
   const forms = (await Promise.all(KIND_KEYS.map(kindForm))).join('');
@@ -175,6 +179,12 @@ export function autoRoutes(app: App): Route<DashReq>[] {
       }
       const on = r.form.whatsapp === '1' || r.form.email === '1';
       return { redirect: back, message: on ? `ההודעה על ${KINDS[kind].he} פעילה. היא יוצאת רק על מה שקורה בחנות מעכשיו.` : `ההודעה על ${KINDS[kind].he} כבויה.` };
+    }],
+    ['POST', /^\/lead\/(\d+)\/auto\/again\/(\d+)$/, async (r, m) => {
+      owner(r);
+      if (!(await sendAgain(app, Number(m[1]), Number(m[2])))) throw new ActionError('את ההודעה הזו אי אפשר לשלוח שוב מכאן.', 404);
+      await audit(app.db, { actor: r.user.name, action: 'auto_send_again', storeId: Number(m[1]), detail: { id: Number(m[2]) } });
+      return { redirect: back, message: 'ההודעה תצא שוב בדקה הקרובה.' };
     }],
     ['POST', /^\/lead\/(\d+)\/auto\/templates$/, async (r, m) => {
       owner(r);

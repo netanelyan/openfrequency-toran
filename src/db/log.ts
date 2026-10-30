@@ -32,12 +32,27 @@ export type Usage = {
   tag?: string;
 };
 
+/**
+ * One usage row, and with it the store's month in store_spend (in the same transaction), so a store's cap reads one row
+ * (agent/spend.ts). The month is Israel's.
+ */
 export async function usage(db: Db, u: Usage) {
-  await db.query(
-    `INSERT INTO usage (store_id, conversation_id, kind, backend, model, in_tokens, cache_read, cache_write, out_tokens, units, usd, api_usd, tag)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-    [u.storeId ?? null, u.conversationId ?? null, u.kind, u.backend ?? null, u.model ?? null, u.inTokens || 0, u.cacheRead || 0, u.cacheWrite || 0, u.outTokens || 0, u.units || 0, u.usd || 0, u.apiUsd || 0, u.tag ?? null],
-  );
+  const write = async (t: Db) => {
+    await t.query(
+      `INSERT INTO usage (store_id, conversation_id, kind, backend, model, in_tokens, cache_read, cache_write, out_tokens, units, usd, api_usd, tag)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [u.storeId ?? null, u.conversationId ?? null, u.kind, u.backend ?? null, u.model ?? null, u.inTokens || 0, u.cacheRead || 0, u.cacheWrite || 0, u.outTokens || 0, u.units || 0, u.usd || 0, u.apiUsd || 0, u.tag ?? null],
+    );
+    if (u.storeId && (u.usd || 0) > 0) {
+      await t.query(
+        `INSERT INTO store_spend (store_id, month, usd) VALUES ($1, to_char(now() AT TIME ZONE 'Asia/Jerusalem', 'YYYY-MM'), $2)
+         ON CONFLICT (store_id, month) DO UPDATE SET usd = store_spend.usd + EXCLUDED.usd`,
+        [u.storeId, u.usd],
+      );
+    }
+  };
+  if (u.storeId && (u.usd || 0) > 0) await db.tx(write);
+  else await write(db);
 }
 
 /**
