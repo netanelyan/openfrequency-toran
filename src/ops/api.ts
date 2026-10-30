@@ -29,6 +29,22 @@ export function local(app: App, r: Req): boolean {
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
+/**
+ * Why an internal call from accounts is refused, as accounts' contracts say it (test/fixtures/contracts: setup.json,
+ * toran-ops.json, workspaces-delete.json; Teder answers the same): 503 not_configured when OF_INTERNAL_TOKEN is not set
+ * here, 403 forbidden when the call is not from this machine or came through Caddy, 401 bad_token when the bearer is
+ * missing or wrong. Null when it may go on.
+ */
+export function internalRefusal(app: App, r: Req): Out | null {
+  const token = String(app.env.OF_INTERNAL_TOKEN || '').trim();
+  if (token.length < 32) return { status: 503, json: { error: 'not_configured' } };
+  if (r.req.headers['x-forwarded-for'] || !/^(127.0.0.1|::1|::ffff:127.0.0.1)$/.test(r.req.socket.remoteAddress || '')) return { status: 403, json: { error: 'forbidden' } };
+  const got = Buffer.from(String(r.req.headers.authorization || ''));
+  const want = Buffer.from(`Bearer ${token}`);
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return { status: 401, json: { error: 'bad_token' } };
+  return null;
+}
+
 /** A lead's page, where the operator opens it: Toran's dashboard under accounts' /admin (web/server.ts, ADMIN). */
 const leadUrl = (app: App, id: number | string | null) => (id == null ? null : `${accountsLinks(app.env).home}${ADMIN}/lead/${id}`);
 
@@ -69,11 +85,11 @@ export async function opsData(app: App) {
 }
 
 export function opsRoutes(app: App): Route<Req>[] {
-  const refuse: Out = { status: 403, json: { ok: false, error: 'forbidden' } };
   return [
-    ['GET', /^\/internal\/ops$/, async (r) => (local(app, r) ? { json: await opsData(app), headers: { 'cache-control': 'no-store' } } : refuse)],
+    ['GET', /^\/internal\/ops$/, async (r) => internalRefusal(app, r) ?? { json: await opsData(app), headers: { 'cache-control': 'no-store' } }],
     ['POST', /^\/internal\/ops\/(toran|teder)\/([\w.:%-]{1,100})\/([a-z]+)$/, async (r, m) => {
-      if (!local(app, r)) return refuse;
+      const no = internalRefusal(app, r);
+      if (no) return no;
       const kind = m[1] as Kind;
       const id = decodeURIComponent(m[2]);
       const what = m[3] as (typeof ACTIONS)[number];

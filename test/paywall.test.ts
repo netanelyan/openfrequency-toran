@@ -134,6 +134,27 @@ function call(s: Awaited<ReturnType<typeof serve>>, { url, headers, remote }: { 
   });
 }
 
+test("every answer accounts' entitlement contract gives is believed, 'due' (the 14 days of grace) and an access value Toran does not know included: only `allowed` is acted on", async () => {
+  const s = await serve();
+  try {
+    const t = Date.parse('2026-11-01T10:00:00Z');
+    const contract = JSON.parse(readFileSync(new URL('./fixtures/contracts/entitlement.json', import.meta.url), 'utf8'));
+    // The contract's examples, as accounts would give them for Toran: the same bodies, product "toran".
+    const bodies = contract.routes[0].answers.filter((a: any) => a.status === 200).map((a: any) => ({ ...a.body, product: 'toran' }));
+    assert.ok(bodies.some((b: any) => b.access === 'due'), 'the contract has the grace answer');
+    bodies.push({ ...bodies[0], access: 'a-future-value', allowed: true });
+    for (const [i, body] of bodies.entries()) {
+      const ws = 100 + i;
+      const c = entitlementClient({ db: s.app.db, env: { OF_INTERNAL_TOKEN: INTERNAL_TOKEN }, clock: () => t, fetchImpl: async () => new Response(JSON.stringify({ ...body, workspace: ws }), { status: 200 }) });
+      const v = await c.check(ws);
+      assert.equal(v.source, 'fresh', `${body.access}: taken as an answer, not as accounts being down`);
+      assert.equal(v.allowed, body.allowed, `${body.access}: allowed as accounts said`);
+    }
+  } finally {
+    await s.close();
+  }
+});
+
 test('under /admin, accounts vouches for the operator with X-OF-Operator instead of their cookie, exactly as its contract signs it (PRA-SEC-004)', async () => {
   const s = await serve();
   const ADMIN = { 'x-of-admin-prefix': '/admin/toran' };

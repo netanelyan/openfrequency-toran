@@ -256,25 +256,15 @@ const NOT_HERE: Record<string, string> = {
 };
 
 /**
- * Where Toran's real answer differs from the contract (reported 2026-10-30, PRA-QA-003), exactly as the check finds it.
- * The docs the contracts name (accounts' docs/setup.md "Deleting a workspace" and "/setup", docs/internal-ops.md
- * "/admin and Toran's /internal/ops") say only that accounts reads the status (a 2xx deletes; a checklist or a
- * dashboard is used only on its 200) and leave these bodies and refusals to the contract, so neither side is changed
- * here. accounts' clients read none of the difference: they ignore unknown keys and treat any status but the right one
- * as a failure. When one side changes, the entry goes.
+ * Where Toran's real answer differs from the contract, exactly as the check finds it. When one side changes, the entry
+ * goes. accounts' clients read none of the difference: they ignore unknown keys and treat any status but the right one
+ * as a failure.
+ *
+ * The refusals of /internal/setup, /internal/ops and the workspace delete answer as the contracts say since 2026-10-30
+ * (src/ops/api.ts internalRefusal, and src/erase.ts: 401 bad_token, 503 not_configured, the same as Teder's); until then
+ * setup and ops answered 403 forbidden to all of them, and the delete's refusals carried an ok: false.
  */
 const DISAGREES: Record<string, string[]> = {
-  // Toran's refusals carry ok: false beside the error (the note that leaves the body to the product is about its 200).
-  [`${DEL} :: no token, or the wrong one`]: ['$: ok here, not in the contract'],
-  [`${DEL} :: OF_INTERNAL_TOKEN unset or short here`]: ['$: ok here, not in the contract'],
-  // /internal/setup and /internal/ops refuse everything that is not this machine with the token as 403 forbidden
-  // (src/ops/api.ts local, the same check as /internal/lead; Toran's docs/operator.md sections 4 and 5).
-  [`${SETUP} :: no token, or the wrong one`]: ['status 403 where the contract has 401', '$: ok here, not in the contract', 'error "forbidden" where the contract has "bad_token"'],
-  [`${SETUP} :: OF_INTERNAL_TOKEN unset or short here`]: ['status 403 where the contract has 503', '$: ok here, not in the contract', 'error "forbidden" where the contract has "not_configured"'],
-  [`${OPS} :: no token, or the wrong one`]: ['status 403 where the contract has 401', '$: ok here, not in the contract', 'error "forbidden" where the contract has "bad_token"'],
-  [`${OPS} :: OF_INTERNAL_TOKEN unset or short here`]: ['status 403 where the contract has 503', '$: ok here, not in the contract', 'error "forbidden" where the contract has "not_configured"'],
-  [`${ACT} :: no token, or the wrong one`]: ['status 403 where the contract has 401', '$: ok here, not in the contract', 'error "forbidden" where the contract has "bad_token"'],
-  [`${ACT} :: OF_INTERNAL_TOKEN unset or short here`]: ['status 403 where the contract has 503', '$: ok here, not in the contract', 'error "forbidden" where the contract has "not_configured"'],
   // The dashboard also carries our one WhatsApp number and the job queue's counts (src/ops/api.ts opsData; the queue
   // is in Toran's docs/operator.md section 6). A lead marked "they answered" has a next step's day and no text yet
   // (src/ops/actions.ts markReplied), and a request whose site was never read has no store (src/ops/queue.ts

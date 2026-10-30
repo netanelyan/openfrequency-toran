@@ -6,7 +6,8 @@ import { markServiceResumed, markServiceStopped } from '../jobs/retention.ts';
 // src/billing/entitlement.js, ported).
 //
 //   GET {OF_ACCOUNTS_INTERNAL}/internal/entitlement?workspace=<id>&product=toran, bearer OF_INTERNAL_TOKEN
-//   -> { workspace, product: "toran", enabled, access: paid | comp | unpaid | cancelled | off, allowed, paidThrough, cancelAt }
+//   -> { workspace, product: "toran", enabled, access: paid | comp | due | unpaid | cancelled | off, allowed, paidThrough, cancelAt,
+//        graceUntil } (test/fixtures/contracts/entitlement.json, accounts' contract)
 //
 // `allowed` is the only thing acted on. The answer is kept in the settings table (entitlement:<workspace>), so the
 // dashboard and the answer path read the same one and a restart keeps it:
@@ -28,12 +29,17 @@ export const PRODUCT = 'toran';
 export const FRESH_MS = 5 * 60_000;
 export const STALE_MS = 24 * 3_600_000;
 export const RETRY_MS = 60_000;
-const ACCESS = ['paid', 'comp', 'unpaid', 'cancelled', 'off'];
+/**
+ * The access values accounts' contract lists. `due` (the 14 days of grace after a paid period, still allowed) came on
+ * 2026-10-29. Only `allowed` is acted on, so a value not in this list is still an answer: refusing it as malformed would
+ * read accounts as down and stop a paying store after STALE_MS.
+ */
+export const ACCESS = ['paid', 'comp', 'due', 'unpaid', 'cancelled', 'off'];
 const MIN_TOKEN = 32;
 
 type Env = Record<string, string | undefined>;
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
-export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; checkedAt: string };
+export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; checkedAt: string };
 export type View = { workspace: number; allowed: boolean; known: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; checkedAt: string | null; source: 'fresh' | 'cache' | 'stale' | 'unknown' };
 
 const keyOf = (workspaceId: number) => `entitlement:${workspaceId}`;
@@ -51,7 +57,7 @@ async function keep(db: Db, workspaceId: number, k: Kept) {
 function wellFormed(b: any, workspaceId: number): boolean {
   if (!b || typeof b !== 'object') return false;
   if (b.workspace !== workspaceId || b.product !== PRODUCT || typeof b.allowed !== 'boolean') return false;
-  if (b.access != null && !ACCESS.includes(b.access)) return false;
+  if (b.access != null && typeof b.access !== 'string') return false;
   return true;
 }
 
@@ -92,7 +98,7 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
       /* not JSON: handled below */
     }
     let next: Kept | null = null;
-    if (r.status === 200 && wellFormed(body, workspaceId)) next = { allowed: body.allowed, access: body.access ?? null, paidThrough: body.paidThrough ?? null, cancelAt: body.cancelAt ?? null, checkedAt: new Date(t).toISOString() };
+    if (r.status === 200 && wellFormed(body, workspaceId)) next = { allowed: body.allowed, access: body.access ?? null, paidThrough: body.paidThrough ?? null, cancelAt: body.cancelAt ?? null, graceUntil: body.graceUntil ?? null, checkedAt: new Date(t).toISOString() };
     else if (r.status === 404 && body?.error === 'no_workspace') next = { allowed: false, access: 'off', paidThrough: null, cancelAt: null, checkedAt: new Date(t).toISOString() };
     if (!next) {
       log(`[entitlement] workspace ${workspaceId}: accounts answered ${r.status}${body?.error ? ` ${body.error}` : ''}, the last answer stands`);

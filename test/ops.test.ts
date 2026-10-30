@@ -202,7 +202,7 @@ test("the dashboard is accounts' /admin's: Toran gives it as data on /internal/o
     const id = await store(s.app, 'zz.example', { status: 'page_ready', approved_at: ago(1), page_built_at: ago(1), contact_whatsapp: '972500000316' });
     const token = { authorization: `Bearer ${INTERNAL_TOKEN}` };
     const get = (h: Record<string, string>) => fetch(`${s.base}/internal/ops`, { headers: h });
-    assert.equal((await get({})).status, 403);
+    assert.equal((await get({})).status, 401, 'no token: 401 bad_token, as the contract says');
     assert.equal((await get({ ...token, 'x-forwarded-for': '1.2.3.4' })).status, 403, 'never through Caddy');
     const r = await get(token);
     assert.equal(r.status, 200);
@@ -219,7 +219,7 @@ test("the dashboard is accounts' /admin's: Toran gives it as data on /internal/o
     const again = await post(`toran/${id}/sent`, { by: 'op' });
     assert.equal(again.status, 400);
     assert.match((await again.json()).error, /כבר סומן/);
-    assert.equal((await fetch(`${s.base}/internal/ops/toran/${id}/lost`, { method: 'POST', body: '{}' })).status, 403);
+    assert.equal((await fetch(`${s.base}/internal/ops/toran/${id}/lost`, { method: 'POST', body: '{}' })).status, 401, 'no token: 401 bad_token');
     assert.equal((await s.app.db.one<any>("SELECT actor FROM audit WHERE action = 'ops_sent'")).actor, 'operator@example.test');
 
     // Toran's own site shows Toran only: no cross-product dashboard on Today, for anyone.

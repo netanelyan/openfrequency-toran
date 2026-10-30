@@ -71,11 +71,11 @@ const MIN_TOKEN = 32;
 /** Who may ask: this machine, not through Caddy, with the shared token. Null when allowed, else the answer. */
 function refused(app: App, r: Req): Out | null {
   const token = String(app.env.OF_INTERNAL_TOKEN || '').trim();
-  if (token.length < MIN_TOKEN) return { status: 503, json: { ok: false, error: 'not_configured' } };
-  if (r.req.headers['x-forwarded-for'] || !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(r.req.socket.remoteAddress || '')) return { status: 403, json: { ok: false, error: 'not_local' } };
+  if (token.length < MIN_TOKEN) return { status: 503, json: { error: 'not_configured' } };
+  if (r.req.headers['x-forwarded-for'] || !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(r.req.socket.remoteAddress || '')) return { status: 403, json: { error: 'forbidden' } };
   const got = Buffer.from(String(r.req.headers.authorization || ''));
   const want = Buffer.from(`Bearer ${token}`);
-  if (got.length !== want.length || !timingSafeEqual(got, want)) return { status: 401, json: { ok: false, error: 'bad_token' } };
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return { status: 401, json: { error: 'bad_token' } };
   return null;
 }
 

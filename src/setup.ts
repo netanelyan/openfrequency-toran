@@ -1,7 +1,7 @@
 import { pendingClaim, type Claim } from './domainProof.ts';
 import type { App } from './app.ts';
 import type { Out, Req, Route } from './web/server.ts';
-import { local } from './ops/api.ts';
+import { internalRefusal } from './ops/api.ts';
 import { publicBase } from './auto/messages.ts';
 import { INGESTIBLE_HE, canIngest } from './ingest/catalogue.ts';
 import { enabledChannels } from './channels/config.ts';
@@ -21,7 +21,7 @@ import { socialAccountOf } from './web/pages/social.ts';
 //   { "product": "toran", "ready": <every required step done>,
 //     "steps": [ { "key", "title", "status": todo | working | done | attention | soon, "detail", "href", "required" } ] }
 //
-// From this machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (ops/api.ts local), like /internal/ops.
+// From this machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (ops/api.ts internalRefusal: 401 bad_token, 503 not_configured, 403 forbidden, as accounts' contract says).
 //
 // The steps are about the workspace's store, its first one (a workspace has one for now), in this order:
 //   store      required  the site read (pages/start.ts adds it): none yet, being read, read, or a site Toran cannot read
@@ -148,10 +148,10 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
 }
 
 export function setupRoutes(app: App): Route<Req>[] {
-  const refuse: Out = { status: 403, json: { ok: false, error: 'forbidden' } };
   return [
     ['GET', /^\/internal\/setup$/, async (r) => {
-      if (!local(app, r)) return refuse;
+      const no = internalRefusal(app, r);
+      if (no) return no;
       const raw = r.url.searchParams.get('workspace') || '';
       const id = /^\d{1,10}$/.test(raw) ? Number(raw) : 0;
       if (!Number.isSafeInteger(id) || id <= 0) return { status: 400, json: { ok: false, error: 'bad_workspace' } };

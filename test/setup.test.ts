@@ -63,8 +63,8 @@ test('GET /internal/setup: from this machine with the token only; a brand-new wo
   const s = await serve();
   try {
     s.app.env.PUBLIC_BASE_URL = BASE;
-    assert.equal((await setup(s, 1, {})).status, 403, 'no token');
-    assert.equal((await setup(s, 1, { authorization: 'Bearer not-the-token-not-the-token-not-the' })).status, 403, 'a wrong token');
+    assert.equal((await setup(s, 1, {})).status, 401, 'no token: 401 bad_token, as the contract says');
+    assert.equal((await setup(s, 1, { authorization: 'Bearer not-the-token-not-the-token-not-the' })).status, 401, 'a wrong token: 401 bad_token');
     assert.equal((await setup(s, 1, { authorization: `Bearer ${INTERNAL_TOKEN}`, 'x-forwarded-for': '203.0.113.9' })).status, 403, 'never through Caddy');
     for (const bad of ['', 'abc', '0', '-3', '1.5']) assert.equal((await setup(s, bad)).status, 400, bad);
 
