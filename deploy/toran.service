@@ -17,8 +17,8 @@
 # /var/lib/toran. /var/lib/toran is the toran user's home (getent passwd toran), and the service writes there: its .npm
 # folder was changed at 10:14 on 2026-10-27, the minute Toran last started. So it stays writable here. What this file
 # changes against it: the working directory becomes the release link, After/Wants docker.service, the start limit and
-# OnFailure, TORAN_MIGRATE=check, TimeoutStopSec=30 and OOMScoreAdjust. The memory cap is unchanged until the owner
-# decides (below).
+# OnFailure, TORAN_MIGRATE=check, TimeoutStopSec=30 and OOMScoreAdjust, and the memory
+# limits the owner chose on 2026-10-30 (below).
 
 [Unit]
 Description=Toran: the dashboard, the pitch pages, the webhooks and the worker
@@ -48,11 +48,11 @@ TimeoutStopSec=30
 
 # Memory on a shared 4 GB server (3.9 GB and 2 GB of swap): past MemoryHigh the kernel reclaims hard, past MemoryMax
 # the process is killed and restarted, and under pressure from outside Toran and its database are the last to go.
-# THE OWNER'S DECISION, not taken yet, so this file keeps today's cap. The facts: the unit has MemoryMax=1100M; Toran
-# was killed for memory at that cap on 2026-10-25 08:38 UTC, its peak per run from 10-23 to 10-25 was 0.83 to 1.0 GB,
-# and the run since 2026-10-27 sits at the cap. Proposed: MemoryHigh=1200M and MemoryMax=1400M. Once the owner
-# decides, change the two lines here (or the openfrequency-ops drop-in, docs/apply.md step 4).
-MemoryMax=1100M
+# The owner chose these on 2026-10-30. The facts behind them: the unit had MemoryMax=1100M; Toran was killed for memory
+# at that cap on 2026-10-25 08:38 UTC, its peak per run from 10-23 to 10-25 was 0.83 to 1.0 GB, and the run since
+# 2026-10-27 sat at the cap. openfrequency-ops' drop-in carries the same numbers (docs/apply.md step 4).
+MemoryHigh=1200M
+MemoryMax=1400M
 OOMScoreAdjust=-500
 
 # Hardening, the same lines as the unit running today: the process writes only to its private folder and its home.

@@ -55,8 +55,8 @@ by `toran-backup.service` as root at 03:45. Checked on 2026-10-30:
 - The live unit, read in full, already has the same hardening lines and `ReadWritePaths=/opt/toran/private
   /var/lib/toran`. `/var/lib/toran` is the toran user's home, and the service writes there (its `.npm`). It stays
   writable.
-- The new unit keeps `MemoryMax=1100M` until the owner decides. The proposal and the figures are in
-  `deploy/toran.service`.
+- The new unit has the memory limits the owner chose on 2026-10-30, `MemoryHigh=1200M` and `MemoryMax=1400M`, with
+  the figures behind them in `deploy/toran.service`.
 
 As root:
 
