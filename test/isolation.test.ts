@@ -59,7 +59,12 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   'GET ^\\/lead\\/(\\d+)\\/assistant$': (i) => `/lead/${i.b}/assistant`,
   'POST ^\\/lead\\/(\\d+)\\/assistant$': (i) => `/lead/${i.b}/assistant`,
   'GET ^\\/jobs\\/(\\d+)\\.json$': (i) => `/jobs/${i.jobB}.json`,
+  'POST ^\\/lead\\/(\\d+)\\/auto\\/again\\/(\\d+)$': (i) => `/lead/${i.b}/auto/again/1`,
+  'POST ^\\/queue\\/(\\d+)\\/again$': (i) => `/queue/${i.jobB}/again`,
 };
+
+/** Id routes that are the operator's alone (server.ts OPERATOR_ONLY) and name no store: a customer is refused, 403, before any id is read. */
+const OPERATOR_ID = new Set(['POST ^\\/queue\\/(\\d+)\\/again$']);
 
 /** The routes with no id, and why none is needed. */
 const NO_ID: Record<string, string> = {
@@ -82,6 +87,7 @@ const NO_ID: Record<string, string> = {
   'POST ^\\/review\\/approve-all$': "the operator's alone (OPERATOR_ONLY)",
   'GET ^\\/assistant$': "the session's own store's assistant",
   'GET ^\\/brand$': 'the brand sheet, nobody\'s data',
+  'GET ^\\/queue$': "the operator's alone (OPERATOR_PAGES)",
 };
 
 test('every dashboard route has an isolation case: an id case asked with another workspace\'s ids, or a reason it needs none', async () => {
@@ -128,7 +134,7 @@ test("workspace A asking with workspace B's ids: every id route answers 404, and
     for (const [key, path] of Object.entries(ID_CASES)) {
       const p = path(ids);
       const r = key.startsWith('GET') ? await s.get(p) : await s.post(p, { _csrf: token, notes: 'A', status: 'paid', plan: 'big', on: '1', text: 'A', question: 'A?', answer: 'A', reason: 'A', key: 'A', domain: 'a.example' });
-      assert.equal(r.status, 404, `${key} (${p})`);
+      assert.equal(r.status, OPERATOR_ID.has(key) ? 403 : 404, `${key} (${p})`);
     }
     assert.equal(await snapshot(), before, "nothing of B's changed");
   } finally {

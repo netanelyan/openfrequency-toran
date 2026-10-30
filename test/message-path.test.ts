@@ -372,7 +372,8 @@ test('a long email reaches the model cut to 4,000 characters, and the owner keep
   try {
     const long = `שאלה: ${'מילה '.repeat(2400)}`;
     await handleInbound(s.app, { ...s.mail({ text: long }), channel: 'email' });
-    const sent = m.calls[0].messages.map((x) => (typeof x.content === 'string' ? x.content : '')).join('\n');
+    // A message's content is a string, or blocks (the app's line and the customer's text go as blocks of their own).
+    const sent = m.calls[0].messages.map((x) => (typeof x.content === 'string' ? x.content : x.content.map((b: any) => (b.type === 'text' ? b.text : '')).join('\n'))).join('\n');
     assert.ok(sent.length < MAX_TEXT + 1000, `the model got ${sent.length} characters`);
     assert.match(sent, /is not shown/);
     assert.equal((await s.app.db.one<any>("SELECT m.text FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE m.role = 'customer' AND c.channel = 'email'")).text.length, long.trim().length);
