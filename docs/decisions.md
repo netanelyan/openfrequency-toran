@@ -934,3 +934,38 @@ in Teder's words, the owner exempt, no Toran store from a Teder code; the handof
 is down, done once it answers, and never sent to Teder for a number it refuses; the link sent once when the demo is up,
 to two numbers for one store, and left for the operator after 23 hours; a Teder request never taken as Toran's; the
 endpoint's product.
+
+## 2026-10-31: one lead centre on accounts' /admin, and no "sent" from a number that is not connected
+
+The owner asked for one lead centre: both products' demos, the ready messages, and a way to send them. A read of the
+code found that on the VPS, with our number not connected yet, the demo number was the simulator: the send-now button
+and the links that go out by themselves "sent" into it and marked the lead sent, and nobody got anything.
+
+**What changed.**
+- `src/channels/lines.ts` `demoLine` says how the demo number sends (Meta, Twilio or the simulator), its number, and
+  whether it is live: the simulator is not live under `TORAN_ENV=prod`. Not live, `sendDirect` refuses in words,
+  `deliverRequested` and `deliverTeder` wait, the queue offers no `direct`, and nothing is marked sent. `/internal/ops`
+  gives it as `demoLine`, and `/admin` shows one line at the top.
+- Every card's link has its message written in it (`wa.me/<n>?text=`, `mailto:...&body=`); accounts' page puts the
+  edited message in the link at the click.
+- A request with nothing to send (`stuck`) has a message for its reason and the same link.
+- `tederDemos`: every Teder demo of the last 30 days not up yet, at its stage, Teder's reason kept (`teder_leads.error`,
+  migration 042), each linking to its page in Teder (`TEDER_URL`, new), a failed one with a message.
+- A Teder card can go from the demo number (`sendTederDirect`) inside the 23 hours after a code's message; one asked
+  for with a typed number never can, since that number never wrote to us.
+- `leads`: the website's waitlist and the leads no product took, from its new `GET /internal/leads` (`OF_WEB_INTERNAL`,
+  new), which until now reached the owner only by email.
+
+**Alternatives:**
+- Keep marking sent and fix it later: a lead marked sent gets its reminder four days on, to someone who never got the
+  first message.
+- Hide the button but keep the automatic sends: they would still go into the simulator.
+- A Teder demo with a typed number sent from our number anyway: outside Meta's window it is refused, or needs a
+  template the owner has not approved.
+- The website's leads pushed to Toran: a second write path for leads that are already kept in the website's database;
+  a read at each load keeps one copy.
+
+**Tested** (test/ops.test.ts, test/requests.test.ts, test/contracts.test.ts): the simulator in prod refusing the button
+over HTTP and delivering and marking nothing, a fake Meta number then sending both products' links; every card's link
+text; each stuck reason's message; every Teder stage, its order and links; the Teder button inside its window, past
+it, for a typed number and with the number not connected; the website's leads and the website down.
