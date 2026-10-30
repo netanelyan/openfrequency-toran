@@ -56,11 +56,18 @@
             ],
             "stuck": [
               {
+                "product": "toran",
                 "domain": "wix-store.example",
                 "phone": "972500000204",
                 "at": "2026-10-24T04:00:00.000Z",
                 "why": "האתר על Wix, ותורן בונה דמו רק לחנויות Shopify",
                 "storeId": 40,
+                "message": "היי, כאן OpenFrequency. ביקשתם באתר דמו של תורן ל־wix-store. תורן בונה דמו רק לחנויות Shopify, והחנות על Wix, אז לא יכולנו לבנות אותו. אם יש שאלה, אפשר לענות כאן.",
+                "target": {
+                  "kind": "whatsapp",
+                  "href": "https://wa.me/972500000204?text=%D7%94%D7%99%D7%99%2C%20%D7%9B%D7%90%D7%9F%20OpenFrequency.%20%D7%91%D7%99%D7%A7%D7%A9%D7%AA%D7%9D%20%D7%91%D7%90%D7%AA%D7%A8%20%D7%93%D7%9E%D7%95%20%D7%A9%D7%9C%20%D7%AA%D7%95%D7%A8%D7%9F%20%D7%9C%D6%BEwix-store.%20%D7%AA%D7%95%D7%A8%D7%9F%20%D7%91%D7%95%D7%A0%D7%94%20%D7%93%D7%9E%D7%95%20%D7%A8%D7%A7%20%D7%9C%D7%97%D7%A0%D7%95%D7%99%D7%95%D7%AA%20Shopify%2C%20%D7%95%D7%94%D7%97%D7%A0%D7%95%D7%AA%20%D7%A2%D7%9C%20Wix%2C%20%D7%90%D7%96%20%D7%9C%D7%90%20%D7%99%D7%9B%D7%95%D7%9C%D7%A0%D7%95%20%D7%9C%D7%91%D7%A0%D7%95%D7%AA%20%D7%90%D7%95%D7%AA%D7%95.%20%D7%90%D7%9D%20%D7%99%D7%A9%20%D7%A9%D7%90%D7%9C%D7%94%2C%20%D7%90%D7%A4%D7%A9%D7%A8%20%D7%9C%D7%A2%D7%A0%D7%95%D7%AA%20%D7%9B%D7%90%D7%9F.",
+                  "label": "להעתיק ולפתוח וואטסאפ"
+                },
                 "leadUrl": "https://toran.openfrequency.co.il/lead/40"
               }
             ],

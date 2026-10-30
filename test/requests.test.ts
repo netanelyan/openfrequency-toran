@@ -180,6 +180,9 @@ test('a claimed Teder code is handed to Teder by a job, tried again while Teder 
     assert.match(job.last_error, /Teder did not take the request: 503 down/);
     assert.equal((await app.db.one<any>("SELECT teder_id FROM demo_requests WHERE code = 'REQ-TTTTT1'")).teder_id, null);
     assert.deepEqual((await stuckRequests(app)).map((s) => [s.domain, s.why, s.storeId]), [['teder-shop.co.il', 'הבקשה בדרך לתדר', null]]);
+    const waiting = (await stuckRequests(app))[0];
+    assert.deepEqual([waiting.product, waiting.message], ['teder', 'היי, כאן OpenFrequency. ביקשתם באתר דמו של תדר ל־teder-shop.co.il. הוא עוד בבנייה, ונשלח לכם את הלינק כשיהיה מוכן.']);
+    assert.equal(waiting.target.href, `https://wa.me/${P1}?text=${encodeURIComponent(waiting.message!)}`, 'to the number that wrote');
 
     teder.down(false);
     await handoffs(app, { now: true });
@@ -212,6 +215,7 @@ test('a handoff Teder never takes ends failed and is listed; a number Teder does
     assert.match(job.last_error, /not an Israeli mobile/);
     assert.equal(teder.posts.length, 0, 'Teder is never asked for what it refuses');
     assert.deepEqual((await stuckRequests(app)).map((s) => [s.domain, s.why]), [['abroad.example', 'תדר לא קיבל את הבקשה']]);
+    assert.equal((await stuckRequests(app))[0].message, 'היי, כאן OpenFrequency. ביקשתם באתר דמו של תדר ל־abroad.example, ולא הצלחנו לבנות אותו. אם יש שאלה, אפשר לענות כאן.');
   } finally {
     await teder.close();
     await app.db.close();

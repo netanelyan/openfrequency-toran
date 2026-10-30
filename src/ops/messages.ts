@@ -55,6 +55,23 @@ ${o.url}
     : `היי, כאן OpenFrequency. החיבור של הוואטסאפ של ${o.storeName} לתורן הסתיים, ותורן לא עונה בו עכשיו. ההודעות של הלקוחות מחכות לכם בשיחות בדשבורד. כדי שתורן יחזור לענות, מחברים מחדש כאן:
 ${o.url}`;
 
+// To someone who asked for a demo on the website and has no link yet (queue.ts stuckRequests), from the operator's own
+// WhatsApp. Not outreach: they asked, and they are waiting for an answer.
+
+const PRODUCT_HE = { toran: 'תורן', teder: 'תדר' } as const;
+
+/** Their demo is still being built (or checked): the link comes once it is ready. */
+export const stuckWaiting = (o: { product: 'toran' | 'teder'; storeName: string }) =>
+  `היי, כאן OpenFrequency. ביקשתם באתר דמו של ${PRODUCT_HE[o.product]} ${le(o.storeName)}. הוא עוד בבנייה, ונשלח לכם את הלינק כשיהיה מוכן.`;
+
+/** Their demo could not be built: the site was not read, the build failed, or Teder did not take the request. */
+export const stuckFailed = (o: { product: 'toran' | 'teder'; storeName: string }) =>
+  `היי, כאן OpenFrequency. ביקשתם באתר דמו של ${PRODUCT_HE[o.product]} ${le(o.storeName)}, ולא הצלחנו לבנות אותו. אם יש שאלה, אפשר לענות כאן.`;
+
+/** A Toran demo for a store on a platform Toran does not read (`supported` is ingest/catalogue.ts INGESTIBLE_HE). */
+export const stuckPlatform = (o: { storeName: string; platform: string; supported: string }) =>
+  `היי, כאן OpenFrequency. ביקשתם באתר דמו של תורן ${le(o.storeName)}. תורן בונה דמו רק לחנויות ${o.supported}, והחנות על ${o.platform}, אז לא יכולנו לבנות אותו. אם יש שאלה, אפשר לענות כאן.`;
+
 /** Why a store said no, as the operator picks it. */
 export const LOST_REASONS: Record<string, string> = {
   not_interested: 'לא מעוניינים',

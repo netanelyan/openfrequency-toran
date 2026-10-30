@@ -144,7 +144,8 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
       "leadUrl": "https://toran.openfrequency.co.il/lead/12" }
   ],
   "noContact": [{ "id": 31, "name": "...", "domain": "...", "score": 71, "leadUrl": "..." }],
-  "stuck": [{ "domain": "...", "phone": "9725...", "at": "...", "why": "...", "storeId": 7, "leadUrl": "..." }],
+  "stuck": [{ "product": "toran", "domain": "...", "phone": "9725...", "at": "...", "why": "...", "storeId": 7, "message": "...",
+    "target": { "kind": "whatsapp", "href": "https://wa.me/9725...?text=...", "label": "להעתיק ולפתוח וואטסאפ" }, "leadUrl": "..." }],
   "conversations": [{ "key": "teder:7", "product": "teder", "id": "7", "name": "...", "domain": "...", "replied_at": "...",
     "next_step": "...", "next_step_at": "...", "target": { ... }, "page": "...", "status": "...", "leadUrl": null }],
   "funnels": { "toran": [{ "key": "found", "label": "נמצאו", "all": 12, "month": 3 }], "teder": [ ... ] },
@@ -167,6 +168,10 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
 - `direct` means the message can go out now from the demo number (the `direct` action): inside the 23 hours, and
   while our number is connected (section 3).
 - `leadUrl` is the lead's page on Toran's dashboard, and null for a Teder lead.
+- Each `stuck` request has a `message` for its reason, from the operator's own WhatsApp (`src/ops/messages.ts`): still
+  being built ("...הוא עוד בבנייה, ונשלח לכם את הלינק כשיהיה מוכן."), could not be built, Teder included ("...ולא
+  הצלחנו לבנות אותו. אם יש שאלה, אפשר לענות כאן."), or a platform Toran does not read; null for a Teder demo taken
+  down. Its `target` is the number that asked, with the message written in.
 - The funnels' last stage, `customers`, comes with `all` and `month` as null: accounts fills it from its
   subscriptions.
 - `ourNumber` is our one WhatsApp number once our company store connected it, and null before. `demoLine` is the demo

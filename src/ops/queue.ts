@@ -6,7 +6,7 @@ import { PLATFORM_HE, shortDate } from '../web/ui.ts';
 import { contactTarget, firstMessage, pitchUrl, reminderMessage, waLink } from '../outreach.ts';
 import { reconnectUrl, WARN_DAYS } from '../channels/waStore.ts';
 import { demoLine } from '../channels/lines.ts';
-import { reconnectWhatsapp, requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo } from './messages.ts';
+import { reconnectWhatsapp, requestedLink, requestedLinkLater, stuckFailed, stuckPlatform, stuckWaiting, tederFirst, tederReminder, triedDemo } from './messages.ts';
 
 // Who the operator writes to today, about Toran or Teder, most urgent first (docs/operator.md section 4), and who is
 // already in a conversation. Every entry carries its message and where to send it: a wa.me or mailto: link with the
@@ -61,22 +61,23 @@ const waTarget = (phone: string | null, message?: string | null): Item['target']
 const DIRECT_HOURS = 23;
 
 /**
- * A demo asked for on the website (the number proven) that has no page to send yet, and why: the operator answers them.
- * A Teder request's why names Teder, and it has no store here (storeId null).
+ * A demo asked for on the website (the number proven) that has no page to send yet, and why: the operator answers them,
+ * with the message for the reason (messages.ts) written in the link to their number. A Teder request's why names
+ * Teder, and it has no store here (storeId null). A demo Teder took down has nothing to say (message null).
  */
-export type Stuck = { domain: string; phone: string; at: string; why: string; storeId: number | null };
+export type Stuck = { product: 'toran' | 'teder'; domain: string; phone: string; at: string; why: string; storeId: number | null; message: string | null; target: Item['target'] };
 
-/** Why a Teder request has no link yet: Teder has not taken it, or its demo is not up (Teder's statuses, src/demos/build.js). */
-const tederWhy = (r: any) =>
-  !r.teder_id ? (r.job === 'queued' || r.job === 'running' ? 'הבקשה בדרך לתדר' : 'תדר לא קיבל את הבקשה')
-  : r.status === 'failed' ? 'תדר לא הצליח לבנות את הדמו'
-  : r.status === 'removed' || r.removed_at ? 'הדמו של תדר הוסר'
-  : r.status === 'ready' ? 'הדמו של תדר מחכה לבדיקה בתדר'
-  : 'הדמו של תדר בבנייה';
+/** Why a Teder request has no link yet, and whether it waits or failed: Teder has not taken it, or its demo is not up (Teder's statuses, src/demos/build.js). */
+const tederWhy = (r: any): { why: string; state: 'waiting' | 'failed' | 'removed' } =>
+  !r.teder_id ? (r.job === 'queued' || r.job === 'running' ? { why: 'הבקשה בדרך לתדר', state: 'waiting' } : { why: 'תדר לא קיבל את הבקשה', state: 'failed' })
+  : r.status === 'failed' ? { why: 'תדר לא הצליח לבנות את הדמו', state: 'failed' }
+  : r.status === 'removed' || r.removed_at ? { why: 'הדמו של תדר הוסר', state: 'removed' }
+  : r.status === 'ready' ? { why: 'הדמו של תדר מחכה לבדיקה בתדר', state: 'waiting' }
+  : { why: 'הדמו של תדר בבנייה', state: 'waiting' };
 
 export async function stuckRequests(app: App): Promise<Stuck[]> {
   const rows = await app.db.query<any>(
-    `SELECT r.domain, r.phone, r.claimed_at, s.id, s.platform, s.page_built_at, s.approved_at, s.sent_at, s.status,
+    `SELECT r.domain, r.phone, r.claimed_at, s.id, s.name, s.brand, s.brand_override, s.platform, s.page_built_at, s.approved_at, s.sent_at, s.status,
             (SELECT status FROM jobs WHERE dedupe_key = 'add:' || r.domain ORDER BY id DESC LIMIT 1) AS job
        FROM demo_requests r LEFT JOIN stores s ON s.domain = r.domain
       WHERE r.product = 'toran' AND r.claimed_at > now() - interval '14 days' AND (s.id IS NULL OR (s.sent_at IS NULL AND (s.approved_at IS NULL OR s.page_built_at IS NULL)))
@@ -84,25 +85,43 @@ export async function stuckRequests(app: App): Promise<Stuck[]> {
   );
   // A Teder request whose demo has no public page yet (teder_leads, as last read from Teder), its link not sent.
   const teder = await app.db.query<any>(
-    `SELECT r.domain, r.phone, r.claimed_at, r.teder_id, t.status, t.removed_at,
+    `SELECT r.domain, r.phone, r.claimed_at, r.teder_id, t.name, t.status, t.removed_at,
             (SELECT status FROM jobs WHERE dedupe_key = 'teder_lead:' || r.id ORDER BY id DESC LIMIT 1) AS job
        FROM demo_requests r LEFT JOIN teder_leads t ON t.id = r.teder_id
       WHERE r.product = 'teder' AND r.claimed_at > now() - interval '14 days' AND r.delivered_at IS NULL AND t.page_url IS NULL
       ORDER BY r.claimed_at`,
   );
-  const toran: Stuck[] = rows.map((r) => ({
-    domain: r.domain,
-    phone: r.phone,
-    at: r.claimed_at,
-    storeId: r.id ?? null,
-    why: r.job === 'queued' || r.job === 'running' ? 'הדף בבנייה'
-      : r.id && r.platform && !canIngest(r.platform) ? `האתר על ${PLATFORM_HE[r.platform] || r.platform}, ותורן בונה דמו רק לחנויות ${INGESTIBLE_HE}`
-      : !r.id ? 'לא הצלחנו לקרוא את האתר'
-      : !r.page_built_at ? 'הדף לא נבנה'
-      : 'הדף מחכה לבדיקה, חסר בו משהו',
-  }));
+  const toran: Stuck[] = rows.map((r) => {
+    const name = r.id ? storeName(r) : r.domain;
+    const other = r.id && r.platform && !canIngest(r.platform) ? PLATFORM_HE[r.platform] || r.platform : null;
+    const building = r.job === 'queued' || r.job === 'running';
+    const message = building ? stuckWaiting({ product: 'toran', storeName: name })
+      : other ? stuckPlatform({ storeName: name, platform: other, supported: INGESTIBLE_HE })
+      : !r.id || !r.page_built_at ? stuckFailed({ product: 'toran', storeName: name })
+      : stuckWaiting({ product: 'toran', storeName: name });
+    return {
+      product: 'toran' as const,
+      domain: r.domain,
+      phone: r.phone,
+      at: r.claimed_at,
+      storeId: r.id ?? null,
+      why: building ? 'הדף בבנייה'
+        : other ? `האתר על ${other}, ותורן בונה דמו רק לחנויות ${INGESTIBLE_HE}`
+        : !r.id ? 'לא הצלחנו לקרוא את האתר'
+        : !r.page_built_at ? 'הדף לא נבנה'
+        : 'הדף מחכה לבדיקה, חסר בו משהו',
+      message,
+      target: waTarget(r.phone, message),
+    };
+  });
+  const tederRows: Stuck[] = teder.map((r) => {
+    const { why, state } = tederWhy(r);
+    const name = r.name || r.domain;
+    const message = state === 'waiting' ? stuckWaiting({ product: 'teder', storeName: name }) : state === 'failed' ? stuckFailed({ product: 'teder', storeName: name }) : null;
+    return { product: 'teder' as const, domain: r.domain, phone: r.phone, at: r.claimed_at, storeId: null, why, message, target: waTarget(r.phone, message) };
+  });
   const time = (at: unknown) => new Date(at as string).getTime();
-  return [...toran, ...teder.map((r) => ({ domain: r.domain, phone: r.phone, at: r.claimed_at, storeId: null, why: tederWhy(r) }))].sort((a, b) => time(a.at) - time(b.at));
+  return [...toran, ...tederRows].sort((a, b) => time(a.at) - time(b.at));
 }
 
 export async function queue(app: App): Promise<{ items: Item[]; noContact: any[] }> {

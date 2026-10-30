@@ -370,6 +370,17 @@ test('a demo asked for on the website with nothing to send is listed, with why',
     await app.db.query("INSERT INTO demo_requests (code, url, domain, phone, claimed_at) VALUES ('REQ-EEEEEE', 'https://konimbo-shop.example/', 'konimbo-shop.example', $1, now()), ('REQ-FFFFFF', 'https://gone.example/', 'gone.example', '972500000331', now())", [PHONE]);
     const s = await stuckRequests(app);
     assert.deepEqual(s.map((x) => [x.domain, x.why]), [['konimbo-shop.example', 'האתר על Konimbo, ותורן בונה דמו רק לחנויות Shopify, WooCommerce, Wix ו־Cashcow'], ['gone.example', 'לא הצלחנו לקרוא את האתר']]);
+    // Each with a message for its reason, written in the link to the number that asked.
+    assert.deepEqual(s.map((x) => x.message), [
+      'היי, כאן OpenFrequency. ביקשתם באתר דמו של תורן ל־konimbo-shop. תורן בונה דמו רק לחנויות Shopify, WooCommerce, Wix ו־Cashcow, והחנות על Konimbo, אז לא יכולנו לבנות אותו. אם יש שאלה, אפשר לענות כאן.',
+      'היי, כאן OpenFrequency. ביקשתם באתר דמו של תורן ל־gone.example, ולא הצלחנו לבנות אותו. אם יש שאלה, אפשר לענות כאן.',
+    ]);
+    assert.deepEqual(s.map((x) => [x.product, x.target.kind, x.target.label]), [['toran', 'whatsapp', 'להעתיק ולפתוח וואטסאפ'], ['toran', 'whatsapp', 'להעתיק ולפתוח וואטסאפ']]);
+    assert.equal(s[1].target.href, `https://wa.me/972500000331?text=${encodeURIComponent(s[1].message!)}`);
+    // A page still being built: the link comes once it is ready.
+    await app.db.query("INSERT INTO jobs (kind, dedupe_key, status, payload) VALUES ('add_store', 'add:gone.example', 'queued', '{}')");
+    const building = (await stuckRequests(app)).find((x) => x.domain === 'gone.example')!;
+    assert.deepEqual([building.why, building.message], ['הדף בבנייה', 'היי, כאן OpenFrequency. ביקשתם באתר דמו של תורן ל־gone.example. הוא עוד בבנייה, ונשלח לכם את הלינק כשיהיה מוכן.']);
   } finally {
     await app.db.close();
   }
