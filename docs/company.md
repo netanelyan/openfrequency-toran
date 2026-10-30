@@ -75,7 +75,7 @@ website's. There is no second number and no Twilio. Once it is connected to Meta
 
 | | Who | Who answers |
 | --- | --- | --- |
-| 1 | A message with a code: `REQ-...` (the website's demo form) or `DEMO-...` (a pitch page's button); a pitch page's own message to us ("take this page down", "about the page") | the demo request, or the demo as that store; the page's message is kept for you. A code comes first, so a business owner who presses a pitch page's button still gets the demo |
+| 1 | A message with a code: `REQ-...` (the website's demo form) or `DEMO-...` (a pitch page's button); a pitch page's own message to us ("take this page down", "about the page") | the demo request (Toran's or Teder's, one of each per number: docs/operator.md section 3), or the demo as that store; the page's message is kept for you. A code comes first, so a business owner who presses a pitch page's button still gets the demo |
 | 2 | A business owner whose number accounts verified, or a `LINK-...` code from accounts | the owner's assistant (docs/owner-line.md), Teder's news included |
 | 3 | A phone bound to a demo in the last 7 days | that store's demo agent |
 | 4 | Anyone else | our support: this store, its prompt and its three tools |

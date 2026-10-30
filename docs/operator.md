@@ -10,10 +10,11 @@ their outreach.
 ```
    Toran (the dashboard) ── GET /internal/ops/customers ──▶ accounts  (workspaces, subscriptions, invoices)
                          ── GET /internal/demos ──────────▶ Teder     (the store demos and their opens)
-   openfrequency.co.il   ── POST /internal/lead {url, code} ▶ Toran   (a Toran demo request, by its REQ- code)
+   openfrequency.co.il   ── POST /internal/lead {url, code, product?} ▶ Toran  (a demo request, by its REQ- code)
+   Toran (the worker)    ── POST /internal/lead {url, whatsapp} ──▶ Teder  (a Teder request, once its number wrote)
 ```
 
-All three routes are local-only. They take `Authorization: Bearer <OF_INTERNAL_TOKEN>` (the same value in every
+All four routes are local-only. They take `Authorization: Bearer <OF_INTERNAL_TOKEN>` (the same value in every
 service's `.env`, 32 characters or more), and they refuse a request that has `X-Forwarded-For`, or that comes from
 a socket that is not loopback. Every answer is JSON with `Cache-Control: no-store`.
 
@@ -74,17 +75,44 @@ store demo, newest first, at most 500:
 - `opens` counts the page's views by anyone who is not signed in to OpenFrequency.
 - `visitors` counts the distinct browsers among them, by a cookie, the way Toran counts its pitch pages.
 
-## 3. The website: a Toran demo request by its code
+## 3. The website: a demo request by its code, one per number per product
 
 Since 2026-10-23, Toran counts a demo asked for on openfrequency.co.il only when the person writes to the demo
-number with the request's code (`src/channels/request.ts`). The website's part:
+number with the request's code (`src/channels/request.ts`). Since 2026-10-30 the same holds for a Teder demo. The
+website's part:
 
-1. The Toran demo form takes the store's address only. The WhatsApp number proves itself by writing.
+1. The demo form takes the store's address only. The WhatsApp number proves itself by writing.
 2. `server/lead.mjs` makes a code `REQ-XXXXXX` (6 of `A-Z0-9`, random), keeps it with the lead, and hands Toran
-   `{ "url", "code" }` at `/internal/lead`, retrying as before.
+   `{ "url", "code" }` at `/internal/lead` for a Toran demo, `{ "url", "code", "product": "teder" }` for a Teder
+   one, retrying as before. `product` is `toran` when it is left out; any value but `toran` or `teder` is
+   `400 { "ok": false, "error": "bad" }`.
 3. It answers the form with the code and a `https://wa.me/<TORAN_DEMO_WA>?text=...` link whose message holds the
    code. The form's success state shows that button.
-4. Toran does the rest: one demo per number, and the reply on WhatsApp.
+4. Toran does the rest: the reply on WhatsApp, and one demo per number per product.
+
+**One demo per number per product.** A number that claimed a Toran code may still claim a Teder one, and the other
+way; a second code of the same product from the same number gets "כבר קיבלנו מהמספר הזה בקשה לדמו של תורן" (or "של
+תדר"), and the code is left for its own number. The owner's phone (`TORAN_OWNER_WHATSAPP`) may ask any number of
+times. A pitch page's `DEMO-` code is not a request: it starts that store's demo, as many times as anyone presses it.
+
+**A Toran code** adds the store for that number (or gives the number to a store Toran has), and the page's link goes
+to it on the demo number once the page is public, inside the 23 hours (`deliverRequested`).
+
+**A Teder code** adds nothing to Toran. The person gets "קיבלנו, תודה. אנחנו בונים עכשיו דמו של תדר ל־<domain>..." at
+once, and the worker hands the request to Teder (`teder_lead` job, `handToTeder`): `POST /internal/lead` on
+`TEDER_SITE_INTERNAL` with `{ "url", "whatsapp": "<the number that wrote>" }` and the internal token. A Teder that
+does not answer is tried again, 8 tries in all, the last 140 minutes after the first; Teder takes an Israeli mobile only
+(`9725XXXXXXXX`), so another number's handoff fails without asking Teder. Teder keeps one demo per store and answers
+with it (`{ ok, id, existing }`); `demo_requests.teder_id` keeps that id. Each minute while a Teder request waits,
+Toran reads `GET /internal/demos` again, and once the demo has a `pageUrl` (Teder gives one to an approved demo
+only) its link goes to the number on the demo number, inside the 23 hours after it wrote, once
+(`demo_requests.delivered_at`, `deliverTeder`). The first such send marks the Teder lead sent, as "שלחתי" does, so
+its one reminder comes due in four days. Two numbers that asked for the same store each get its one demo. Past the 23
+hours the demo stays on the list as `asked_teder`, to send by hand.
+
+A request with nothing to send yet is under `stuck`. A Teder one says why in its own words: "הבקשה בדרך לתדר", "תדר
+לא קיבל את הבקשה" (the handoff failed every try: its job is on the queue page, to run again), "הדמו של תדר בבנייה",
+"הדמו של תדר מחכה לבדיקה בתדר", "תדר לא הצליח לבנות את הדמו" or "הדמו של תדר הוסר"; its `storeId` is null.
 
 ## 4. Where the dashboard lives: accounts' /admin
 
@@ -92,7 +120,7 @@ The operator's dashboard is on accounts' `/admin`, the superadmin's console, beh
 code. toran.openfrequency.co.il shows Toran only. Toran keeps the work behind the dashboard:
 - the list of who to write to, and the outreach on each lead
 - the copies of Teder's demos
-- sending a demo asked for on the website by itself
+- sending a demo asked for on the website by itself, Toran's or Teder's
 
 It gives all of that to `/admin` through two internal routes, under the same checks as `/internal/lead` (OF_INTERNAL_TOKEN,
 loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (default `http://127.0.0.1:4710`).

@@ -902,3 +902,35 @@ send path still checks the kind, the quiet time, the consent and the template's 
   delete them.
 - A mail client's mailto unsubscribe (an email with the subject "הסר" and no body) reaches the store's inbox as before;
   only a body that says "הסר" is taken as one.
+
+## 2026-10-30: one demo per number per product; Teder's demo asked for with a code too
+
+The owner's rule: a number writes the website's code to our WhatsApp, and gets a demo; one demo per number per
+product. Until now one number got one demo of anything (`request.ts` asked "did this phone claim any request").
+
+**What changed.** Each `demo_requests` row has a `product`, `toran` or `teder` (migration 041; the old rows are
+Toran's), and the website's `POST /internal/lead` says which (`product` left out is Toran, anything else 400). The rule
+asks "did this phone claim a request of this product", so a number that had Toran's can have Teder's, and the reply
+that refuses a second one names the product. The owner's phone is still exempt, and a pitch page's `DEMO-` code is
+still not a request.
+
+A claimed Teder code adds no Toran store. A `teder_lead` job hands it to Teder's own `POST /internal/lead` with the
+number that wrote, on `TEDER_SITE_INTERNAL` with the internal token, tried again while Teder does not answer.
+Teder's answer (its demo for that store, new or existing) is kept as `teder_id`. The worker reads Teder's
+`GET /internal/demos` each minute while one waits, and sends the link once the demo has a `pageUrl`, inside the 23
+hours, once (`delivered_at`); past them it is the operator's `asked_teder` card, as before.
+
+**Alternatives:**
+- One request per number across products, as before: the owner asked for one per product.
+- Teder keeps its own form with a typed number: nothing proves the number, which is why Toran's moved to codes on
+  2026-10-23.
+- Calling Teder while the message is handled: a Teder restart at that moment would lose the request, and the person
+  would wait on it. The job answers at once and tries again.
+- Matching Toran's request to Teder's demo by domain: Toran keys a store by its registrable domain, Teder by the
+  host without `www`, so `teder_id` from Teder's own answer is the link.
+
+**Tested** (test/requests.test.ts, test/workspaces.test.ts): Toran then Teder from one number, a second Teder refused
+in Teder's words, the owner exempt, no Toran store from a Teder code; the handoff tried again while a stand-in Teder
+is down, done once it answers, and never sent to Teder for a number it refuses; the link sent once when the demo is up,
+to two numbers for one store, and left for the operator after 23 hours; a Teder request never taken as Toran's; the
+endpoint's product.
