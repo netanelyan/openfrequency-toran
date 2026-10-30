@@ -16,6 +16,7 @@ import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
 import { boundaryOf, parseMultipart, type Upload } from './multipart.ts';
 import { MAX_BYTES } from '../channels/files.ts';
+import { readiness, revision } from '../health.ts';
 
 // The website: the owner's dashboard, the public pitch pages, and the WhatsApp webhook,
 // in one process. It listens on 127.0.0.1 (or the container's interface behind Caddy).
@@ -23,7 +24,7 @@ import { MAX_BYTES } from '../channels/files.ts';
 // THE CHECKS, IN ORDER, ON EVERY REQUEST (Teder's):
 //   - the Host header is ours (defeats DNS rebinding)
 //   - a request under the public name came over HTTPS, which only the proxy can say
-//   - public routes (static files, /healthz, /s/<slug>, the beacon, the webhook) answer
+//   - public routes (static files, /healthz, /readyz, /s/<slug>, the beacon, the webhook) answer
 //     here with their own checks; everything else needs a session
 //   - the session is openfrequency-accounts' (accounts.ts): no session goes to its login,
 //     a closed workspace or a plan without Toran gets a page saying so, and a check that
@@ -208,7 +209,12 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
         if (p === '/static/brand.css') return send(req, res, 200, brandCss(), 'text/css; charset=utf-8', { 'cache-control': 'public, max-age=3600' });
         if (p === '/static/manifest.webmanifest') return send(req, res, 200, JSON.stringify(MANIFEST), 'application/manifest+json; charset=utf-8', { 'cache-control': 'public, max-age=86400' });
         if (p === '/favicon.ico') return send(req, res, 200, readFileSync(path.join(BRAND_DIR, 'svg/toran.svg')), 'image/svg+xml', { 'cache-control': 'public, max-age=86400' });
-        if (p === '/healthz') return send(req, res, 200, 'ok', 'text/plain; charset=utf-8');
+        // Liveness and readiness (health.ts): the deploy and the uptime monitor wait on /readyz, never on /healthz.
+        if (p === '/healthz') return send(req, res, 200, `ok${revision(app.env) ? ` ${revision(app.env)}` : ''}`, 'text/plain; charset=utf-8', { 'cache-control': 'no-store' });
+        if (p === '/readyz') {
+          const r = await readiness(app);
+          return send(req, res, r.ok ? 200 : 503, JSON.stringify(r), 'application/json; charset=utf-8', { 'cache-control': 'no-store' });
+        }
         const art = /^\/static\/demo\/([\w-]{1,60})\.svg$/.exec(p);
         if (art) return send(req, res, 200, demoArt(art[1]), 'image/svg+xml', { 'cache-control': 'public, max-age=86400' });
         if (p === '/robots.txt') return send(req, res, 200, 'User-agent: *\nDisallow: /\n', 'text/plain; charset=utf-8');

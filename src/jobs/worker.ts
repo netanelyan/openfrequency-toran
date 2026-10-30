@@ -8,6 +8,8 @@ import { handleInbound } from '../channels/route.ts';
 import { discover } from '../leads/discover.ts';
 import { canonicalDomain } from '../core/urls.ts';
 import { event } from '../db/log.ts';
+import { withDbLabel } from '../db/index.ts';
+import { workerBeat } from '../health.ts';
 import { claim, done, enqueue, fail, progress, type Job } from './queue.ts';
 import { handleTederEvent, handleTederReady } from '../owners/events.ts';
 import { deliverRequested } from '../ops/actions.ts';
@@ -186,7 +188,8 @@ export async function drain(app: App, { kinds = null }: { kinds?: string[] | nul
 
 async function runOne(app: App, job: Job) {
   try {
-    const result = await runJob(app, job);
+    // A query the database cancels for running too long is logged with the job's kind (db/index.ts).
+    const result = await withDbLabel(`job ${job.kind}`, () => runJob(app, job));
     await done(app.db, job.id, result ?? null);
   } catch (e: any) {
     app.log(`[job ${job.id} ${job.kind}] ${cleanLine(e?.stack || e?.message || e, 800)}`);
@@ -201,6 +204,8 @@ export function startWorker(app: App, { idleMs = 1000, concurrency = 2 }: { idle
   const loop = async () => {
     while (!stopped) {
       try {
+        // A sign of life for /readyz (health.ts): written at most every 30 seconds, whichever loop gets there.
+        await workerBeat(app);
         if (Date.now() - lastSchedule > 60_000) {
           lastSchedule = Date.now();
           await schedule(app);

@@ -36,6 +36,9 @@ import { pageLinks } from './sitemap.ts';
 // A store whose site names no colour is given its logo's (logo.ts), when its logo is
 // its mark and not a share photo; the review screen says where the colour came from.
 
+/** How long one statement of an ingest's write may run: a whole catalogue's products and chunks in one transaction. */
+export const INGEST_STATEMENT_MS = 120_000;
+
 export type IngestSummary = { storeId: number; domain: string; products: number; available: number; gone: number; policies: { kind: string; title: string; chars: number }[]; chunks: number; faqs: number; brand: { colors: string[]; logo: boolean; tone: boolean; colorsFrom: string | null }; currency: string; warnings: string[] };
 
 export class IngestError extends Error {
@@ -91,6 +94,8 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
 
   progress('שומר');
   let gone = 0;
+  // One transaction writes the whole store (up to thousands of products and their chunks): longer than the 15 seconds a
+  // statement gets elsewhere (db/index.ts PG_LIMITS).
   await db.tx(async (t) => {
     const ids: string[] = [];
     for (const r of rows) {
@@ -132,7 +137,7 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
       `UPDATE stores SET brand = $2::jsonb, name = COALESCE(NULLIF($3, ''), name), ingested_at = now(), updated_at = now(), config = config || $4::jsonb WHERE id = $1`,
       [storeId, J(brand), cat.name || '', J({ currency, moneyFormat: cat.moneyFormat, catalogue: cat.source })],
     );
-  });
+  }, { statementTimeoutMs: INGEST_STATEMENT_MS });
   const available = rows.filter((r) => r.available).length;
   const summary: IngestSummary = {
     storeId,

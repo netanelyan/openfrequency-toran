@@ -58,7 +58,7 @@ export function makeLog(env: Env = process.env, { quiet = false } = {}): (m: str
 export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, graph, api, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; llm?: Llm; wa?: WaProvider; mail?: EmailAdapter; graph?: GraphFetch; api?: typeof fetch; quiet?: boolean } = {}): Promise<App> {
   if (env === process.env) loadEnv(env);
   const log = makeLog(env, { quiet });
-  const theDb = db || (await openDb({ env }));
+  const theDb = db || (await openDb({ env, log }));
   return {
     db: theDb,
     env,
