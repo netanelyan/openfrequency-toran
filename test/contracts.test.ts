@@ -41,8 +41,11 @@ const filesOf = (dir: string) => readdirSync(dir).filter((f) => f.endsWith('.jso
 /**
  * accounts' contracts beside this checkout: walking up from this repo's root (6 levels at most), the first
  * openfrequency-accounts found, its main checkout's docs/contracts, else each of its worktrees' (.claude/worktrees/*).
+ * `paired` is accounts' worktree of this checkout's own name, when this checkout is a worktree (.claude/worktrees/<name>)
+ * and accounts has one so named: one change to a contract in flight on both sides, before either is merged.
  */
-function accountsContracts(): { main: string | null; worktrees: string[] } | null {
+function accountsContracts(): { main: string | null; worktrees: string[]; paired: string | null } | null {
+  const ours = path.basename(path.dirname(ROOT)) === 'worktrees' && path.basename(path.dirname(path.dirname(ROOT))) === '.claude' ? path.basename(ROOT) : null;
   let dir = ROOT;
   for (let i = 0; i < 6; i++) {
     const up = path.dirname(dir);
@@ -53,7 +56,8 @@ function accountsContracts(): { main: string | null; worktrees: string[] } | nul
     const main = path.join(accounts, 'docs', 'contracts');
     const trees = path.join(accounts, '.claude', 'worktrees');
     const worktrees = existsSync(trees) ? readdirSync(trees).map((w) => path.join(trees, w, 'docs', 'contracts')).filter((d) => existsSync(d)).sort() : [];
-    return { main: existsSync(main) ? main : null, worktrees };
+    const paired = ours ? worktrees.find((d) => path.basename(path.dirname(path.dirname(d))) === ours) || null : null;
+    return { main: existsSync(main) ? main : null, worktrees, paired };
   }
   return null;
 }
@@ -75,8 +79,9 @@ function copyDiffers(dir: string): string[] {
 test("the contracts here are accounts' own: test/fixtures/contracts is byte-identical to openfrequency-accounts docs/contracts when that checkout is beside this one", (t) => {
   assert.ok(filesOf(DIR).includes('README.md') && Object.keys(contracts).length > 0, 'the copy is here');
   const found = accountsContracts();
-  // The main checkout's is accounts' word once merged; until then, the copy must be one of its worktrees' as a whole.
-  const sources = found ? (found.main ? [found.main] : found.worktrees) : [];
+  // The main checkout's is accounts' word once merged; until then, the copy must be one of its worktrees' as a whole. A
+  // worktree here with a namesake in accounts (one change on both sides) is held to that one's.
+  const sources = found ? (found.paired ? [found.paired] : found.main ? [found.main] : found.worktrees) : [];
   if (!sources.length) {
     t.diagnostic('no openfrequency-accounts checkout with docs/contracts beside this one: the copy is not compared (as in CI)');
     return;
@@ -265,12 +270,11 @@ const NOT_HERE: Record<string, string> = {
  * setup and ops answered 403 forbidden to all of them, and the delete's refusals carried an ok: false.
  */
 const DISAGREES: Record<string, string[]> = {
-  // The dashboard also carries our one WhatsApp number and the job queue's counts (src/ops/api.ts opsData; the queue
-  // is in Toran's docs/operator.md section 6). A lead marked "they answered" has a next step's day and no text yet
-  // (src/ops/actions.ts markReplied), and a request whose site was never read has no store (src/ops/queue.ts
-  // stuckRequests): the contract does not let next_step or storeId be null. accounts' reader (its src/web/toran.js
-  // readOps) takes null for both.
-  [`${OPS} :: the dashboard`]: ['$: jobs, ourNumber here, not in the contract', '$.conversations[0].next_step: null where the contract has string', '$.stuck[1].storeId: null where the contract has number'],
+  // The dashboard also carries the job queue's counts (src/ops/api.ts opsData; the queue is in Toran's
+  // docs/operator.md section 6), which /admin does not show. Since 2026-10-30 the contract has our number and the demo
+  // line, and lets a conversation's next_step (a lead just marked "they answered") and a stuck request's storeId (a
+  // site never read) be null, as accounts' reader (its src/web/toran.js readOps) always took them.
+  [`${OPS} :: the dashboard`]: ['$: jobs here, not in the contract'],
 };
 
 /**

@@ -5,7 +5,7 @@ import { accountsLinks, ADMIN } from '../web/accounts.ts';
 import { syncTeder } from './sources.ts';
 import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests } from './queue.ts';
 import { funnels } from './funnel.ts';
-import { oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
+import { demoLine, oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
 import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, setNext, type Kind } from './actions.ts';
 import { queueState } from '../jobs/queue.ts';
 
@@ -66,7 +66,7 @@ const TOLD = `סומן שאמרת להם לחבר מחדש את הוואטסאפ
 
 export async function opsData(app: App) {
   const ok = await syncTeder(app);
-  const [q, convs, stuck, f, one] = await Promise.all([queue(app), conversations(app), stuckRequests(app), funnels(app, null), oneNumberRoles(app)]);
+  const [q, convs, stuck, f, one, line] = await Promise.all([queue(app), conversations(app), stuckRequests(app), funnels(app, null), oneNumberRoles(app), demoLine(app)]);
   // The last stage, customers, is accounts' word: it fills it from its subscriptions.
   for (const s of [...f.toran, ...f.teder]) if (s.key === 'customers') Object.assign(s, { all: null, month: null });
   return {
@@ -79,6 +79,10 @@ export async function opsData(app: App) {
     // Our one WhatsApp number (channels/lines.ts) and what it does now, in the order its messages are read; null
     // until our company store connects it.
     ourNumber: one ? { number: one.one.number, status: one.one.status, roles: one.roles.map((key) => ({ key, he: ROLE_HE[key] })), leadUrl: leadUrl(app, one.one.storeId) } : null,
+    // The demo number as it sends now (channels/lines.ts demoLine): through Meta, Twilio or the simulator, and whether
+    // that reaches anyone. Not live (the simulator on the VPS): nothing goes from it, and the links that go by
+    // themselves wait.
+    demoLine: { live: line.live, via: line.via, number: line.number },
     // The job queue (web/pages/queue.ts): what waits, how long the oldest customer message has waited, what failed.
     jobs: await queueState(app.db).then((s) => ({ queued: s.queued, running: s.running, messages: s.messages, oldestAt: s.oldestAt, failed: s.failed.length, url: `${accountsLinks(app.env).home}${ADMIN}/queue` })),
   };

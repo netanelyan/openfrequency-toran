@@ -147,7 +147,10 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
   "stuck": [{ "domain": "...", "phone": "9725...", "at": "...", "why": "...", "storeId": 7, "leadUrl": "..." }],
   "conversations": [{ "key": "teder:7", "product": "teder", "id": "7", "name": "...", "domain": "...", "replied_at": "...",
     "next_step": "...", "next_step_at": "...", "target": { ... }, "page": "...", "status": "...", "leadUrl": null }],
-  "funnels": { "toran": [{ "key": "found", "label": "נמצאו", "all": 12, "month": 3 }], "teder": [ ... ] }
+  "funnels": { "toran": [{ "key": "found", "label": "נמצאו", "all": 12, "month": 3 }], "teder": [ ... ] },
+  "ourNumber": { "number": "9725...", "status": "active", "roles": [{ "key": "demo", "he": "..." }], "leadUrl": "..." },
+  "demoLine": { "live": true, "via": "meta", "number": "9725..." },
+  "jobs": { "queued": 0, "running": 0, "messages": 0, "oldestAt": null, "failed": 0, "url": "..." }
 }
 ```
 
@@ -164,6 +167,9 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
 - `leadUrl` is the lead's page on Toran's dashboard, and null for a Teder lead.
 - The funnels' last stage, `customers`, comes with `all` and `month` as null: accounts fills it from its
   subscriptions.
+- `ourNumber` is our one WhatsApp number once our company store connected it, and null before. `demoLine` is the demo
+  number as it sends now (`src/channels/lines.ts` `demoLine`): `via` meta, twilio or sim, its `number` when known, and
+  `live`, false on the VPS while it is the simulator (section 3). /admin shows it as one line at the top.
 
 ### `POST /internal/ops/<toran|teder>/<id>/<action>`
 

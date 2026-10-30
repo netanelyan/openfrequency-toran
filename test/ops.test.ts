@@ -212,6 +212,10 @@ test("the dashboard is accounts' /admin's: Toran gives it as data on /internal/o
     assert.match(item.leadUrl, new RegExp(`/lead/${id}$`));
     assert.equal(d.funnels.toran.at(-1).key, 'customers');
     assert.equal(d.funnels.toran.at(-1).all, null, "customers are accounts' to fill");
+    assert.deepEqual([d.ourNumber, d.demoLine], [null, { live: true, via: 'sim', number: '972500000999' }], 'no number of ours connected; the simulator is the phone here');
+    s.app.env.TORAN_ENV = 'prod';
+    assert.deepEqual((await (await get(token)).json()).demoLine, { live: false, via: 'sim', number: '972500000999' }, 'on the VPS the simulator reaches nobody');
+    delete s.app.env.TORAN_ENV;
 
     const post = (path: string, body: unknown) => fetch(`${s.base}/internal/ops/${path}`, { method: 'POST', headers: { ...token, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const sent = await post(`toran/${id}/sent`, { by: 'operator@example.test' });

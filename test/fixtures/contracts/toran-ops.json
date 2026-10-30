@@ -101,6 +101,22 @@
                   "month": 4
                 }
               ]
+            },
+            "ourNumber": {
+              "number": "972500000999",
+              "status": "active",
+              "roles": [
+                {
+                  "key": "demo",
+                  "he": "הדמו: מי ששלח קוד מעמוד של חנות, או שהדמו שלו עוד פתוח"
+                }
+              ],
+              "leadUrl": "https://accounts.openfrequency.co.il/admin/toran/lead/1"
+            },
+            "demoLine": {
+              "live": true,
+              "via": "meta",
+              "number": "972500000999"
             }
           },
           "nullable": [
@@ -108,7 +124,11 @@
             "leadUrl",
             "all",
             "month",
-            "page"
+            "page",
+            "ourNumber",
+            "number",
+            "next_step",
+            "storeId"
           ]
         },
         {
