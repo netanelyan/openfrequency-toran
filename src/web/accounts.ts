@@ -157,26 +157,31 @@ export function refusal(status: number, error: string): 'login' | 'closed' | 'no
 }
 
 /**
- * The operator, as accounts' /admin proxy vouches for them (the audit's PRA-SEC-004): instead of forwarding the
- * superadmin's session cookie to Toran, accounts sends
+ * The operator, as accounts' /admin proxy vouches for them (the audit's PRA-SEC-004). accounts no longer forwards the
+ * superadmin's session cookie (only Toran's own tn_* cookies come through); it signs, for each proxied request
+ * (openfrequency-accounts src/web/admin-toran.js operatorAssertion, docs/contracts/admin-toran-operator.json):
  *
- *   x-of-operator: <b64url(JSON { email, name, id?, exp })>.<b64url(HMAC-SHA256(OF_INTERNAL_TOKEN, first part))>
+ *   X-OF-Operator: <payload>.<signature>
+ *     payload    base64url of JSON { id, email, name, ses, exp }: the superadmin's id, email and name; ses, 32 base64url
+ *                characters, the same for every request of one accounts session (Toran's CSRF tokens are derived from
+ *                it); exp, milliseconds since 1970, 60 seconds after signing
+ *     signature  base64url of HMAC-SHA256 of the payload's characters, keyed with OF_INTERNAL_TOKEN
  *
- * on each proxied request, exp a few seconds ahead (epoch milliseconds). Taken only under the admin prefix from this
- * machine (web/server.ts viaAdmin), only signed with our token, only unexpired and never more than OPERATOR_TTL_MS
- * ahead: then the request is the operator's, with no session cookie at all. A forwarded cookie still works the old way.
+ * Taken only under the admin prefix from a loopback socket (web/server.ts viaAdmin), with a token of 32 characters or
+ * more, a signature compared in constant time, and exp in the future and at most OPERATOR_TTL_MS ahead. A forwarded
+ * cookie still works the old way, so either side can be deployed first.
  */
 export const OPERATOR_TTL_MS = 120_000;
-export function operatorFrom(header: unknown, env: Env = process.env, t = Date.now()): Session | null {
+export function operatorFrom(header: unknown, env: Env = process.env, t = Date.now()): { session: Session; ses: string } | null {
   const token = String(env.OF_INTERNAL_TOKEN || '').trim();
   const v = String(header || '');
-  if (token.length < MIN_TOKEN || !v || v.length > 2048) return null;
-  const [body, sig] = v.split('.');
-  if (!body || !sig) return null;
-  const want = createHmac('sha256', token).update(body).digest('base64url');
-  const a = Buffer.from(want);
-  const b = Buffer.from(sig);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  if (token.length < MIN_TOKEN || !v || v.length > 4096) return null;
+  const dot = v.indexOf('.');
+  if (dot < 1 || v.indexOf('.', dot + 1) !== -1) return null;
+  const body = v.slice(0, dot);
+  const want = Buffer.from(createHmac('sha256', token).update(body).digest('base64url'));
+  const got = Buffer.from(v.slice(dot + 1));
+  if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
   let claim: any;
   try {
     claim = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
@@ -185,7 +190,8 @@ export function operatorFrom(header: unknown, env: Env = process.env, t = Date.n
   }
   const exp = Number(claim?.exp);
   if (!Number.isFinite(exp) || exp <= t || exp > t + OPERATOR_TTL_MS) return null;
-  if (typeof claim.email !== 'string' || !/^[^\s@]+@[^\s@]+$/.test(claim.email)) return null;
-  const id = Number.isInteger(claim.id) ? claim.id : 0;
-  return { user: { id, email: claim.email, name: typeof claim.name === 'string' ? claim.name.slice(0, 120) : null, superadmin: true }, workspace: null, role: 'superadmin', products: [PRODUCT], readOnly: false, viewAs: null };
+  if (!Number.isInteger(claim.id) || typeof claim.email !== 'string' || !/^[^\s@]+@[^\s@]+$/.test(claim.email)) return null;
+  if (typeof claim.ses !== 'string' || !/^[A-Za-z0-9_-]{32}$/.test(claim.ses)) return null;
+  const name = typeof claim.name === 'string' && claim.name ? claim.name.slice(0, 120) : null;
+  return { session: { user: { id: claim.id, email: claim.email, name, superadmin: true }, workspace: null, role: 'superadmin', products: [PRODUCT], readOnly: false, viewAs: null }, ses: claim.ses };
 }

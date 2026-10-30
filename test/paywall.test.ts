@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { createHandler } from '../src/web/server.ts';
 import { conversationFor, runTurn } from '../src/agent/loop.ts';
 import { entitlementClient, FRESH_MS, STALE_MS, storeAllowed } from '../src/billing/entitlement.ts';
 import { customer, INTERNAL_TOKEN, viewingAs } from './helpers.ts';
@@ -97,33 +99,67 @@ test('the kept answer: fresh for 5 minutes, standing 24 hours while accounts is 
   }
 });
 
-test('under /admin, accounts may vouch for the operator with a signed header instead of their cookie (PRA-SEC-004)', async () => {
+// accounts' side signs it: openfrequency-accounts src/web/admin-toran.js operatorAssertion, and its contract
+// docs/contracts/admin-toran-operator.json, whose example payload these cases are built from.
+const CONTRACT_EXAMPLE = { id: 1, email: 'admin@example.com', name: 'Admin', ses: 'Qm9vazEyMzQ1Njc4OTBhYmNkZWZnaGlq', exp: 1792832460000 };
+const sign = (claim: Record<string, unknown>, key = INTERNAL_TOKEN) => {
+  const payload = Buffer.from(JSON.stringify(claim)).toString('base64url');
+  return `${payload}.${createHmac('sha256', key).update(payload).digest('base64url')}`;
+};
+
+/** One request straight into the handler, from a socket address of the test's choosing. */
+function call(s: Awaited<ReturnType<typeof serve>>, { url, headers, remote }: { url: string; headers: Record<string, string>; remote: string }): Promise<{ status: number; location: string | null }> {
+  const handler = createHandler(s.app, { port: Number(new URL(s.base).port) });
+  const req = Object.assign(Readable.from([]), { method: 'GET', url, headers: { host: new URL(s.base).host, ...headers }, socket: { remoteAddress: remote } });
+  return new Promise((done) => {
+    let status = 0;
+    let location: string | null = null;
+    const res = {
+      writeHead(st: number, h: Record<string, string> = {}) {
+        status = st;
+        location = h.location ?? null;
+        return res;
+      },
+      setHeader() {},
+      end() {
+        done({ status, location });
+      },
+    };
+    handler(req as any, res as any);
+  });
+}
+
+test('under /admin, accounts vouches for the operator with X-OF-Operator instead of their cookie, exactly as its contract signs it (PRA-SEC-004)', async () => {
   const s = await serve();
   const ADMIN = { 'x-of-admin-prefix': '/admin/toran' };
-  const vouch = (claim: Record<string, unknown>, key = INTERNAL_TOKEN) => {
-    const body = Buffer.from(JSON.stringify(claim)).toString('base64url');
-    return `${body}.${createHmac('sha256', key).update(body).digest('base64url')}`;
-  };
   try {
     s.as('');
-    const good = vouch({ email: 'operator@example.test', name: 'operator', exp: Date.now() + 60_000 });
-    assert.equal((await s.get('/admin/toran/leads', { ...ADMIN, 'x-of-operator': good })).status, 200);
+    const good = sign({ ...CONTRACT_EXAMPLE, exp: Date.now() + 60_000 });
+    assert.equal((await s.get('/admin/toran/leads', { ...ADMIN, 'x-of-operator': good })).status, 200, 'the contract\'s payload, signed with our token, 60 seconds ahead');
     assert.equal((await s.get('/leads', { 'x-of-operator': good })).status, 303, 'only under the admin prefix');
-    const bad = [
-      vouch({ email: 'operator@example.test', exp: Date.now() - 1 }),
-      vouch({ email: 'operator@example.test', exp: Date.now() + 3_600_000 }),
-      vouch({ email: 'operator@example.test', exp: Date.now() + 60_000 }, 'x'.repeat(40)),
-      `${good}x`,
-      'nonsense',
+    const refused: [string, string][] = [
+      ['the contract\'s example as it stands: expired', sign(CONTRACT_EXAMPLE)],
+      ['too far ahead', sign({ ...CONTRACT_EXAMPLE, exp: Date.now() + 3_600_000 })],
+      ['a bad signature', sign({ ...CONTRACT_EXAMPLE, exp: Date.now() + 60_000 }, 'x'.repeat(40))],
+      ['a changed payload', `${Buffer.from(JSON.stringify({ ...CONTRACT_EXAMPLE, exp: Date.now() + 60_000 })).toString('base64url')}.${good.split('.')[1]}`],
+      ['no ses', sign({ ...CONTRACT_EXAMPLE, ses: undefined, exp: Date.now() + 60_000 })],
+      ['a ses that is not 32 base64url characters', sign({ ...CONTRACT_EXAMPLE, ses: 'short', exp: Date.now() + 60_000 })],
+      ['not a statement', 'nonsense'],
     ];
-    for (const b of bad) assert.equal((await s.get('/admin/toran/leads', { ...ADMIN, 'x-of-operator': b })).status, 303, b);
-    // A form under it carries the operator's own CSRF token.
+    for (const [why, h] of refused) assert.equal((await s.get('/admin/toran/leads', { ...ADMIN, 'x-of-operator': h })).status, 303, why);
+    // From a socket that is not this machine's, the same good header is no one's: sent to sign in.
+    const away = await call(s, { url: '/admin/toran/leads', headers: { ...ADMIN, 'x-of-operator': good }, remote: '10.0.0.5' });
+    assert.equal(away.status, 303);
+    assert.match(String(away.location), /\/login\?next=/);
+    assert.equal((await call(s, { url: '/admin/toran/leads', headers: { ...ADMIN, 'x-of-operator': good }, remote: '127.0.0.1' })).status, 200);
+    // The CSRF token comes from ses: the same session posts, another session's token does not.
     const html = await (await s.get('/admin/toran/settings', { ...ADMIN, 'x-of-operator': good })).text();
     const token = /name="_csrf" value="([^"]+)"/.exec(html)?.[1] || '';
     assert.ok(token);
-    const on = await s.post('/admin/toran/settings/dev', { _csrf: token, on: '1' }, { ...ADMIN, 'x-of-operator': good, origin: 'https://accounts.test' });
-    assert.equal(on.status, 303);
-    assert.equal((await s.post('/admin/toran/settings/dev', { _csrf: 'stale', on: '1' }, { ...ADMIN, 'x-of-operator': good, origin: 'https://accounts.test' })).status, 403);
+    const again = sign({ ...CONTRACT_EXAMPLE, exp: Date.now() + 60_000 });
+    assert.equal((await s.post('/admin/toran/settings/dev', { _csrf: token, on: '1' }, { ...ADMIN, 'x-of-operator': again, origin: 'https://accounts.test' })).status, 303);
+    const other = sign({ ...CONTRACT_EXAMPLE, ses: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', exp: Date.now() + 60_000 });
+    assert.equal((await s.post('/admin/toran/settings/dev', { _csrf: token, on: '1' }, { ...ADMIN, 'x-of-operator': other, origin: 'https://accounts.test' })).status, 403);
   } finally {
     await s.close();
   }

@@ -230,11 +230,11 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const ajax = req.headers['x-tn-ajax'] === '1';
       const json = (status: number, body: unknown) => send(req, res, status, JSON.stringify(body), 'application/json; charset=utf-8');
       // Under /admin, accounts vouches for the operator with a signed header instead of their cookie (accounts.ts
-      // operatorFrom, PRA-SEC-004); the CSRF token is then the operator's, since there is no session id to derive it from.
+      // operatorFrom, PRA-SEC-004); the CSRF token then comes from its ses, stable for one accounts session.
       const vouched = viaAdmin ? operatorFrom(req.headers['x-of-operator'], env) : null;
       const sid = vouched ? null : sessionIdFrom(jar, { https: secure });
-      const who = vouched ? { status: 200, body: vouched, cached: false } : await accounts.whoIs(sid, { live: method !== 'GET' });
-      const basis = sid || (vouched ? `operator:${vouched.user.email}` : null);
+      const who = vouched ? { status: 200, body: vouched.session, cached: false } : await accounts.whoIs(sid, { live: method !== 'GET' });
+      const basis = sid || (vouched ? `operator:${vouched.ses}` : null);
       if (who.status !== 200 || !basis) {
         const kind = refusal(who.status, String(who.body?.error || ''));
         const here = viaAdmin && adminOrigin ? `${adminOrigin}${method === 'GET' ? req.url || ADMIN : ADMIN}` : `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`;

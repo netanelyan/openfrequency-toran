@@ -79,9 +79,12 @@ Toran has no login of its own. A browser without a session goes to
   table, and lets the last answer stand 24 hours while accounts does not answer. A workspace not allowed sees the pay
   page (402); its customers' messages get no model call and go to the owner as handoffs; its automatic messages are
   skipped as `unpaid`. The operator, view-as and stores in no workspace are never asked about.
-- Under `/admin/toran`, accounts may send the signed `x-of-operator` header (HMAC with `OF_INTERNAL_TOKEN`, at most 2
-  minutes ahead) instead of forwarding the superadmin's cookie; Toran takes it only from this machine under the admin
-  prefix. A forwarded cookie still works, so either side can be deployed first.
+- Under `/admin/toran`, accounts sends `X-OF-Operator: <payload>.<signature>` instead of the superadmin's cookie
+  (accounts' `docs/contracts/admin-toran-operator.json`): the payload is base64url JSON `{ id, email, name, ses, exp }`,
+  the signature base64url HMAC-SHA256 of the payload under `OF_INTERNAL_TOKEN`, `exp` 60 seconds ahead in milliseconds.
+  Toran takes it only from a loopback socket under the admin prefix, compares the signature in constant time, refuses
+  it expired or more than 2 minutes ahead, and derives its CSRF tokens from `ses`. A forwarded cookie still works, so
+  either side can be deployed first.
 
 ## The demo number (Twilio)
 
