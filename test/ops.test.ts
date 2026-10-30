@@ -77,8 +77,14 @@ test('who to write to today, in order: tried the demo, asked on the website, the
     assert.deepEqual(q.noContact.map((s) => s.id), [none], 'a page with nothing to send it to is listed apart');
     const askedItem = q.items[2];
     assert.equal(askedItem.direct, true, 'asked two hours ago: it can go out on the demo number');
-    assert.equal(askedItem.target.href, `https://wa.me/${PHONE}`);
     assert.match(askedItem.message!, /הדמו של תורן ל־asked מוכן/);
+    // Each link opens the chat or the mail with the card's message already written in it.
+    assert.equal(askedItem.target.href, `https://wa.me/${PHONE}?text=${encodeURIComponent(askedItem.message!)}`);
+    for (const i of q.items.filter((x) => x.target.kind === 'whatsapp')) assert.equal(new URL(i.target.href!).searchParams.get('text'), i.message, i.key);
+    const mail = new URL(q.items[3].target.href!);
+    assert.equal(`${mail.protocol}${mail.pathname}`, 'mailto:owner@opened.example');
+    assert.deepEqual([mail.searchParams.get('subject'), mail.searchParams.get('body')], ['תורן ל־opened', q.items[3].message]);
+    assert.doesNotMatch(q.items[3].target.href!, /\+/, 'spaces as %20, which mail programs read');
     assert.match(q.items[0].message!, /ראינו שניסיתם את הדמו/, 'tried the demo: the question takes the reminder\'s place');
     assert.match(q.items[1].message!, /ביקשתם באתר דמו של תדר[^]*https:\/\/teder\.example\/s\/tb-x1/);
     assert.equal(q.items[3].target.kind, 'email');

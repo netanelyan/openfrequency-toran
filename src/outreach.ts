@@ -37,9 +37,16 @@ ${o.url}
 /** When the one reminder is due: four days after the first message, never on Shabbat. */
 export const followupDue = (sentAt: number) => notOnShabbat(sentAt + FOLLOWUP_DAYS * DAY);
 
-/** Where the owner sends it: the store's WhatsApp, else its email. The link opens the chat or the mail; the text is pasted by hand. */
-export function contactTarget(s: { contact_whatsapp: string | null; contact_email: string | null; name?: string | null }): { kind: 'whatsapp' | 'email' | null; href: string | null; label: string } {
-  if (s.contact_whatsapp) return { kind: 'whatsapp', href: `https://wa.me/${s.contact_whatsapp}`, label: 'להעתיק ולפתוח וואטסאפ' };
-  if (s.contact_email) return { kind: 'email', href: `mailto:${s.contact_email}?subject=${encodeURIComponent(`תורן ${le(s.name || 'החנות')}`)}`, label: 'להעתיק ולפתוח מייל' };
+/** A wa.me link to a number, with `text` written in the chat when there is one. */
+export const waLink = (phone: string, text?: string | null) => `https://wa.me/${phone}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
+
+/**
+ * Where the owner sends it: the store's WhatsApp, else its email. The link opens the chat or the mail, with `message`
+ * already written in it when one is given (wa.me's text, mailto's body), so it works without script too; the page
+ * also copies it.
+ */
+export function contactTarget(s: { contact_whatsapp: string | null; contact_email: string | null; name?: string | null }, message?: string | null): { kind: 'whatsapp' | 'email' | null; href: string | null; label: string } {
+  if (s.contact_whatsapp) return { kind: 'whatsapp', href: waLink(s.contact_whatsapp, message), label: 'להעתיק ולפתוח וואטסאפ' };
+  if (s.contact_email) return { kind: 'email', href: `mailto:${s.contact_email}?subject=${encodeURIComponent(`תורן ${le(s.name || 'החנות')}`)}${message ? `&body=${encodeURIComponent(message)}` : ''}`, label: 'להעתיק ולפתוח מייל' };
   return { kind: null, href: null, label: 'להעתיק' };
 }

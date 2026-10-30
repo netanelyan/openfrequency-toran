@@ -298,7 +298,7 @@ test("past the 23 hours a Teder demo is not sent by itself: it waits on the oper
     const item = (await queue(app)).items.find((i) => i.key === 'teder:40')!;
     assert.equal(item.reason, 'asked_teder');
     assert.equal(item.direct, false);
-    assert.equal(item.target.href, `https://wa.me/${P1}`, 'to the number that wrote');
+    assert.equal(item.target.href, `https://wa.me/${P1}?text=${encodeURIComponent(item.message!)}`, 'to the number that wrote, the message written in');
     assert.match(item.message!, /^היי, כאן OpenFrequency\. ביקשתם באתר דמו של תדר/);
   } finally {
     await teder.close();

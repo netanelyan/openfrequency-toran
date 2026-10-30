@@ -3,13 +3,14 @@ import { HOUR, now } from '../core/clock.ts';
 import { displayName } from '../ingest/brand.ts';
 import { INGESTIBLE_HE, canIngest } from '../ingest/catalogue.ts';
 import { PLATFORM_HE, shortDate } from '../web/ui.ts';
-import { contactTarget, firstMessage, pitchUrl, reminderMessage } from '../outreach.ts';
+import { contactTarget, firstMessage, pitchUrl, reminderMessage, waLink } from '../outreach.ts';
 import { reconnectUrl, WARN_DAYS } from '../channels/waStore.ts';
 import { demoLine } from '../channels/lines.ts';
 import { reconnectWhatsapp, requestedLink, requestedLinkLater, tederFirst, tederReminder, triedDemo } from './messages.ts';
 
 // Who the operator writes to today, about Toran or Teder, most urgent first (docs/operator.md section 4), and who is
-// already in a conversation. Every entry carries its message and where to send it. Nothing here sends anything,
+// already in a conversation. Every entry carries its message and where to send it: a wa.me or mailto: link with the
+// message already written in it, which the page also copies. Nothing here sends anything,
 // except the one case Toran promised: the link to a demo someone asked for, on the demo number where they asked,
 // inside its 24 hours (ops/actions.ts).
 //
@@ -55,7 +56,8 @@ const open = (t = '') => `${t}lost_at IS NULL AND ${t}replied_at IS NULL AND (${
  */
 const live = (t = '') => `${t}status NOT IN ('skipped', 'pilot', 'paid') AND ${t}taken_down_at IS NULL AND ${t}workspace_id IS NULL AND ${open(t)}`;
 const storeName = (s: any) => displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
-const waTarget = (phone: string | null) => (phone ? { kind: 'whatsapp' as const, href: `https://wa.me/${phone}`, label: 'להעתיק ולפתוח וואטסאפ' } : { kind: null, href: null, label: 'להעתיק' });
+/** A number's chat, with the message written in it when there is one (outreach.ts contactTarget does the same). */
+const waTarget = (phone: string | null, message?: string | null): Item['target'] => (phone ? { kind: 'whatsapp', href: waLink(phone, message), label: 'להעתיק ולפתוח וואטסאפ' } : { kind: null, href: null, label: 'להעתיק' });
 const DIRECT_HOURS = 23;
 
 /**
@@ -121,12 +123,14 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
     const name = storeName(s);
     const ended = s.wa_status === 'reconnect';
     const ends = ended ? null : shortDate(s.token_expires_at);
-    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'reconnect', rank: 110, name, domain: s.domain, why: ended ? 'החיבור של הוואטסאפ הסתיים, תורן לא עונה בו' : `צריך לחבר מחדש את הוואטסאפ עד ${ends}`, message: reconnectWhatsapp({ storeName: name, url: reconnectUrl(app.env, s.id), ends }), target: contactTarget(s), direct: false, mark: 'sent', page: reconnectUrl(app.env, s.id), at: s.token_expires_at });
+    const message = reconnectWhatsapp({ storeName: name, url: reconnectUrl(app.env, s.id), ends });
+    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'reconnect', rank: 110, name, domain: s.domain, why: ended ? 'החיבור של הוואטסאפ הסתיים, תורן לא עונה בו' : `צריך לחבר מחדש את הוואטסאפ עד ${ends}`, message, target: contactTarget(s, message), direct: false, mark: 'sent', page: reconnectUrl(app.env, s.id), at: s.token_expires_at });
   }
 
   for (const s of await db.query<any>(`SELECT * FROM stores WHERE ${base} AND demo_started_at IS NOT NULL AND followup_sent_at IS NULL ORDER BY demo_started_at DESC`)) {
     const name = storeName(s);
-    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'tried_demo', rank: 100, name, domain: s.domain, why: 'ניסו את הדמו', message: triedDemo({ storeName: name }), target: contactTarget(s), direct: false, mark: 'reminded', page: pitchUrl(app.env, s.slug), at: s.demo_started_at });
+    const message = triedDemo({ storeName: name });
+    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'tried_demo', rank: 100, name, domain: s.domain, why: 'ניסו את הדמו', message, target: contactTarget(s, message), direct: false, mark: 'reminded', page: pitchUrl(app.env, s.slug), at: s.demo_started_at });
   }
 
   // Asked on the website: the request was claimed from their number, so the page goes to that number.
@@ -141,12 +145,14 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
     const name = storeName(s);
     const url = pitchUrl(app.env, s.slug);
     const direct = connected && now() - new Date(s.req_at).getTime() < DIRECT_HOURS * HOUR;
-    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'asked_toran', rank: 85, name, domain: s.domain, why: 'ביקשו דמו באתר, הדף מוכן', message: direct ? requestedLink({ storeName: name, url }) : requestedLinkLater({ storeName: name, url }), target: waTarget(s.req_phone || s.contact_whatsapp), direct, mark: 'sent', page: url, at: s.req_at });
+    const message = direct ? requestedLink({ storeName: name, url }) : requestedLinkLater({ storeName: name, url });
+    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'asked_toran', rank: 85, name, domain: s.domain, why: 'ביקשו דמו באתר, הדף מוכן', message, target: waTarget(s.req_phone || s.contact_whatsapp, message), direct, mark: 'sent', page: url, at: s.req_at });
   }
 
   for (const s of await db.query<any>(`SELECT * FROM stores WHERE ${base} AND sent_at IS NOT NULL AND followup_sent_at IS NULL AND followup_due_at <= now() AND demo_started_at IS NULL ORDER BY opened_at IS NULL, followup_due_at`)) {
     const name = storeName(s);
-    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'reminder', rank: s.opened_at ? 70 : 60, name, domain: s.domain, why: s.opened_at ? 'התזכורת, והדף נפתח' : 'התזכורת, הדף עוד לא נפתח', message: reminderMessage({ storeName: name, url: pitchUrl(app.env, s.slug) }), target: contactTarget(s), direct: false, mark: 'reminded', page: pitchUrl(app.env, s.slug), at: s.followup_due_at });
+    const message = reminderMessage({ storeName: name, url: pitchUrl(app.env, s.slug) });
+    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'reminder', rank: s.opened_at ? 70 : 60, name, domain: s.domain, why: s.opened_at ? 'התזכורת, והדף נפתח' : 'התזכורת, הדף עוד לא נפתח', message, target: contactTarget(s, message), direct: false, mark: 'reminded', page: pitchUrl(app.env, s.slug), at: s.followup_due_at });
   }
 
   const ready = await db.query<any>(`SELECT * FROM stores WHERE ${base} AND approved_at IS NOT NULL AND page_built_at IS NOT NULL AND sent_at IS NULL ORDER BY score DESC`);
@@ -158,17 +164,20 @@ export async function queue(app: App): Promise<{ items: Item[]; noContact: any[]
       continue;
     }
     const name = storeName(s);
-    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'first_send', rank: 40 + Math.min(10, Math.round((Number(s.score) || 0) / 10)), name, domain: s.domain, why: `מוכן לשליחה, ציון ${s.score}`, message: firstMessage({ storeName: name, url: pitchUrl(app.env, s.slug) }), target: contactTarget(s), direct: false, mark: 'sent', page: pitchUrl(app.env, s.slug), at: s.approved_at });
+    const message = firstMessage({ storeName: name, url: pitchUrl(app.env, s.slug) });
+    items.push({ key: `toran:${s.id}`, product: 'toran', id: String(s.id), reason: 'first_send', rank: 40 + Math.min(10, Math.round((Number(s.score) || 0) / 10)), name, domain: s.domain, why: `מוכן לשליחה, ציון ${s.score}`, message, target: contactTarget(s, message), direct: false, mark: 'sent', page: pitchUrl(app.env, s.slug), at: s.approved_at });
   }
 
   const tbase = `removed_at IS NULL AND won_at IS NULL AND ${open()}`;
   for (const d of await db.query<any>(`SELECT * FROM teder_leads WHERE ${tbase} AND page_url IS NOT NULL AND sent_at IS NULL ORDER BY approved_at`)) {
     const name = d.name || d.domain;
-    items.push({ key: `teder:${d.id}`, product: 'teder', id: String(d.id), reason: 'asked_teder', rank: 85, name, domain: d.domain, why: 'ביקשו דמו של תדר באתר, המצגת מוכנה', message: tederFirst({ storeName: name, url: d.page_url }), target: waTarget(d.whatsapp), direct: false, mark: 'sent', page: d.page_url, at: d.approved_at });
+    const message = tederFirst({ storeName: name, url: d.page_url });
+    items.push({ key: `teder:${d.id}`, product: 'teder', id: String(d.id), reason: 'asked_teder', rank: 85, name, domain: d.domain, why: 'ביקשו דמו של תדר באתר, המצגת מוכנה', message, target: waTarget(d.whatsapp, message), direct: false, mark: 'sent', page: d.page_url, at: d.approved_at });
   }
   for (const d of await db.query<any>(`SELECT * FROM teder_leads WHERE ${tbase} AND page_url IS NOT NULL AND sent_at IS NOT NULL AND reminded_at IS NULL AND reminder_due_at <= now() ORDER BY opens = 0, reminder_due_at`)) {
     const name = d.name || d.domain;
-    items.push({ key: `teder:${d.id}`, product: 'teder', id: String(d.id), reason: 'teder_reminder', rank: d.opens ? 65 : 55, name, domain: d.domain, why: d.opens ? `התזכורת, המצגת נפתחה ${d.opens} פעמים` : 'התזכורת, המצגת עוד לא נפתחה', message: tederReminder({ storeName: name, url: d.page_url }), target: waTarget(d.whatsapp), direct: false, mark: 'reminded', page: d.page_url, at: d.reminder_due_at });
+    const message = tederReminder({ storeName: name, url: d.page_url });
+    items.push({ key: `teder:${d.id}`, product: 'teder', id: String(d.id), reason: 'teder_reminder', rank: d.opens ? 65 : 55, name, domain: d.domain, why: d.opens ? `התזכורת, המצגת נפתחה ${d.opens} פעמים` : 'התזכורת, המצגת עוד לא נפתחה', message, target: waTarget(d.whatsapp, message), direct: false, mark: 'reminded', page: d.page_url, at: d.reminder_due_at });
   }
 
   for (const c of await conversations(app)) {

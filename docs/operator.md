@@ -160,6 +160,8 @@ loopback, no `X-Forwarded-For`). Accounts reaches Toran at `OF_TORAN_INTERNAL` (
   ends within 10 days or has ended (docs/connecting-channels.md, step 2). Its message asks them to, with the link, and
   its `page` is the store's WhatsApp page. Its `mark` is sent: on such a store, "שלחתי" records that they were told,
   and the card comes back after three days while the number still waits.
+- `target.href` opens the chat (`https://wa.me/<number>?text=<the message>`) or the mail (`mailto:<address>?subject=...&body=<the
+  message>`) with the card's message already written in it; a card with no message (a next step) opens the chat alone.
 - `mark` says what "שלחתי" records: sent, reminded, or next (a next step: no message; its card offers the next-step
   form).
 - `direct` means the message can go out now from the demo number (the `direct` action): inside the 23 hours, and
