@@ -189,3 +189,49 @@ link arrives signed in). Teder answers the same contract. Toran's is `src/setup.
 
 Until the store exists, every step after it is `todo` with `href: null` and the detail "אחרי שהחנות מוכנה". A
 workspace Toran has never heard of is a brand-new one and answers that way too: it is never an error.
+
+## 6. When the message path fails: the queue, alerts, caps, retention, deletion
+
+What keeps a customer's message from being lost or delayed without anyone knowing (the readiness audit's PRA-BE-001 to
+-009, PRA-DB-004 to -007, PRA-AI-004 and -007):
+
+- **The worker's loops.** `TORAN_MESSAGE_LOOPS` (4) take customers' messages (`wa_inbound`, `mail_inbound`,
+  `dm_inbound`, and the owners' own `wa_echo` and `dm_echo`) and nothing else; `TORAN_BACKGROUND_LOOPS` (1) take the
+  rest (ingest, re-scrapes, the automatic messages). A customer's second message is not taken while their first runs
+  (src/jobs/queue.ts `claim`), so no loop waits on a conversation. A running job's lease is three minutes and is
+  refreshed every minute; at start, jobs another boot left running go back to the queue at once. More loops answer
+  more people at once but hold more turns in memory: Toran runs at its `MemoryMax=1100M` (SERVER-FACTS.md), so lower
+  `TORAN_MESSAGE_LOOPS` if memory is short. **UNVERIFIED:** the memory cost of 4 message loops against 2 before; settle
+  it with `systemctl show toran -p MemoryPeak` after a busy day.
+- **A turn's deadline.** 60 seconds (`TORAN_TURN_DEADLINE_MS`); each model call gets what is left, at most 30 seconds,
+  and one retry. Past it the customer gets the "checking" line and the owner a handoff.
+- **A send that fails** is retried by the job: the answer already written is sent again, only its parts that did not go
+  out, with no model call, inside the reply window. **UNVERIFIED:** a send that timed out after the provider accepted
+  it is sent again (no idempotency key goes to Twilio, Meta or Resend); a customer may then get one part twice.
+- **A message that fails every attempt** goes into its conversation with a handoff ("תורן לא הצליח לענות להודעה
+  הזו..."), the operator hears of it, and it is listed on **the queue page**, `/admin/toran/queue` (Toran's `/queue`,
+  the operator's only): what waits, how long the oldest customer message has waited, and the failed jobs of the last
+  14 days, each with "להריץ שוב". `GET /internal/ops` carries the same counts as `jobs`.
+- **Alerts** (src/ops/alert.ts): a lost message, a customer message waiting over 5 minutes, a store at 80% or past its
+  cap, the cap over every store, a store spending over `TORAN_STORE_HOUR_ALERT_USD` ($5) in an hour, a store past
+  `TORAN_STORE_TURNS_PER_HOUR` (200) answers or `TORAN_NEW_SENDERS_PER_HOUR` (30) new email senders in an hour. Each
+  goes to the log, and to `TORAN_ALERT_CMD` or `/usr/local/bin/of-alert` when it exists. **UNVERIFIED:** of-alert is
+  not on the server as of 2026-10-29 (SERVER-FACTS.md); check with `ls -l /usr/local/bin/of-alert`. Until it is, an
+  alert is a log line only (`journalctl -u toran | grep '\[alert\]'`).
+- **Spend caps** (src/agent/spend.ts): each store's month against its plan's conversations, twice, at $0.25 each
+  ($150 for 300, $750 for 1,500; the operator's `stores.config.capUsd` replaces it), beside `TORAN_MONTHLY_CAP_USD`
+  over every store. Past the store's cap only that store hands off.
+- **Retention** (src/jobs/retention.ts), once an Israel day, one `retention` event with its counts:
+  - a store's customers' conversations, messages, files, customers' contact details, automatic messages' log and
+    events: deleted 30 days after its service stopped (no channel on, its page taken down, or `markServiceStopped`
+    from the paywall); its opt-outs stay
+  - leads, 6 months after the last contact: website demo requests, Teder's demos as Toran keeps them (unless won),
+    chats on the demo number with a store that is no customer's
+  - finished jobs' payloads emptied after 7 days, finished and failed jobs deleted after 30
+  - the automatic messages' log 90 days after it was written, events after 13 months, the owner line's duplicate
+    guard after 30 days; conversations silent for 14 days are closed, and the tracking numbers and links an order
+    lookup gave are taken out of them
+  - The 90 days and 13 months are Toran's own; the privacy page (openfrequency-web) states only the leads' 6 months
+    and the conversations' 30 days, so it should state these too.
+- **Deleting a workspace**: `POST /internal/workspaces/<id>/delete` (src/erase.ts), the same checks as the other
+  internal routes; 200 with what it deleted, 200 also when nothing was there.
