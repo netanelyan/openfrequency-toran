@@ -1,0 +1,70 @@
+# /etc/systemd/system/toran.service
+#
+# Toran in one process on 127.0.0.1:4710: the dashboard, the pitch pages, the webhooks and the worker. Caddy is in
+# front of it (deploy/Caddyfile.example), Postgres runs in Docker beside it (deploy/docker-compose.yml). The code runs
+# from /opt/toran/current, a release folder deploy/deploy.sh switches; the service writes only to /opt/toran/private.
+#
+#   sudo useradd --system --no-create-home --home-dir /opt/toran/private --shell /usr/sbin/nologin toran
+#   sudo cp deploy/toran.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable toran
+#
+# Keys go in /opt/toran/private/.env, mode 600, owned by toran; PORT=4710 is set there too (checked on the server
+# 2026-10-29), and the listen address defaults to 127.0.0.1 (src/web/server.ts). On a restart that finds a migration
+# not applied it refuses to start (TORAN_MIGRATE=check): migrations are the deploy's own step, after a backup
+# (docs/deploy.md).
+#
+# What changes against the unit installed on 2026-10-29 (user toran, /opt/toran, the same ExecStart, NODE_ENV,
+# TORAN_ENV, TORAN_HOME, MemoryMax=1100M, no After=docker.service, no OnFailure): the working directory becomes the
+# release link, After/Wants docker.service, TORAN_MIGRATE=check, OnFailure, the memory numbers below, and the
+# hardening. Its other lines were not read: `systemctl cat toran` and diff before replacing it.
+
+[Unit]
+Description=Toran: the dashboard, the pitch pages, the webhooks and the worker
+# Its database is a Docker container: after a reboot, start once Docker is up (and src/db/index.ts waits up to a
+# minute more for Postgres itself).
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+# A crash loop (5 failed starts in 10 minutes) leaves the unit failed, and the operator hears of it (openfrequency-ops).
+StartLimitIntervalSec=600
+StartLimitBurst=5
+OnFailure=of-alert@%n.service
+
+[Service]
+Type=simple
+User=toran
+Group=toran
+WorkingDirectory=/opt/toran/current
+Environment=NODE_ENV=production
+Environment=TORAN_ENV=prod
+Environment=TORAN_HOME=/opt/toran/private
+Environment=TORAN_MIGRATE=check
+ExecStart=/opt/node24/bin/node scripts/web.ts --worker
+Restart=on-failure
+RestartSec=5
+# Time for the worker to finish the job in hand and the database to close (scripts/web.ts, on SIGTERM).
+TimeoutStopSec=30
+
+# Memory on a shared 4 GB server (3.9 GB and 2 GB of swap): past MemoryHigh the kernel reclaims hard, past MemoryMax
+# the process is killed and restarted, and under pressure from outside Toran and its database are the last to go.
+# THE OWNER'S DECISION, proposed here: the unit today has MemoryMax=1100M; Toran was killed for memory at that cap on
+# 2026-10-25 08:38 UTC, its peak per run from 10-23 to 10-25 was 0.83 to 1.0 GB, and the run since 2026-10-27 sits at
+# the cap. 1200M before reclaiming hard and 1400M before a kill give it room; keep 1100M if the server cannot spare it.
+MemoryHigh=1200M
+MemoryMax=1400M
+OOMScoreAdjust=-500
+
+# Hardening, as Teder's: the process writes only to its private folder. New for Toran: after installing, look for
+# EACCES or EROFS in `journalctl -u toran` (anything it writes outside private/ would show there).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/toran/private
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

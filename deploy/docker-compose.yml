@@ -1,5 +1,5 @@
-# Toran's database on the VPS: Postgres with pgvector, and nothing else. The app runs on the host under pm2
-# (deploy/ecosystem.config.cjs), and the host's Caddy is in front of it (deploy/Caddyfile.example).
+# Toran's database on the VPS: Postgres with pgvector, and nothing else. The app runs on the host under systemd
+# (deploy/toran.service), and the host's Caddy is in front of it (deploy/Caddyfile.example).
 #
 #   export TORAN_DB_PASSWORD=<a long random password>
 #   docker compose -f deploy/docker-compose.yml up -d
@@ -9,11 +9,23 @@
 #   DATABASE_URL=postgres://toran:<the password>@127.0.0.1:5433/toran
 #
 # Not run on the development machine (it has no Docker); see docs/deploy.md.
+#
+# Memory: the server is shared (4 GB with Teder, accounts and other sites), so the database has a ceiling of its own
+# (Postgres's defaults, shared_buffers 128 MB, fit well under it). Changing it recreates the container: `up -d` in a
+# quiet minute, the data volume stays. Backups: deploy/toran-backup.sh, nightly (docs/restore.md).
+#
+# The image is the tag. CI tests on the same image pinned by digest (.github/workflows/test.yml); to pin the server to
+# the image it runs now, read its digest with
+#   docker inspect --format '{{index .RepoDigests 0}}' $(docker inspect --format '{{.Image}}' toran-db-1)
+# and write `image: pgvector/pgvector@sha256:<that>` below: the same bytes, so `up -d` recreates nothing.
 
 services:
   db:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
+    mem_limit: 512m
+    # Under memory pressure from elsewhere on the server, the kernel kills others first (Teder before Toran).
+    oom_score_adj: -500
     environment:
       POSTGRES_DB: toran
       POSTGRES_USER: toran

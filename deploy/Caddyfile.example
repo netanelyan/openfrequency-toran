@@ -2,7 +2,7 @@
 # block and don't change the other blocks, then:
 #   sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && sudo systemctl reload caddy
 #
-# The app is the pm2 job "toran" on 127.0.0.1:4710 (deploy/ecosystem.config.cjs). One name is enough: with
+# The app is the systemd service "toran" on 127.0.0.1:4710 (deploy/toran.service). One name is enough: with
 # PUBLIC_HOST=toran.openfrequency.co.il and PUBLIC_BASE_URL=https://toran.openfrequency.co.il in private/.env, the
 # dashboard, the pitch pages and the webhooks are all served on it. A second name for the pitch pages would need a
 # block like this one and its own PUBLIC_BASE_URL.

@@ -1,0 +1,13 @@
+# /etc/systemd/system/toran-backup.timer: Toran's backup every night at 03:45 on the server's clock (UTC, as the timer
+# installed today runs), after Teder's and accounts' at 03:30; one missed while the server was off runs when it is
+# back (Persistent).
+
+[Unit]
+Description=Toran: the nightly backup
+
+[Timer]
+OnCalendar=*-*-* 03:45:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

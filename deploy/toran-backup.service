@@ -1,0 +1,20 @@
+# /etc/systemd/system/toran-backup.service: one backup of Toran's database (and its customers' files), run by
+# toran-backup.timer. A backup that fails, or that pg_restore cannot list, fails the unit, and of-alert@ tells the
+# operator (the server's alert unit: openfrequency-ops).
+#
+#   sudo install -m 755 deploy/toran-backup.sh /usr/local/bin/toran-backup
+#   sudo cp deploy/toran-backup.service deploy/toran-backup.timer /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl enable --now toran-backup.timer
+#   sudo systemctl start toran-backup.service && ls -l /var/backups/toran      # one now, to see it work
+
+[Unit]
+Description=Toran: back up the database (pg_dump -Fc, checked with pg_restore --list) and the customers' files
+Requires=docker.service
+After=docker.service
+OnFailure=of-alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/toran-backup
+Nice=10
+IOSchedulingClass=idle
