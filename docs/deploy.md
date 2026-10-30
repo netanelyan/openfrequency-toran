@@ -74,6 +74,14 @@ Toran has no login of its own. A browser without a session goes to
 - A page reuses accounts' answer for up to 60 seconds; every POST asks afresh. View-as is read-only.
 - Accounts down or misconfigured: an error page, and nobody gets in. The pitch pages, the webhook and `/healthz`
   never ask accounts.
+- The paywall (`src/billing/entitlement.ts`): for a customer's workspace Toran also asks accounts'
+  `GET /internal/entitlement?workspace=<id>&product=toran` (same token), keeps the answer 5 minutes in the settings
+  table, and lets the last answer stand 24 hours while accounts does not answer. A workspace not allowed sees the pay
+  page (402); its customers' messages get no model call and go to the owner as handoffs; its automatic messages are
+  skipped as `unpaid`. The operator, view-as and stores in no workspace are never asked about.
+- Under `/admin/toran`, accounts may send the signed `x-of-operator` header (HMAC with `OF_INTERNAL_TOKEN`, at most 2
+  minutes ahead) instead of forwarding the superadmin's cookie; Toran takes it only from this machine under the admin
+  prefix. A forwarded cookie still works, so either side can be deployed first.
 
 ## The demo number (Twilio)
 

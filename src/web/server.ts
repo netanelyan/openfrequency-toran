@@ -7,7 +7,7 @@ import { BRAND_DIR, brandCss, ICON_FILES, MANIFEST } from '../brand.ts';
 import type { App } from '../app.ts';
 import { audit } from '../db/log.ts';
 import { clientIp, cookies, csrfFor, csrfOk, isHttps, sessionSecret } from './auth.ts';
-import { accountsClient, accountsLinks, ADMIN, refusal, sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
+import { accountsClient, accountsLinks, ADMIN, operatorFrom, refusal, sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
 import { ownsConversation, ownsJob, ownsStore, scopeOf, type Scope } from './workspace.ts';
 import type { PageCtx } from './ui.ts';
 import { notFoundPage, refusalPage } from './pages/basic.ts';
@@ -16,6 +16,7 @@ import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
 import { boundaryOf, parseMultipart, type Upload } from './multipart.ts';
 import { MAX_BYTES } from '../channels/files.ts';
+import { entitlementOf } from '../billing/entitlement.ts';
 
 // The website: the owner's dashboard, the public pitch pages, and the WhatsApp webhook,
 // in one process. It listens on 127.0.0.1 (or the container's interface behind Caddy).
@@ -228,9 +229,13 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const jar = cookies(req);
       const ajax = req.headers['x-tn-ajax'] === '1';
       const json = (status: number, body: unknown) => send(req, res, status, JSON.stringify(body), 'application/json; charset=utf-8');
-      const sid = sessionIdFrom(jar, { https: secure });
-      const who = await accounts.whoIs(sid, { live: method !== 'GET' });
-      if (who.status !== 200 || !sid) {
+      // Under /admin, accounts vouches for the operator with a signed header instead of their cookie (accounts.ts
+      // operatorFrom, PRA-SEC-004); the CSRF token is then the operator's, since there is no session id to derive it from.
+      const vouched = viaAdmin ? operatorFrom(req.headers['x-of-operator'], env) : null;
+      const sid = vouched ? null : sessionIdFrom(jar, { https: secure });
+      const who = vouched ? { status: 200, body: vouched, cached: false } : await accounts.whoIs(sid, { live: method !== 'GET' });
+      const basis = sid || (vouched ? `operator:${vouched.user.email}` : null);
+      if (who.status !== 200 || !basis) {
         const kind = refusal(who.status, String(who.body?.error || ''));
         const here = viaAdmin && adminOrigin ? `${adminOrigin}${method === 'GET' ? req.url || ADMIN : ADMIN}` : `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`;
         if (kind === 'login') {
@@ -252,8 +257,19 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
         if (method === 'GET') return reply(req, res, { redirect: there });
         return ajax ? json(409, { ok: false, message: 'הניהול של תורן עבר ל־/admin.', redirect: there }) : send(req, res, 409, 'the operator manages Toran at /admin/toran', 'text/plain; charset=utf-8');
       }
+      // ---- the paywall (billing/entitlement.ts, PRA-SEC-002): a customer whose workspace has not paid for Toran gets the
+      // pay page, and posts nothing. The operator, and the operator viewing as the customer, are never asked about.
+      if (!scope.operator && !session.viewAs && session.workspace) {
+        const ent = await entitlementOf(app).check(session.workspace.id);
+        if (!ent.allowed) {
+          const kind = ent.known ? 'unpaid' : 'unchecked';
+          const status = kind === 'unpaid' ? 402 : 503;
+          if (method !== 'GET' && ajax) return json(status, { ok: false, message: kind === 'unpaid' ? 'התשלום על תורן לא פעיל, אז שום דבר לא נשמר.' : 'אי אפשר לבדוק את התשלום כרגע, אז שום דבר לא נשמר.' });
+          return send(req, res, status, refusalPage(kind, kind === 'unpaid' ? links.home : `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`), 'text/html; charset=utf-8');
+        }
+      }
       const user = { id: session.user.id, name: String(session.user.name || session.user.email), role: session.role, email: session.user.email };
-      const csrf = csrfFor(sid, secret);
+      const csrf = csrfFor(basis, secret);
       const setCookies: string[] = [];
       const flash = jar.tn_flash || null;
       if (flash) setCookies.push('tn_flash=; Path=/; Max-Age=0; SameSite=Strict');
@@ -287,7 +303,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
           form = parsed.fields;
           files = parsed.files;
         } else form = Object.fromEntries(new URLSearchParams(await readBody(req)));
-        if (!csrfOk(form._csrf, sid, secret)) return ajax ? json(403, { ok: false, message: 'הדף ישן. צריך לרענן אותו.' }) : send(req, res, 403, 'stale page, reload it', 'text/plain; charset=utf-8');
+        if (!csrfOk(form._csrf, basis, secret)) return ajax ? json(403, { ok: false, message: 'הדף ישן. צריך לרענן אותו.' }) : send(req, res, 403, 'stale page, reload it', 'text/plain; charset=utf-8');
         if (p === '/settings/dev') {
           const on = form.on === '1';
           const c = `tn_dev=${on ? '1' : ''}; Path=/; Max-Age=${on ? 31536000 : 0}; SameSite=Strict; HttpOnly${secure ? '; Secure' : ''}`;

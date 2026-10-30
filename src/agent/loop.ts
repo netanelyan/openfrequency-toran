@@ -8,6 +8,7 @@ import { DEMO_NOTE, stripForgedContext, systemFor, type StoreForPrompt } from '.
 import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
 import { buildAllow, checkingLine, guardReply, type Redaction } from './guard.ts';
 import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
+import { storeAllowed } from '../billing/entitlement.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
@@ -156,8 +157,14 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // The monthly cap on paid API spend (TORAN_MONTHLY_CAP_USD): past it, no model call is made; the customer gets the
   // honest "checking" line and the owner a handoff. The subscription (claude-cli) costs nothing per call and is not capped.
   const cap = Number(app.env.TORAN_MONTHLY_CAP_USD) || 0;
-  const capped = cap > 0 && app.llm.backend === 'api' && Number((await db.one<{ usd: number }>("SELECT COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE at >= date_trunc('month', now())"))?.usd) >= cap;
-  if (capped) {
+  // ---- the paywall (billing/entitlement.ts, PRA-BE-007): a store whose workspace accounts says has not paid for Toran
+  // is answered as past the cap, with no model call, and the owner gets the message as a handoff.
+  const unpaid = !(await storeAllowed(app, store.id));
+  const capped = unpaid || (cap > 0 && app.llm.backend === 'api' && Number((await db.one<{ usd: number }>("SELECT COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE at >= date_trunc('month', now())"))?.usd) >= cap);
+  if (unpaid) {
+    handoff = { reason: 'other', summary: `Toran is not paid for in this store's workspace: ${cleanLine(input.text, 120)}` };
+    app.log(`[agent] store ${store.id}: its workspace has not paid for Toran; handed off without a model call`);
+  } else if (capped) {
     handoff = { reason: 'other', summary: `the monthly spend cap ($${cap}) is reached: ${cleanLine(input.text, 120)}` };
     app.log(`[agent] monthly cap $${cap} reached; store ${store.id} handed off without a model call`);
   }

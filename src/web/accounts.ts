@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 // Who is signed in: openfrequency-accounts answers, Toran has no login of its own. Ported from Teder's accounts.js.
 //
@@ -154,4 +154,38 @@ export function refusal(status: number, error: string): 'login' | 'closed' | 'no
   if (status === 403 && error === 'workspace_disabled') return 'closed';
   if (status === 403 && error === 'product_disabled') return 'not_in_plan';
   return 'error';
+}
+
+/**
+ * The operator, as accounts' /admin proxy vouches for them (the audit's PRA-SEC-004): instead of forwarding the
+ * superadmin's session cookie to Toran, accounts sends
+ *
+ *   x-of-operator: <b64url(JSON { email, name, id?, exp })>.<b64url(HMAC-SHA256(OF_INTERNAL_TOKEN, first part))>
+ *
+ * on each proxied request, exp a few seconds ahead (epoch milliseconds). Taken only under the admin prefix from this
+ * machine (web/server.ts viaAdmin), only signed with our token, only unexpired and never more than OPERATOR_TTL_MS
+ * ahead: then the request is the operator's, with no session cookie at all. A forwarded cookie still works the old way.
+ */
+export const OPERATOR_TTL_MS = 120_000;
+export function operatorFrom(header: unknown, env: Env = process.env, t = Date.now()): Session | null {
+  const token = String(env.OF_INTERNAL_TOKEN || '').trim();
+  const v = String(header || '');
+  if (token.length < MIN_TOKEN || !v || v.length > 2048) return null;
+  const [body, sig] = v.split('.');
+  if (!body || !sig) return null;
+  const want = createHmac('sha256', token).update(body).digest('base64url');
+  const a = Buffer.from(want);
+  const b = Buffer.from(sig);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  let claim: any;
+  try {
+    claim = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+  const exp = Number(claim?.exp);
+  if (!Number.isFinite(exp) || exp <= t || exp > t + OPERATOR_TTL_MS) return null;
+  if (typeof claim.email !== 'string' || !/^[^\s@]+@[^\s@]+$/.test(claim.email)) return null;
+  const id = Number.isInteger(claim.id) ? claim.id : 0;
+  return { user: { id, email: claim.email, name: typeof claim.name === 'string' ? claim.name.slice(0, 120) : null, superadmin: true }, workspace: null, role: 'superadmin', products: [PRODUCT], readOnly: false, viewAs: null };
 }
