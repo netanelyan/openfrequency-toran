@@ -101,7 +101,8 @@ test('not free: backed by a cost the store wrote for the same thing', () => {
   passes('ההחזרה לא בחינם, דמי המשלוח חזרה על הלקוח.');
   passes("Shipping isn't free under 300 ₪, it's 35 ₪.");
   const noCost = buildAllow({ toolTexts: ['From the store\'s FAQ: "יש אריזת מתנה?"\nכן, כל הזמנה נארזת כמתנה לפי בקשה.'], customerTexts: [] });
-  cuts('אריזת מתנה לא בחינם.', 'free', noCost);
+  // "Free" said of what the store's passage never calls free is a promise word with no backing: cut before the claim check.
+  assert.equal(guardReply('אריזת מתנה לא בחינם.', noCost).redactions[0]?.rule, 'promise');
 });
 
 test('shipping areas: a place the policy names, with the same polarity; "all of Israel" is not Eilat', () => {
@@ -157,7 +158,7 @@ test('returns and exchanges: possible or not as the policy says, and only on the
   cuts('החזרה רק עם קבלה.', 'return');
   cuts('החלפה אפשרית רק עם תווית.', 'return');
   cuts('מוצרי מבצע לא ניתנים להחזרה.', 'return');
-  cuts('You get store credit for a return.', 'return');
+  assert.equal(guardReply('You get store credit for a return.', allow()).redactions[0]?.rule, 'promise', 'store credit no passage gives is a promise');
   const none = buildAllow({ toolTexts: [search], customerTexts: [] });
   cuts('אפשר להחזיר תוך 14 יום.', 'return', none);
   // A list in the policy: its conditions are under the heading about returns.

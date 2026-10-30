@@ -29,9 +29,11 @@ import { numbersIn, splitSentences, STOCK, stripMeta } from './guard.ts';
 // does not back "shipping is free" either, with the condition dropped. Shipping areas,
 // delivery methods and a return's conditions may sit anywhere in a passage about their
 // subject (policies list them); payment methods and product facts anywhere in the tools'
-// text. The customer's own statements (not their questions or requests) count for
-// payment, returns and delivery: "I paid with Bit" lets the reply say Bit. They never
-// count for what the store offers. A bare "yes" or "no" makes the claims of the
+// text. The customer's own statements (not their questions or requests) count for the
+// payment method alone: "I paid with Bit" lets the reply say Bit. They never count for
+// what the store offers, a return's period or conditions, or how it ships: "returns are
+// accepted for a year" typed by a customer, then repeated by a steered model, is still
+// the customer's word (the audit's PRA-AI-001). A bare "yes" or "no" makes the claims of the
 // customer's question: "כן, יש" to "שולחים לאילת?" is "we ship to Eilat".
 //
 // Not a claim: a question back to the customer, a sentence that says it is checking,
@@ -366,7 +368,7 @@ export function claimEvidence({ toolTexts, customerTexts }: { toolTexts: string[
 
 type Scope = 'sentence' | 'part' | 'text';
 type Claim = { kind: ClaimKind; key: string; subjects: string[]; all?: boolean; scope: Scope; neg: boolean; conditional?: boolean; words?: string[][] };
-const CUSTOMER_KINDS = new Set<ClaimKind>(['payment', 'return', 'delivery']);
+const CUSTOMER_KINDS = new Set<ClaimKind>(['payment']);
 // Words that say nothing about what is free.
 const VAGUE = new Set(['זה', 'זו', 'זאת', 'הזה', 'הזאת', 'הוא', 'היא', 'לגמרי', 'גם', 'כן', 'it', 'its', 'this', 'that', 'yes', 'also', 'totally', 'completely', 'then', 'case'].map(normalize));
 const formsOf = new WeakMap<Seen, Set<string>>();

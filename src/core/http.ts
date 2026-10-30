@@ -1,18 +1,35 @@
-// Fetching other people's websites, politely.
+// Fetching other people's websites, politely, and never our own machine.
 //
 // Every request to a store goes through here:
 //   - an honest user agent that names the bot and where to read about it
 //   - robots.txt, read once a day per host, obeyed for every path (Allow/Disallow,
-//     longest match wins, * and $ understood). tiyul-social had none of this.
+//     longest match wins, * and $ understood), on every hop of a redirect. tiyul-social had none of this.
 //   - one request at a time per host, at least HOST_GAP_MS apart
 //   - a timeout, and a size cap enforced while reading (a chunked body with no
 //     content-length cannot slip past it, which tiyul-social's could)
-//   - typed failures: { code: timeout | http | network | too_large | robots | not_text }
+//   - typed failures: { code: timeout | http | network | too_large | robots | not_text | blocked }
+//
+// THE ADDRESS RULE (the audit's PRA-SEC-001). A store's address is typed by a stranger and its pages may redirect
+// anywhere, so every hop is checked where it connects, not where it was typed. Redirects are followed by hand (at most
+// MAX_HOPS); each hop's host is resolved and refused ('blocked') when any of its addresses is loopback, private
+// (RFC 1918), link-local (169.254/16 with the cloud metadata address, fe80::/10), CGNAT (100.64/10), unique-local
+// (fc00::/7), unspecified, multicast, reserved or documentation space, or an IPv4 address wrapped in IPv6
+// (::ffff:127.0.0.1, 64:ff9b::/96). The address checked is the one the connection uses (the request's own lookup), so
+// a name that answers a public address to the check and 127.0.0.1 to the connection cannot slip through. A redirect
+// from https down to http is refused. The URL parser has turned 2130706433 and 0x7f.1 into 127.0.0.1 before the host
+// is read. The headless browser (browser.ts) asks the same question of every request a page makes.
 //
 // Nothing here ever POSTs. The engine reads stores; it does not act on them.
 //
 // The Fetcher type is the seam for tests: a fixture fetcher answers from files, so the
 // whole discovery and ingest pipeline runs offline.
+
+import http from 'node:http';
+import https from 'node:https';
+import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
+import { BlockList, isIP } from 'node:net';
+import zlib from 'node:zlib';
+import { Readable } from 'node:stream';
 
 // An image (a store's logo, for its colour) is asked for with `binary`: its bytes come back as they were sent,
 // and `text` is empty.
@@ -37,7 +54,76 @@ const HOST_GAP_MS = 1200;
 const ROBOTS_TTL_MS = 24 * 3_600_000;
 const DEFAULT_MAX = 8 * 1024 * 1024;
 
+const MAX_HOPS = 5;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ---------------------------------------------------------------- the address rule
+
+const BLOCKED = new BlockList();
+for (const [net, bits] of [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
+  ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
+  ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
+] as const) BLOCKED.addSubnet(net, bits, 'ipv4');
+for (const [net, bits] of [['::', 128], ['::1', 128], ['100::', 64], ['2001:db8::', 32], ['fc00::', 7], ['fe80::', 10], ['fec0::', 10], ['ff00::', 8]] as const) BLOCKED.addSubnet(net, bits, 'ipv6');
+
+/** The IPv4 address inside an IPv6 one that carries it (::ffff:a.b.c.d, ::a.b.c.d, 64:ff9b::a.b.c.d), or null. */
+function v4Inside(addr: string): string | null {
+  const a = addr.toLowerCase();
+  const dotted = /^(?:::ffff:|::|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/.exec(a);
+  if (dotted) return dotted[1];
+  const hex = /^(?:::ffff:|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(a);
+  if (hex) {
+    const hi = parseInt(hex[1], 16);
+    const lo = parseInt(hex[2], 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return null;
+}
+
+/** Is this address one we never fetch from: our own machine, a private network, a reserved range? */
+export function isBlockedAddress(addr: string): boolean {
+  const ip = String(addr || '').replace(/^\[|\]$/g, '').replace(/%.*$/, '');
+  const kind = isIP(ip);
+  if (!kind) return true;
+  if (kind === 6) {
+    const inner = v4Inside(ip);
+    if (inner) return isBlockedAddress(inner);
+    return BLOCKED.check(ip, 'ipv6');
+  }
+  return BLOCKED.check(ip, 'ipv4');
+}
+
+type Lookup = (hostname: string, options: { all: true }, cb: (err: NodeJS.ErrnoException | null, addresses: LookupAddress[]) => void) => void;
+
+/** A lookup that refuses a name with any blocked address: the connection uses what it returns, so the check holds. */
+function guardedLookup(resolve: Lookup) {
+  return (hostname: string, options: any, cb: (...a: any[]) => void) => {
+    resolve(hostname, { all: true }, (err, addrs) => {
+      if (err) return cb(err);
+      const bad = (addrs || []).find((a) => isBlockedAddress(a.address));
+      if (bad || !addrs?.length) return cb(Object.assign(new Error(`${hostname} resolves to ${bad?.address || 'nothing'}, which is not fetched`), { code: 'EBLOCKED' }));
+      if (options?.all) return cb(null, addrs);
+      const pick = addrs.find((a) => !options?.family || a.family === options.family) || addrs[0];
+      cb(null, pick.address, pick.family);
+    });
+  };
+}
+
+/** May a page's request go to this URL's host? For the headless browser, which resolves names itself: checked, not pinned. */
+export async function hostAllowed(url: string, resolve: Lookup = dnsLookup as unknown as Lookup): Promise<boolean> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return true; // data:, blob: and about: never leave the browser
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (isIP(host)) return !isBlockedAddress(host);
+  return new Promise((ok) => resolve(host, { all: true }, (err, addrs) => ok(!err && !!addrs?.length && !addrs.some((a) => isBlockedAddress(a.address)))));
+}
 
 // ---------------------------------------------------------------- robots.txt
 
@@ -87,10 +173,13 @@ export function robotsAllows(rules: Rule[], pathAndQuery: string): boolean {
 
 // ---------------------------------------------------------------- the live fetcher
 
-export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { gapMs?: number; userAgent?: string } = {}): Fetcher {
+// resolve: the name lookup (dns.lookup; a test passes its own); trusted: hosts ("host:port") the address rule lets
+// through, for a test's own local server alone.
+export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT, resolve = dnsLookup as unknown as Lookup, trusted = new Set<string>() }: { gapMs?: number; userAgent?: string; resolve?: Lookup; trusted?: Set<string> } = {}): Fetcher {
   const nextAt = new Map<string, number>();
   const robots = new Map<string, { at: number; rules: Rule[] }>();
   const chains = new Map<string, Promise<unknown>>();
+  const lookup = guardedLookup(resolve);
 
   /** Run fn for a host after the host's previous request, and at least gapMs after it. */
   function perHost<T>(host: string, fn: () => Promise<T>): Promise<T> {
@@ -108,36 +197,49 @@ export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { g
     return run;
   }
 
+  /** One request, one hop: a redirect comes back as it is (its Location in headers), never followed here. */
   async function raw(url: string, { accept = 'text/html,application/json;q=0.9,*/*;q=0.5', maxBytes = DEFAULT_MAX, timeoutMs = 20_000, binary = false }: Parameters<Fetcher>[1] = {}): Promise<FetchResult> {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+    const free = trusted.has(`${host}:${port}`);
+    if (!free && isIP(host) && isBlockedAddress(host)) throw new FetchError(`${host} is not fetched (a private, loopback or reserved address)`, 'blocked', url);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let res: Response;
+    const mod = u.protocol === 'https:' ? https : http;
     try {
-      res = await fetch(url, { headers: { 'user-agent': userAgent, accept, 'accept-language': 'he-IL,he;q=0.9,en;q=0.6' }, redirect: 'follow', signal: ctrl.signal });
-    } catch (e: any) {
-      clearTimeout(timer);
-      throw new FetchError(e?.name === 'AbortError' ? `timed out after ${timeoutMs} ms` : `network: ${e?.cause?.code || e?.message || e}`, e?.name === 'AbortError' ? 'timeout' : 'network', url);
-    }
-    try {
-      const len = Number(res.headers.get('content-length') || 0);
-      if (len > maxBytes) throw new FetchError(`body of ${len} bytes is over the cap`, 'too_large', url, res.status);
-      const chunks: Uint8Array[] = [];
+      const res = await new Promise<http.IncomingMessage>((ok, fail) => {
+        const req = mod.request(u, { method: 'GET', headers: { 'user-agent': userAgent, accept, 'accept-language': 'he-IL,he;q=0.9,en;q=0.6', 'accept-encoding': 'gzip, deflate, br' }, signal: ctrl.signal, ...(free ? {} : { lookup: lookup as any }) }, ok);
+        req.on('error', fail);
+        req.end();
+      });
+      const status = res.statusCode || 0;
+      const headers: Record<string, string> = {};
+      for (const [k, v] of Object.entries(res.headers)) if (v != null) headers[k] = Array.isArray(v) ? v.join(', ') : String(v);
+      const contentType = headers['content-type'] || '';
+      if (status >= 300 && status < 400 && headers.location) {
+        res.resume();
+        return { url, status, contentType, text: '', headers };
+      }
+      const len = Number(headers['content-length'] || 0);
+      if (len > maxBytes) {
+        res.destroy();
+        throw new FetchError(`body of ${len} bytes is over the cap`, 'too_large', url, status);
+      }
+      const enc = String(headers['content-encoding'] || '').toLowerCase();
+      const body: Readable = enc === 'gzip' || enc === 'x-gzip' ? res.pipe(zlib.createGunzip()) : enc === 'br' ? res.pipe(zlib.createBrotliDecompress()) : enc === 'deflate' ? res.pipe(zlib.createInflate()) : res;
+      const chunks: Buffer[] = [];
       let size = 0;
-      if (res.body) {
-        for await (const c of res.body as unknown as AsyncIterable<Uint8Array>) {
-          size += c.length;
-          if (size > maxBytes) {
-            ctrl.abort();
-            throw new FetchError(`body over ${maxBytes} bytes`, 'too_large', url, res.status);
-          }
-          chunks.push(c);
+      for await (const c of body as AsyncIterable<Buffer>) {
+        size += c.length;
+        if (size > maxBytes) {
+          res.destroy();
+          throw new FetchError(`body over ${maxBytes} bytes`, 'too_large', url, status);
         }
+        chunks.push(c);
       }
       const buf = Buffer.concat(chunks);
-      const contentType = res.headers.get('content-type') || '';
-      const headers: Record<string, string> = {};
-      res.headers.forEach((v, k) => (headers[k] = v));
-      if (binary) return { url: res.url || url, status: res.status, contentType, text: '', headers, bytes: new Uint8Array(buf) };
+      if (binary) return { url, status, contentType, text: '', headers, bytes: new Uint8Array(buf) };
       const charset = /charset=([\w-]+)/i.exec(contentType)?.[1]?.toLowerCase() || 'utf-8';
       let text: string;
       try {
@@ -145,10 +247,12 @@ export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { g
       } catch {
         text = buf.toString('utf8');
       }
-      return { url: res.url || url, status: res.status, contentType, text, headers };
+      return { url, status, contentType, text, headers };
     } catch (e: any) {
       if (e instanceof FetchError) throw e;
-      throw new FetchError(e?.name === 'AbortError' ? `timed out after ${timeoutMs} ms` : `reading: ${e?.message || e}`, e?.name === 'AbortError' ? 'timeout' : 'network', url);
+      if (e?.code === 'EBLOCKED') throw new FetchError(e.message, 'blocked', url);
+      const aborted = e?.name === 'AbortError' || ctrl.signal.aborted;
+      throw new FetchError(aborted ? `timed out after ${timeoutMs} ms` : `network: ${e?.code || e?.message || e}`, aborted ? 'timeout' : 'network', url);
     } finally {
       clearTimeout(timer);
     }
@@ -159,33 +263,57 @@ export function liveFetcher({ gapMs = HOST_GAP_MS, userAgent = USER_AGENT }: { g
     if (hit && Date.now() - hit.at < ROBOTS_TTL_MS) return hit.rules;
     let rules: Rule[] = [];
     try {
-      const r = await perHost(host, () => raw(`${origin}/robots.txt`, { accept: 'text/plain', maxBytes: 512 * 1024, timeoutMs: 10_000 }));
+      // robots.txt is read with its own redirects followed under the same rule, a hop at a time.
+      const r = await hops(`${origin}/robots.txt`, { accept: 'text/plain', maxBytes: 512 * 1024, timeoutMs: 10_000, robots: false });
       // A missing robots.txt allows everything; a server error is read as "not now" (RFC 9309): we skip the host.
       if (r.status >= 500) rules = [{ allow: false, path: '/' }];
       else if (r.status < 400 && !/<html/i.test(r.text.slice(0, 400))) rules = parseRobots(r.text);
-    } catch {
+    } catch (e: any) {
+      if (e instanceof FetchError && e.code === 'blocked') throw e;
       rules = [];
     }
     robots.set(origin, { at: Date.now(), rules });
     return rules;
   }
 
-  return async function get(url, opts = {}) {
+  /** One hop, with its robots.txt and one retry for a network failure or a timeout (a connection that timed out once usually connects the second time). */
+  async function hop(url: string, opts: Parameters<Fetcher>[1] = {}): Promise<FetchResult> {
     const u = new URL(url);
     if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new FetchError('only http(s)', 'network', url);
     if (opts.robots !== false) {
       const rules = await rulesFor(u.origin, u.host);
       if (!robotsAllows(rules, u.pathname + u.search)) throw new FetchError(`robots.txt disallows ${u.pathname}`, 'robots', url);
     }
-    // One retry for a network failure or a timeout: a connection that timed out once usually connects the second time.
-    let r: FetchResult;
     try {
-      r = await perHost(u.host, () => raw(url, opts));
+      return await perHost(u.host, () => raw(url, opts));
     } catch (e: any) {
       if (!(e instanceof FetchError) || !['network', 'timeout'].includes(e.code)) throw e;
       await sleep(2000);
-      r = await perHost(u.host, () => raw(url, opts));
+      return perHost(u.host, () => raw(url, opts));
     }
+  }
+
+  /** Follow redirects by hand, each hop checked as the first: its address, its robots.txt, no step down to http. */
+  async function hops(url: string, opts: Parameters<Fetcher>[1] = {}): Promise<FetchResult> {
+    let at = url;
+    for (let i = 0; ; i++) {
+      const r = await hop(at, opts);
+      if (!(r.status >= 300 && r.status < 400 && r.headers.location)) return { ...r, url: at };
+      if (i >= MAX_HOPS) throw new FetchError(`more than ${MAX_HOPS} redirects`, 'http', url, r.status);
+      let next: URL;
+      try {
+        next = new URL(r.headers.location, at);
+      } catch {
+        throw new FetchError(`a redirect to "${r.headers.location}", which is not an address`, 'http', at, r.status);
+      }
+      if (next.protocol !== 'https:' && next.protocol !== 'http:') throw new FetchError(`a redirect to ${next.protocol}, not http(s)`, 'blocked', at, r.status);
+      if (new URL(at).protocol === 'https:' && next.protocol === 'http:') throw new FetchError(`a redirect from https down to http (${next.host})`, 'blocked', at, r.status);
+      at = next.toString();
+    }
+  }
+
+  return async function get(url, opts = {}) {
+    const r = await hops(url, opts);
     if (r.status >= 400) throw new FetchError(`HTTP ${r.status}`, 'http', url, r.status);
     return r;
   };

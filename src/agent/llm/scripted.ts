@@ -24,7 +24,8 @@ export const defaultScript: Script = (req) => {
     if (passage && !/has not written/.test(text)) return [{ type: 'text', text: passage.trim() }];
     return [{ type: 'text', text: 'את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.' }];
   }
-  const text = (blocks.find((b) => b.type === 'text') as { text?: string } | undefined)?.text || '';
+  // The customer's text is the last text block: the app's SERVER CONTEXT rides in its own block before it.
+  const text = (blocks.filter((b) => b.type === 'text').pop() as { text?: string } | undefined)?.text || '';
   const q = text.replace(/^SERVER CONTEXT[\s\S]*?\n\n/, '').trim();
   if (/משלוח|החזר|החלפ|תשלום|ביט|אספקה|מגיע/.test(q)) return [{ type: 'tool_use', id: `s_${Date.now()}`, name: 'get_policy', input: { topic: q } }];
   return [{ type: 'tool_use', id: `s_${Date.now()}`, name: 'search_products', input: { query: q } }];

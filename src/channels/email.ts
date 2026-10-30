@@ -54,7 +54,7 @@ const lowerHeaders = (h: unknown): Headers => Object.fromEntries(Object.entries(
 const ids = (s: string | undefined) => [...String(s || '').matchAll(/<[^<>\s]+>/g)].map((m) => m[0]);
 
 /** Why this email must not be answered, or null when a person wrote it. */
-export function automated(headers: Headers, from: string, ownDomain: string): string | null {
+export function automated(headers: Headers, from: string, ownDomain: string, auth?: SenderAuth): string | null {
   const h = (k: string) => String(headers[k] || '').trim().toLowerCase();
   const addr = parseAddress(from).address;
   if (h('auto-submitted') && h('auto-submitted') !== 'no') return 'auto-submitted';
@@ -66,6 +66,26 @@ export function automated(headers: Headers, from: string, ownDomain: string): st
   const local = addr.split('@')[0];
   if (/(^|[.+_-])(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?)([.+_-]|$)/.test(local) || /^notifications?([.+_-]|$)/.test(local)) return 'no-reply address';
   if (ownDomain && addr.endsWith(`@${ownDomain.toLowerCase()}`)) return 'our own domain';
+  const unverified = senderAuth(auth);
+  if (unverified) return unverified;
+  return null;
+}
+
+/**
+ * Whether the sender is who the From line says (PRA-AI-002), from Resend's own verdict: the received email's
+ * `authentication` object, { spf, dkim, dmarc }, each 'pass' | 'fail' | 'gray' | 'processing_failed' | 'unknown',
+ * "computed when the email was received ... from the receiving mail server, not from the message headers, so the sender
+ * cannot forge them", null for mail received before the field existed (resend.com/docs/api-reference/emails/
+ * retrieve-received-email, read 2026-10-29). DMARC failing, or SPF failing with no DKIM that passes, is a forged or
+ * unverified sender: the mail is held for the owner with no answer, since an answer goes to the From address and
+ * nothing vouches for it. 'gray', 'unknown', 'processing_failed' and no verdict say nothing against the sender, and the
+ * mail is answered as before. The message's own Authentication-Results header is never read: the sender can write it.
+ */
+export type SenderAuth = { spf?: string; dkim?: string; dmarc?: string } | null | undefined;
+export function senderAuth(auth: SenderAuth): string | null {
+  if (!auth || typeof auth !== 'object') return null;
+  if (auth.dmarc === 'fail') return 'sender not verified (dmarc=fail)';
+  if (auth.spf === 'fail' && auth.dkim !== 'pass') return 'sender not verified (spf=fail, no dkim pass)';
   return null;
 }
 
@@ -157,7 +177,7 @@ export function fromEmail(e: any, ownDomain: string, at?: number): Inbound {
       const ref = a.id && (e.id || e.email_id) ? `${e.id || e.email_id}/${a.id}` : typeof a.content === 'string' ? `base64:${a.content}` : null;
       return { name: String(a.filename || 'file'), type: String(a.content_type || ''), size: Number(a.size) || (typeof a.content === 'string' ? Buffer.byteLength(a.content, 'base64') : 0), ...(ref ? { ref } : {}) };
     }),
-    automated: automated(headers, e.from || headers.from || '', ownDomain),
+    automated: automated(headers, e.from || headers.from || '', ownDomain, e.authentication),
     ...(at ? { at } : {}),
   };
 }

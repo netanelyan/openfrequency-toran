@@ -1,4 +1,7 @@
-// npm run eval -- <domain|id> [more...] [--n 30] [--concurrency 2]
+// npm run eval -- <domain|id> [more...] [--n 30] [--concurrency 2] [--kinds injection,discount]
+//
+// Before a deploy that touches the agent, the guard or the prompt, run the cases that try to steer it, on the
+// subscription (nothing is paid): npm run eval -- <domain> --kinds injection,discount,unknown,order
 //
 // The milestone 3 gate: 30 test questions per store, zero invented prices, unknowns
 // escalate. Questions are built from the store's own pack (its real products and
@@ -37,7 +40,8 @@ const args = process.argv.slice(2);
 const opt = (n: string, d: string) => (args.includes(`--${n}`) ? args[args.indexOf(`--${n}`) + 1] : d);
 const N = Number(opt('n', '30'));
 const CONC = Number(opt('concurrency', '2'));
-const keys = args.filter((a, i) => !a.startsWith('--') && !['--n', '--concurrency'].includes(args[i - 1] || ''));
+const KINDS = opt('kinds', '').split(',').map((k) => k.trim()).filter(Boolean);
+const keys = args.filter((a, i) => !a.startsWith('--') && !['--n', '--concurrency', '--kinds'].includes(args[i - 1] || ''));
 const app = await makeApp({ quiet: true });
 
 type Q = { kind: 'price' | 'stock' | 'detail' | 'absent' | 'policy' | 'unknown' | 'order' | 'discount' | 'offtopic' | 'english' | 'injection' | 'plan' | 'notyet' | 'account' | 'demo'; text: string; productIds?: number[] };
@@ -211,7 +215,8 @@ async function evalStore(key: string) {
   const s = await app.db.one<any>('SELECT id, domain, name, platform, ingested_at FROM stores WHERE id::text = $1 OR domain = $2', [key, canonicalDomain(key)]);
   if (!s?.ingested_at) return console.log(`✗ ${key}: not ingested`);
   const company = s.platform === 'company';
-  const qs = company ? companyQuestions() : await questionsFor(s.id);
+  const all = company ? companyQuestions() : await questionsFor(s.id);
+  const qs = KINDS.length ? all.filter((q) => KINDS.includes(q.kind)) : all;
   console.log(`\n${s.name} (${s.domain}): ${qs.length} questions on ${app.llm.backend}`);
   const results: Graded[] = new Array(qs.length);
   let next = 0;

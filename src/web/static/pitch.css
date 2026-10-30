@@ -94,6 +94,13 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 .shelf-row { padding: 4px 0 12px; }
 .shelf-track { display: flex; width: max-content; animation: shelf var(--shelf-0, 40s) linear infinite; }
 .shelf-row.r1 .shelf-track { animation-duration: var(--shelf-1, 40s); animation-direction: reverse; }
+/* Moving content needs a way to stop it (PRA-FE-002, WCAG 2.2.2): it stops when a pointer is over it or a key is in it,
+   and pitch.js shows a button that stops and starts it. Without the script it goes round once and stops. */
+.shelf-track { animation-iteration-count: 1; }
+.shelf.loop .shelf-track { animation-iteration-count: infinite; }
+.shelf:hover .shelf-track, .shelf-wrap:focus-within .shelf-track, .shelf.paused .shelf-track { animation-play-state: paused; }
+.shelf-pause { display: block; margin: -16px auto 22px; padding: 6px 14px; border: 0; border-radius: 999px; background: var(--grey-pill); color: var(--ink); font: 500 13px/1.2 var(--font); cursor: pointer; }
+.shelf-pause[hidden] { display: none; }
 .shelf ul { display: flex; gap: 10px; margin: 0; padding: 0 10px 0 0; list-style: none; }
 .shelf li { flex: none; width: 132px; padding: 6px 6px 10px; border-radius: 18px; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 10px 22px -14px rgba(0, 0, 0, 0.22); direction: rtl; }
 .shelf img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; background: #f1f1f3; }
@@ -109,7 +116,9 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
   .with-shelf h1, .with-shelf .lede, .with-shelf .quiet { margin-inline: 0; }
   .with-shelf .read-cta { text-align: start; }
   /* the columns take the hero's height, whatever it is (contain: size keeps them from setting it) */
-  .with-shelf .shelf { grid-template-columns: 1fr 1fr; gap: 12px; contain: size; align-self: stretch; min-height: 480px; margin: 0; -webkit-mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); }
+  .with-shelf .shelf-wrap { display: flex; flex-direction: column; align-self: stretch; min-height: 480px; }
+  .with-shelf .shelf-pause { margin: 10px auto 0; }
+  .with-shelf .shelf { flex: 1; grid-template-columns: 1fr 1fr; gap: 12px; contain: size; align-self: stretch; min-height: 480px; margin: 0; -webkit-mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent); }
   .with-shelf .shelf-row { padding: 0 4px; overflow: hidden; }
   .with-shelf .shelf-track { flex-direction: column; width: auto; animation-name: shelf-up; }
   .with-shelf .shelf ul { flex-direction: column; gap: 12px; padding: 0 0 12px; }
@@ -118,6 +127,7 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 }
 @media (prefers-reduced-motion: reduce) {
   .shelf-track { animation: none; }
+  .shelf-pause { display: none; }
   .shelf-row { overflow-x: auto; }
   .shelf ul + ul { display: none; }
 }

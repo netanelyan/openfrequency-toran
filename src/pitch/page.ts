@@ -1,5 +1,5 @@
 import type { App } from '../app.ts';
-import { iconLinks, ofMark, toranMark } from '../brand.ts';
+import { accessibilityLink, iconLinks, ofMark, toranMark } from '../brand.ts';
 import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
 import { esc } from '../web/ui.ts';
 import { money } from '../agent/tools.ts';
@@ -174,9 +174,9 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
   // so it is hidden from screen readers; the numbers under it say what was read.
   const tile = (p: ShelfItem) => `<li><img src="${esc(thumb(p.image))}" alt="" width="132" height="132" referrerpolicy="no-referrer" decoding="async" data-hide-on-error><b>${esc(shortTitle(p.title))}</b>${p.price_min != null ? `<small>${esc(money(p.price_min, currency))}</small>` : ''}</li>`;
   const shelfSec = d.shelf.length
-    ? `<div class="shelf" aria-hidden="true">
+    ? `<div class="shelf-wrap"><div class="shelf" aria-hidden="true">
     ${shelfRows(d.shelf).map((row, r) => `<div class="shelf-row r${r}"><div class="shelf-track">${[0, 1].map(() => `<ul>${row.map(tile).join('')}</ul>`).join('')}</div></div>`).join('\n    ')}
-  </div>`
+  </div><button class="shelf-pause" type="button" aria-pressed="false" hidden>לעצור את התנועה</button></div>`
     : '';
 
   const greenBtn = (label: string, cls = '') => (demo ? `<a class="wa ${cls}" href="${esc(demo)}" data-demo rel="noopener">${waIcon()}<span>${label}</span></a>` : `<span class="wa off ${cls}">${waIcon()}<span>${owner ? ph('[מספר הדמו]') : label}</span></span>`);
@@ -270,6 +270,7 @@ ${iconLinks()}
   <footer class="foot" data-depth="100">
     <span class="by">${ofMark(16, { label: null })}<span><span dir="ltr">OpenFrequency</span>, ${esc(d.offer.city)}</span></span>
     ${downLink ? `<a href="${esc(downLink)}" data-takedown rel="noopener">להוריד את העמוד הזה</a>` : owner ? ph('[חסר המספר של OpenFrequency, אז אין לינק להורדת העמוד]') : ''}
+    ${accessibilityLink()}
   </footer>
 </div>
 ${demo ? `<div class="dock">${greenBtn('לכתוב לו בוואטסאפ')}</div>` : ''}
@@ -297,5 +298,5 @@ const linksSec = `<section class="links" aria-labelledby="links-h">
 
 /** The page for a slug that is not (or no longer) there. */
 export function goneHtml(removed: boolean): string {
-  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="robots" content="noindex, nofollow"><title>${removed ? 'העמוד הוסר' : 'העמוד לא נמצא'}</title><link rel="stylesheet" href="/static/brand.css"><link rel="stylesheet" href="/static/pitch.css"></head><body><div class="wrap"><section class="hero gone"><h1>${removed ? 'העמוד הזה הוסר' : 'העמוד הזה לא כאן'}</h1><p class="lede">${removed ? 'הורדנו אותו כמו שביקשתם, והקישור כבר לא עובד.' : 'אולי הקישור ישן. אם קיבלתם אותו מאיתנו, אפשר לענות להודעה ונשלח קישור חדש.'}</p></section></div></body></html>`;
+  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="robots" content="noindex, nofollow"><title>${removed ? 'העמוד הוסר' : 'העמוד לא נמצא'}</title><link rel="stylesheet" href="/static/brand.css"><link rel="stylesheet" href="/static/pitch.css"></head><body><div class="wrap"><section class="hero gone"><h1>${removed ? 'העמוד הזה הוסר' : 'העמוד הזה לא כאן'}</h1><p class="lede">${removed ? 'הורדנו אותו כמו שביקשתם, והקישור כבר לא עובד.' : 'אולי הקישור ישן. אם קיבלתם אותו מאיתנו, אפשר לענות להודעה ונשלח קישור חדש.'}</p></section><footer class="foot">${accessibilityLink()}</footer></div></body></html>`;
 }

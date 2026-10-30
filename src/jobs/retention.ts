@@ -6,6 +6,7 @@ import { filesDir } from '../core/paths.ts';
 import { type Db, J } from '../db/index.ts';
 import { event } from '../db/log.ts';
 import { closeSilent } from '../channels/conversations.ts';
+import { refreshWorkspaces } from '../billing/entitlement.ts';
 
 // How long Toran keeps what it keeps, and the daily pass that holds it to that (the worker's schedule, once an Israel
 // day). The periods the website publishes (openfrequency-web: legal.leadMonths, price.keepDays) are the first two:
@@ -126,6 +127,9 @@ export async function dailyRetention(app: App, { force = false }: { force?: bool
   const last = await app.db.one<{ value: any }>('SELECT value FROM settings WHERE key = $1', [KEY]);
   if (!force && last?.value?.day === today) return null;
   await app.db.query('INSERT INTO settings (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [KEY, J({ day: today, at: new Date().toISOString() })]);
+  // Every workspace with a store is asked about first (billing/entitlement.ts): a store nobody writes to still starts its
+  // 30 days when its workspace stops paying. accounts not answering stops nothing here: the last answer stands.
+  await refreshWorkspaces(app).catch((e) => app.log(`[retention] the paywall could not be asked: ${e?.message || e}`));
   const r = await retention(app);
   const said = Object.entries(r).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ');
   app.log(`[retention] ${said || 'nothing to delete'}`);

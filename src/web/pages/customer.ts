@@ -92,7 +92,9 @@ async function setupPage(app: App, r: DashReq, title: string, active: string) {
   const add = mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a>` : '';
   const actions = (first: string) => (first || support(app) ? `<p class="mt12 m0">${first}${writeUs(app)}</p>` : '');
   const box = st?.status === 'working'
-    ? `<div class="empty" data-wait-job="${st.job}">${icon('clock')}<b>קוראים את האתר שלכם</b>תורן קורא את המוצרים, המחירים ודפי המדיניות. זה לוקח דקה או שתיים, והדף יתעדכן לבד.</div>`
+    ? `<div class="empty" data-wait-job="${st.job}"${support(app) ? ` data-help="${esc(support(app)!)}"` : ''}>${icon('clock')}<b>קוראים את האתר שלכם</b>תורן קורא את המוצרים, המחירים ודפי המדיניות. זה לוקח דקה או שתיים, והדף יתעדכן לבד.</div>`
+    : st?.verify
+      ? `<div class="empty">${icon('alert')}<b>צריך לאמת שהאתר שלכם</b>${esc(st.detail)}${actions(mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('check')}לאמת את האתר</a>` : '')}</div>`
     : st?.status === 'attention'
       ? `<div class="empty">${icon('alert')}<b>לא הצלחנו לקרוא את האתר</b>כדאי לבדוק שהכתובת נכונה ולנסות שוב. אם זה חוזר, כתבו לנו.${actions(mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('refresh')}לנסות שוב</a>` : '')}</div>`
       : `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>${add ? 'כותבים את הכתובת של האתר, ותורן קורא ממנו את המוצרים ואת דפי המדיניות. אחר כך תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.' : 'כשהחנות תתחבר, תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.'}${actions(add)}</div>`;
@@ -104,8 +106,8 @@ ${box}`);
 async function readingBanner(app: App, r: DashReq): Promise<string> {
   if (!(Number(r.scope.workspaceId) > 0)) return '';
   const st = storeState(await setupStoreOf(app, Number(r.scope.workspaceId)));
-  if (st.status === 'working') return `<div class="banner info" data-wait-job="${st.job}">${icon('clock')}<div><b>קוראים את האתר שלכם</b><p>זה לוקח דקה או שתיים. אחר כך תראו ב<a href="/knowledge">מה תורן יודע</a> את המוצרים ואת דפי המדיניות שנקראו.</p></div></div>`;
-  if (st.status === 'attention') return `<div class="banner warn">${icon('alert')}<div><b>לא הצלחנו לקרוא את האתר</b><p>${esc(st.detail)}</p></div>${writeUs(app)}</div>`;
+  if (st.status === 'working') return `<div class="banner info" data-wait-job="${st.job}"${support(app) ? ` data-help="${esc(support(app)!)}"` : ''}>${icon('clock')}<div><b>קוראים את האתר שלכם</b><p>זה לוקח דקה או שתיים. אחר כך תראו ב<a href="/knowledge">מה תורן יודע</a> את המוצרים ואת דפי המדיניות שנקראו.</p></div></div>`;
+  if (st.status === 'attention') return `<div class="banner warn">${icon('alert')}<div><b>${st.verify ? 'צריך לאמת שהאתר שלכם' : 'לא הצלחנו לקרוא את האתר'}</b><p>${esc(st.detail)}</p></div>${writeUs(app)}</div>`;
   return '';
 }
 

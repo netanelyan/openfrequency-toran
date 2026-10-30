@@ -167,6 +167,7 @@ ${waBanner(await waAccountOf(app, id), id)}
     ${s.workspace_id ? `<section class="panel" id="plan"><header><h2>החבילה של הלקוח</h2></header>
       <form class="row" method="post" action="/lead/${id}/plan">${csrfField(r.ctx)}<select name="plan" aria-label="חבילה">${(Object.keys(PLANS) as PlanKey[]).map((k) => `<option value="${k}"${planOf(s.config) === k ? ' selected' : ''}>${esc(PLANS[k].he)}, עד ${PLANS[k].conversations.toLocaleString('en-US')} שיחות</option>`).join('')}</select><button class="btn sm" type="submit">לשמור</button></form>
       <p class="small muted mt8 m0">הלקוח רואה את החבילה ואת השיחות של החודש בעמוד "החבילה". המחיר והחשבוניות נשארים ב-accounts.</p>
+      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/release`, 'לשחרר את האתר מהחשבון', { cls: 'btn sm danger', confirm: 'לשחרר? החנות חוזרת להיות ליד שלנו, והחשבון של הלקוח לא רואה אותה יותר. מי שיוכיח שהאתר שלו יוכל להוסיף אותה.' })}</div>
     </section>` : ''}
     <section class="panel"><header><h2>מה קרה</h2></header><ol class="trace">${events.map((e) => `<li class="ok"><b>${esc(EVENT_HE[e.kind] || e.kind)}</b> <span class="d">${esc(stamp(e.at))}</span></li>`).join('') || '<li>עוד כלום</li>'}</ol></section>
   </div>
@@ -284,6 +285,16 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
       await event(app.db, s.id, 'followup_sent', { by: r.user.name });
       await audit(app.db, { actor: r.user.name, action: 'followup_sent', storeId: s.id });
       return { message: 'התזכורת סומנה. זו הייתה האחרונה.' };
+    }],
+    // A disputed domain (PRA-SEC-003): the operator takes the store back from the workspace that has it, and every claim
+    // on its domain is dropped, so whoever proves the site next can add it.
+    ['POST', /^\/lead\/(\d+)\/release$/, async (r, m) => {
+      const s = await store(m[1]);
+      const from = s.workspace_id;
+      await app.db.query('UPDATE stores SET workspace_id = NULL, updated_at = now() WHERE id = $1', [s.id]);
+      await app.db.query('DELETE FROM domain_claims WHERE domain = $1', [s.domain]);
+      await audit(app.db, { actor: r.user.name, action: 'release_domain', storeId: s.id, detail: { from, domain: s.domain } });
+      return { message: 'האתר שוחרר מהחשבון.' };
     }],
     ['POST', /^\/lead\/(\d+)\/skip$/, async (r, m) => {
       const s = await store(m[1]);

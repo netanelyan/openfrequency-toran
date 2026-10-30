@@ -132,3 +132,7 @@ export const MANIFEST = {
 /** The <head> lines for the icons, shared by the dashboard and the pitch pages. */
 export const iconLinks = () =>
   `<link rel="icon" href="/static/brand/toran.svg" type="image/svg+xml">\n<link rel="apple-touch-icon" href="/static/brand/toran-180.png">`;
+
+/** OpenFrequency's accessibility statement, linked from every public page Toran serves (PRA-FE-002). */
+export const ACCESSIBILITY_URL = 'https://openfrequency.co.il/accessibility';
+export const accessibilityLink = (cls = '') => `<a${cls ? ` class="${cls}"` : ''} href="${ACCESSIBILITY_URL}" rel="noopener">הצהרת נגישות</a>`;

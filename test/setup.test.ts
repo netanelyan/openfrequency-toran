@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { drain } from '../src/jobs/worker.ts';
 import { queue } from '../src/ops/queue.ts';
 import { startUrl } from '../src/web/pages/start.ts';
+import { proofDeps } from '../src/domainProof.ts';
 import { customer, INTERNAL_TOKEN, viewingAs } from './helpers.ts';
 import { serve } from './serve.ts';
 
@@ -29,6 +30,24 @@ async function asCustomer(s: S, ws: number) {
   return (await s.csrf('/start')) || (await s.csrf('/'));
 }
 const ajax = { 'x-tn-ajax': '1' };
+/**
+ * A site added the way a customer adds it now (src/domainProof.ts): POST /start keeps a claim, the customer puts its
+ * token in a TXT record, and POST /start/verify finds it and adds the store. Returns the answer that added it (or the
+ * first answer, when /start refused before any claim).
+ */
+async function addSite(s: S, token: string, url: string, headers: Record<string, string> = {}) {
+  const first = await s.post('/start', { _csrf: token, url }, headers);
+  const claim = await s.app.db.one<any>('SELECT * FROM domain_claims WHERE proven_at IS NULL ORDER BY id DESC LIMIT 1');
+  if (!claim || ![200, 303].includes(first.status)) return first;
+  const was = proofDeps.resolveTxt;
+  proofDeps.resolveTxt = async (host: string) => (host === claim.domain ? [[`toran-verify=${claim.token}`]] : []);
+  try {
+    await s.app.db.query("UPDATE audit SET at = now() - interval '1 minute' WHERE action = 'verify_domain'");
+    return await s.post('/start/verify', { _csrf: token }, headers);
+  } finally {
+    proofDeps.resolveTxt = was;
+  }
+}
 const addJobs = async (s: S) => (await s.app.db.query<any>("SELECT id, payload, dedupe_key, status FROM jobs WHERE kind = 'add_store' ORDER BY id")).map((j) => ({ ...j, id: Number(j.id) }));
 
 test('a store address as a customer types it: a website, never an IP, localhost or a local name', () => {
@@ -94,7 +113,7 @@ test('/start: a customer adds their store; it is born in their workspace, read, 
     assert.equal((await addJobs(s)).length, 0);
 
     // A new site: add_store with the workspace in its payload, and Today says the site is being read.
-    const r = await s.post('/start', { _csrf: token, url: 'https://www.beit-hasabon.example/shop' });
+    const r = await addSite(s, token, 'https://www.beit-hasabon.example/shop');
     assert.equal(r.status, 303);
     assert.equal(r.headers.get('location'), '/');
     const [job] = await addJobs(s);
@@ -174,7 +193,7 @@ test("/start with an operator's lead: it becomes the workspace's and is read aga
     s.app.env.PUBLIC_BASE_URL = BASE;
     const lead = (await s.app.db.one<{ id: number }>("SELECT id FROM stores WHERE domain = 'tavlinim-ba-shuk.example'"))!.id;
     let token = await asCustomer(s, 11);
-    const r = await s.post('/start', { _csrf: token, url: 'http://tavlinim-ba-shuk.example/' });
+    const r = await addSite(s, token, 'http://tavlinim-ba-shuk.example/');
     assert.equal(r.status, 303);
     assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, 11);
     assert.equal((await addJobs(s)).length, 0, 'no new store');
@@ -185,7 +204,7 @@ test("/start with an operator's lead: it becomes the workspace's and is read aga
 
     // A site that is not a store: the add fails, the step says so and links back to /start, Today offers to try again.
     token = await asCustomer(s, 12);
-    assert.equal((await s.post('/start', { _csrf: token, url: 'wood-and-thread.example' })).status, 303);
+    assert.equal((await addSite(s, token, 'wood-and-thread.example')).status, 303);
     assert.equal((await addJobs(s)).at(-1)!.payload.workspaceId, 12);
     await drain(s.app);
     const d = await steps(s, 12);
@@ -196,11 +215,11 @@ test("/start with an operator's lead: it becomes the workspace's and is read aga
     assert.match(today, /href="\/start"/);
     assert.match(await (await s.get('/start')).text(), /לא הצלחנו לקרוא את האתר הקודם/);
     // One add a minute per workspace.
-    const soon = await s.post('/start', { _csrf: token, url: 'beit-hasabon.example' }, ajax);
+    const soon = await addSite(s, token, 'beit-hasabon.example', ajax);
     assert.equal(soon.status, 429);
     assert.match((await soon.json()).message, /בעוד דקה/);
     await s.app.db.query("UPDATE audit SET at = now() - interval '2 minutes' WHERE action = 'start_store'");
-    assert.equal((await s.post('/start', { _csrf: token, url: 'beit-hasabon.example' }, ajax)).status, 200);
+    assert.equal((await addSite(s, token, 'beit-hasabon.example', ajax)).status, 200);
 
     // A store on a platform Toran cannot read: attention, with the platforms it can.
     await s.app.db.query("INSERT INTO stores (domain, url, name, platform, slug, source, workspace_id) VALUES ('other-platform.example', 'https://other-platform.example/', 'אחר', 'unknown', 'other-xxxx', 'signup', 13)");
@@ -260,6 +279,53 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     d = await steps(s, 21);
     assert.deepEqual([d.by.messenger.status, d.by.messenger.href], ['soon', null], 'not socialReady');
     assert.equal(d.by.whatsapp.status, 'done', 'a number already connected stays done');
+  } finally {
+    await s.close();
+  }
+});
+
+test('a site is proven the workspace\'s before it is read or a lead moves: a TXT record or a meta tag; the operator releases a disputed one (PRA-SEC-003)', async () => {
+  const s = await serve();
+  try {
+    s.app.env.PUBLIC_BASE_URL = BASE;
+    const lead = (await s.app.db.one<{ id: number }>("SELECT id FROM stores WHERE domain = 'tavlinim-ba-shuk.example'"))!.id;
+    const token = await asCustomer(s, 21);
+    const first = await s.post('/start', { _csrf: token, url: 'tavlinim-ba-shuk.example' });
+    assert.equal(first.headers.get('location'), '/start');
+    assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, null, 'the lead does not move before the proof');
+    const claim = await s.app.db.one<any>('SELECT * FROM domain_claims WHERE workspace_id = 21');
+    const page = await (await s.get('/start')).text();
+    assert.ok(page.includes(`toran-verify=${claim.token}`), 'the TXT value');
+    assert.ok(page.includes(`&lt;meta name=&quot;toran-verify&quot; content=&quot;${claim.token}&quot;&gt;`), 'the meta tag');
+    const st = await steps(s, 21);
+    assert.deepEqual([st.by.store.status, st.by.store.href], ['attention', `${BASE}/start`]);
+    // Nothing there yet: refused, and the page says it looked.
+    const was = proofDeps.resolveTxt;
+    proofDeps.resolveTxt = async () => [['v=spf1 -all']];
+    const no = await s.post('/start/verify', { _csrf: token }, ajax);
+    assert.equal(no.status, 422);
+    assert.match(await (await s.get('/start')).text(), /עוד לא מצאנו את הקוד/);
+    assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, null);
+    // Asked again at once: one look every few seconds.
+    assert.equal((await s.post('/start/verify', { _csrf: token }, ajax)).status, 429);
+    // The meta tag on the home page, read through the store fetcher.
+    const fetcher = s.app.fetcher;
+    s.app.fetcher = async (url, opts) => (url === claim.url ? { url, status: 200, contentType: 'text/html', headers: {}, text: `<html><head><meta content="${claim.token}" name="toran-verify"></head></html>` } : fetcher(url, opts));
+    await s.app.db.query("UPDATE audit SET at = now() - interval '1 minute' WHERE action = 'verify_domain'");
+    const yes = await s.post('/start/verify', { _csrf: token });
+    assert.equal(yes.headers.get('location'), '/');
+    assert.equal((await s.app.db.one<any>('SELECT how FROM domain_claims WHERE id = $1', [claim.id])).how, 'meta');
+    assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, 21, 'proven: the lead is theirs');
+    s.app.fetcher = fetcher;
+    proofDeps.resolveTxt = was;
+
+    // A customer cannot release; the operator can, and the claims on the domain go with it.
+    assert.equal((await s.post(`/lead/${lead}/release`, { _csrf: await s.csrf(`/lead/${lead}/knowledge`) })).status, 403);
+    s.login();
+    const op = await s.csrf(`/lead/${lead}`);
+    assert.equal((await s.post(`/lead/${lead}/release`, { _csrf: op })).status, 303);
+    assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, null);
+    assert.equal((await s.app.db.one<any>("SELECT COUNT(*)::int AS n FROM domain_claims WHERE domain = 'tavlinim-ba-shuk.example'")).n, 0);
   } finally {
     await s.close();
   }

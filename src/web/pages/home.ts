@@ -12,6 +12,7 @@ import { addForm, leadRow } from './leads.ts';
 import { selling, storeIdIn, storesOf } from '../workspace.ts';
 import { ALL_CHANNELS, CHANNEL_HE, channelStates, enabledChannels, MESSAGING, messagingSql, setChannelState, type ChannelState } from '../../channels/config.ts';
 import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../../channels/owner.ts';
+import { GraphError, TOKEN_GONE } from '../../channels/meta.ts';
 import { questionOf } from '../../assistant/index.ts';
 import { forgetStorePrompt } from '../../agent/loop.ts';
 import { conversationRow, filesHtml, maskPeer, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, whyHe, type InboxState } from '../inbox.ts';
@@ -107,6 +108,13 @@ ${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><s
 /** WhatsApp's own markup, as the phone shows it: _italic_ and *bold* (applied to already escaped text). */
 const waMarkup = (html: string) => html.replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1<i>$2</i>').replace(/(^|\s)\*([^*\n]+)\*(?=\s|$)/g, '$1<b>$2</b>');
 
+/** Why a send failed, for the owner: a connection Meta no longer takes (its code 190, meta.ts TOKEN_GONE), a provider that refused, or none that answered. */
+export function sendFailedHe(e: any, ch: string): string {
+  if (e instanceof GraphError && e.code === TOKEN_GONE) return BLOCKED_HE.reconnect;
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError' || /fetch failed|network|ECONN|ETIMEDOUT|ENOTFOUND/i.test(String(e?.message || e))) return `לא הצלחנו להגיע ל${ch} כרגע, ולא נשלח כלום. התשובה נשארה כאן, ואפשר לנסות שוב בעוד רגע.`;
+  return `${ch} לא קיבל את ההודעה${e instanceof GraphError && e.code ? ` (קוד ${e.code})` : ''}. התשובה נשארה כאן. אפשר לנסות שוב בעוד רגע, ואם זה חוזר, לענות ללקוח ישירות או לכתוב לנו.`;
+}
+
 const BLOCKED_HE: Record<string, string> = {
   window_closed: 'עברו יותר מ־24 שעות מההודעה האחרונה של הלקוח. בוואטסאפ אפשר לענות אחרי זה רק בתבנית שמטא אישרה, ולתורן עוד אין תבניות, אז מכאן אי אפשר לענות בשיחה הזו.',
   suppressed: 'מייל לכתובת הזו חזר או סומן כספאם, אז לא שולחים אליה יותר.',
@@ -161,7 +169,7 @@ async function chat(app: App, r: DashReq, id: number) {
   const settle = waiting && !r.ctx.readOnly ? `<div class="row mt12">${postButton(r.ctx, `/chat/${id}/settle`, 'טיפלתי בזה בלי לענות מכאן', { cls: 'btn sm ghost', iconName: 'check' })}</div>` : '';
   const replyBox = (MESSAGING as string[]).includes(c.channel) ? `<section class="panel mt16" id="reply"><header><h2>לענות ללקוח</h2><span class="end chip">${esc(ch)}</span></header>
   ${pausedNote}
-  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply"${st.files ? ' enctype="multipart/form-data"' : ''} class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto"${st.files ? '' : ' required'} maxlength="4000" class="wide" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>${learn}${st.files ? `<label class="f mt8">לצרף קובץ<small>תמונה או PDF, עד ${MAX_BYTES / 1024 / 1024}MB. תורן עצמו לא שולח קבצים.</small><input type="file" name="file" accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"></label>` : ''}<div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
+  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" data-ajax="reply"${st.files ? ' enctype="multipart/form-data"' : ''} class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto"${st.files ? '' : ' required'} maxlength="4000" class="wide" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>${learn}${st.files ? `<label class="f mt8">לצרף קובץ<small>תמונה או PDF, עד ${MAX_BYTES / 1024 / 1024}MB. תורן עצמו לא שולח קבצים.</small><input type="file" name="file" accept="image/jpeg,image/png,image/gif,image/webp,application/pdf" data-max="${MAX_BYTES}" data-too-big="הקובץ גדול מ־${MAX_BYTES / 1024 / 1024}MB. אפשר לצרף קובץ קטן יותר."></label>` : ''}<p class="small bad mt8 m0" data-error role="alert" hidden></p><div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
   <p class="small muted mt8 m0">${windowNote}${st.from ? `התשובה יוצאת מהכתובת <bdi class="ltr">${esc(st.from)}</bdi>. ` : ''}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc((st.reason === 'window_closed' && DM_CLOSED[c.channel]) || BLOCKED_HE[st.reason || ''] || '')}</p>`}
   ${settle}
   ${learned.length ? `<p class="small mt12 m0">${icon('book')} תורן שמר מהשיחה הזו את התשובה ל"${esc(learned.map((x) => x.question).join('", "'))}". <a href="/lead/${c.sid}/knowledge#answers">${op ? 'לתשובות של החנות' : 'לתשובות שלכם'}</a></p>` : ''}
@@ -294,7 +302,16 @@ export function homeRoutes(app: App): Route<DashReq>[] {
       if (checked && !checked.ok) throw new ActionError(checked.he);
       if (!text && !checked) throw new ActionError('התשובה ריקה.');
       const id = Number(m[1]);
-      const d = await ownerReply(app, id, text, r.user.name, checked?.ok ? [checked.file] : []);
+      // A send the channel refuses or never answers is said in Hebrew, and the owner's text stays in the box (the form
+      // posts in the background, app.js): the provider's own words go to the log (PRA-FE-003).
+      let d: Awaited<ReturnType<typeof ownerReply>>;
+      try {
+        d = await ownerReply(app, id, text, r.user.name, checked?.ok ? [checked.file] : []);
+      } catch (e: any) {
+        app.log(`[inbox] reply in conversation ${id} failed: ${e?.message || e}`);
+        const c = await app.db.one<{ channel: string }>('SELECT channel FROM conversations WHERE id = $1', [id]);
+        throw new ActionError(sendFailedHe(e, CHANNEL_HE[c?.channel as keyof typeof CHANNEL_HE] || 'הערוץ'), 502);
+      }
       if (!d.ok) throw new ActionError(BLOCKED_HE[d.reason] || 'לא נשלח.');
       // Kept for next time: the question as the owner left it, and their answer (the agent prefers it to the site's).
       const question = String(r.form.question || '').replace(/\s+/g, ' ').trim().slice(0, 300);

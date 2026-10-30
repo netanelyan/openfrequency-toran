@@ -1,3 +1,4 @@
+import { pendingClaim, type Claim } from './domainProof.ts';
 import type { App } from './app.ts';
 import type { Out, Req, Route } from './web/server.ts';
 import { local } from './ops/api.ts';
@@ -47,15 +48,17 @@ export type SetupStore = { id: number; domain: string; platform: string; ingeste
 type JobRow = { id: number; kind: string; status: string; last_error: string | null; result: any };
 
 /** The workspace's store (its first), the latest add from /start, and the latest reading of its site. */
-export async function setupStoreOf(app: App, workspaceId: number): Promise<{ store: SetupStore | null; add: JobRow | null; read: JobRow | null }> {
+export async function setupStoreOf(app: App, workspaceId: number): Promise<{ store: SetupStore | null; add: JobRow | null; read: JobRow | null; claim?: Claim | null }> {
   const store = await app.db.one<SetupStore>('SELECT id, domain, platform, ingested_at, knowledge_seen_at FROM stores WHERE workspace_id = $1 ORDER BY id LIMIT 1', [workspaceId]);
   const add = await app.db.one<JobRow>("SELECT id, kind, status, last_error, result FROM jobs WHERE kind = 'add_store' AND payload->>'workspaceId' = $1 ORDER BY id DESC LIMIT 1", [String(workspaceId)]);
   const read = store ? await app.db.one<JobRow>('SELECT id, kind, status, last_error, result FROM jobs WHERE dedupe_key = $1 ORDER BY id DESC LIMIT 1', [`ingest:${store.id}`]) : null;
-  return { store, add, read };
+  // A site typed at /start and not yet proven the workspace's (domainProof.ts): nothing is read until it is.
+  const claim = store ? null : await pendingClaim(app, workspaceId);
+  return { store, add, read, claim };
 }
 
 /** Where the store stands: the first step, and what Today and /start say while it is not done (pages/start.ts). */
-export function storeState({ store, add, read }: Awaited<ReturnType<typeof setupStoreOf>>): { status: StepStatus; detail: string; job: number | null } {
+export function storeState({ store, add, read, claim = null }: Awaited<ReturnType<typeof setupStoreOf>>): { status: StepStatus; detail: string; job: number | null; verify?: string } {
   const live = [add, read].find((j) => j && LIVE.includes(j.status)) || null;
   if (store?.ingested_at) return { status: 'done', detail: '', job: null };
   if (live) return { status: 'working', detail: 'קוראים את האתר. זה לוקח דקה או שתיים.', job: live.id };
@@ -64,6 +67,7 @@ export function storeState({ store, add, read }: Awaited<ReturnType<typeof setup
   const last = [add, read].filter(Boolean).sort((a, b) => b!.id - a!.id)[0];
   if (last?.status === 'failed') return { status: 'attention', detail: store ? 'לא הצלחנו לקרוא את האתר. כתבו לנו ונבדוק.' : 'לא הצלחנו לקרוא את האתר. אפשר לנסות שוב, או לכתוב לנו.', job: null };
   if (store) return { status: 'todo', detail: 'האתר עוד לא נקרא.', job: null };
+  if (claim) return { status: 'attention', detail: `צריך לאמת שהאתר ${claim.domain} שלכם, ואז תורן קורא אותו. ההוראות בדף הוספת החנות.`, job: null, verify: claim.domain };
   return { status: 'todo', detail: 'כותבים את הכתובת של האתר, ותורן קורא ממנו את המוצרים ואת דפי המדיניות.', job: null };
 }
 

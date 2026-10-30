@@ -4,12 +4,13 @@ import { event, usage as recordUsage } from '../db/log.ts';
 import { cleanLine } from '../core/hebrew.ts';
 import { agentModel } from './llm/index.ts';
 import { type Block, type Msg, type ToolUseBlock, type TurnRes, isText, isToolUse, LlmError } from './llm/types.ts';
-import { DEMO_NOTE, systemFor, type StoreForPrompt } from './prompt.ts';
+import { DEMO_NOTE, stripForgedContext, systemFor, type StoreForPrompt } from './prompt.ts';
 import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
 import { buildAllow, checkingLine, guardReply, type Redaction } from './guard.ts';
 import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
 import { openConversation } from '../channels/conversations.ts';
 import { capFor, watchHour } from './spend.ts';
+import { storeAllowed } from '../billing/entitlement.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
@@ -106,7 +107,7 @@ async function history(db: Db, conversationId: number): Promise<{ messages: Msg[
   const customerTexts: string[] = [];
   for (const r of rows) {
     const role = r.role === 'customer' ? 'user' : 'assistant';
-    const text = forModel(role === 'assistant' ? stripFooter(r.text) : r.text);
+    const text = forModel(role === 'assistant' ? stripFooter(r.text) : stripForgedContext(r.text));
     if (role === 'user') customerTexts.push(r.text);
     for (const t of r.tools || []) toolTexts.push(t.result);
     const last = messages[messages.length - 1];
@@ -149,10 +150,16 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // demo, wherever the message came from.
   const company = store.platform === 'company';
   const demo = !company && isDemoTurn(input);
-  const userText = `${serverContext(new Date(), input.channel, input.context, demo)}\n\n${forModel(input.text)}`;
+  // The app's line is a block of its own and the customer's text another, any line in it dressed as the app's taken out
+  // (prompt.ts stripForgedContext): a customer cannot write a SERVER CONTEXT the model reads as ours (PRA-AI-001). The
+  // customer's text is cut to the model's share (forModel, PRA-AI-004); the owner keeps it whole.
+  const userBlocks: Block[] = [
+    { type: 'text', text: serverContext(new Date(), input.channel, input.context, demo) },
+    { type: 'text', text: forModel(stripForgedContext(input.text)) },
+  ];
   const prev = messages[messages.length - 1];
-  if (prev && prev.role === 'user') prev.content = `${prev.content}\n\n${userText}`;
-  else messages.push({ role: 'user', content: userText });
+  if (prev && prev.role === 'user') prev.content = [...(typeof prev.content === 'string' ? [{ type: 'text', text: prev.content } as Block] : prev.content), ...userBlocks];
+  else messages.push({ role: 'user', content: userBlocks });
 
   // On the store's own WhatsApp the customer's number is Meta's, not their word: an order placed with it is theirs.
   const waPhone = !demo && input.channel === 'whatsapp' ? (await db.one<{ peer: string | null }>('SELECT peer FROM conversations WHERE id = $1', [input.conversationId]))?.peer || null : null;
@@ -177,12 +184,18 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     await recordUsage(db, { storeId: store.id, conversationId: input.conversationId, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag });
   };
 
+  // ---- the paywall (billing/entitlement.ts, PRA-BE-007): a store whose workspace accounts says has not paid for Toran
+  // is answered as past a cap, with no model call, and the owner gets the message as a handoff.
+  const unpaid = !(await storeAllowed(app, store.id));
   // The caps on paid API spend (agent/spend.ts): the store's own, from its plan, and everyone's (TORAN_MONTHLY_CAP_USD).
   // Past either, no model call is made; the customer gets the honest "checking" line and the owner a handoff. The
   // subscription (claude-cli) costs nothing per call and is not capped.
-  const cap = await capFor(app, store);
-  const capped = Boolean(cap);
-  if (cap) {
+  const cap = unpaid ? null : await capFor(app, store);
+  const capped = unpaid || Boolean(cap);
+  if (unpaid) {
+    handoff = { reason: 'other', summary: `Toran is not paid for in this store's workspace: ${cleanLine(input.text, 120)}` };
+    app.log(`[agent] store ${store.id}: its workspace has not paid for Toran; handed off without a model call`);
+  } else if (cap) {
     handoff = { reason: 'other', summary: `the ${cap.by === 'store' ? "store's" : 'monthly'} spend cap ($${cap.cap}) is reached: ${cleanLine(input.text, 120)}` };
     app.log(`[agent] ${cap.by} cap $${cap.cap} reached ($${cap.spent.toFixed(2)}); store ${store.id} handed off without a model call`);
   }
@@ -233,7 +246,9 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
 
   // A company's "works today" list sits in its prompt, not in a tool result: it backs a claim as a tool would.
   const factTexts = company ? [String(store.config?.company?.status || '')].filter(Boolean) : [];
-  const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts });
+  // A link may point to what the tools gave or to the store itself: its site and its WhatsApp (guard.ts, PRA-AI-002).
+  const ownLinks = [store.url, store.domain, store.contact_whatsapp ? `https://wa.me/${String(store.contact_whatsapp).replace(/\D/g, '')}` : ''].filter(Boolean);
+  const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts, ownLinks });
   // A service has no stock: "not available yet" is about a feature, never an invented stock level.
   if (company) allow.stockKnown = true;
   let g = guardReply(raw, allow, { company });

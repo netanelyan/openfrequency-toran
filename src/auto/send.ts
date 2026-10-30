@@ -15,6 +15,7 @@ import { complete, emailText, firstName, isKind, KIND_KEYS, KINDS, kindOf, LEGAC
 import type { Happening, Placed, Read } from './platforms.ts';
 import { approvedFor, storeWa } from './templates.ts';
 import { openConversation } from '../channels/conversations.ts';
+import { storeAllowed } from '../billing/entitlement.ts';
 
 // The automatic messages, from what happened at the store to a message in the customer's conversation:
 //
@@ -220,6 +221,8 @@ async function deliver(app: App, ev: any): Promise<Outcome> {
   const m = ev.message as MessageKey;
   const st = (await settingsOf(app, ev.store_id))[kind];
   if (!isOn(st)) return { status: 'skipped', why: 'off' };
+  // The paywall (billing/entitlement.ts, PRA-BE-007): nothing goes out for a store whose workspace has not paid for Toran.
+  if (!(await storeAllowed(app, ev.store_id))) return { status: 'skipped', why: 'unpaid' };
   const t = now();
   if (customerQuiet(t)) return { status: 'waiting', until: afterQuiet(t) };
   if (t - new Date(ev.due_at).getTime() > LATE[kind]) return { status: 'skipped', why: 'late' };

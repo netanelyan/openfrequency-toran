@@ -68,6 +68,7 @@ type Canned = Record<string, unknown> | { status: number; body: unknown };
  */
 export async function fakeAccounts() {
   const answers = new Map<string, Canned>();
+  const entitlements = new Map<number, 'unpaid' | 'gone' | 'down'>();
   let calls = 0;
   const server = http.createServer((req, res) => {
     calls++;
@@ -76,6 +77,16 @@ export async function fakeAccounts() {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
       res.end(JSON.stringify(body));
     };
+    // The paywall's question (src/billing/entitlement.ts): every workspace has paid, unless a test said otherwise.
+    if (url.pathname === '/internal/entitlement') {
+      if (req.headers.authorization !== `Bearer ${INTERNAL_TOKEN}`) return out(401, { error: 'bad_token' });
+      const ws = Number(url.searchParams.get('workspace'));
+      const e = entitlements.get(ws);
+      if (e === 'gone') return out(404, { error: 'no_workspace' });
+      if (e === 'down') return out(503, { error: 'down' });
+      const allowed = e !== 'unpaid';
+      return out(200, { workspace: ws, product: url.searchParams.get('product'), enabled: true, access: allowed ? 'paid' : 'unpaid', allowed, paidThrough: allowed ? LATER : null, cancelAt: null });
+    }
     if (url.pathname !== '/internal/session') return out(404, { error: 'not_found' });
     if (url.searchParams.get('product') !== 'toran') return out(400, { error: 'bad_product' });
     if (req.headers.authorization !== `Bearer ${INTERNAL_TOKEN}`) return out(401, { error: 'bad_token' });
@@ -102,6 +113,11 @@ export async function fakeAccounts() {
     answer(sid: string, answer: Canned | null) {
       if (answer == null) answers.delete(sid);
       else answers.set(sid, answer);
+    },
+    /** What accounts says of a workspace's Toran from now on: paid (null, the default), unpaid, gone (404) or down (503). */
+    paid(workspaceId: number, state: 'unpaid' | 'gone' | 'down' | null) {
+      if (state == null) entitlements.delete(workspaceId);
+      else entitlements.set(workspaceId, state);
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

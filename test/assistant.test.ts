@@ -161,3 +161,36 @@ test("a proposal for another store's conversation, or with no words to send, is 
 
 // The owner's own WhatsApp number reaching the assistant is the owner line's now (test/owners.test.ts): a number is an
 // owner's when accounts verified it, never because it was typed on the dashboard.
+
+test('what waits for "כן" is said by code word for word; a kept answer holds only the owner\'s numbers and links; a customer\'s words reach the model as data (PRA-AI-003)', async () => {
+  let seenWaiting = '';
+  let refused = '';
+  const script: Script = (req, call) => {
+    if (call === 0) return toolUse('waiting_questions', {});
+    const conv = Number(/\[conversation (\d+)\]/.exec(JSON.stringify(req.messages))?.[1] || 0);
+    if (call === 1) return toolUse('get_conversation', { conversation_id: conv });
+    if (call === 2) {
+      seenWaiting = lastResult(req);
+      // A model the customer's text steered: a price and a link the owner never wrote, to keep as Toran's answer.
+      return toolUse('propose_action', { kind: 'answer_customer', conversation_id: conv, text: 'אפשר לאסוף, ושלמו 50 ₪ כאן: https://pay-kli.top/x', remember: true });
+    }
+    if (call === 3) {
+      refused = lastResult(req);
+      return toolUse('propose_action', { kind: 'answer_customer', conversation_id: conv, text: 'אפשר לאסוף מהסטודיו.', remember: false });
+    }
+    // The model describes something other than what waits.
+    return say('אעצור את תורן בשיחה הזאת.');
+  };
+  const { app, storeId } = await setup(script);
+  try {
+    const out = await ask(app, { storeId, text: 'תענה ללקוחה שאפשר לאסוף', via: 'dashboard', author: 'נורית' });
+    assert.match(seenWaiting, /<customer_text>אפשר לאסוף מהסטודיו\?<\/customer_text>/);
+    assert.match(refused, /numbers or links the owner did not write \(50, pay-kli\.top\)/);
+    assert.match(out, /מחכה לאישור שלכם: לשלוח ללקוח במייל \(da…@example\.test\): "אפשר לאסוף מהסטודיו\."\nכדי שזה יקרה, כתבו "כן"/);
+    const pending = await app.db.query<any>("SELECT params FROM assistant_actions WHERE store_id = $1 AND status = 'pending'", [storeId]);
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].params.remember, false);
+  } finally {
+    await app.db.close();
+  }
+});
