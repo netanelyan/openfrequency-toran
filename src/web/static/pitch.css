@@ -251,3 +251,8 @@ ul.logos li[title='WooCommerce'] svg { width: 46px; }
 .stop-btn:active { transform: scale(0.98); }
 .stop-btn:focus-visible, .stop-card .grey:focus-visible { outline: 3px solid rgba(0, 102, 204, 0.45); outline-offset: 3px; }
 .stop-note { margin: 0 0 14px; padding: 8px 14px; border-radius: 14px; background: var(--grey-pill); font-size: 14px; color: var(--ink-2); }
+
+/* "ניגודיות גבוהה" in the accessibility panel (static/a11y.js puts .a-contrast on <html>; the panel's look is a11y.css):
+   the quiet text comes up to the ink, the glass goes solid with a dark edge, the hairlines darken. Light only, as the
+   page is. */
+html.a-contrast { --ink-2: #1d1d1f; --ink-3: #1d1d1f; --link: #0050a0; --glass: #ffffff; --glass-edge: #424245; --grey-pill: #e5e5ea; --line-2: #424245; --bar-float: #ffffff; --bar-edge: #424245; }

@@ -1,0 +1,43 @@
+/* The accessibility panel, on every page Toran serves (the dashboard, its sign-in refusals and errors, the pitch pages and
+   the message-settings page), as on openfrequency.co.il (its style.css .a11y): a round glass button at the bottom
+   corner, a panel of four switches over it, each switch a class on <html> (static/a11y.js) that the rules at the foot
+   read. It loads after the page's own stylesheet and takes that page's tokens: the dashboard's glass bars (style.css),
+   light and dark; a pitch page (pitch.css, light only) has no bar tokens, so the fallbacks here are the light ones.
+   Each stylesheet keeps its own "ניגודיות גבוהה" tokens, as it keeps its own prefers-contrast block. The button is glass,
+   as the tab bar is; the panel is solid, as the account menus are, so its words keep their contrast over whatever
+   the page has under it. */
+
+.a11y-w { position: fixed; z-index: 45; bottom: calc(16px + env(safe-area-inset-bottom)); inset-inline-end: 16px; font-family: inherit; transition: transform 0.25s ease; }
+.a11y-w[hidden], .a11y-p[hidden] { display: none; }
+.a11y-btn { display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%; background: var(--bar-float, rgba(250, 250, 252, 0.82)); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: var(--shadow-float, 0 8px 30px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06)), inset 0 0 0 1px var(--bar-edge, rgba(0, 0, 0, 0.08)); color: var(--ink, #1d1d1f); cursor: pointer; }
+.a11y-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.a11y-btn svg circle { fill: currentColor; stroke: none; }
+.a11y-btn .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.a11y-p { position: absolute; bottom: 60px; inset-inline-end: 0; display: grid; gap: 8px; width: min(280px, calc(100vw - 32px)); padding: 16px; border-radius: var(--r, 18px); background: var(--solid, #ffffff); box-shadow: var(--shadow-float, 0 8px 30px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06)), inset 0 0 0 1px var(--bar-edge, rgba(0, 0, 0, 0.08)); color: var(--ink, #1d1d1f); text-align: start; line-height: 1.4; }
+.a11y-p h2 { margin: 0 0 4px; font-family: inherit; font-size: 17px; font-weight: 600; line-height: 1.3; letter-spacing: normal; color: inherit; }
+.a11y-p [data-a] { min-height: 44px; padding: 10px 14px; border: 1px solid var(--line-2, rgba(0, 0, 0, 0.16)); border-radius: var(--r-m, 12px); background: transparent; color: var(--ink, #1d1d1f); font: inherit; font-size: 15px; text-align: start; cursor: pointer; }
+.a11y-p [data-a][aria-pressed='true'] { border-color: var(--accent-fill); background: var(--accent-fill); color: var(--accent-ink, #fff); }
+.a11y-end { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: 14px; }
+.a11y-reset { min-height: 44px; padding: 0; border: 0; background: none; color: var(--ink-2, #424245); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.a11y-end a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink, #1d1d1f); text-decoration: underline; text-underline-offset: 3px; }
+.a11y-w :focus-visible { outline: 3px solid color-mix(in srgb, var(--accent-fill) 60%, transparent); outline-offset: 2px; }
+@media (prefers-reduced-transparency: reduce) {
+  .a11y-btn { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--solid, #ffffff); }
+}
+@media print { .a11y-w { display: none; } }
+
+/* Where it sits. On a phone the dashboard's tab bar floats at the foot (style.css, under 900px): the button stands over
+   its end corner, and over the page's action bar too where the page has one (a store's review).
+   A pitch page's docked WhatsApp button (under 721px, once the hero's has scrolled away): the button rises over it with
+   it. The owner's framed preview of a pitch page has the dashboard's own button, not a second one inside the frame. */
+@media (max-width: 899px) {
+  .tabbar ~ .a11y-w { bottom: calc(var(--tab, 62px) + 20px + env(safe-area-inset-bottom)); }
+  body:has(.actionbar) .tabbar ~ .a11y-w { bottom: calc(var(--tab, 62px) + 92px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 720px) { .dock.show ~ .a11y-w { transform: translateY(-67px); } }
+body.preview .a11y-w { display: none; }
+
+/* The switches. Bigger text zooms the page, so the sizes written in px grow with it (the website's way). */
+html.a-big body { zoom: 1.2; }
+html.a-links a { text-decoration: underline !important; text-decoration-thickness: 2px !important; text-underline-offset: 3px; }
+html.a-still *, html.a-still *::before, html.a-still *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

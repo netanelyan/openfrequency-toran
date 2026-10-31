@@ -1,4 +1,4 @@
-import { toranMark, ofMark, iconLinks } from '../brand.ts';
+import { a11yHead, a11yWidget, toranMark, ofMark, iconLinks } from '../brand.ts';
 
 // The pieces every page is made of. Pages are functions from data to HTML strings: no
 // framework, so a page can be tested by reading it. Every value that came from outside
@@ -153,6 +153,7 @@ export function layout(ctx: PageCtx, body: string): string {
 <link rel="stylesheet" href="/static/brand.css?v=${ctx.v || 1}">
 <link rel="stylesheet" href="/static/style.css?v=${ctx.v || 1}">
 <link rel="stylesheet" href="/static/stores.css?v=${ctx.v || 1}">
+${a11yHead(ctx.v || 1)}
 ${iconLinks()}
 <link rel="manifest" href="/static/manifest.webmanifest">
 </head>
@@ -174,6 +175,7 @@ ${body}
 </main>
 <nav class="tabbar" aria-label="ניווט">${tabs}</nav>
 <div id="toast" role="status" aria-live="polite"${flash}></div>
+${a11yWidget()}
 <script src="/static/app.js?v=${ctx.v || 1}" defer></script>
 </body>
 </html>`;

@@ -1,5 +1,5 @@
 import type { App } from '../app.ts';
-import { accessibilityLink, iconLinks } from '../brand.ts';
+import { a11yHead, a11yWidget, accessibilityLink, iconLinks } from '../brand.ts';
 import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
 import { linkOf, stopFromLink, undoFromLink, type StopLink } from '../auto/consent.ts';
 import { esc } from './ui.ts';
@@ -21,7 +21,9 @@ import type { Out, Req, Route } from './server.ts';
 // polite page, the same for every wrong one. Each route is one lookup by primary key, and an address may ask 30 times
 // a minute.
 
-const CSP = "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'none'; connect-src 'none'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+// Script only from this site, for the accessibility panel's one file (static/a11y.js): no inline script and nothing from
+// anywhere else, and the page still sends nothing anywhere (connect-src 'none').
+const CSP = "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'none'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 const headers = { 'content-security-policy': CSP, 'x-robots-tag': 'noindex, nofollow, noarchive', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' };
 
 type Store = { name: string; color: string; logo: string | null };
@@ -51,6 +53,7 @@ function page(title: string, body: string, theme: string | null): string {
 <link rel="stylesheet" href="/static/brand.css">
 <link rel="stylesheet" href="/static/pitch.css">
 ${theme ? `<link rel="stylesheet" href="${esc(theme)}">` : ''}
+${a11yHead()}
 ${iconLinks()}
 </head>
 <body>
@@ -58,6 +61,7 @@ ${iconLinks()}
 ${body}
 <footer class="foot">${accessibilityLink()}</footer>
 </div>
+${a11yWidget()}
 </body>
 </html>`;
 }

@@ -11,10 +11,11 @@
     if (img.complete && !img.naturalWidth) hide();
     else img.addEventListener('error', hide);
   });
-  // The strip goes round for as long as the page is open only with a button to stop it (PRA-FE-002).
+  // The strip goes round for as long as the page is open only with a button to stop it (PRA-FE-002). Not at all with
+  // reduced motion, or with "לעצור תנועה" on in the accessibility panel (a11y.js, the class a-still on <html>).
   const shelf = document.querySelector('.shelf');
   const pause = document.querySelector('.shelf-pause');
-  if (shelf && pause && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (shelf && pause && !matchMedia('(prefers-reduced-motion: reduce)').matches && !document.documentElement.classList.contains('a-still')) {
     shelf.classList.add('loop');
     pause.hidden = false;
     pause.addEventListener('click', () => {

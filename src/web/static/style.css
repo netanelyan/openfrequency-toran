@@ -518,7 +518,10 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
 details.panel[open] > summary { margin-bottom: 16px; }
 .keys { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; }
 .keys li { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-m); background: var(--inset); font-size: 13px; }
-.keys code { font-size: 12px; direction: ltr; unicode-bidi: isolate; }
+/* A key's name is one long word (OF_ACCOUNTS_INTERNAL): on a phone it breaks, and the row wraps, rather than push the
+   settings sideways (68px at 390, 153px with the accessibility panel's larger text). */
+.keys li { flex-wrap: wrap; }
+.keys code { font-size: 12px; direction: ltr; unicode-bidi: isolate; min-width: 0; overflow-wrap: anywhere; }
 .keys .end { margin-inline-start: auto; }
 a.back { display: inline-flex; align-items: center; gap: 2px; min-height: 32px; color: var(--accent-p); font-size: 14px; margin-bottom: 4px; }
 a.back svg.i { transform: rotate(-90deg); width: 18px; height: 18px; }
@@ -724,3 +727,11 @@ html.sk-on #main > :not(.sk-page) { display: none; }
 
 /* An image on its way (a chat's attachment): its box shimmers until it is in (app.js marks .ok). */
 .js .chat img:not(.ok) { background: var(--fill); min-height: 120px; min-width: 120px; }
+
+/* "ניגודיות גבוהה" in the accessibility panel (static/a11y.js puts .a-contrast on <html>; the panel's look is a11y.css):
+   as Increase Contrast above, a step further: the quiet text comes up to the ink, the hairlines darken and the glass goes
+   solid, light and dark. */
+html.a-contrast { --ink-2: #1d1d1f; --ink-3: #424245; --ink-p: #1d1d1f; --line: #8e8e93; --line-2: #424245; --bar: #ffffff; --bar-float: #ffffff; --bar-edge: #424245; --surface: #ffffff; --surface-hi: #ffffff; --edge: #424245; }
+@media (prefers-color-scheme: dark) {
+  html.a-contrast { --ink-2: #f5f5f7; --ink-3: #e5e5ea; --ink-p: #f5f5f7; --line: #8e8e93; --line-2: #d2d2d7; --bar: #000000; --bar-float: #000000; --bar-edge: #d2d2d7; --surface: #000000; --surface-hi: #000000; --edge: #d2d2d7; --solid: #000000; }
+}

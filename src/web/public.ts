@@ -21,6 +21,7 @@ import { setupRoutes } from '../setup.ts';
 import { eraseRoutes } from '../erase.ts';
 import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
 import { unsubscribeRoutes } from './unsubscribe.ts';
+import { errorPage } from './pages/basic.ts';
 
 // The public routes, answered without a session:
 //
@@ -266,7 +267,8 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       const q = r.url.searchParams;
       const out = await finishConnect(app, channel, { state: q.get('state') || '', code: q.get('code') || '', error: q.get('error') || '', nonce: cookies(r.req)[NONCE_COOKIE] || '' });
       const headers = { 'set-cookie': clearNonce(app.env, r.secure), 'referrer-policy': 'no-referrer' };
-      if (!out.storeId) return { status: 400, html: '<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><title>תורן</title><p>הקישור הזה כבר לא עובד. חוזרים לתורן ומחברים שוב.</p></html>', headers };
+      // Toran's own error page (its look, the accessibility panel and statement), not a bare line.
+      if (!out.storeId) return { status: 400, html: errorPage(400, 'הקישור הזה כבר לא עובד. חוזרים לתורן ומחברים שוב.'), headers };
       const done = out.outcome === 'pick' ? `pick=${encodeURIComponent(out.state!)}` : out.outcome === 'connected' ? 'connected=1' : `error=${out.why}`;
       return { redirect: `/lead/${out.storeId}/${channel}?${done}`, headers };
     }],

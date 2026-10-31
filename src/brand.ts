@@ -136,3 +136,25 @@ export const iconLinks = () =>
 /** OpenFrequency's accessibility statement, linked from every public page Toran serves (PRA-FE-002). */
 export const ACCESSIBILITY_URL = 'https://openfrequency.co.il/accessibility';
 export const accessibilityLink = (cls = '') => `<a${cls ? ` class="${cls}"` : ''} href="${ACCESSIBILITY_URL}" rel="noopener">הצהרת נגישות</a>`;
+
+/**
+ * The accessibility panel, on every page Toran serves, as on openfrequency.co.il (the owner, 2026-10-31: "accesebillity
+ * widget should be available in each subdomain. not only on the web repo"): the website's four switches with its own
+ * words, a reset, and its statement. a11yHead() goes in the <head> after the page's stylesheets: a11y.css, and a11y.js
+ * without defer, so the switches a visitor saved (localStorage of-a11y, the website's key) are on <html> before the page
+ * paints; the CSP allows no inline script. a11yWidget() goes last in the <body>, after the tab bar or the dock it sits
+ * over. The button comes before its panel, so Tab goes from it into the switches; it stays hidden without script.
+ */
+const A11Y_SWITCHES = [['big', 'טקסט גדול יותר'], ['contrast', 'ניגודיות גבוהה'], ['links', 'קו מתחת לקישורים'], ['still', 'לעצור תנועה']] as const;
+export const a11yHead = (v?: string | number) => {
+  const q = v ? `?v=${encodeURIComponent(String(v))}` : '';
+  return `<link rel="stylesheet" href="/static/a11y.css${q}">\n<script src="/static/a11y.js${q}"></script>`;
+};
+export const a11yWidget = () => `<div class="a11y-w" data-a11y hidden>
+<button class="a11y-btn" type="button" aria-expanded="false" aria-controls="a11y-p"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4.5" r="1.8"/><path d="M5 8.5l7 1.5 7-1.5M12 10v4.5M12 14.5l-3 6M12 14.5l3 6"/></svg><span class="sr">נגישות</span></button>
+<div class="a11y-p" id="a11y-p" role="group" aria-labelledby="a11y-h" hidden>
+<h2 id="a11y-h">נגישות</h2>
+${A11Y_SWITCHES.map(([k, label]) => `<button type="button" data-a="${k}" aria-pressed="false">${label}</button>`).join('\n')}
+<div class="a11y-end"><button type="button" class="a11y-reset" data-a11y-reset>לאפס</button><a href="${ACCESSIBILITY_URL}" rel="noopener">הצהרת הנגישות</a></div>
+</div>
+</div>`;

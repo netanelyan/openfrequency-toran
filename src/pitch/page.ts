@@ -1,5 +1,5 @@
 import type { App } from '../app.ts';
-import { accessibilityLink, iconLinks, ofMark, toranMark } from '../brand.ts';
+import { a11yHead, a11yWidget, accessibilityLink, iconLinks, ofMark, toranMark } from '../brand.ts';
 import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
 import { esc } from '../web/ui.ts';
 import { money } from '../agent/tools.ts';
@@ -212,6 +212,7 @@ ${base ? `<meta property="og:type" content="website">
 <link rel="stylesheet" href="/static/brand.css">
 <link rel="stylesheet" href="/static/pitch.css">
 <link rel="stylesheet" href="/s/${esc(d.store.slug)}/theme.css">
+${a11yHead()}
 ${iconLinks()}
 </head>
 <body${preview ? ' class="preview"' : ''}>
@@ -274,6 +275,7 @@ ${iconLinks()}
   </footer>
 </div>
 ${demo ? `<div class="dock">${greenBtn('לכתוב לו בוואטסאפ')}</div>` : ''}
+${a11yWidget()}
 <script src="/static/pitch.js" defer></script>
 </body>
 </html>`;
@@ -298,5 +300,5 @@ const linksSec = `<section class="links" aria-labelledby="links-h">
 
 /** The page for a slug that is not (or no longer) there. */
 export function goneHtml(removed: boolean): string {
-  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="robots" content="noindex, nofollow"><title>${removed ? 'העמוד הוסר' : 'העמוד לא נמצא'}</title><link rel="stylesheet" href="/static/brand.css"><link rel="stylesheet" href="/static/pitch.css"></head><body><div class="wrap"><section class="hero gone"><h1>${removed ? 'העמוד הזה הוסר' : 'העמוד הזה לא כאן'}</h1><p class="lede">${removed ? 'הורדנו אותו כמו שביקשתם, והקישור כבר לא עובד.' : 'אולי הקישור ישן. אם קיבלתם אותו מאיתנו, אפשר לענות להודעה ונשלח קישור חדש.'}</p></section><footer class="foot">${accessibilityLink()}</footer></div></body></html>`;
+  return `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="robots" content="noindex, nofollow"><title>${removed ? 'העמוד הוסר' : 'העמוד לא נמצא'}</title><link rel="stylesheet" href="/static/brand.css"><link rel="stylesheet" href="/static/pitch.css">${a11yHead()}</head><body><div class="wrap"><section class="hero gone"><h1>${removed ? 'העמוד הזה הוסר' : 'העמוד הזה לא כאן'}</h1><p class="lede">${removed ? 'הורדנו אותו כמו שביקשתם, והקישור כבר לא עובד.' : 'אולי הקישור ישן. אם קיבלתם אותו מאיתנו, אפשר לענות להודעה ונשלח קישור חדש.'}</p></section><footer class="foot">${accessibilityLink()}</footer></div>${a11yWidget()}</body></html>`;
 }

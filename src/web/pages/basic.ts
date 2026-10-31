@@ -1,4 +1,4 @@
-import { accessibilityLink, iconLinks, toranMark } from '../../brand.ts';
+import { a11yHead, a11yWidget, accessibilityLink, iconLinks, toranMark } from '../../brand.ts';
 import { esc, icon, layout, type PageCtx } from '../ui.ts';
 
 /** Why accounts let nobody in, in OpenFrequency's voice. No redirect from any of them, so no loop with accounts. */
@@ -23,6 +23,7 @@ export function refusalPage(kind: keyof typeof REFUSALS, href: string): string {
 <title>${esc(r.title)} · תורן</title>
 <link rel="stylesheet" href="/static/brand.css">
 <link rel="stylesheet" href="/static/style.css">
+${a11yHead()}
 ${iconLinks()}
 </head>
 <body class="login">
@@ -33,6 +34,7 @@ ${iconLinks()}
   <a class="btn primary" href="${esc(href)}">${esc(r.link)}</a>
   <p class="small muted mt12 m0">${accessibilityLink()}</p>
 </main>
+${a11yWidget()}
 </body>
 </html>`;
 }
@@ -59,6 +61,7 @@ export function errorPage(status: number, text: string, back = '/'): string {
 <title>${esc(title)} · תורן</title>
 <link rel="stylesheet" href="/static/brand.css">
 <link rel="stylesheet" href="/static/style.css">
+${a11yHead()}
 ${iconLinks()}
 </head>
 <body class="login">
@@ -69,6 +72,7 @@ ${iconLinks()}
   <div class="row">${back !== '/' ? `<a class="btn primary" href="${esc(back)}">חזרה לדף הקודם</a>` : ''}<a class="btn${back === '/' ? ' primary' : ''}" href="/">להיום</a></div>
   <p class="small muted mt12 m0">${accessibilityLink()}</p>
 </main>
+${a11yWidget()}
 </body>
 </html>`;
 }
