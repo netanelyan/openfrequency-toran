@@ -196,7 +196,7 @@ The number business owners write to, about Toran and Teder (docs/owner-line.md).
    add `name=HX...` to `TWILIO_TEMPLATES`. Until a template is approved, its message is not sent outside the 24
    hours, and owner_notifications records it as `no_template`.
 3. **Teder.** Set `OF_ASSISTANT_SECRET` (32+ random characters) here and in Teder's `.env`. Teder's internal API is
-   on 127.0.0.1:4701 (`TEDER_INTERNAL` if not), and Teder posts its events to Toran's own port on 127.0.0.1.
+   on 127.0.0.1:4700 (`TEDER_INTERNAL` if not), and Teder posts its events to Toran's own port on 127.0.0.1.
 4. **Know what it costs.** Twilio charges $0.005 a message here too. Meta charges for each template it delivers
    (the utility rate), on Twilio's bill. An answer to the owner, and anything inside the 24 hours, costs Meta
    nothing.

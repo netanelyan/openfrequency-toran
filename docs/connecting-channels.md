@@ -264,6 +264,41 @@ demo's way back to support and where the phone's answers land. After App Review:
 
 A store's own page cannot connect this number: it says "זה המספר של OpenFrequency, ואי אפשר לחבר אותו לחנות".
 
+### What production runs: our number added in WhatsApp Manager (2026-10-31)
+
+Production did not take the route above. On 2026-10-30 our number's WhatsApp Business app account was deleted and the
+number added straight to our WhatsApp account in WhatsApp Manager (2477118039396394, phone number id
+`1486290554558575`; SERVER-FACTS.md, "Meta: our business"). It has no app, so nothing connects it on the company
+store's page (`oneNumber` stays null), and it is set by id, as in "Separate numbers, by setting" below, the same id
+twice. What was done, in order:
+
+1. **Verify.** WhatsApp Manager refused new codes for a day ("You have requested a verification code too many times").
+   Meta's API asks on its own: `POST <id>/request_code` with `code_method=VOICE` (or `SMS`) and `language=en`, then
+   `POST <id>/verify_code` with `code=<the digits>`, both with `META_SYSTEM_TOKEN`. The owner ran both; the code is
+   theirs to type.
+2. **Register** for the Cloud API: `POST <id>/register` with `messaging_product=whatsapp` and `pin=<6 digits>`. The
+   PIN (the number's two-step verification PIN) is in `/opt/toran/private/wa-pin`, mode 600, owner toran, and is
+   never printed. Meta allows 10 registrations in 72 hours. WhatsApp Manager takes a profile picture only after this.
+3. **`.env`**, then restart (backup `.env.bak-20261031T210541Z`):
+   ```
+   META_DEMO_PHONE_ID=1486290554558575
+   META_OWNER_PHONE_ID=1486290554558575    # the same id: the owner line's news goes out through Meta, not the simulator
+   TORAN_ASSISTANT_WA=<DEMO_WA_NUMBER's digits>   # and OF_ASSISTANT_WA in accounts' .env, the same
+   ```
+   `DEMO_WA_NUMBER`, `TORAN_OWNER_WHATSAPP`, `TORAN_SUPPORT_STORE` and `META_SYSTEM_TOKEN` were already set, and every
+   `TWILIO_*` is empty. After the restart `/internal/ops` answers `demoLine: {live: true, via: "meta"}`; `ourNumber`
+   stays null on this route. The start line still says "WhatsApp: sim": that is `app.wa`, which our lines don't use.
+4. **The webhook** needed nothing: our WhatsApp account was subscribed to the app on 2026-10-30.
+5. **The templates** (item 6 below) were submitted through the API from `src/owners/templates.ts`, so the text is
+   exactly what Toran sends: `POST 2477118039396394/message_templates` with the name, `language: "he"`, `UTILITY`, the
+   body with its samples, the footer and the quick replies. Once Meta approves them, `META_TEMPLATES` lists them.
+   Sending one needs a payment method on that WhatsApp account (it has no currency yet).
+6. **Support** is store 95, re-synced from the site's export (docs/company.md) the same night.
+
+There is no phone app on this number, so "answer one of them from the WhatsApp Business app" in step 5 above does not
+apply: answer from the inbox at `/admin/toran`, inside the 24 hours. To undo: empty the two ids and restart, and the
+lines go back to the simulator, as before.
+
 ### Separate numbers, by setting
 
 Both lines also work on Twilio's code, and on Meta's Cloud API as numbers of their own. Each one is on Meta once its
