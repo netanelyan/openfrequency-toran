@@ -68,12 +68,12 @@ export const shekels = (n: number) => Number(n).toLocaleString('he-IL', Number.i
 const TOTAL_WORDS = /סך\s+הכו?ל/;
 
 /**
- * Accounts' summary without the lines that say the total again (one with "סך הכול", or with the total itself as a
- * whole number, 1,746.40 but not 11,746.40), since our own first line says it: the customer reads the amount once.
+ * Accounts' summary without its "סך הכול" line, since our own first line says the total: the customer reads the amount
+ * once. Only that line goes: an item's line stays even when its amount happens to equal the total (one product, VAT
+ * included), so the customer always sees what the money is for.
  */
-export function withoutTotal(summary: string, total: string): string {
-  const amount = new RegExp(`(?<![\\d.,])${total.replace(/[.,]/g, '\\$&')}(?![\\d]|[.,]\\d)`);
-  return summary.split('\n').filter((l) => l.trim() && !TOTAL_WORDS.test(l) && !amount.test(l)).join('\n');
+export function withoutTotal(summary: string, _total?: string): string {
+  return summary.split('\n').filter((l) => l.trim() && !TOTAL_WORDS.test(l)).join('\n');
 }
 
 /** 'YYYY-MM-DD' as Israelis write a date: 31.12.2026. */

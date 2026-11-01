@@ -212,8 +212,8 @@ test('a PAY code: the amount with VAT, accounts\' lines, the transfer\'s details
     // A new code from the same phone takes the wait over.
     s.accounts.code('PAY-ZZ9YY8', due('PAY-ZZ9YY8', { workspace: { id: 8, name: 'מאפיית הכרמל' }, total: 990, summary: 'תורן, החבילה הקטנה: 990 ₪' }));
     const again = await s.write(CUSTOMER, 'PAY-ZZ9YY8');
-    // Its only summary line restates the total (990), so the amount is said once, by our own line.
-    assert.match(again.reply!, /לתשלום על המנוי של מאפיית הכרמל: 990 ₪, כולל מע״מ\.\n\nפרטי ההעברה:\n/);
+    // Its only summary line is what the money is for, so it stays even though its amount equals the total.
+    assert.match(again.reply!, /לתשלום על המנוי של מאפיית הכרמל: 990 ₪, כולל מע״מ\.\nתורן, החבילה הקטנה: 990 ₪\n\nפרטי ההעברה:\n/);
     assert.deepEqual({ ...(await s.wait(CUSTOMER)) }, { code: 'PAY-ZZ9YY8', workspace_id: 8, workspace_name: 'מאפיית הכרמל', week: true });
     assert.equal((await s.app.db.one<any>('SELECT COUNT(*)::int AS n FROM pay_waits')).n, 1);
   } finally {
@@ -676,8 +676,8 @@ test('the check spends within the agent\'s caps and 5 checks a phone an Israel d
   }
 });
 
-test('a summary line that restates the total goes: "סך הכול", or the total itself as a whole number', () => {
-  const summary = ['תדר: 1,746.40 ₪ החודש', 'עוד מנוי: 11,746.40 ₪', 'סך הכל לתשלום: כמו למעלה', 'תורן: 1,746.405 משהו', '', 'דמי הקמה: 990 ₪'].join('\n');
-  assert.equal(withoutTotal(summary, '1,746.40'), ['עוד מנוי: 11,746.40 ₪', 'תורן: 1,746.405 משהו', 'דמי הקמה: 990 ₪'].join('\n'));
-  assert.equal(withoutTotal('דמי הקמה: 990 ₪\nתורן: 1,990 ₪', '990'), 'תורן: 1,990 ₪');
+test('only the summary\'s "סך הכול" line goes; an item\'s line stays even when its amount equals the total', () => {
+  const summary = ['תדר: 1,746.40 ₪ החודש', 'סך הכל לתשלום: כמו למעלה', '', 'דמי הקמה: 990 ₪', 'סך הכול לתשלום עכשיו: 2,736.40 ₪'].join('\n');
+  assert.equal(withoutTotal(summary, '1,746.40'), ['תדר: 1,746.40 ₪ החודש', 'דמי הקמה: 990 ₪'].join('\n'));
+  assert.equal(withoutTotal('דמי הקמה: 990 ₪', '990'), 'דמי הקמה: 990 ₪', 'the one thing being paid for is never dropped');
 });
