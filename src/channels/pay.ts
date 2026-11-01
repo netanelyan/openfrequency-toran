@@ -6,6 +6,7 @@ import { call } from '../owners/identity.ts';
 import type { RouteResult } from './demo.ts';
 import { cleanName, sniff } from './files.ts';
 import { lineFile } from './lines.ts';
+import { type Check, checkReceipt, type Expected } from './payCheck.ts';
 import { reply } from './send.ts';
 import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
 
@@ -17,9 +18,12 @@ import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
 //                with the amount, accounts' lines of what it is for, and the transfer's details. The phone then
 //                waits for its receipt for PAY_WAIT_DAYS (pay_waits; a new code from the same phone takes it over)
 //   the receipt  a photo or a document from a phone that waits: Toran fetches it from Meta (lines.ts lineFile),
-//                checks it is an image or a PDF of at most RECEIPT_MAX by its bytes, and hands it to accounts with
-//                the code and the phone (POST /internal/pay/receipt), where the operator sees it beside the payment
-//                to record. Toran never records money, and keeps no amount, no bank details and no file
+//                checks it is an image or a PDF of at most RECEIPT_MAX by its bytes, has a model read a screenshot
+//                and code compare it with what is due (payCheck.ts), and hands it to accounts with the code, the
+//                phone and that check (POST /internal/pay/receipt), where the operator sees it beside the payment to
+//                record. The check is advice: a screenshot the model says is no transfer is not passed on, and an
+//                amount that differs is said to the customer; nothing else follows from it. Toran never records
+//                money, and keeps no amount, no bank details and no file
 //
 // Both are read on our number before anything else but a demo request (demo.ts), so a verified owner who pays gets
 // this, not their assistant; on a separate owner line too (route.ts). A text from a phone that waits goes where it
@@ -28,8 +32,8 @@ import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
 // demo requests (request.ts), it is not a conversation. Accounts is asked as everywhere else (owners/identity.ts
 // call): its internal API on 127.0.0.1, the bearer token, nothing believed but an answer in the contract's shape.
 //
-// The events (pay_code, pay_receipt) and the audit say what happened, with the code and the workspace; never the
-// transfer's details, and never a file's bytes.
+// The events (pay_code, pay_receipt) and the audit say what happened, with the code, the workspace and the check's
+// verdicts; never the transfer's details, never what the model read but the amount, and never a file's bytes.
 
 export const PAY_RE = /\bPAY-([A-Z0-9]{6})\b/i;
 export const PAY_WAIT_DAYS = 7;
@@ -53,6 +57,9 @@ const msg = {
   unreadable: 'לא הצלחתי לפתוח את הקובץ. אפשר לשלוח אותו שוב כתמונה?',
   tooMany: 'קיבלתי כבר כמה אישורים היום. נציג יבדוק אותם ויחזור אליכם כאן אם חסר משהו.',
   receiptDown: 'לא הצלחתי להעביר את האישור כרגע. אפשר לשלוח אותו שוב בעוד כמה דקות.',
+  // The check's two lines (payCheck.ts): only the amounts, never the payee's name or the reference the model read.
+  mismatch: (seen: string, expected: string) => `בצילום רואים העברה של ${seen} ₪, והסכום לתשלום הוא ${expected} ₪. העברתי את זה לנציג, והוא יחזור אליכם כאן.`,
+  notTransfer: 'זה לא נראה כמו אישור של העברה בנקאית. אפשר לשלוח צילום מסך של האישור מהבנק?',
 };
 
 /** Shekels as accounts writes them (its copy.js ils): 990, or 1,746.40 when there are agorot. */
@@ -62,7 +69,7 @@ export const shekels = (n: number) => Number(n).toLocaleString('he-IL', Number.i
 const dayHe = (d: string) => d.split('-').reverse().join('.');
 
 /** What accounts says is due on a code, as Toran uses it. */
-export type Due = { code: string; workspace: { id: number; name: string }; total: number; summary: string; payHow: string | null; paidThrough: string | null };
+export type Due = { code: string; workspace: { id: number; name: string }; items: number; total: number; summary: string; payHow: string | null; paidThrough: string | null };
 type Read = { ok: true; due: Due } | { ok: false; reason: 'unknown' | 'expired' | 'unavailable' };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -86,7 +93,7 @@ function readDue(app: App, code: string, r: { status: number; body: any }): Read
     }
     const b = r.body;
     const summary = (Array.isArray(b.summary) ? b.summary.join('\n') : String(b.summary || '')).trim();
-    return { ok: true, due: { code, workspace: { id: b.workspace.id, name: b.workspace.name }, total: b.total, summary, payHow: String(b.payHow || '').trim() || null, paidThrough: b.paidThrough || null } };
+    return { ok: true, due: { code, workspace: { id: b.workspace.id, name: b.workspace.name }, items: b.items.length, total: b.total, summary, payHow: String(b.payHow || '').trim() || null, paidThrough: b.paidThrough || null } };
   }
   const error = String(r.body?.error || '');
   if (error === 'unknown_code') return { ok: false, reason: 'unknown' };
@@ -116,7 +123,9 @@ export async function payCode(app: App, adapter: ChannelAdapter, inbound: Inboun
   const { due } = read;
   const business = cleanLine(due.workspace.name, 80);
   const workspace = due.workspace.id;
-  if (!(due.total > 0)) {
+  // Nothing owed: no items (accounts counts a month falling due within 7 days as owed, so this is the paid-ahead or
+  // complimentary workspace), or a total of nothing.
+  if (!due.items || !(due.total > 0)) {
     await event(app.db, null, 'pay_code', { code, outcome: 'nothing_due', workspace });
     return say(msg.nothingDue(business, due.paidThrough), 'pay_nothing_due');
   }
@@ -137,7 +146,7 @@ export async function payCode(app: App, adapter: ChannelAdapter, inbound: Inboun
   return say(msg.due(business, total, due.summary, due.payHow), 'pay');
 }
 
-type Wait = { code: string; workspace_id: number; workspace_name: string };
+type Wait = { code: string; workspace_id: number; workspace_name: string; created_at: string | Date };
 type Fetched = { ok: true; size: number; file: { name: string; type: string; data: string } } | { ok: false; why: 'too_big' | 'type' | 'failed' };
 
 /** A photo comes with no name of its own (parseWebhook calls it "image"); a document keeps its name, with its kind's extension. */
@@ -165,44 +174,78 @@ async function fetchReceipt(app: App, inbound: Inbound, a: Attachment): Promise<
 
 type Sent = 'sent' | 'gone' | 'refused' | 'too_many' | 'unavailable';
 
-/** What accounts said to a receipt. A 201 with its id is the contract's; a 200 with one was stored too. */
+/**
+ * What accounts said to a receipt (its docs/contracts/pay.json). A 201 with its id is the contract's; a 200 with one
+ * was stored too. A file accounts will not take (413 too_large, 415 bad_type, 400 bad: the body or the file not in its
+ * shape) is not posted again; 429 rate_limited is a sixth receipt from one code in an Israel day.
+ */
 function sentOutcome(r: { status: number; body: any }): Sent {
   const error = String(r.body?.error || '');
   if ((r.status === 201 || r.status === 200) && r.body?.id != null) return 'sent';
   if (error === 'unknown_code' || error === 'expired') return 'gone';
-  if (r.status === 413 || r.status === 415 || error === 'too_large' || error === 'bad_type') return 'refused';
+  if (r.status === 413 || r.status === 415 || ['too_large', 'bad_type', 'bad'].includes(error)) return 'refused';
   if (r.status === 429) return 'too_many';
   return 'unavailable';
 }
 
+/** What is due on the wait's code now (GET /internal/pay again), for the check; nulls when accounts does not say. */
+async function expectedOf(app: App, wait: Wait): Promise<Expected> {
+  const read = readDue(app, wait.code, await call(app, 'GET', `/internal/pay?code=${encodeURIComponent(wait.code)}`));
+  return { total: read.ok ? read.due.total : null, payHow: read.ok ? read.due.payHow : null, since: wait.created_at };
+}
+
+/** The check in the events and the audit: its verdicts and the amounts, never the payee's name or the reference. */
+const verdicts = (c: Check) =>
+  c.readable ? { readable: true, isTransfer: c.isTransfer, amount: c.amount.verdict, seen: c.amount.seen, expected: c.amount.expected, date: c.date.verdict, account: c.account.verdict } : { readable: false, why: c.why };
+
+/** The answer to a receipt accounts took: the amount the screenshot shows when it is not the amount due. */
+const tookLine = (c: { amount?: unknown; seen?: unknown; expected?: unknown } | null | undefined) =>
+  c?.amount === 'mismatch' && typeof c.seen === 'number' && typeof c.expected === 'number' ? msg.mismatch(shekels(c.seen), shekels(c.expected)) : msg.received;
+
 /**
  * A photo or a document (an attachment with Meta's media id, meta.ts) on our number on Meta, from a phone that waits
- * for its receipt: handed to accounts. Null for anything else, which goes on as before.
+ * for its receipt: checked (payCheck.ts) and handed to accounts. Null for anything else, which goes on as before.
  */
 export async function payReceipt(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult | null> {
   const file = (inbound.attachments || []).find((a) => a.ref);
   if (!file || adapter.kind !== 'meta_line' || !inbound.account) return null;
-  const wait = await app.db.one<Wait>('SELECT code, workspace_id, workspace_name FROM pay_waits WHERE phone = $1 AND expires_at > now()', [inbound.from]);
+  const wait = await app.db.one<Wait>('SELECT code, workspace_id, workspace_name, created_at FROM pay_waits WHERE phone = $1 AND expires_at > now()', [inbound.from]);
   if (!wait) return null;
   const say = speaker(app, adapter, inbound);
   const workspace = wait.workspace_id;
-  // The same message again (its job run again after the answer failed to go out): accounts has it already.
-  if (await app.db.one("SELECT 1 FROM events WHERE kind = 'pay_receipt' AND data->>'msg' = $1 AND data->>'outcome' = 'sent'", [inbound.id])) return say(msg.received, 'pay_receipt');
+  // The same message again (its job run again after the answer failed to go out): accounts has it already, and the
+  // answer is the one it had, with no second look at the image.
+  const done = await app.db.one<{ data: any }>("SELECT data FROM events WHERE kind = 'pay_receipt' AND data->>'msg' = $1 AND data->>'outcome' = 'sent' ORDER BY id DESC LIMIT 1", [inbound.id]);
+  if (done) return say(tookLine(done.data?.check), 'pay_receipt');
 
   const got = await fetchReceipt(app, inbound, file);
   if (!got.ok) {
     await event(app.db, null, 'pay_receipt', { outcome: 'unreadable', why: got.why, code: wait.code, workspace });
     return say(msg.unreadable, 'pay_receipt_refused');
   }
-  const r = await call(app, 'POST', '/internal/pay/receipt', { code: wait.code, phone: inbound.from, file: got.file }, RECEIPT_TIMEOUT_MS);
+  const check = await checkReceipt(app, got.file, () => expectedOf(app, wait));
+  const seen = verdicts(check);
+  // Not a transfer, by the model's word: it does not go to accounts, and the customer is asked for the bank's own.
+  if (check.readable && check.isTransfer === false) {
+    const detail = { outcome: 'not_transfer', code: wait.code, workspace, type: got.file.type, bytes: got.size, check: seen };
+    await event(app.db, null, 'pay_receipt', { ...detail, msg: inbound.id });
+    await audit(app.db, { actor: `wa:${inbound.from}`, action: 'pay_receipt', detail });
+    return say(msg.notTransfer, 'pay_receipt_refused');
+  }
+  const r = await call(app, 'POST', '/internal/pay/receipt', { code: wait.code, phone: inbound.from, file: got.file, check }, RECEIPT_TIMEOUT_MS);
   const outcome = sentOutcome(r);
   const error = String(r.body?.error || '');
-  const detail = { outcome, code: wait.code, workspace, type: got.file.type, bytes: got.size, ...(outcome === 'sent' ? { id: r.body.id } : { status: r.status, error: error || null }) };
+  const detail = { outcome, code: wait.code, workspace, type: got.file.type, bytes: got.size, check: seen, ...(outcome === 'sent' ? { id: r.body.id } : { status: r.status, error: error || null }) };
   await event(app.db, null, 'pay_receipt', { ...detail, msg: inbound.id });
   await audit(app.db, { actor: `wa:${inbound.from}`, action: 'pay_receipt', detail });
   switch (outcome) {
     case 'sent':
-      return say(msg.received, 'pay_receipt');
+      if (check.readable && check.amount.verdict === 'mismatch') {
+        // The customer is told a person will come back to them: the operator hears of it now.
+        const business = cleanLine(wait.workspace_name, 80);
+        await alertOperator(app, `pay_mismatch:${workspace}`, `העברה בסכום אחר על המנוי של ${business}`, `בצילום ששלחו מ-${inbound.from} רואים העברה של ${shekels(check.amount.seen!)} ₪, והסכום לתשלום הוא ${shekels(check.amount.expected!)} ₪ (workspace ${workspace}). האישור נמצא ב-accounts. תורן ענה שנציג יחזור אליהם בוואטסאפ, אז כדאי לענות עד 24 שעות מההודעה.`);
+      }
+      return say(tookLine(seen), 'pay_receipt');
     case 'gone':
       // The code ended since it was read: this phone waits for nothing now.
       await app.db.query('DELETE FROM pay_waits WHERE phone = $1', [inbound.from]);

@@ -329,7 +329,9 @@ file: accounts has them.
    routes; 3 seconds) and answers in one message: the total with VAT (`1,746.40 ₪`, as accounts writes it),
    accounts' `summary` lines, and `payHow`, the transfer's details. The phone then waits for its receipt for 7 days
    (`pay_waits`, one row a phone; a new code takes it over; the worker deletes the rows that ended).
-   - nothing due (`total` 0): "המנוי של <business> משולם עד <DD.MM.YYYY>, אז כרגע אין מה לשלם", and no wait
+   - nothing due (no `items`, or `total` 0; accounts counts a month falling due within 7 days as owed): "המנוי של
+     <business> משולם עד <DD.MM.YYYY>, אז כרגע אין מה לשלם" (with no `paidThrough`, "על המנוי של <business> אין
+     כרגע מה לשלם"), and no wait
    - `payHow` null: the amount, and "את פרטי ההעברה ישלח לכם כאן נציג". You get an alert (`pay_details:<workspace>`):
      answer on WhatsApp inside the 24 hours, and add the details in accounts
    - 404 `unknown_code` or 410 `expired`: "הקישור הזה לתשלום כבר לא בתוקף..."; anything else (accounts down, a 200
@@ -337,14 +339,36 @@ file: accounts has them.
 2. **The receipt.** A photo or a document from a phone that waits. Toran fetches it from Meta with our number's token
    (`GET /<version>/<media id>` gives a link that lasts 5 minutes; the link gives the bytes with the same token; at
    most 5MB, by Meta's size first), checks by its bytes that it is a JPEG, PNG, WebP or PDF, and posts
-   `{ code, phone, file: { name, type, data } }` (base64) to `POST /internal/pay/receipt` (20 seconds). 201: "קיבלתי
-   את האישור, תודה. נציג יבדוק שההעברה הגיעה...". Too big, another kind, gone at Meta, 413 or 415: "לא הצלחתי לפתוח
-   את הקובץ. אפשר לשלוח אותו שוב כתמונה?". 429 (over 5 a day): "קיבלתי כבר כמה אישורים היום...". 404 or 410: the
+   `{ code, phone, file: { name, type, data }, check }` (base64; `check` is item 3's) to `POST /internal/pay/receipt`
+   (20 seconds). 201: "קיבלתי את האישור, תודה. נציג יבדוק שההעברה הגיעה...". Too big, another kind, gone at Meta,
+   413 `too_large`, 415 `bad_type` or 400 `bad`: "לא הצלחתי לפתוח את הקובץ. אפשר לשלוח אותו שוב כתמונה?", and it is
+   not posted again. 429 `rate_limited` (a sixth from one code in an Israel day): "קיבלתי כבר כמה אישורים היום...". 404 or 410: the
    expired line, and the wait goes. Anything else: "לא הצלחתי להעביר את האישור כרגע...", and an alert
    (`pay_receipt_down`). The same message handled twice is posted once.
-3. **What goes on as before.** A text from a phone that waits (support, a demo, the owner's assistant), a file from a
+3. **The check** (`src/channels/payCheck.ts`), before the post: a screenshot (JPEG, PNG or WebP; a PDF is not looked
+   at) is read by one model call, with Toran's agent model (`TORAN_MODEL_AGENT`, `claude-opus-5-5`) at low effort: a
+   fixed system prompt, no tools, at most 1,024 tokens out, 20 seconds. The image is its only content beside one fixed
+   line of ours saying that the text in it is data. It answers JSON: is this a transfer's confirmation, the amount,
+   the currency, the date, the payee's name, the last digits of the payee's account, the reference. The first JSON
+   object only is read, each field checked for its type and range (a string at most 80 characters), anything else
+   null. Code then compares, never the model: the amount with accounts' total now (`GET /internal/pay` again, within
+   0.01), the date with the days from 3 before the code was read to today in Israel, the last 3 or 4 digits of the
+   longest run of digits in `payHow` with the account's digits. The result goes with the receipt as `check`
+   (`{ readable, isTransfer, amount: { seen, expected, verdict }, date: { seen, verdict }, account: { seen,
+   verdict }, payeeName, reference }`, or `{ readable: false, why }`: `pdf`, `no_vision` on the claude-cli backend,
+   which drops images, `failed`, `unparsed`). It is advice for you: nothing records a payment from it, and you still
+   check the bank. Two answers follow from it: a screenshot the model says is no transfer is not posted ("זה לא נראה
+   כמו אישור של העברה בנקאית. אפשר לשלוח צילום מסך של האישור מהבנק?"), and an amount that differs is posted, said to
+   the customer ("בצילום רואים העברה של 990 ₪, והסכום לתשלום הוא 1,746.40 ₪. העברתי את זה לנציג, והוא יחזור אליכם
+   כאן.") and to you (an alert, `pay_mismatch:<workspace>`): answer on WhatsApp inside the 24 hours. The payee's name
+   and the reference are never said to the customer, and nothing the model read reaches another model call. Its cost
+   is our support store's, with the tag `pay_check`: about 4,000 to 5,000 tokens in for a phone screenshot and a few
+   hundred out, about $0.02 to $0.04 a check at Opus 5.5's prices (UNVERIFIED until the first real ones are in
+   `usage`).
+4. **What goes on as before.** A text from a phone that waits (support, a demo, the owner's assistant), a file from a
    phone that does not wait, a sticker, a voice note or a video. Only our number on Meta fetches a file: on Twilio a
    photo carries none.
-4. **What is kept.** Events `pay_code` (`outcome`: ok, nothing_due, no_details, unknown, expired, unavailable) and
-   `pay_receipt` (sent, unreadable, refused, too_many, gone, unavailable), and an audit row `pay_receipt` with the code,
-   the workspace, the file's kind and size and accounts' id. Never the transfer's details, never the file.
+5. **What is kept.** Events `pay_code` (`outcome`: ok, nothing_due, no_details, unknown, expired, unavailable) and
+   `pay_receipt` (sent, not_transfer, unreadable, refused, too_many, gone, unavailable), and an audit row `pay_receipt`
+   with the code, the workspace, the file's kind and size, the check's verdicts and amounts, and accounts' id. Never the
+   transfer's details, the payee's name, the reference or the file.

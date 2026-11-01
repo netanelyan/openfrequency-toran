@@ -125,8 +125,28 @@
             "name": "IMG-20261101-WA0003.jpg",
             "type": "image/png",
             "data": "iVBORw0KGgo="
+          },
+          "check": {
+            "readable": true,
+            "isTransfer": true,
+            "amount": {
+              "seen": 1746.4,
+              "expected": 1746.4,
+              "verdict": "ok"
+            },
+            "date": {
+              "seen": "2026-11-01",
+              "verdict": "ok"
+            },
+            "account": {
+              "seen": "8901",
+              "verdict": "ok"
+            },
+            "payeeName": "OpenFrequency",
+            "reference": "77812"
           }
-        }
+        },
+        "notes": "check is optional: what Toran read on the picture. Unknown keys are dropped, strings cut to 80 characters, a value of the wrong type or a verdict outside its list dropped (amount: ok | mismatch | unknown; date: ok | too_old | future | unknown; account: ok | mismatch | unknown). It is shown to the operator and decides nothing."
       },
       "answers": [
         {
