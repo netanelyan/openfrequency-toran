@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { toIntl } from '../core/urls.ts';
 import { open } from '../core/secrets.ts';
+import { download } from './files.ts';
 import { LIMITS } from './policy.ts';
 import type { ChannelAdapter, Inbound, Sent } from './types.ts';
 import type { WaOut } from './whatsapp.ts';
@@ -192,6 +193,16 @@ const textOf = (m: any): string => {
   }
 };
 const FILE_TYPES = new Set(['image', 'audio', 'video', 'document', 'sticker', 'location', 'contacts']);
+/**
+ * The kinds whose media id is kept, as the attachment's ref: a photo and a document, the two a transfer's receipt comes
+ * as (pay.ts, which alone fetches WhatsApp media, with mediaBytes below). A sticker, a voice note or a video keeps no
+ * ref, so it is never taken for a receipt; nothing else reads a WhatsApp file's bytes (policy.ts).
+ */
+const MEDIA_KEPT = new Set(['image', 'document']);
+const fileOf = (m: any) => {
+  const media = m?.[m.type] || {};
+  return { name: media.filename || m.type, type: media.mime_type || m.type, size: 0, ...(MEDIA_KEPT.has(m.type) && media.id ? { ref: String(media.id) } : {}) };
+};
 
 /** Meta's word on one of a store's templates (auto/templates.ts): its status, or the category it moved it to. */
 export type TemplateNews = { waba: string; name: string; status: string | null; category: string | null; reason: string | null };
@@ -223,7 +234,7 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
             profileName: (names.get(String(m.from)) as string) || null,
             account: phoneId,
             to,
-            ...(FILE_TYPES.has(m.type) ? { attachments: [{ name: m[m.type]?.filename || m.type, type: m[m.type]?.mime_type || m.type, size: 0 }] } : {}),
+            ...(FILE_TYPES.has(m.type) ? { attachments: [fileOf(m)] } : {}),
           });
         }
         for (const s of Array.isArray(v.statuses) ? v.statuses : []) {
@@ -280,6 +291,33 @@ export function outBody(to: string, msg: WaOut): Record<string, unknown> {
 export async function cloudSend(env: Env, f: GraphFetch, phoneId: string, token: string, to: string, msg: WaOut): Promise<Sent> {
   const out = await graph(env, f, 'POST', `${phoneId}/messages`, { token, body: outBody(to, msg) });
   return { id: String(out?.messages?.[0]?.id || ''), usd: 0 };
+}
+
+// ---- a file a person sent
+
+/** Hosts Meta's media links are on (lookaside.fbsbx.com today): our token goes to no other. */
+const MEDIA_HOST = /(?:^|\.)(?:fbsbx\.com|facebook\.com|fbcdn\.net|whatsapp\.net)$/i;
+
+/**
+ * The bytes of a file a person sent, by the media id the webhook gave (parseWebhook's ref), at most max of them. Meta's
+ * GET /<media id>, with the token of the number it was sent to, answers where the file is (a link that lasts five
+ * minutes), its type and its size; the link gives the bytes only with the same token. A file Meta says is bigger than
+ * max is refused before it is fetched, and one that grows past max as it comes (files.ts download). Meta keeps an
+ * inbound media id for 7 days.
+ */
+export async function mediaBytes(env: Env, f: GraphFetch, mediaId: string, token: string, max: number): Promise<Buffer> {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(mediaId)) throw new Error('not a media id');
+  const info = await graph(env, f, 'GET', mediaId, { token });
+  if (Number(info?.file_size) > max) throw new Error('the file is too big');
+  const link = String(info?.url || '');
+  let host = '';
+  try {
+    host = new URL(link).hostname;
+  } catch {
+    /* no link: refused below */
+  }
+  if (!link.startsWith('https://') || !MEDIA_HOST.test(host)) throw new GraphError('Meta gave no media link on its own hosts', 200, null);
+  return download(f, link, max, { authorization: `Bearer ${token}` });
 }
 
 // ---- one connected number, as a channel adapter

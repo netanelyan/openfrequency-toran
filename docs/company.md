@@ -112,12 +112,13 @@ website's. There is no second number and no Twilio. Once it is connected to Meta
 | | Who | Who answers |
 | --- | --- | --- |
 | 1 | A message with a code: `REQ-...` (the website's demo form) or `DEMO-...` (a pitch page's button); a pitch page's own message to us ("take this page down", "about the page") | the demo request (Toran's or Teder's, one of each per number: docs/operator.md section 3), or the demo as that store; the page's message is kept for you. A code comes first, so a business owner who presses a pitch page's button still gets the demo |
-| 2 | A business owner whose number accounts verified, or a `LINK-...` code from accounts | the owner's assistant (docs/owner-line.md), Teder's news included |
-| 3 | A phone bound to a demo in the last 7 days | that store's demo agent |
-| 4 | Anyone else | our support: this store, its prompt and its three tools |
+| 2 | A message with a `PAY-...` code (accounts' "לתשלום בוואטסאפ" button), or a photo or a document from a phone that sent one in the last 7 days | the payment (`src/channels/pay.ts`, docs/operator.md section 7): the amount and the transfer's details from accounts, then the receipt handed to accounts. A PAY code is read right after a `REQ-` code, and a receipt before the owner routing, so a business owner who pays gets this, not their assistant. A text from that phone goes on to the rows below |
+| 3 | A business owner whose number accounts verified, or a `LINK-...` code from accounts | the owner's assistant (docs/owner-line.md), Teder's news included |
+| 4 | A phone bound to a demo in the last 7 days | that store's demo agent |
+| 5 | Anyone else | our support: this store, its prompt and its three tools |
 
 Every answer, every reply from the inbox and every template of the owner line goes out from the same number, through
-the Cloud API. The number is never answered as this store's own WhatsApp: that would skip rows 1 to 3. No other
+the Cloud API. The number is never answered as this store's own WhatsApp: that would skip rows 1 to 4. No other
 store can connect it: its page says "זה המספר של OpenFrequency, ואי אפשר לחבר אותו לחנות", by the number's Meta id
 or by the number Meta shows.
 

@@ -38,7 +38,12 @@ function wellFormed(b: any): b is Owner {
   return true;
 }
 
-async function call(app: App, method: 'GET' | 'POST', pathQuery: string, body?: unknown): Promise<{ status: number; body: any }> {
+/**
+ * One question to accounts' internal API, as every caller asks it: the bearer token, no redirect followed, an answer
+ * within timeoutMs, and anything that is not an answer (a short token, a refused connection, a timeout) a 503 of our
+ * own. The payment over WhatsApp (channels/pay.ts) asks the same way, with longer for a receipt's upload.
+ */
+export async function call(app: App, method: 'GET' | 'POST', pathQuery: string, body?: unknown, timeoutMs = 3000): Promise<{ status: number; body: any }> {
   const base = String(app.env.OF_ACCOUNTS_INTERNAL || 'http://127.0.0.1:4741').trim().replace(/\/+$/, '');
   const token = String(app.env.OF_INTERNAL_TOKEN || '').trim();
   if (token.length < MIN_TOKEN) return { status: 503, body: { error: 'not_configured' } };
@@ -49,7 +54,7 @@ async function call(app: App, method: 'GET' | 'POST', pathQuery: string, body?: 
       headers: { authorization: `Bearer ${token}`, accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
       redirect: 'error',
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e: any) {
     app.log(`[owners] accounts unreachable at ${base}: ${e?.name === 'TimeoutError' ? 'timed out' : e?.message}`);

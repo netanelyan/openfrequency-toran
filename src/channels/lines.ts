@@ -1,7 +1,7 @@
 import type { App } from '../app.ts';
 import { toranEnv } from '../core/env.ts';
 import { open } from '../core/secrets.ts';
-import { cloudSend } from './meta.ts';
+import { cloudSend, mediaBytes } from './meta.ts';
 import { LIMITS } from './policy.ts';
 import type { WaProvider } from './whatsapp.ts';
 
@@ -119,6 +119,15 @@ async function tokenOf(app: App, phoneId: string): Promise<string> {
   const row = await app.db.one<{ secret: string }>("SELECT secret FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND external_id = $1 AND secret IS NOT NULL ORDER BY (status = 'active') DESC, id DESC LIMIT 1", [phoneId]);
   if (!row) throw new Error(`no token for our number ${phoneId}: set META_SYSTEM_TOKEN, or connect the number on the company store's WhatsApp page`);
   return open(app.env, row.secret);
+}
+
+/**
+ * A file someone sent to one of our numbers on Meta, by its media id (meta.ts mediaBytes), read with that number's
+ * token. Only a payment's receipt is fetched this way (pay.ts): the adapter below has no fetchFile, so our support and
+ * the demos keep no WhatsApp file, as on every other WhatsApp number (policy.ts).
+ */
+export async function lineFile(app: App, phoneId: string, mediaId: string, max: number): Promise<Buffer> {
+  return mediaBytes(app.env, app.graph, mediaId, await tokenOf(app, digits(phoneId)), max);
 }
 
 /** Our numbers on the Cloud API, as one WhatsApp provider. */

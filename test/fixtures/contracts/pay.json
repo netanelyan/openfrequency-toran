@@ -1,0 +1,209 @@
+{
+  "name": "pay",
+  "doc": "docs/internal-pay.md",
+  "servedBy": [
+    "accounts"
+  ],
+  "calledBy": [
+    "toran"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/pay",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "query": {
+          "code": "PAY- and six of ABCDEFGHJKMNPQRSTUVWXYZ23456789, in any letter case, as the customer's message carries it"
+        }
+      },
+      "answers": [
+        {
+          "case": "owed: the first month and the setup fee",
+          "status": 200,
+          "body": {
+            "code": "PAY-ABC234",
+            "expiresAt": "2026-12-21T10:00:00.000Z",
+            "workspace": {
+              "id": 3,
+              "name": "Dana Shop"
+            },
+            "items": [
+              {
+                "product": "teder",
+                "productName": "תדר",
+                "plan": "small",
+                "monthly": 490,
+                "setup": 990,
+                "net": 1480,
+                "total": 1746.4,
+                "firstMonth": true
+              }
+            ],
+            "net": 1480,
+            "vat": 266.4,
+            "total": 1746.4,
+            "vatIncluded": false,
+            "summary": [
+              "תדר, החבילה הקטנה: 490 ₪ לחודש, לא כולל מע״מ, ודמי הקמה של 990 ₪ פעם אחת.",
+              "סך הכול לתשלום עכשיו: 1,746.40 ₪, כולל מע״מ (1,480 ₪ ועוד 266.40 ₪ מע״מ)."
+            ],
+            "payHow": "העברה בנקאית לחשבון 12-345-678901",
+            "paidThrough": null
+          },
+          "nullable": [
+            "plan",
+            "payHow",
+            "paidThrough"
+          ]
+        },
+        {
+          "case": "nothing owed: paid more than a week ahead, or complimentary",
+          "status": 200,
+          "body": {
+            "code": "PAY-ABC234",
+            "expiresAt": "2026-12-21T10:00:00.000Z",
+            "workspace": {
+              "id": 3,
+              "name": "Dana Shop"
+            },
+            "items": [],
+            "net": 0,
+            "vat": 0,
+            "total": 0,
+            "vatIncluded": false,
+            "summary": [],
+            "payHow": "העברה בנקאית לחשבון 12-345-678901",
+            "paidThrough": "2026-11-21"
+          },
+          "nullable": [
+            "payHow",
+            "paidThrough"
+          ]
+        },
+        {
+          "case": "no such code, or its workspace is disabled or deleted",
+          "status": 404,
+          "body": {
+            "error": "unknown_code"
+          }
+        },
+        {
+          "case": "the code's 60 days are over",
+          "status": 410,
+          "body": {
+            "error": "expired"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/pay/receipt",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "request": {
+        "body": {
+          "code": "PAY-ABC234",
+          "phone": "972500000123",
+          "file": {
+            "name": "IMG-20261101-WA0003.jpg",
+            "type": "image/png",
+            "data": "iVBORw0KGgo="
+          }
+        }
+      },
+      "answers": [
+        {
+          "case": "kept, and the operator emailed a link to it",
+          "status": 201,
+          "body": {
+            "id": 7,
+            "workspace": {
+              "id": 3,
+              "name": "Dana Shop"
+            }
+          }
+        },
+        {
+          "case": "the phone is not international digits",
+          "status": 400,
+          "body": {
+            "error": "bad_phone"
+          }
+        },
+        {
+          "case": "not that shape: no file object, or its data is not base64",
+          "status": 400,
+          "body": {
+            "error": "bad"
+          }
+        },
+        {
+          "case": "no such code, or its workspace is disabled or deleted",
+          "status": 404,
+          "body": {
+            "error": "unknown_code"
+          }
+        },
+        {
+          "case": "the code's 60 days are over",
+          "status": 410,
+          "body": {
+            "error": "expired"
+          }
+        },
+        {
+          "case": "the file is over 5 MB, or the body over 7,500,000 bytes",
+          "status": 413,
+          "body": {
+            "error": "too_large"
+          }
+        },
+        {
+          "case": "not a JPEG, PNG, WebP or PDF, or its first bytes are not the type it says",
+          "status": 415,
+          "body": {
+            "error": "bad_type"
+          }
+        },
+        {
+          "case": "a sixth receipt from one code in an Israel day",
+          "status": 429,
+          "body": {
+            "error": "rate_limited"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

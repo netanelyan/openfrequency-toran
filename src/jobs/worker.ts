@@ -190,6 +190,7 @@ export async function schedule(app: App) {
   );
   for (const s of due) await enqueue(app.db, 'rescrape', { storeId: s.id }, { dedupeKey: `ingest:${s.id}`, runAt: new Date(Date.now() + rescrapeOffsetMs(s.id)) });
   await app.db.query("DELETE FROM wa_users WHERE expires_at < now() - interval '1 day'");
+  await app.db.query('DELETE FROM pay_waits WHERE expires_at < now()'); // a payment's wait for its receipt (channels/pay.ts)
   // A demo asked for on the website whose page is ready: its link, on the demo number (ops/actions.ts). Teder's are
   // read from Teder only while one waits.
   await deliverRequested(app);

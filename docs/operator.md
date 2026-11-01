@@ -13,9 +13,10 @@ their outreach.
                          ── GET /internal/leads ──────────▶ the website's lead service (its last 30 days' leads)
    openfrequency.co.il   ── POST /internal/lead {url, code, product?} ▶ Toran  (a demo request, by its REQ- code)
    Toran (the worker)    ── POST /internal/lead {url, whatsapp} ──▶ Teder  (a Teder request, once its number wrote)
+   Toran (our number)    ── GET /internal/pay, POST /internal/pay/receipt ──▶ accounts  (paying over WhatsApp, section 7)
 ```
 
-All five routes are local-only. They take `Authorization: Bearer <OF_INTERNAL_TOKEN>` (the same value in every
+All seven routes are local-only. They take `Authorization: Bearer <OF_INTERNAL_TOKEN>` (the same value in every
 service's `.env`, 32 characters or more), and they refuse a request that has `X-Forwarded-For`, or that comes from
 a socket that is not loopback. Every answer is JSON with `Cache-Control: no-store`.
 
@@ -315,3 +316,35 @@ What keeps a customer's message from being lost or delayed without anyone knowin
   deleted, 200 with every count 0 when nothing was there; 401 `bad_token` without the right token; 503
   `not_configured` when `OF_INTERNAL_TOKEN` is unset or short here; 403 from anywhere but this machine. accounts reads
   only the status and treats anything but a 2xx as a failure.
+
+## 7. Paying over WhatsApp: a PAY code and its receipt
+
+Payment is a bank transfer that you record in accounts' `/admin`. Accounts gives each customer a "לתשלום בוואטסאפ"
+button that opens WhatsApp to our number with `היי, אני רוצה לשלם על המנוי של <business>. PAY-XXXXXX` filled in.
+Toran's part is `src/channels/pay.ts`, read on our number right after a `REQ-` code (docs/company.md, the table), and
+on a separate owner line before the assistant. Toran never records money and keeps no amount, no bank details and no
+file: accounts has them.
+
+1. **The code.** Toran asks accounts `GET /internal/pay?code=PAY-XXXXXX` (the internal token, as for the owner
+   routes; 3 seconds) and answers in one message: the total with VAT (`1,746.40 ₪`, as accounts writes it),
+   accounts' `summary` lines, and `payHow`, the transfer's details. The phone then waits for its receipt for 7 days
+   (`pay_waits`, one row a phone; a new code takes it over; the worker deletes the rows that ended).
+   - nothing due (`total` 0): "המנוי של <business> משולם עד <DD.MM.YYYY>, אז כרגע אין מה לשלם", and no wait
+   - `payHow` null: the amount, and "את פרטי ההעברה ישלח לכם כאן נציג". You get an alert (`pay_details:<workspace>`):
+     answer on WhatsApp inside the 24 hours, and add the details in accounts
+   - 404 `unknown_code` or 410 `expired`: "הקישור הזה לתשלום כבר לא בתוקף..."; anything else (accounts down, a 200
+     not in the contract's shape, a missing token): "לא הצלחתי לבדוק את הסכום כרגע..."
+2. **The receipt.** A photo or a document from a phone that waits. Toran fetches it from Meta with our number's token
+   (`GET /<version>/<media id>` gives a link that lasts 5 minutes; the link gives the bytes with the same token; at
+   most 5MB, by Meta's size first), checks by its bytes that it is a JPEG, PNG, WebP or PDF, and posts
+   `{ code, phone, file: { name, type, data } }` (base64) to `POST /internal/pay/receipt` (20 seconds). 201: "קיבלתי
+   את האישור, תודה. נציג יבדוק שההעברה הגיעה...". Too big, another kind, gone at Meta, 413 or 415: "לא הצלחתי לפתוח
+   את הקובץ. אפשר לשלוח אותו שוב כתמונה?". 429 (over 5 a day): "קיבלתי כבר כמה אישורים היום...". 404 or 410: the
+   expired line, and the wait goes. Anything else: "לא הצלחתי להעביר את האישור כרגע...", and an alert
+   (`pay_receipt_down`). The same message handled twice is posted once.
+3. **What goes on as before.** A text from a phone that waits (support, a demo, the owner's assistant), a file from a
+   phone that does not wait, a sticker, a voice note or a video. Only our number on Meta fetches a file: on Twilio a
+   photo carries none.
+4. **What is kept.** Events `pay_code` (`outcome`: ok, nothing_due, no_details, unknown, expired, unavailable) and
+   `pay_receipt` (sent, unreadable, refused, too_many, gone, unavailable), and an audit row `pay_receipt` with the code,
+   the workspace, the file's kind and size and accounts' id. Never the transfer's details, never the file.
