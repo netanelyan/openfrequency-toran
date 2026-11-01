@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { App } from './app.ts';
 import { J, V } from './db/index.ts';
 import { event } from './db/log.ts';
@@ -14,8 +15,14 @@ import { oneNumber } from './channels/lines.ts';
 // 'company' (so the review queue, the outreach and the follow-ups never list it), and it is not qualified (so the
 // leads list shows it only under "everything"; the funnel leaves it out). It belongs to no workspace: the operator's.
 //
-// Its knowledge comes from one JSON file, the site's export (openfrequency-web, `npm run support`), synced here by
-// `npm run company -- sync <file>`:
+// Its knowledge comes from one JSON file, the site's export (openfrequency-web, src/support.mjs), synced here two ways,
+// through the same two steps (parseExport, then syncCompany):
+//   by itself     the real build of the site publishes the export at https://openfrequency.co.il/support.json, and
+//                 with TORAN_SUPPORT_EXPORT_URL naming it the worker reads it once an Israel day and soon after each
+//                 start, and syncs it only when its content changed (jobs/reread.ts)
+//   by hand       `npm run company -- sync <file>`, the export as a file (openfrequency-web, `npm run support`)
+// Each sync keeps the export's hash in the store's config (config.company.hash), so a file synced by hand is not synced
+// again by the next daily read. What is in the file:
 //   plans     product rows, one per plan, with the plan's sentence; get_plans reads them (agent/tools.ts)
 //   faq       the site's questions, each with the answer that is true today (support.json's, else the site's) as
 //             site_answer; the owner's own answers (the dashboard, the inbox's "save the answer") are never touched
@@ -68,27 +75,56 @@ export type CompanyExport = {
   generatedAt?: string;
 };
 
-/** The file, checked before anything is written: a half-read export never replaces a working one. */
+/**
+ * The file, checked before anything is written: a half-read export never replaces a working one. Plans and pages each
+ * need at least one: a sync marks every plan the file does not have as gone and replaces all the pages, so an export
+ * with none (a site build gone wrong) would empty the store, and is refused instead. The questions may be none: only
+ * those of the URLs the file has are ever dropped.
+ */
 export function readExport(json: unknown): CompanyExport {
   const d = json as CompanyExport;
   const fail = (why: string) => {
     throw new Error(`not a company export: ${why}`);
   };
-  if (!d || typeof d !== 'object') fail('not an object');
+  if (!d || typeof d !== 'object' || Array.isArray(d)) fail('not an object');
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(String(d.domain || ''))) fail('domain');
   if (!/^https:\/\//.test(String(d.url || ''))) fail('url');
   if (!String(d.status || '').trim()) fail('status');
   if (!Array.isArray(d.plans) || !d.plans.length || !d.plans.every((p) => p.key && p.title && Number.isFinite(p.monthly) && p.text)) fail('plans');
   if (!Array.isArray(d.faq) || !d.faq.every((f) => f.q && f.a)) fail('faq');
-  if (!Array.isArray(d.pages) || !d.pages.every((p) => p.kind && p.title && p.url && p.text)) fail('pages');
+  if (!Array.isArray(d.pages) || !d.pages.length || !d.pages.every((p) => p.kind && p.title && p.url && p.text)) fail('pages');
   return d;
 }
 
+/** The export's text, from a file or from the site, parsed and checked whole (readExport): the one way a sync starts. */
+export function parseExport(text: string): CompanyExport {
+  let json: unknown;
+  try {
+    json = JSON.parse(String(text ?? ''));
+  } catch {
+    throw new Error('not a company export: not JSON');
+  }
+  return readExport(json);
+}
+
+/**
+ * What the export says, as one hash: its JSON without generatedAt, the moment it was made, which changes with every
+ * build of the site whether anything else did or not. The site writes the keys in a fixed order, so the same content
+ * hashes the same.
+ */
+export const exportHash = (d: CompanyExport) => createHash('sha256').update(JSON.stringify({ ...d, generatedAt: undefined })).digest('hex');
+
 export type SyncSummary = { storeId: number; created: boolean; slug: string | null; plans: number; faqs: number; faqsRemoved: number; policies: number; chunks: number; embedded: boolean };
 
-export async function syncCompany(app: App, data: CompanyExport, { slug = 'support' }: { slug?: string } = {}): Promise<SyncSummary> {
+/**
+ * Create or update the company store the export names (its domain), all in one transaction: what came from the last
+ * file is replaced, the owner's own answers and corrections are kept. `from` is where the export came from, 'file' or
+ * the URL of the daily read, kept with its hash in config.company and in the company_sync event.
+ */
+export async function syncCompany(app: App, data: CompanyExport, { slug = 'support', from = 'file' }: { slug?: string; from?: string } = {}): Promise<SyncSummary> {
   const { db } = app;
   const d = readExport(data);
+  const hash = exportHash(d);
   const pieces = d.pages.flatMap((p, i) => chunk(p.text).map((text) => ({ page: i, kind: p.kind, text: text.startsWith(p.title) ? text : `${p.title}\n${text}` })));
   const vectors = await embed(pieces.map((p) => p.text), 'passage', app.env);
 
@@ -100,7 +136,7 @@ export async function syncCompany(app: App, data: CompanyExport, { slug = 'suppo
   let faqsRemoved = 0;
   await db.tx(async (t) => {
     const brand = { name: d.name, tone: d.tone };
-    const config = { currency: 'ILS', company: { status: d.status, generatedAt: d.generatedAt || null } };
+    const config = { currency: 'ILS', company: { status: d.status, generatedAt: d.generatedAt || null, hash, from } };
     if (!storeId) {
       const row = await t.one<{ id: number }>(
         `INSERT INTO stores (domain, url, name, platform, status, qualified, source, source_detail, contact_email, contact_whatsapp, slug, brand, config, ingested_at)
@@ -156,6 +192,6 @@ export async function syncCompany(app: App, data: CompanyExport, { slug = 'suppo
   });
   const slugNow = (await db.one<{ slug: string | null }>('SELECT slug FROM stores WHERE id = $1', [storeId]))?.slug ?? null;
   const summary: SyncSummary = { storeId, created: !existing, slug: slugNow, plans: d.plans.length, faqs: d.faq.length, faqsRemoved, policies: d.pages.length, chunks: pieces.length, embedded: Boolean(vectors) };
-  await event(db, storeId, 'company_sync', { ...summary, generatedAt: d.generatedAt || null });
+  await event(db, storeId, 'company_sync', { ...summary, generatedAt: d.generatedAt || null, hash, from });
   return summary;
 }

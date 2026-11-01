@@ -65,6 +65,7 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'OF_INTERNAL_TOKEN', group: 'website', he: 'המפתח המשותף עם openfrequency-accounts, שבודק מי מחובר. אותו ערך בכל השירותים' },
   { name: 'OF_ASSISTANT_SECRET', group: 'website', he: 'החתימה על הבקשות בין תורן לתדר, לפחות 32 תווים. אותו ערך גם בתדר' },
   { name: 'OF_WEB_INTERNAL', group: 'website', he: 'שירות הלידים של האתר בשרת הזה: ממנו הלוח שלך קורא את רשימת ההמתנה ואת הלידים שלא הגיעו לתורן או לתדר. ברירת המחדל http://127.0.0.1:4720' },
+  { name: 'TORAN_SUPPORT_EXPORT_URL', group: 'website', he: 'הקובץ שהאתר מפרסם לתמיכה, https://openfrequency.co.il/support.json: ממנו חנות השירות שלנו מתעדכנת לבד, פעם ביום וכשתורן עולה, ורק כשמשהו בו השתנה. ריק: מעדכנים ביד (npm run company -- sync)' },
   { name: 'TEDER_URL', group: 'website', he: 'הכתובת הציבורית של תדר: ממנה הלוח שלך פותח דמו של תדר (/demos/<id>). ברירת המחדל https://teder.openfrequency.co.il' },
   { name: 'TEDER_SITE_INTERNAL', group: 'website', he: 'האתר של תדר בשרת הזה: ממנו מגיעות המצגות של תדר ללוח שלך, ואליו עוברות בקשות הדמו של תדר מהוואטסאפ. ברירת המחדל http://127.0.0.1:4700' },
   { name: 'TORAN_CHANNELS', group: 'channels', he: 'הערוצים שהקוד שלהם פועל, למשל whatsapp,email. וואטסאפ תמיד פועל' },

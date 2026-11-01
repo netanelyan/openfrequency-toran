@@ -64,7 +64,7 @@ copy the message, mark it sent, see the chats.
 | `src/auto` | the store's automatic messages: its platform's webhooks and readings, consent and the quiet link to stop the reminders (`/u/<token>`, src/web/unsubscribe.ts), quiet time, the WhatsApp templates on the store's own account |
 | `src/company.ts` | a company store: Toran answering our own support from the site's export, and on our one WhatsApp number as owner line, demo number and support (docs/company.md) |
 | `src/web` | the dashboard (Teder's look), auth, the public routes |
-| `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape) |
+| `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape, our support's daily re-read of the site's /support.json) |
 | `src/brand.ts` | the family's marks and tokens; `assets/brand/` holds the files |
 | `deploy/` | Postgres with pgvector in Docker Compose, the systemd service, the nightly backup, the deploy and rollback scripts, the host Caddy block; see docs/deploy.md and docs/restore.md |
 

@@ -13,6 +13,7 @@ import { workerBeat } from '../health.ts';
 import { BOOT, beat, claim, done, enqueue, fail, MESSAGE_KINDS, progress, requeueOrphans, type Job } from './queue.ts';
 import { lostMessage } from './lost.ts';
 import { dailyRetention } from './retention.ts';
+import { rereadCompany, scheduleReread } from './reread.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { interruptedSends } from '../auto/send.ts';
 import { handleTederEvent, handleTederReady } from '../owners/events.ts';
@@ -42,6 +43,8 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 //                workspace (never a lead to sell to)
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
 //   rescrape     the daily refresh of a store whose demo is open
+//   company_reread  our support's daily re-read of the website: its /support.json (TORAN_SUPPORT_EXPORT_URL), synced
+//                into the company store when it changed (jobs/reread.ts)
 //   teder_lead   a Teder demo asked for on the website, its code just sent from WhatsApp: handed to Teder (its POST
 //                /internal/lead, channels/request.ts handToTeder), tried again while Teder does not take it
 //   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts)
@@ -58,7 +61,9 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 // do not all start in the same minute; expired WhatsApp bindings cleaned up; the link to each demo asked for on the
 // website whose page is now ready, Toran's or Teder's, sent on the demo number; the automatic messages' readings and
 // sends, and any left "sending" by a restart marked as not sent; the operator told when a customer's message has waited
-// in the queue over five minutes; and once a day the retention pass (jobs/retention.ts).
+// in the queue over five minutes; and once a day the retention pass (jobs/retention.ts) and, with
+// TORAN_SUPPORT_EXPORT_URL set, our support's re-read of the website, which also runs soon after each start
+// (jobs/reread.ts).
 //
 // The loops (startWorker): TORAN_MESSAGE_LOOPS (2) take customers' messages and nothing else, so a re-scrape or an
 // ingest never stands between a customer and their answer; TORAN_BACKGROUND_LOOPS (1) take everything else. A message
@@ -149,6 +154,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return handleTederEvent(app, String(p.id || ''));
     case 'teder_ready':
       return handleTederReady(app, Number(p.workspace));
+    case 'company_reread':
+      return rereadCompany(app);
     case 'ingest':
     case 'rescrape':
       return { storeId: p.storeId, ...(await ingestAndBuild(app, Number(p.storeId), say, job.kind === 'rescrape')) };
@@ -205,8 +212,9 @@ export async function schedule(app: App) {
   // A customer waiting on the queue.
   const old = await app.db.one<{ n: number; at: string | null }>(`SELECT COUNT(*)::int AS n, MIN(run_at) AS at FROM jobs WHERE status = 'queued' AND kind = ANY($1::text[]) AND run_at < now() - interval '${QUEUE_ALERT_MINUTES} minutes'`, [MESSAGE_KINDS]);
   if (old?.n) await alertOperator(app, 'queue_old', 'הודעות של לקוחות מחכות בתור', `${old.n} הודעות מחכות יותר מ-${QUEUE_ALERT_MINUTES} דקות, הוותיקה מ-${old.at}. כדאי לבדוק שה-worker של תורן רץ, ולהסתכל בדף התור.`, { everyMinutes: 30 });
-  // Once a day, the retention pass.
+  // Once a day, the retention pass; and our support's re-read of the website, once a day and soon after a start.
   await dailyRetention(app);
+  await scheduleReread(app);
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */

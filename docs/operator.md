@@ -306,6 +306,10 @@ What keeps a customer's message from being lost or delayed without anyone knowin
     lookup gave are taken out of them
   - The 90 days and 13 months are Toran's own; the privacy page (openfrequency-web) states only the leads' 6 months
     and the conversations' 30 days, so it should state these too.
+- **Our support's re-read of the site** (src/jobs/reread.ts), with `TORAN_SUPPORT_EXPORT_URL` set: once an Israel day
+  and soon after each start, one `company_reread` event and one `[reread]` log line (`journalctl -u toran | grep
+  '\[reread\]'`). The store is synced only when the site's /support.json changed, and a failed read changes nothing
+  in it (docs/company.md, "It re-reads the site by itself").
 - **Deleting a workspace**: `POST /internal/workspaces/<id>/delete` (src/erase.ts), as accounts' contract has it
   (openfrequency-accounts `docs/contracts/workspaces-delete.json`): 200 `{ ok: true, deleted: {...} }` with what it
   deleted, 200 with every count 0 when nothing was there; 401 `bad_token` without the right token; 503

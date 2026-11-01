@@ -1,14 +1,16 @@
 // npm run company -- sync <export.json> [--slug support]
 //   create or update a company store (OpenFrequency's own support) from the site's export: openfrequency-web,
-//   `npm run support -- <export.json>`. docs/company.md has the whole setup.
+//   `npm run support -- <export.json>`. docs/company.md has the whole setup. The same check and the same sync as the
+//   worker's daily read of the site's /support.json (TORAN_SUPPORT_EXPORT_URL, src/jobs/reread.ts), which keeps the
+//   store current by itself once it exists; by hand it always syncs, changed or not
 // npm run company -- show
-//   the company stores here: their plans, questions, pages and connected channels
+//   the company stores here: their plans, questions, pages and connected channels, and where the last sync came from
 // npm run company -- email <domain> on|off
 //   connect or disconnect the store's email address (<slug>@TORAN_MAIL_DOMAIN), as "לחבר מייל" on its lead page does
 
 import { readFileSync } from 'node:fs';
 import { makeApp } from '../src/app.ts';
-import { COMPANY, syncCompany } from '../src/company.ts';
+import { COMPANY, parseExport, syncCompany } from '../src/company.ts';
 import { enabledChannels, storeAddress } from '../src/channels/config.ts';
 import { audit } from '../src/db/log.ts';
 
@@ -23,7 +25,7 @@ const say = (m: string) => console.log(m);
 try {
   const cmd = args[0];
   if (cmd === 'sync' && args[1]) {
-    const s = await syncCompany(app, JSON.parse(readFileSync(args[1], 'utf8')), { slug: flag('slug') || 'support' });
+    const s = await syncCompany(app, parseExport(readFileSync(args[1], 'utf8')), { slug: flag('slug') || 'support', from: 'file' });
     say(`${s.created ? 'Created' : 'Updated'} company store ${s.storeId}${s.slug ? ` (slug ${s.slug})` : ''}: ${s.plans} plans, ${s.faqs} questions${s.faqsRemoved ? ` (${s.faqsRemoved} the site dropped, removed)` : ''}, ${s.policies} pages in ${s.chunks} chunks${s.embedded ? '' : ' (embeddings off: get_policy matches words only)'}.`);
     say(`Its email address, once connected on /lead/${s.storeId}: ${s.slug || `store-${s.storeId}`}@${app.env.TORAN_MAIL_DOMAIN || '<TORAN_MAIL_DOMAIN>'}`);
   } else if (cmd === 'show') {
@@ -32,7 +34,8 @@ try {
     for (const s of stores) {
       const n = async (sql: string) => (await app.db.one<{ n: number }>(sql, [s.id]))!.n;
       const channels = await app.db.query<{ channel: string; external_id: string; status: string }>('SELECT channel, external_id, status FROM channel_accounts WHERE store_id = $1 ORDER BY id', [s.id]);
-      say(`${s.id} ${s.domain} (slug ${s.slug || 'none'}), synced ${new Date(s.ingested_at).toISOString()} from an export of ${s.config?.company?.generatedAt || '?'}`);
+      const c = s.config?.company || {};
+      say(`${s.id} ${s.domain} (slug ${s.slug || 'none'}), synced ${new Date(s.ingested_at).toISOString()} from an export of ${c.generatedAt || '?'} (${c.from && c.from !== 'file' ? `the daily read of ${c.from}` : 'a file'}, hash ${String(c.hash || '?').slice(0, 12)})`);
       say(`  ${await n('SELECT COUNT(*)::int AS n FROM products WHERE store_id = $1 AND gone_at IS NULL')} plans, ${await n('SELECT COUNT(*)::int AS n FROM faqs WHERE store_id = $1')} questions (${await n('SELECT COUNT(*)::int AS n FROM faqs WHERE store_id = $1 AND answer IS NOT NULL')} with the owner's answer), ${await n('SELECT COUNT(*)::int AS n FROM policies WHERE store_id = $1')} pages`);
       say(`  channels: ${channels.map((c) => `${c.channel} ${c.external_id} (${c.status})`).join(', ') || 'none connected'}`);
     }

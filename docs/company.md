@@ -7,7 +7,10 @@ pitched, and left out of the leads, the queue, the follow-ups and the funnel.
 
 ## Where its knowledge comes from
 
-One JSON file, made by the website repository from the same config and page modules the site is built from:
+One JSON file, made by the website repository from the same config and page modules the site is built from
+(openfrequency-web `src/support.mjs`). Its real build publishes it beside the pages, so every deploy of the site puts
+it at `https://openfrequency.co.il/support.json`, and Toran reads it there by itself ("It re-reads the site by itself"
+below). The same file, by hand:
 
 ```
 openfrequency-web$ npm run support -- <file.json>
@@ -62,8 +65,41 @@ Handoffs land in the operator's inbox like any store's.
    Replies from the inbox go out from the number the person wrote to. Neither number is live yet. On Meta, our one
    number does all of this by itself once it is connected on this store's WhatsApp page: see "Toran on our own
    number" below.
-5. **After a change on the site** (a price, a question, `support.json`): steps 1 and 2 again. The owner's own answers
-   (the dashboard's questions, the inbox's "save the answer") are kept.
+5. **After a change on the site** (a price, a question, `support.json`): deploy the site. With
+   `TORAN_SUPPORT_EXPORT_URL` set (below), the store follows by itself, at the next Israel day or the next start of
+   Toran; without it, steps 1 and 2 again. Either way the owner's own answers (the dashboard's questions, the inbox's
+   "save the answer") are kept.
+
+## It re-reads the site by itself
+
+Customers' stores are re-scraped every day; this store re-reads the site's export instead (`src/jobs/reread.ts`,
+the `company_reread` job). It is off until `.env` names the file:
+
+```
+TORAN_SUPPORT_EXPORT_URL=https://openfrequency.co.il/support.json
+```
+
+There is no default, so a laptop's worker or a test never reads the live site.
+
+- **When:** the worker queues the read once an Israel day (the first minute after midnight, as the retention pass),
+  and once soon after each start, so a restart of Toran picks up the site at once. One read at a time.
+- **What it does:** a GET of the URL (https only, 15 seconds, at most 1 MB; the file is about 50 KB), through the
+  same fetcher as every store's pages, robots.txt included: a draft of the site disallows everything and is never
+  read. The file is checked exactly as `npm run company -- sync` checks it (`parseExport`), and must be for a company
+  store that is already here, by its domain (the first sync is by hand, step 2), and for `TORAN_SUPPORT_STORE`'s domain
+  when that is set.
+- **Only when it changed:** each sync keeps the export's hash in the store's `config.company.hash` (the whole file but
+  `generatedAt`, which every build of the site changes). The same hash, and nothing is written. A new one, and the same
+  sync as by hand runs (`syncCompany`), then the store's prompt is forgotten, so the next answer reads the new file.
+  A file synced by hand is not synced again by the next read. The chunks' embeddings are made on this machine's CPU
+  (no paid API), but loading the model and rewriting every page is why the read skips a day the site did not change.
+- **When it fails** (the site down, a timeout, an HTTP error, over the cap, not JSON, not an export, another domain,
+  no such store): one line in the log, `[reread] <url>: not read (<why>); the store keeps what it had`, and the store
+  keeps every plan, question and page it had. Nothing is written before the whole file has passed, and the sync is
+  one transaction. The next try is the next Israel day, or the next start.
+- **Where to see it:** each read writes one `company_reread` event (`changed`, or `ok: false` with the `error`) and
+  one `[reread]` log line; a sync also writes `company_sync` with `from`, the URL or `file`. `npm run company -- show`
+  says where the last sync came from and its hash. To read the site now, restart Toran.
 
 ## Toran on our own number
 
