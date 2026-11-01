@@ -143,7 +143,7 @@ test('with TORAN_SUPPORT_STORE, a number nobody linked gets our support agent on
     assert.equal(r.storeId, storeId);
     const out = s.outbox.filter((m) => m.to === OTHER);
     assert.equal(out.length, 1);
-    assert.equal(out[0].text, 'תורן עולה 250 ₪ לחודש, לא כולל מע״מ.');
+    assert.equal(out[0].text, `כאן תורן, הבוט של שירות לי.\n\nתורן עולה 250 ₪ לחודש, לא כולל מע״מ.`, 'our support says it is a bot');
     assert.equal(out[0].from, LINE, 'the answer goes out from the owner line');
     const conv = await s.app.db.one<any>('SELECT c.id, a.status, a.external_id FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE c.store_id = $1 AND c.peer = $2', [storeId, OTHER]);
     assert.deepEqual([conv.status, conv.external_id], ['line', LINE]);

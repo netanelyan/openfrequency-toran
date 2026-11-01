@@ -4,6 +4,7 @@ import { audit } from '../../db/log.ts';
 import { J } from '../../db/index.ts';
 import { enqueue } from '../../jobs/queue.ts';
 import { forgetStorePrompt } from '../../agent/loop.ts';
+import { botLine, botName, cleanBotName, NAME_MAX, personLine } from '../../agent/intro.ts';
 import { displayName } from '../../ingest/brand.ts';
 import { ofWhatsapp } from '../../offer.ts';
 import { counted, monthOf, PLANS, planOf, prevMonth, usageOf, type PlanKey, type Usage } from '../../plans.ts';
@@ -37,11 +38,11 @@ const MONTH_START = `(date_trunc('month', now() AT TIME ZONE '${TZ}') AT TIME ZO
 /** The two weeks after a store's first channel is connected, when we read its conversations with the owner. */
 const FIRST_DAYS = 14;
 
-type Store = { id: number; name: string; domain: string; slug: string | null; platform: string; config: any; demo_code: string | null; taken_down_at: string | null; ingested_at: string | null; live_at: string | null };
+type Store = { id: number; name: string; domain: string; slug: string | null; platform: string; config: any; demo_code: string | null; taken_down_at: string | null; ingested_at: string | null; live_at: string | null; agent_name: string | null };
 
 /** The stores a customer page is about: the workspace's, or for the operator every customer's (never their own leads). */
 export async function myStores(app: App, sc: Scope): Promise<Store[]> {
-  const rows = await app.db.query<any>(`SELECT s.id, s.name, s.domain, s.slug, s.platform, s.config, s.brand, s.brand_override, s.demo_code, s.taken_down_at, s.ingested_at,
+  const rows = await app.db.query<any>(`SELECT s.id, s.name, s.domain, s.slug, s.platform, s.config, s.brand, s.brand_override, s.demo_code, s.taken_down_at, s.ingested_at, s.agent_name,
       (SELECT MIN(connected_at) FROM channel_accounts a WHERE a.store_id = s.id) AS live_at
     FROM stores s WHERE ${storesOf(sc, 's')}${sc.operator ? ' AND s.workspace_id IS NOT NULL' : ''} ORDER BY s.id LIMIT 50`);
   return rows.map((s) => ({ ...s, name: displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain }));
@@ -198,7 +199,11 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
     <section class="panel"><header><h2>מה הוא עונה לבד, ומה הוא משאיר לכם</h2></header>
       <h3 class="small mt8">עונה לבד</h3><ul class="m0">${(orders ? [...ANSWERS_ALONE, ORDER_ALONE] : ANSWERS_ALONE).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       <h3 class="small mt16">משאיר לכם</h3><ul class="m0">${(orders ? LEAVES_YOU.map((x) => (x === LEAVES_YOU[2] ? ORDER_LEAVES : x)) : LEAVES_YOU).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-      <p class="small muted mt12 m0">כשאין באתר תשובה, הוא אומר ללקוח שהוא בודק, במקום לנחש, והשאלה מגיעה אליכם ל<a href="/chats?state=waiting">שיחות</a>.</p>
+      <p class="small muted mt12 m0">כשאין לו תשובה, הוא אומר ללקוח שהוא לא בטוח ושהעביר את השאלה לנציג, במקום לנחש, והשאלה מגיעה אליכם ל<a href="/chats?state=waiting">שיחות</a>.</p>
+    </section>
+    <section class="panel" id="bot-name"><header><h2>השם של הבוט</h2></header>
+      <p class="small muted m0">ככה הוא פותח כל שיחה, כדי שהלקוח ידע שעונה לו בוט: <q>${esc(botLine('first', botName(s), s.name))}</q>. כשאתם עונים בעצמכם, הלקוח מקבל לפני ההודעה שלכם: <q>${esc(personLine(s.name))}</q></p>
+      ${ro ? '' : `<form class="mt12" method="post" action="/lead/${id}/bot-name">${csrfField(r.ctx)}<label class="f">השם<small>עד ${NAME_MAX} תווים. משאירים ריק, והוא פשוט הבוט של ${esc(s.name)}.</small><input type="text" name="agent_name" value="${esc(s.agent_name || '')}" maxlength="${NAME_MAX}" dir="auto"></label><div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div></form>`}
     </section>
     <section class="panel" id="answers"><header><h2>התשובות שלכם</h2><span class="end small muted">${mine.length}</span></header>
       <p class="small muted m0">תורן עונה לפי התשובות האלה לפני מה שכתוב באתר. מוחקים תשובה כששומרים אותה ריקה.</p>
@@ -366,6 +371,16 @@ export function customerRoutes(app: App): Route<DashReq>[] {
       const html = await knowledge(app, r, Number(m[1]));
       if (!html) throw new ActionError('אין חנות כזו', 404);
       return { html };
+    }],
+    // The bot's name (agent/intro.ts): empty takes it away. The server already checked the store is this workspace's.
+    ['POST', /^\/lead\/(\d+)\/bot-name$/, async (r, m) => {
+      const id = Number(m[1]);
+      const raw = String(r.form.agent_name || '').trim();
+      const name = raw ? cleanBotName(raw) : null;
+      if (raw && !name) throw new ActionError(`השם יכול להיות עד ${NAME_MAX} תווים, באותיות, ספרות ורווחים.`);
+      await app.db.query('UPDATE stores SET agent_name = $2, updated_at = now() WHERE id = $1', [id, name]);
+      await audit(app.db, { actor: r.user.name, action: 'agent_name', storeId: id, detail: { name } });
+      return { redirect: `/lead/${id}/knowledge#bot-name`, message: name ? `מעכשיו הבוט נקרא ${name}` : 'הבוט בלי שם' };
     }],
     ['POST', /^\/lead\/(\d+)\/reread$/, async (r, m) => {
       const id = Number(m[1]);

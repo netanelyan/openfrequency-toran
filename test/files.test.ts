@@ -162,7 +162,9 @@ test('files in the inbox over HTTP: shown in the conversation, served only insid
     };
     assert.equal((await post(PDF, 'חשבונית.pdf')).status, 303);
     const sent = s.app.mail.outbox!.at(-1)!;
-    assert.equal(sent.text, 'מצרפת את החשבונית');
+    assert.equal(sent.text, `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.
+
+מצרפת את החשבונית`);
     assert.deepEqual((sent.attachments as any[]).map((a) => [a.filename, a.content_type]), [['חשבונית.pdf', 'application/pdf']]);
     assert.match(await (await s.get(`/chat/${conv}`)).text(), /חשבונית\.pdf/);
     const n = s.app.mail.outbox!.length;

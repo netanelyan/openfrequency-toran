@@ -72,7 +72,9 @@ test('the inbox in the website\'s three words: waiting for you, answered alone, 
     assert.ok(!/טוקנים|העברות|לליד/.test(page));
     const r = await s.post(`/chat/${asked}/reply`, { _csrf: await s.csrf(`/chat/${asked}`), text: 'כן, בימי ראשון עד חמישי, 9:00 עד 16:00.', learn: '1', question: 'אפשר לאסוף מהמחסן?' });
     assert.equal(r.status, 303);
-    assert.equal(s.app.mail!.outbox!.at(-1)!.text, 'כן, בימי ראשון עד חמישי, 9:00 עד 16:00.');
+    // The bot answered here before, so the customer is told a person took over (agent/intro.ts); the kept answer is the
+    // owner's words alone.
+    assert.equal(s.app.mail!.outbox!.at(-1)!.text, `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.\n\nכן, בימי ראשון עד חמישי, 9:00 עד 16:00.`);
     const faq = await s.app.db.one<any>('SELECT question, answer, conversation_id FROM faqs WHERE store_id = $1 AND conversation_id IS NOT NULL', [a]);
     assert.deepEqual(faq, { question: 'אפשר לאסוף מהמחסן?', answer: 'כן, בימי ראשון עד חמישי, 9:00 עד 16:00.', conversation_id: asked });
     assert.match(await (await s.get(`/chats?state=fixed`)).text(), new RegExp(`/chat/${asked}"`));

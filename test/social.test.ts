@@ -274,7 +274,7 @@ test('the 24 hours: past them nothing goes out, until Meta approves Human Agent;
     assert.match(html, /7 ימים מההודעה האחרונה של הלקוח/);
     assert.equal((await s.post(`/chat/${conv}/reply`, { _csrf: await s.csrf(`/chat/${conv}`), text: 'פתוחים עד שש' })).status, 303);
     const last = sends(g, `${PAGE}/messages`).at(-1)!;
-    assert.deepEqual([last.body.messaging_type, last.body.tag, last.body.message.text], ['MESSAGE_TAG', 'HUMAN_AGENT', 'פתוחים עד שש']);
+    assert.deepEqual([last.body.messaging_type, last.body.tag, last.body.message.text], ['MESSAGE_TAG', 'HUMAN_AGENT', `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.\n\nפתוחים עד שש`]);
 
     // The agent never answers past the 24 hours, approved or not.
     await s.app.db.query("UPDATE conversations SET agent_paused_until = NULL WHERE id = $1", [conv]);

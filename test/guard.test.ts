@@ -24,7 +24,7 @@ test('a price from the tool passes; a rounded or invented price is cut and hands
   const rounded = guardReply('הספל עולה בערך 90 ₪. רוצים קישור?', allow());
   assert.equal(rounded.redactions[0].rule, 'price');
   assert.ok(rounded.needsHandoff);
-  assert.match(rounded.text, /^את המחיר המדויק אני בודק/);
+  assert.match(rounded.text, /^על המחיר המדויק אני לא בטוח/);
   assert.match(rounded.text, /רוצים קישור\?$/);
   assert.equal(guardReply('הקערה עולה 120 שקלים', allow()).redactions[0]?.rule, 'price');
 });
@@ -57,7 +57,7 @@ test('stock words need stock data from a tool; superlatives never pass', () => {
 
 test('a cut sentence ending in a colon takes its list; the same category is replaced once', () => {
   const r = guardReply('המחירים שלנו:\n- ספל 95 ₪\n- קערה 70 ₪\nרוצים לשמוע על משלוחים?', allow());
-  assert.equal(r.text.split('את המחיר המדויק').length - 1, 1);
+  assert.equal(r.text.split('על המחיר המדויק').length - 1, 1);
   assert.ok(!r.text.includes('95') && !r.text.includes('70'));
   assert.match(r.text, /רוצים לשמוע על משלוחים\?$/);
 });
@@ -67,7 +67,7 @@ test('a product\'s option count is a fact; a stock quantity never is; a cut take
   assert.equal(guardReply('בסיס המיטה עולה 3599 ₪ עד 6099 ₪, לפי הגרסה (יש 3 אפשרויות).', opts).redactions.length, 0);
   assert.equal(guardReply('נשארו רק 3 במלאי.', opts).redactions[0]?.rule, 'stock');
   const r = guardReply('יש שתי אפשרויות: הקטן עולה 999 ₪. הגדול במלאי.', opts);
-  assert.equal(r.text, 'את המחיר המדויק אני בודק עם החנות, ואחזור אליך כאן. הגדול במלאי.');
+  assert.equal(r.text, 'על המחיר המדויק אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן. הגדול במלאי.');
 });
 
 test('a number with a non-money unit is a quantity: "1 month" does not cut a correct price; days stay checked', () => {
@@ -80,7 +80,7 @@ test('a number with a non-money unit is a quantity: "1 month" does not cut a cor
 
 test('English replies get English replacement lines; a budget the customer set may be said back; no dashes reach the customer', () => {
   const en = guardReply('The mug is 95 shekels.', allow());
-  assert.match(en.text, /^I'm checking the exact price/);
+  assert.match(en.text, /^I'm not sure about the exact price/);
   const own = buildAllow({ toolTexts: [tool], customerTexts: ['יש משהו עד 150 ₪?'] });
   assert.equal(guardReply('עד 150 ₪ יש את הצלחת, ב-149 ₪.', own).redactions.length, 0);
   assert.equal(guardReply('יש בכחול — וגם באפור.', allow()).text, 'יש בכחול, וגם באפור.');

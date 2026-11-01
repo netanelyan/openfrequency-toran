@@ -49,7 +49,7 @@ test('chit-chat, greetings, questions back and "I am checking" are not claims', 
     'שבת שלום!',
     'חג שמח!',
     'רוצים שאבדוק אם יש משלוח לאילת?',
-    'את זה אני בודק עם החנות, ואחזור אליך כאן.',
+    'על זה אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן.',
     'העברתי את הבקשה לחנות, ויחזרו אליך כאן.',
     'את מדיניות ההחזרות לא מצאתי, אז העברתי לחנות.',
     'שולחים לי את המידה ואני בודק.',
@@ -81,7 +81,7 @@ test('free: passes with its subject and its condition as the store wrote them; r
   assert.equal(r.redactions[0].borderline, true, 'the tools do say "free", of something else');
   assert.ok(r.needsHandoff);
   assert.equal(r.handoffReason, 'unknown');
-  assert.equal(r.text, 'את זה אני בודק עם החנות, ואחזור אליך כאן. רוצים את הקישור?');
+  assert.equal(r.text, 'על זה אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן. רוצים את הקישור?');
   cuts('Returns are free.', 'free');
   cuts('The exchange is at no extra cost.', 'free');
   // The condition dropped: free only over 300 ₪.
@@ -274,14 +274,14 @@ test('a company store: its "works today" list backs a claim as a tool result wou
   assert.equal(guardReply('אפשר לשלם בכרטיס אשראי.', a, { company: true }).redactions.length, 0);
   const r = guardReply('אפשר לשלם בביט.', a, { company: true });
   assert.equal(r.redactions[0]?.rule, 'claim');
-  assert.equal(r.text, 'את זה אני בודק, ומישהו מאיתנו יחזור אליך כאן.');
+  assert.equal(r.text, 'על זה אני לא בטוח, אז העברתי את השאלה לנציג שלנו. הוא יחזור אליך כאן.');
   // Not numbers: a fact text never allows a price.
   assert.equal(guardReply('זה עולה 99 ₪.', buildAllow({ toolTexts: [], customerTexts: [], factTexts: ['99 ₪'] }), { company: true }).redactions[0]?.rule, 'price');
 });
 
 test('an English reply gets the English line; a cut is replaced once, and a lexical cut comes first', () => {
   const en = guardReply('Returns are free. We also ship to Eilat. Anything else?', allow());
-  assert.equal(en.text, "I'm checking this with the store and will update you here. Anything else?");
+  assert.equal(en.text, "I'm not sure about that, so I've passed your question to someone from the store. They'll reply here. Anything else?");
   assert.deepEqual(en.redactions.map((r) => r.claim), ['free', 'area']);
   const price = guardReply('ההחזרה חינם ועולה 20 ₪.', allow());
   assert.equal(price.redactions[0].rule, 'promise', 'free with a number the tools did not give is a lexical cut');

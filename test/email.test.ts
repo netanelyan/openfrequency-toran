@@ -171,7 +171,9 @@ test('the owner answers by email: it goes out threaded and without Auto-Submitte
   const d = await ownerReply(app, conv, 'כן, אפשר. נורית', 'owner@example.test');
   assert.equal(d.ok, true);
   const sent = app.mail!.outbox!.at(-1)!;
-  assert.equal(sent.text, 'כן, אפשר. נורית');
+  assert.equal(sent.text, `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.
+
+כן, אפשר. נורית`, 'the bot answered before: a person is announced');
   assert.equal((sent.headers as any)['Auto-Submitted'], undefined);
   assert.equal(sent.subject, 'Re: שאלה על קערה');
   const owner = await app.db.one<any>("SELECT author, channel FROM messages WHERE conversation_id = $1 AND role = 'owner'", [conv]);
@@ -211,7 +213,9 @@ test('the owner on WhatsApp: a reply inside the 24 hours goes out and pauses the
   assert.equal(st.canReply, true);
   assert.ok(st.windowEnds! > Date.now() + 23 * 3_600_000);
   assert.equal((await ownerReply(app, conv, 'היי, כאן נורית', 'owner')).ok, true);
-  assert.equal(app.wa.outbox!.at(-1)!.text, 'היי, כאן נורית');
+  assert.equal(app.wa.outbox!.at(-1)!.text, `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.
+
+היי, כאן נורית`, 'the bot answered before: a person is announced');
   const n = app.wa.outbox!.length;
   assert.equal((await handleInbound(app, { from: phone, text: 'תודה', id: 'w2' })).action, 'held');
   assert.equal(app.wa.outbox!.length, n);
@@ -263,7 +267,9 @@ test('the inbox over HTTP: connect the store\'s email, mail arrives through the 
     assert.match(page, /לענות ללקוח/);
     assert.match(page, /לשלוח במייל/);
     assert.equal((await s.post(`/chat/${conv}/reply`, { _csrf: await s.csrf(`/chat/${conv}`), text: 'כן, יש. נורית' })).status, 303);
-    assert.equal(s.app.mail.outbox!.at(-1)!.text, 'כן, יש. נורית');
+    assert.equal(s.app.mail.outbox!.at(-1)!.text, `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.
+
+כן, יש. נורית`);
     assert.match(await (await s.get(`/chat/${conv}`)).text(), /להחזיר לתורן/);
 
     // A customer of another workspace: the conversation and its reply route do not exist for them.

@@ -3,7 +3,7 @@
     {
       "action": "bound",
       "storeId": 1,
-      "reply": "היי, כאן כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_"
+      "reply": "כאן הבוט של כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_"
     },
     {
       "action": "answered",
@@ -13,7 +13,7 @@
     {
       "action": "answered",
       "storeId": 1,
-      "reply": "את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.\n\n_דמו של תורן_"
+      "reply": "משלוח עד הבית בכל הארץ עולה 35 ₪. בהזמנה מעל 300 ₪ המשלוח חינם.\n\n_דמו של תורן_"
     },
     {
       "action": "duplicate"
@@ -24,7 +24,7 @@
     {
       "action": "bound",
       "storeId": 2,
-      "reply": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_"
+      "reply": "כאן הבוט של עץ וחוט.\n\nכן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_"
     },
     {
       "action": "no_text",
@@ -37,7 +37,7 @@
     {
       "action": "bound",
       "storeId": 2,
-      "reply": "היי, כאן עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_"
+      "reply": "כאן הבוט של עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_"
     },
     {
       "action": "limit",
@@ -52,7 +52,7 @@
   "outbox": [
     {
       "to": "972500000101",
-      "text": "היי, כאן כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
+      "text": "כאן הבוט של כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
       "inReplyTo": "g0"
     },
     {
@@ -62,7 +62,7 @@
     },
     {
       "to": "972500000101",
-      "text": "את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.\n\n_דמו של תורן_",
+      "text": "משלוח עד הבית בכל הארץ עולה 35 ₪. בהזמנה מעל 300 ₪ המשלוח חינם.\n\n_דמו של תורן_",
       "inReplyTo": "g2"
     },
     {
@@ -72,7 +72,7 @@
     },
     {
       "to": "972500000202",
-      "text": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+      "text": "כאן הבוט של עץ וחוט.\n\nכן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
       "inReplyTo": "g4"
     },
     {
@@ -87,7 +87,7 @@
     },
     {
       "to": "972500000404",
-      "text": "היי, כאן עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
+      "text": "כאן הבוט של עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
       "inReplyTo": "g7"
     },
     {
@@ -184,7 +184,7 @@
       "id": 6,
       "conversation_id": 2,
       "role": "agent",
-      "text": "היי, כאן כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
+      "text": "כאן הבוט של כלי חרס של נורית. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
       "raw_text": null,
       "tools": [],
       "guard": [],
@@ -241,7 +241,7 @@
       "id": 10,
       "conversation_id": 2,
       "role": "agent",
-      "text": "את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.\n\n_דמו של תורן_",
+      "text": "משלוח עד הבית בכל הארץ עולה 35 ₪. בהזמנה מעל 300 ₪ המשלוח חינם.\n\n_דמו של תורן_",
       "raw_text": null,
       "tools": [
         {
@@ -250,7 +250,7 @@
           "input": {
             "topic": "כמה עולה משלוח?"
           },
-          "result": "From the store's shipping page (מדיניות משלוחים, https://kli-cheres.example/policies/shipping-policy):\nמדיניות משלוחים\nמשלוח עד הבית בכל הארץ עולה 35 ₪. בהזמנה מעל 300 ₪ המשלוח חינם.\nההזמנה מגיעה תוך 3 עד 5 ימי עסקים. כלים שמסומנים \"בהכנה\" יוצאים תוך 14 ימי עסקים.\nאפשר גם לאסוף מהסטודיו בקיבוץ, בלי תשלום, אחרי שמתאמים איתי.\nכרגע אין משלוחים לחו\"ל.\n\nFrom the store's returns page (החזרות והחלפות, https://kli-cheres.example/policies/refund-policy):\nהחזרות והחלפות\nאפשר להחזיר או להחליף כלי תוך 14 יום מיום קבלתו, כשהוא שלם ולא בשימוש. דמי המשלוח חזרה על חשבון הלקוח.\nהגיע כלי שבור? שולחים לי תמונה בוואטסאפ תוך 48 שעות, ואני שולחת חדש או מחזירה את הכסף.\nאת הכסף אני מחזירה לאותו אמצעי תשלום, תוך 7 ימי עסקים מהיום שהכלי חוזר אליי.\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the customer asked about installation and they are about shipping), say the store has not written about it, tell the customer you are checking with the store, and call handoff with reason \"unknown\" in this same answer."
+          "result": "From the store's shipping page (מדיניות משלוחים, https://kli-cheres.example/policies/shipping-policy):\nמדיניות משלוחים\nמשלוח עד הבית בכל הארץ עולה 35 ₪. בהזמנה מעל 300 ₪ המשלוח חינם.\nההזמנה מגיעה תוך 3 עד 5 ימי עסקים. כלים שמסומנים \"בהכנה\" יוצאים תוך 14 ימי עסקים.\nאפשר גם לאסוף מהסטודיו בקיבוץ, בלי תשלום, אחרי שמתאמים איתי.\nכרגע אין משלוחים לחו\"ל.\n\nFrom the store's returns page (החזרות והחלפות, https://kli-cheres.example/policies/refund-policy):\nהחזרות והחלפות\nאפשר להחזיר או להחליף כלי תוך 14 יום מיום קבלתו, כשהוא שלם ולא בשימוש. דמי המשלוח חזרה על חשבון הלקוח.\nהגיע כלי שבור? שולחים לי תמונה בוואטסאפ תוך 48 שעות, ואני שולחת חדש או מחזירה את הכסף.\nאת הכסף אני מחזירה לאותו אמצעי תשלום, תוך 7 ימי עסקים מהיום שהכלי חוזר אליי.\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the customer asked about installation and they are about shipping), do not say what they lack: say you are not sure and that you passed the question to someone from the store (נציג), who will answer here, and call handoff with reason \"unknown\" in this same answer."
         }
       ],
       "guard": [],
@@ -274,7 +274,7 @@
       "id": 12,
       "conversation_id": 3,
       "role": "agent",
-      "text": "כן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
+      "text": "כאן הבוט של עץ וחוט.\n\nכן, יש במלאי. מגש עץ אלון עולה 210 ₪. רוצים שאשלח קישור?\n\n_דמו של תורן_",
       "raw_text": null,
       "tools": [
         {
@@ -331,7 +331,7 @@
       "id": 16,
       "conversation_id": 4,
       "role": "agent",
-      "text": "היי, כאן עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
+      "text": "כאן הבוט של עץ וחוט. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?\n\n_דמו של תורן_",
       "raw_text": null,
       "tools": [],
       "guard": [],

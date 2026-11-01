@@ -21,8 +21,8 @@ export const defaultScript: Script = (req) => {
     if (product) return [{ type: 'text', text: `${product[3] === 'במלאי' ? 'כן, יש במלאי.' : 'כרגע זה לא במלאי.'} ${product[1]} עולה ${product[2]}. רוצים שאשלח קישור?` }];
     // A policy passage: its first sentence with substance.
     const passage = text.split('\n').find((l) => l.trim().length > 20 && /[א-ת]/.test(l) && !/^(From the store|Rule:|No products|What this store)/.test(l));
-    if (passage && !/has not written/.test(text)) return [{ type: 'text', text: passage.trim() }];
-    return [{ type: 'text', text: 'את זה אני לא יודע. אני בודק עם החנות, ואחזור אליך כאן.' }];
+    if (passage && !/No passage of the/.test(text)) return [{ type: 'text', text: passage.trim() }];
+    return [{ type: 'text', text: 'על זה אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן.' }];
   }
   // The customer's text is the last text block: the app's SERVER CONTEXT rides in its own block before it.
   const text = (blocks.filter((b) => b.type === 'text').pop() as { text?: string } | undefined)?.text || '';

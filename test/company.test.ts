@@ -130,8 +130,8 @@ test('a company turn: its own prompt and tools, what works today in the prompt, 
     assert.match(faq.content, /From the company's FAQ/);
     assert.match(faq.content, /טלגרם עוד לא פתוח/);
     const none = await runTool(ctx, 'get_policy', { topic: 'יש לכם משרד בתל אביב?' });
-    assert.match(none.content, /The company has not written anything/);
-    assert.match(none.content, /someone from us/);
+    assert.match(none.content, /No passage of the company's answers or pages is about/);
+    assert.match(none.content, /someone from our team \(נציג\)/);
     const handed = await runTool(ctx, 'handoff', { reason: 'cancel', summary: 'רוצה לבטל' });
     assert.match(handed.content, /someone from us/);
   } finally {
@@ -148,7 +148,7 @@ test('with TORAN_SUPPORT_STORE, our demo number (also our public number) answers
     Object.assign(app.env, { TORAN_SUPPORT_STORE: 'shirut-li.example', DEMO_WA_NUMBER: '972500000777' });
     const r = await handleInbound(app, { channel: 'whatsapp', from: '972500000303', text: 'כמה זה עולה?', id: 'd1', at: Date.now() });
     assert.equal(r.storeId, storeId);
-    assert.equal(r.reply, 'החבילה הקטנה עולה 250 ₪ לחודש, לא כולל מע״מ.');
+    assert.equal(r.reply, `כאן תורן, הבוט של שירות לי.\n\nהחבילה הקטנה עולה 250 ₪ לחודש, לא כולל מע״מ.`, 'our support says it is a bot, by its name');
     const a = await app.db.one<any>("SELECT a.status, a.external_id FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE c.peer = '972500000303'");
     assert.deepEqual([a.status, a.external_id], ['line', '972500000777']);
     const bound = await handleInbound(app, { channel: 'whatsapp', from: '972500000404', text: 'DEMO-K7MQ', id: 'd2', at: Date.now() });
@@ -164,7 +164,7 @@ test('the guard speaks for the company: an invented price is cut with our own li
   allow.stockKnown = true;
   const g = guardReply('החבילה עולה 199 ₪ לחודש. טלגרם עוד לא זמין.', allow, { company: true });
   assert.equal(g.redactions.length, 1);
-  assert.match(g.text, /ומישהו מאיתנו יחזור אליך כאן/);
+  assert.match(g.text, /העברתי את השאלה לנציג שלנו\. הוא יחזור אליך כאן/);
   assert.doesNotMatch(g.text, /החנות/);
   assert.match(g.text, /טלגרם עוד לא זמין/);
 });

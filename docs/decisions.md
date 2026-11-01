@@ -969,3 +969,38 @@ and the links that go out by themselves "sent" into it and marked the lead sent,
 over HTTP and delivering and marking nothing, a fake Meta number then sending both products' links; every card's link
 text; each stuck reason's message; every Teder stage, its order and links; the Teder button inside its window, past
 it, for a typed number and with the number not connected; the website's leads and the website down.
+
+## 2026-11-01: the bot says it is a bot, a person is announced, and "I'm not sure" never says why
+
+The owner, with a screenshot of our support answering "על פורמט שאין בתדר לא כתבנו כלום, אז אני לא יודע לענות":
+"makes it feel bizarre. maybe אני לא יודע / אני לא בטוח / ... אני מעביר אותך לנציג. think yourself, and copy the
+style across all"; and: "the user can choose a name for his toran. our toran can be called "toran". the person has to
+know that he speaks with a bot. then, when a person is involved, toran should say that."
+
+The line came from get_policy's own rule, which told the model to "say the company has not written about it".
+
+**What changed.**
+- `src/agent/intro.ts`: the bot's first answer in a conversation opens, in code, with "כאן <name>, הבוט של <store>."
+  (no name: "כאן הבוט של <store>."; English when the customer writes English), and the model is told not to introduce
+  itself. A person's first answer from the inbox after the bot opens with "מכאן עונה לך בן אדם מהצוות של <store>."; the
+  bot's next answer opens with "כאן שוב ...". `conversations.introduced_at` and `stores.agent_name` (migration 043).
+  A conversation with no peer (the demo page's sample chat) has no line. The demo's welcome opens with it too.
+- The owner names the bot on "מה תורן יודע" (`POST /lead/<id>/bot-name`): letters, digits, spaces, a hyphen or an
+  apostrophe, at most 30, at least one letter; empty takes it away. Our own support is "תורן". The owner line's
+  disclosure is the same words: "כאן תורן, הבוט של OpenFrequency."
+- The honest lines (`guard.ts`), the prompts' rules and examples, and get_policy's and get_plans' rules: "על זה אני לא
+  בטוח, אז העברתי את השאלה לנציג מהחנות (לנציג שלנו). הוא יחזור אליך כאן." The model is told never to say why it
+  does not know: nothing about what is or is not written, a list, a page or a tool.
+
+**Not changed:** the five owner-line templates keep "העוזר הדיגיטלי של OpenFrequency" in their footer: Meta approved
+those words, and new ones would go back for approval. A reply the operator sends from a phone app on a store's number
+(`lineEcho`) goes as typed: Toran never sees it before the customer does.
+
+**Prompt injection.** The name is the owner's, checked to a short run of letters, and goes only into the line code
+writes, never into the model's prompt. The note that the app opens the reply rides in the app's own SERVER CONTEXT
+block, which a customer's text cannot imitate (PRA-AI-001).
+
+**Tested** (test/bot-intro.test.ts and the guard, claims, agent, company and lines tests): the name's rules; the line
+once, with and without a name, in English, never in the sample chat, and the model told not to introduce itself; a
+person announced once and stored as sent; "כאן שוב" after a person; the honest lines and both prompts without "why"
+words; the owner saving, refusing and clearing a name.

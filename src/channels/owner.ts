@@ -10,12 +10,15 @@ import { humanAgentOn } from './policy.ts';
 import { keepOutbound } from './files.ts';
 import { ownAddress } from './mailDomain.ts';
 import type { Channel, ChannelAdapter, Inbound, OutFile } from './types.ts';
+import { isEnglish, personLine } from '../agent/intro.ts';
 
 // The store's owner in a conversation, on any channel: they answer from the inbox, and the agent steps back.
 //
 //   ownerReply()   sends the owner's text to the customer through the conversation's own channel, after the same
 //                  checks as any send (the window, a suppressed address), with a file the owner attached where the
-//                  channel takes one (email), and pauses the agent there for PAUSE_HOURS from the owner's last message
+//                  channel takes one (email), and pauses the agent there for PAUSE_HOURS from the owner's last message.
+//                  When the bot was answering until now, the text opens with a line saying a person took over
+//                  (agent/intro.ts personLine), and the bot will say who it is again when it is back
 //   resumeAgent()  "להחזיר לתורן": the agent answers again from the next message
 //   hold()         a customer message kept without an answer (the agent is paused, or the mail was automated)
 
@@ -81,16 +84,31 @@ export async function replyState(app: App, conversationId: number): Promise<{ ca
   return { canReply: !blocked, reason: blocked, windowEnds: hours ? t.to.at! + hours * HOUR : null, ...(hours ? { windowHours: hours } : {}), pausedUntil, ...extra };
 }
 
+/**
+ * Whether a person's answer here opens with personLine (agent/intro.ts): the bot was answering until now, so the
+ * customer is told a person took over. Once the agent is paused for this person, their next answers go as they are.
+ */
+async function takingOver(app: App, conversationId: number, t: Target): Promise<string | null> {
+  if (t.pausedUntil && t.pausedUntil > now()) return null;
+  const last = await app.db.one<{ role: string }>("SELECT role FROM messages WHERE conversation_id = $1 AND role IN ('agent', 'owner') ORDER BY id DESC LIMIT 1", [conversationId]);
+  if (last?.role !== 'agent') return null;
+  const said = await app.db.one<{ text: string }>("SELECT text FROM messages WHERE conversation_id = $1 AND role = 'customer' ORDER BY id DESC LIMIT 1", [conversationId]);
+  return personLine(t.storeName, isEnglish(said?.text || ''));
+}
+
 export async function ownerReply(app: App, conversationId: number, text: string, author: string, files: OutFile[] = []): Promise<Delivery | { ok: false; reason: 'no_customer' | 'no_files' | 'reconnect' }> {
   const t = await replyTarget(app, conversationId);
   if (!t) return { ok: false, reason: 'no_customer' };
   if (t.reconnect) return { ok: false, reason: 'reconnect' };
   if (files.length && !t.adapter.limits.attachments.outbound) return { ok: false, reason: 'no_files' };
-  const d = await reply(app, t.adapter, t.to, text, t.storeId, conversationId, { who: 'owner', storeName: t.storeName, ...(t.from || {}), ...(files.length ? { files } : {}) });
+  const person = await takingOver(app, conversationId, t);
+  const out = person ? `${person}\n\n${text}` : text;
+  const d = await reply(app, t.adapter, t.to, out, t.storeId, conversationId, { who: 'owner', storeName: t.storeName, ...(t.from || {}), ...(files.length ? { files } : {}) });
   if (!d.ok) return d;
   const kept = files.length ? await keepOutbound(app, conversationId, files) : [];
-  await app.db.query('INSERT INTO messages (conversation_id, role, text, author, delivery, attachments) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)', [conversationId, 'owner', text, author, J(d.ids), J(kept)]);
-  await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [conversationId]);
+  await app.db.query('INSERT INTO messages (conversation_id, role, text, author, delivery, attachments) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)', [conversationId, 'owner', out, author, J(d.ids), J(kept)]);
+  // The bot says who it is again when it answers next (agent/intro.ts).
+  await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours', introduced_at = NULL WHERE id = $1`, [conversationId]);
   await event(app.db, t.storeId, 'owner_reply', { conversationId });
   await audit(app.db, { actor: author, action: 'owner_reply', storeId: t.storeId, detail: { conversationId, chars: text.length, ...(files.length ? { files: files.length } : {}) } });
   return d;

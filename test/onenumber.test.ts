@@ -31,6 +31,10 @@ let seq = 0;
 const META = { META_APP_ID: '1234567890', META_APP_SECRET: APP_SECRET, META_WA_CONFIG_ID: '555', META_WEBHOOK_VERIFY_TOKEN: 'verify-me', TORAN_SECRETS_KEY: 'k'.repeat(40) };
 const COEXISTENCE = 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
 const PRICE = 'החבילה הקטנה עולה 250 ₪ לחודש, לא כולל מע״מ.';
+// Our support's first answer in a conversation opens with its line (src/agent/intro.ts).
+const OPENED = `כאן תורן, הבוט של שירות לי.
+
+${PRICE}`;
 
 const company = (): CompanyExport => ({
   domain: 'shirut-li.example', url: 'https://shirut-li.example/', name: 'שירות לי', status: 'מה עובד היום:\n- עונה במייל.', tone: '', contact: {},
@@ -110,7 +114,7 @@ test('our one number: connected on the company store\'s page it plays all three 
 
     // (c) Anyone else: our support, its own prompt and tools.
     const c = await s.write('כמה זה עולה?', STRANGER);
-    assert.deepEqual([c.storeId, c.reply], [s.support, PRICE]);
+    assert.deepEqual([c.storeId, c.reply], [s.support, OPENED]);
 
     // Every answer went out through the Cloud API from our number, nothing through Twilio or the simulator.
     assert.ok(s.g.sent().length >= 4);
@@ -220,7 +224,7 @@ test('our one number: a demo ends back into our support, when the person writes 
     assert.match(s.to(CUSTOMER).at(-1)!.body.text.body, /^סגרנו את הדמו\. מעכשיו עונה לכם כאן התמיכה של OpenFrequency/);
     assert.ok(!(await s.app.db.one('SELECT 1 FROM wa_users WHERE phone = $1', [CUSTOMER])));
     const next = await s.write('כמה זה עולה?', CUSTOMER);
-    assert.deepEqual([next.storeId, next.reply], [s.support, PRICE]);
+    assert.deepEqual([next.storeId, next.reply], [s.support, OPENED]);
     const conv = await s.app.db.one<any>("SELECT c.id FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE c.peer = $1 AND a.status = 'line'", [CUSTOMER]);
     assert.ok(await s.app.db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'agent' AND text LIKE 'סגרנו את הדמו%'", [conv.id]), 'the inbox shows the line');
 
@@ -232,7 +236,7 @@ test('our one number: a demo ends back into our support, when the person writes 
     assert.deepEqual([late.action, late.storeId], ['demo_ended', s.support]);
     const two = s.to(STRANGER).slice(before).map((c) => c.body.text.body);
     assert.match(two[0], /^עברו 7 ימים מאז שהדמו התחיל, אז סגרנו אותו\. מעכשיו עונה לכם כאן התמיכה/);
-    assert.equal(two[1], PRICE);
+    assert.equal(two[1], OPENED);
     assert.ok(!(await s.app.db.one('SELECT 1 FROM wa_users WHERE phone = $1', [STRANGER])));
 
     // "עזרה" in the middle of a sentence is a question for the demo store, not the way out.

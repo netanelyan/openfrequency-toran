@@ -236,21 +236,23 @@ async function getPolicy(c: ToolContext, input: any): Promise<ToolOutcome> {
   const parts: string[] = [];
   // A company store's passages are the company's, and its person is told someone from us answers, not "the store".
   const biz = c.company ? 'company' : 'store';
-  const checking = c.company ? 'tell the person you are checking and someone from us will answer here' : 'tell the customer you are checking with the store';
+  // What the model says when it has no answer: not sure, passed to a person, never why (agent/guard.ts, the owner's
+  // "לא כתבנו כלום ... makes it feel bizarre").
+  const checking = c.company ? 'say you are not sure and that you passed the question to someone from our team (נציג), who will answer here' : 'say you are not sure and that you passed the question to someone from the store (נציג), who will answer here';
   for (const { f } of faqHits) parts.push(`From the ${biz}'s FAQ: "${f.question}"\n${f.answer || f.site_answer}`);
   for (const o of overrides) if (chunks.some((ch) => ch.kind === o.kind) || matched(o.title) > 0) parts.push(`From the ${biz}'s ${o.kind} policy (${o.title}):\n${o.override_text}`);
   for (const ch of chunks) if (!overrides.some((o) => o.kind === ch.kind)) parts.push(`From the ${biz}'s ${ch.kind} page (${ch.title}, ${ch.url}):\n${ch.text}`);
-  if (!parts.length) return { ok: true, content: `The ${biz} has not written anything about "${topic}".\nRule: you do not know the answer. Do not guess what is usual. ${checking[0].toUpperCase()}${checking.slice(1)}, and call handoff with reason "unknown".` };
+  if (!parts.length) return { ok: true, content: `No passage of the ${biz}'s answers or pages is about "${topic}".\nRule: you do not know the answer. Do not guess what is usual, and do not say why you do not know (nothing about what is or is not written). ${checking[0].toUpperCase()}${checking.slice(1)}, and call handoff with reason "unknown".` };
   return {
     ok: true,
-    content: `${parts.join('\n\n')}\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the ${c.company ? 'person' : 'customer'} asked about installation and they are about shipping), say the ${biz} has not written about it, ${checking}, and call handoff with reason "unknown" in this same answer.`,
+    content: `${parts.join('\n\n')}\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the ${c.company ? 'person' : 'customer'} asked about installation and they are about shipping), do not say what they lack: ${checking}, and call handoff with reason "unknown" in this same answer.`,
     facts: parts,
   };
 }
 
 async function getPlans(c: ToolContext): Promise<ToolOutcome> {
   const plans = await loadProducts(c.db, c.storeId);
-  if (!plans.length) return { ok: true, content: 'No plans are written down.\nRule: you do not know the prices. Say you are checking, and call handoff with reason "unknown".' };
+  if (!plans.length) return { ok: true, content: 'No plans are written down.\nRule: you do not know the prices. Say you are not sure and that you passed the question to someone from our team (נציג), who will answer here, and call handoff with reason "unknown".' };
   const lines = plans.map((p) => `- ${p.title}: ${p.body_text} ${p.url}`);
   return { ok: true, content: `${lines.join('\n')}\nRule: quote prices, VAT, setup fees and what a plan covers exactly as written above. A plan, a price, a discount or a condition that is not written here, you do not know.`, facts: lines };
 }

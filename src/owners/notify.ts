@@ -27,7 +27,8 @@ import type { PostId } from './teder.ts';
 
 export const PUSHES_PER_DAY = 8;
 const WINDOW_MARGIN_MS = 10 * 60_000;
-export const DISCLOSURE = 'כאן תורן, העוזר הדיגיטלי של OpenFrequency (תוכנה, לא בן אדם).';
+// The same words as the bot's line to customers (agent/intro.ts botLine): every first answer says a bot is writing.
+export const DISCLOSURE = 'כאן תורן, הבוט של OpenFrequency.';
 
 /** The owner line's number: what Toran's messages to owners come from (TWILIO_WHATSAPP_FROM while it is unset). */
 export const lineNumber = (env: Record<string, string | undefined>) => String(env.TORAN_ASSISTANT_WA || '').replace(/\D/g, '') || null;

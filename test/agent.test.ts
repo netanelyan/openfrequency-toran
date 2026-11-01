@@ -54,7 +54,7 @@ test('get_policy without embeddings finds the shipping passage by its words, and
   const r = await runTool(ctx, 'get_policy', { topic: 'כמה עולה משלוח?' });
   assert.match(r.content, /35 ₪/);
   const none = await runTool(ctx, 'get_policy', { topic: 'האם יש חניה ליד הסטודיו?' });
-  assert.match(none.content, /has not written anything/);
+  assert.match(none.content, /No passage of the store's answers or pages is about/);
   await app.db.close();
 });
 
@@ -151,7 +151,7 @@ test('a fact with no number that the tools never said is cut and handed off; TOR
   assert.equal(off.redactions[0].rule, 'claim');
   assert.equal(off.redactions[0].claim, 'free');
   assert.equal(off.redactions[0].borderline, true);
-  assert.match(off.reply, /^את זה אני בודק עם החנות/);
+  assert.match(off.reply, /^על זה אני לא בטוח, אז העברתי את השאלה לנציג מהחנות/);
   assert.equal(off.handoff?.reason, 'unknown');
   assert.equal(asked.length, 0, 'off by default: no second call');
 
@@ -202,7 +202,7 @@ test('a model that fails or loops still answers the customer honestly, and hands
   const conv = await conversationFor(app.db, id, 'cli', null);
   const o = await runTurn(app, { storeId: id, conversationId: conv, text: 'ספל?' });
   assert.equal(o.rounds, 6);
-  assert.match(o.reply, /בודק/);
+  assert.match(o.reply, /לא בטוח, אז העברתי את השאלה לנציג/);
   assert.equal(o.handoff?.reason, 'unknown');
   await app.db.close();
 });

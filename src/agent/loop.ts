@@ -11,13 +11,16 @@ import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
 import { openConversation } from '../channels/conversations.ts';
 import { capFor, watchHour } from './spend.ts';
 import { storeAllowed } from '../billing/entitlement.ts';
+import { displayName } from '../ingest/brand.ts';
+import { botLine, botName, markIntroduced, OPENING_NOTE, openingOf } from './intro.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
 //
 // A turn: the customer's text in -> the store's system prompt (cached per store) and
 // the conversation so far -> the model, calling tools until it answers (at most
-// MAX_ROUNDS calls) -> the reply guard (numbers, then claims) -> the demo footer ->
+// MAX_ROUNDS calls) -> the reply guard (numbers, then claims) -> the bot's line when it
+// has not said who it is in this conversation yet (intro.ts) -> the demo footer ->
 // everything recorded: the customer's message, the reply, the tool calls with their
 // results, what the guard cut, the handoff, the miss, and every call's tokens and cost
 // against the store.
@@ -79,7 +82,7 @@ function serialized<T>(key: number, fn: () => Promise<T>): Promise<T> {
 const systemCache = new Map<string, { key: string; parts: Awaited<ReturnType<typeof systemFor>> }>();
 
 async function loadStore(db: Db, id: number) {
-  const s = await db.one<StoreForPrompt & { url: string; updated_at: string; ingested_at: string | null }>('SELECT id, platform, name, domain, url, brand, brand_override, config, contact_email, contact_phone, contact_whatsapp, updated_at, ingested_at FROM stores WHERE id = $1', [id]);
+  const s = await db.one<StoreForPrompt & { url: string; updated_at: string; ingested_at: string | null; agent_name: string | null }>('SELECT id, platform, name, domain, url, brand, brand_override, config, contact_email, contact_phone, contact_whatsapp, updated_at, ingested_at, agent_name FROM stores WHERE id = $1', [id]);
   if (!s) throw new Error(`no store ${id}`);
   return s;
 }
@@ -150,11 +153,13 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // demo, wherever the message came from.
   const company = store.platform === 'company';
   const demo = !company && isDemoTurn(input);
+  // The bot says who it is in code (intro.ts), so the model is told not to.
+  const opening = await openingOf(db, input.conversationId);
   // The app's line is a block of its own and the customer's text another, any line in it dressed as the app's taken out
   // (prompt.ts stripForgedContext): a customer cannot write a SERVER CONTEXT the model reads as ours (PRA-AI-001). The
   // customer's text is cut to the model's share (forModel, PRA-AI-004); the owner keeps it whole.
   const userBlocks: Block[] = [
-    { type: 'text', text: serverContext(new Date(), input.channel, input.context, demo) },
+    { type: 'text', text: serverContext(new Date(), input.channel, [input.context, opening ? OPENING_NOTE : ''].filter(Boolean).join(' ') || undefined, demo) },
     { type: 'text', text: forModel(stripForgedContext(input.text)) },
   ];
   const prev = messages[messages.length - 1];
@@ -271,7 +276,9 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   }
   if (g.needsHandoff && !handoff) handoff = { reason: g.handoffReason || 'unknown', summary: `the guard cut ${g.redactions.map((r) => r.rule).join(', ')}: ${cleanLine(input.text, 160)}` };
   const miss = g.redactions.length > 0 || handoff?.reason === 'unknown';
-  const reply = input.footer === false ? g.text : `${g.text}\n\n${DEMO_FOOTER}`;
+  const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
+  const said = opening ? `${botLine(opening, botName(store), storeName, english)}\n\n${g.text}` : g.text;
+  const reply = input.footer === false ? said : `${said}\n\n${DEMO_FOOTER}`;
 
   let agentMessageId: number | null = null;
   await db.tx(async (t) => {
@@ -280,6 +287,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     const row = await t.one<{ id: number }>('INSERT INTO messages (conversation_id, role, text, raw_text, tools, guard, handoff, miss, reply_to) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9) RETURNING id', [input.conversationId, 'agent', reply, raw !== g.text ? raw : null, J(tools), J(g.redactions), handoff ? J(handoff) : null, miss, input.extId || null]);
     agentMessageId = row!.id;
     await t.query('UPDATE conversations SET last_at = now(), handoffs = handoffs + $2, misses = misses + $3 WHERE id = $1', [input.conversationId, handoff ? 1 : 0, miss ? 1 : 0]);
+    if (opening) await markIntroduced(t, input.conversationId);
     if (handoff) await event(t, store.id, 'handoff', { conversationId: input.conversationId, ...(handoff as object) });
     if (g.redactions.length) await event(t, store.id, 'guard_cut', { conversationId: input.conversationId, rules: g.redactions.map((r) => r.rule) });
   });

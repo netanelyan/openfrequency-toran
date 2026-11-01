@@ -14,6 +14,7 @@ import { J } from '../db/index.ts';
 import { ownerLine } from '../owners/line.ts';
 import { supportAccount } from '../company.ts';
 import { conversationOf, storeChannel } from './store.ts';
+import { botLine, botName, markIntroduced } from '../agent/intro.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
@@ -49,7 +50,8 @@ export const BINDING_DAYS = 7;
 const DAILY_TURNS = 40;
 
 const msg = {
-  welcome: (name: string) => `היי, כאן ${name}. אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?`,
+  // The bot's own line first (agent/intro.ts): whoever writes knows from the first message that a bot answers.
+  welcome: (bot: string, name: string | null) => `${botLine('first', name, bot)} אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. מה מחפשים?`,
   noBinding: 'היי, זה מספר הדמו של תורן. כדי להתחיל לוחצים על הכפתור בעמוד שהכנו לחנות, והוא שולח לכאן הודעה עם קוד.',
   badCode: 'את הקוד הזה אנחנו לא מכירים. אפשר ללחוץ שוב על הכפתור בעמוד?',
   expired: `עברו ${BINDING_DAYS} ימים מאז שהדמו הזה התחיל, אז סגרנו אותו. כדי להתחיל מחדש לוחצים שוב על הכפתור בעמוד.`,
@@ -121,7 +123,7 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
   const m = CODE_RE.exec(text);
   if (m) {
     const code = `DEMO-${m[1].toUpperCase()}`;
-    const store = await db.one<{ id: number; name: string | null; domain: string; brand: any; status: string }>("SELECT id, name, domain, brand, status FROM stores WHERE demo_code = $1 AND page_built_at IS NOT NULL AND status <> 'skipped' AND taken_down_at IS NULL", [code]);
+    const store = await db.one<{ id: number; name: string | null; domain: string; brand: any; status: string; platform: string | null; agent_name: string | null }>("SELECT id, name, domain, brand, status, platform, agent_name FROM stores WHERE demo_code = $1 AND page_built_at IS NOT NULL AND status <> 'skipped' AND taken_down_at IS NULL", [code]);
     if (!store) {
       await reply(app, adapter, inbound, msg.badCode, null, null);
       await event(db, null, 'wa_bad_code', { code });
@@ -139,8 +141,9 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
     // The button's message is the code and a greeting; anything more is a question to answer now.
     const rest = text.replace(CODE_RE, '').replace(/^[\s,.!-]*היי,?\s*(?:אני רוצה|באתי) לנסות את (?:העוזר|הבוט|תורן) של .*$/s, '').trim();
     if (!rest) {
-      const welcome = `${msg.welcome(name)}\n\n${DEMO_FOOTER}`;
+      const welcome = `${msg.welcome(name, botName(store))}\n\n${DEMO_FOOTER}`;
       await logPair(app, conv, inbound, welcome);
+      await markIntroduced(db, conv);
       await reply(app, adapter, inbound, welcome, store.id, conv);
       return { action: 'bound', storeId: store.id, reply: welcome };
     }

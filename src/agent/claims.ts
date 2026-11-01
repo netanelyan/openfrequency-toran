@@ -301,9 +301,9 @@ type StockFact = { forms: Set<string>; toks: Set<string>; inStock: boolean };
 // asked: the customer's last message, for a bare "yes" (claimViolation).
 export type ClaimEvidence = { units: Unit[]; parts: Set<string>[]; numbers: Set<string>; sizes: Set<string>; stock: StockFact[]; asked: string | null };
 
-// The tools' instructions to the model are not facts about the store; the query echoed in "has not written anything
-// about" is the customer's question, not an answer.
-const META_LINE = /^(Rule:|Handed off|No product with id|There is no tool|The tool failed|No plans are written down)|has not written anything about/;
+// The tools' instructions to the model are not facts about the store; the query echoed in "No passage of the store's
+// answers or pages is about" is the customer's question, not an answer.
+const META_LINE = /^(Rule:|Handed off|No product with id|There is no tool|The tool failed|No plans are written down|No passage of the \w+'s answers or pages is about)/;
 const SIZE_LETTERS = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', 'xxxl', '2xl', '3xl', '4xl', '5xl', '6xl']);
 const SIZE_UP = /(?<![A-Za-z0-9])(?<!\d\s)(XXXL|XXL|XL|XS|[2-6]XL|S|M|L)(?![A-Za-z'’])/g;
 

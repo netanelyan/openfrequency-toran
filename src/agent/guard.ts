@@ -268,48 +268,41 @@ export function violation(sentence: string, allow: Allow): string | null {
   return null;
 }
 
-const REPLACE: Record<string, string> = {
-  price: 'את המחיר המדויק אני בודק עם החנות, ואחזור אליך כאן.',
-  stock: 'מה יש במלאי אני בודק עם החנות, ואחזור אליך כאן.',
-  delivery: 'כמה זמן לוקח המשלוח אני בודק עם החנות, ואחזור אליך כאן.',
-  promise: 'הנחה או החזר מאשרים רק בחנות. העברתי להם את הבקשה, ויחזרו אליך כאן.',
-  superlative: '',
-  claim: 'את זה אני בודק עם החנות, ואחזור אליך כאן.',
-  link: 'את הקישור אני בודק עם החנות, ואחזור אליך כאן.',
-};
-const REPLACE_EN: Record<string, string> = {
-  price: "I'm checking the exact price with the store and will update you here.",
-  stock: "I'm checking stock with the store and will update you here.",
-  delivery: "I'm checking delivery times with the store and will update you here.",
-  promise: 'Discounts, refunds and exceptions are approved by the store itself. I passed your request on, and they will get back to you here.',
-  superlative: '',
-  claim: "I'm checking this with the store and will update you here.",
-  link: "I'm checking the link with the store and will update you here.",
-};
+// The honest lines say what a person would: I'm not sure, and a person from the store will answer here. Never why the
+// bot does not know (what the site says or not, what was written, a list): the owner, 2026-11-01, on "על פורמט שאין
+// בתדר לא כתבנו כלום": "makes it feel bizarre. maybe אני לא יודע / אני לא בטוח / ... אני מעביר אותך לנציג".
+const passed = (who: string) => `אז העברתי את השאלה ${who}. הוא יחזור אליך כאן.`;
+const passedEn = (who: string) => `so I've passed your question to ${who}. They'll reply here.`;
+const honest = (who: string, whoEn: string, promise: string, promiseEn: string) => ({
+  he: {
+    price: `על המחיר המדויק אני לא בטוח, ${passed(who)}`,
+    stock: `על המלאי אני לא בטוח, ${passed(who)}`,
+    delivery: `על זמני המשלוח אני לא בטוח, ${passed(who)}`,
+    promise,
+    superlative: '',
+    claim: `על זה אני לא בטוח, ${passed(who)}`,
+    link: `על הקישור אני לא בטוח, ${passed(who)}`,
+  } as Record<string, string>,
+  en: {
+    price: `I'm not sure about the exact price, ${passedEn(whoEn)}`,
+    stock: `I'm not sure about stock, ${passedEn(whoEn)}`,
+    delivery: `I'm not sure about delivery times, ${passedEn(whoEn)}`,
+    promise: promiseEn,
+    superlative: '',
+    claim: `I'm not sure about that, ${passedEn(whoEn)}`,
+    link: `I'm not sure about that link, ${passedEn(whoEn)}`,
+  } as Record<string, string>,
+});
+const STORE_LINES = honest('לנציג מהחנות', 'someone from the store', 'הנחה או החזר מאשר רק נציג מהחנות, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.', "Discounts and refunds are approved only by someone from the store, so I've passed your request to them. They'll reply here.");
+const REPLACE = STORE_LINES.he;
+const REPLACE_EN = STORE_LINES.en;
 const HANDOFF_REASON: Record<string, string> = { price: 'unknown', stock: 'unknown', delivery: 'unknown', promise: 'discount', claim: 'unknown', link: 'unknown' };
-// A company store (our own support, src/company.ts) is not a store: the honest line says someone from us answers.
-const REPLACE_COMPANY: Record<string, string> = {
-  price: 'את המחיר המדויק אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
-  stock: 'את זה אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
-  delivery: 'את הזמנים אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
-  promise: 'הנחה או הסדר מיוחד מאשרים רק אצלנו. העברתי את הבקשה, ויחזרו אליך כאן.',
-  superlative: '',
-  claim: 'את זה אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
-  link: 'את הקישור אני בודק, ומישהו מאיתנו יחזור אליך כאן.',
-};
-const REPLACE_COMPANY_EN: Record<string, string> = {
-  price: "I'm checking the exact price, and someone from our team will get back to you here.",
-  stock: "I'm checking this, and someone from our team will get back to you here.",
-  delivery: "I'm checking the timing, and someone from our team will get back to you here.",
-  promise: 'Discounts and exceptions are approved by our team. I passed your request on, and they will get back to you here.',
-  superlative: '',
-  claim: "I'm checking this, and someone from our team will get back to you here.",
-  link: "I'm checking the link, and someone from our team will get back to you here.",
-};
+// A company store (our own support, src/company.ts) is not a store: the person who answers is one of ours.
+const COMPANY_LINES = honest('לנציג שלנו', 'someone from our team', 'הנחה או הסדר מיוחד מאשר רק נציג שלנו, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.', "Discounts and special terms are approved only by someone from our team, so I've passed your request to them. They'll reply here.");
+const REPLACE_COMPANY = COMPANY_LINES.he;
+const REPLACE_COMPANY_EN = COMPANY_LINES.en;
 /** The honest line when nothing is left to say, for a store or for a company. */
-export const checkingLine = (english: boolean, company = false) =>
-  company ? (english ? "I'm checking this, and someone from our team will get back to you here." : 'את זה אני בודק, ומישהו מאיתנו יחזור אליך כאן.')
-    : english ? "I'm checking this with the store and will update you here." : 'את זה אני בודק עם החנות, ואחזור אליך כאן.';
+export const checkingLine = (english: boolean, company = false) => (company ? COMPANY_LINES : STORE_LINES)[english ? 'en' : 'he'].claim;
 
 /** The voice rules' punctuation: no em or en dashes as breaks. */
 // A dash between two numbers is a range ("1–3 ימי עסקים"), kept as a plain hyphen; anywhere else it is a sentence

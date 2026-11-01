@@ -91,7 +91,7 @@ test('the demo number on Meta: a code binds and Toran answers through the Cloud 
     assert.equal(sent.length, 1);
     assert.equal(sent[0].auth, `Bearer ${OURS}`, 'with the token our number was connected with');
     assert.equal(sent[0].body.to, CUSTOMER);
-    assert.match(sent[0].body.text.body, /^היי, כאן /);
+    assert.match(sent[0].body.text.body, /^כאן הבוט של /, 'the welcome says a bot is answering');
     assert.equal(s.app.wa.outbox!.length, seeded, 'nothing through Twilio or the simulator');
     assert.ok(!(await s.app.db.one("SELECT 1 FROM conversations c JOIN channel_accounts x ON x.id = c.account_id WHERE x.external_id = $1", [DEMO_ID])), 'not answered as the store that connected the number');
 
@@ -108,7 +108,7 @@ test('the demo number on Meta: a code binds and Toran answers through the Cloud 
     // The operator answers the demo conversation from the inbox: from the demo number, through Meta.
     const conv = (await s.app.db.one<any>("SELECT id FROM conversations WHERE store_id = $1 AND peer = $2 AND channel = 'whatsapp'", [a, CUSTOMER])).id;
     assert.ok((await ownerReply(s.app, conv, 'כאן נורית, יש בכחול', 'operator')).ok);
-    assert.equal(g.from(DEMO_ID).at(-1)!.body.text.body, 'כאן נורית, יש בכחול');
+    assert.equal(g.from(DEMO_ID).at(-1)!.body.text.body, `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.\n\nכאן נורית, יש בכחול`, 'a person is announced');
 
     // The operator writing from our phone (coexistence) is not the owner of the store that connected the number: the
     // answer lands in the demo conversation the customer is in, and Toran steps back there.
@@ -198,12 +198,12 @@ test('the owner line on Meta: linking, the assistant, Teder\'s news (images insi
     const stranger = '972500000125';
     const sup = await write('כמה זה עולה?', stranger);
     assert.equal(sup.storeId, storeId);
-    assert.equal(g.from(OWNER_ID).at(-1)!.body.text.body, 'תורן עולה 250 ₪ לחודש, לא כולל מע״מ.');
+    assert.equal(g.from(OWNER_ID).at(-1)!.body.text.body, `כאן תורן, הבוט של שירות לי.\n\nתורן עולה 250 ₪ לחודש, לא כולל מע״מ.`, 'our support says it is a bot');
     const conv = await app.db.one<any>('SELECT c.id, a.kind, a.status FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE c.store_id = $1 AND c.peer = $2', [storeId, stranger]);
     assert.deepEqual([conv.kind, conv.status], ['meta_line', 'line']);
     assert.ok((await ownerReply(app, conv.id, 'אני כאן, מה הכתובת של החנות?', 'operator')).ok);
     const last = g.calls.at(-1)!;
-    assert.deepEqual([last.path, last.body.to, last.body.text.body], [`${OWNER_ID}/messages`, stranger, 'אני כאן, מה הכתובת של החנות?']);
+    assert.deepEqual([last.path, last.body.to, last.body.text.body], [`${OWNER_ID}/messages`, stranger, `מכאן עונה לך בן אדם מהצוות של שירות לי.\n\nאני כאן, מה הכתובת של החנות?`]);
     assert.equal(app.wa.outbox!.length, 0);
   } finally {
     await accounts.close();

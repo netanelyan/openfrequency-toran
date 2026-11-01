@@ -213,7 +213,7 @@ test('a customer writes to the store\'s own number: Toran answers through Meta, 
 
     // The owner answers from the dashboard: it goes out from the store's number too.
     assert.equal((await s.post(`/chat/${conv.id}/reply`, { _csrf: await s.csrf(`/chat/${conv.id}`), text: 'כן, יש בכחול. נורית' })).status, 303);
-    assert.equal(g.calls.filter((c) => c.path === `${PHONE_ID}/messages`).at(-1)!.body.text.body, 'כן, יש בכחול. נורית');
+    assert.equal(g.calls.filter((c) => c.path === `${PHONE_ID}/messages`).at(-1)!.body.text.body, `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.\n\nכן, יש בכחול. נורית`, 'the bot answered before: a person is announced');
     await s.app.db.query('UPDATE conversations SET agent_paused_until = NULL WHERE id = $1', [conv.id]);
 
     // The owner answers from the WhatsApp Business app on the phone: in the inbox, and Toran steps back.

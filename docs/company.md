@@ -36,7 +36,7 @@ answer whose question is no longer on /faq stops the export.
 - What does not work yet is never said to work, even when a page says it does.
 - A person's own account, bill, invoice, payment or cancellation is handed off, never answered.
 - A demo or a sign-up: it asks for the store's address and hands it off (reason `demo` or `join`).
-- The guard's honest lines say "someone from us" instead of "the store", and "not available yet" is not a stock claim.
+- The guard's honest lines say the bot is not sure and passed it to "someone from our team" (נציג שלנו) instead of the store's, and "not available yet" is not a stock claim. The bot is "תורן" (src/agent/intro.ts).
 - It is never a demo, wherever the message came from.
 
 Handoffs land in the operator's inbox like any store's.
