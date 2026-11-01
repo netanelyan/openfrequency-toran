@@ -327,7 +327,8 @@ file: accounts has them.
 
 1. **The code.** Toran asks accounts `GET /internal/pay?code=PAY-XXXXXX` (the internal token, as for the owner
    routes; 3 seconds) and answers in one message: the total with VAT (`1,746.40 ₪`, as accounts writes it),
-   accounts' `summary` lines, and `payHow`, the transfer's details. The phone then waits for its receipt for 7 days
+   accounts' `summary` lines without those that say the total again (one with "סך הכול", or with the total itself),
+   so the amount is read once, and `payHow`, the transfer's details. The phone then waits for its receipt for 7 days
    (`pay_waits`, one row a phone; a new code takes it over; the worker deletes the rows that ended).
    - nothing due (no `items`, or `total` 0; accounts counts a month falling due within 7 days as owed): "המנוי של
      <business> משולם עד <DD.MM.YYYY>, אז כרגע אין מה לשלם" (with no `paidThrough`, "על המנוי של <business> אין
@@ -356,19 +357,22 @@ file: accounts has them.
    longest run of digits in `payHow` with the account's digits. The result goes with the receipt as `check`
    (`{ readable, isTransfer, amount: { seen, expected, verdict }, date: { seen, verdict }, account: { seen,
    verdict }, payeeName, reference }`, or `{ readable: false, why }`: `pdf`, `no_vision` on the claude-cli backend,
-   which drops images, `failed`, `unparsed`). It is advice for you: nothing records a payment from it, and you still
-   check the bank. Two answers follow from it: a screenshot the model says is no transfer is not posted ("זה לא נראה
-   כמו אישור של העברה בנקאית. אפשר לשלוח צילום מסך של האישור מהבנק?"), and an amount that differs is posted, said to
-   the customer ("בצילום רואים העברה של 990 ₪, והסכום לתשלום הוא 1,746.40 ₪. העברתי את זה לנציג, והוא יחזור אליכם
+   which drops images, `cap`, `limit`, `failed`, `unparsed`). It is advice for you: nothing records a payment from it,
+   and you still check the bank. Every receipt is posted, checked or not. Two answers follow from it: a screenshot the
+   model says is no transfer is posted with `isTransfer: false`, so you see it on the receipt's page, and the customer
+   is asked for the bank's own ("זה לא נראה כמו אישור של העברה בנקאית. אפשר לשלוח צילום מסך של האישור מהבנק?"); an
+   amount that differs is said to the customer ("בצילום רואים העברה של 990 ₪, והסכום לתשלום הוא 1,746.40 ₪. העברתי את זה לנציג, והוא יחזור אליכם
    כאן.") and to you (an alert, `pay_mismatch:<workspace>`): answer on WhatsApp inside the 24 hours. The payee's name
    and the reference are never said to the customer, and nothing the model read reaches another model call. Its cost
    is our support store's, with the tag `pay_check`: about 4,000 to 5,000 tokens in for a phone screenshot and a few
    hundred out, about $0.02 to $0.04 a check at Opus 5.5's prices (UNVERIFIED until the first real ones are in
-   `usage`).
+   `usage`). It keeps to the agent's caps (`agent/spend.ts` `capFor`): past `TORAN_MONTHLY_CAP_USD`, or past our
+   support store's own cap, it is skipped (`cap`); and to 5 checks a phone an Israel day (`limit`). Either way the
+   receipt is still posted.
 4. **What goes on as before.** A text from a phone that waits (support, a demo, the owner's assistant), a file from a
    phone that does not wait, a sticker, a voice note or a video. Only our number on Meta fetches a file: on Twilio a
    photo carries none.
 5. **What is kept.** Events `pay_code` (`outcome`: ok, nothing_due, no_details, unknown, expired, unavailable) and
-   `pay_receipt` (sent, not_transfer, unreadable, refused, too_many, gone, unavailable), and an audit row `pay_receipt`
+   `pay_receipt` (sent, unreadable, refused, too_many, gone, unavailable), and an audit row `pay_receipt`
    with the code, the workspace, the file's kind and size, the check's verdicts and amounts, and accounts' id. Never the
    transfer's details, the payee's name, the reference or the file.

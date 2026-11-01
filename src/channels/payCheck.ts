@@ -4,6 +4,7 @@ import { cleanLine } from '../core/hebrew.ts';
 import { usage } from '../db/log.ts';
 import { agentModel } from '../agent/llm/index.ts';
 import type { Block } from '../agent/llm/types.ts';
+import { capFor } from '../agent/spend.ts';
 
 // A first look at a payment's receipt (pay.ts), before it goes to accounts: one model call reads the screenshot, and
 // code compares what it read with what is due. The check is advice for the operator, sent with the receipt; nothing in
@@ -24,6 +25,13 @@ import type { Block } from '../agent/llm/types.ts';
 // Only a backend that takes images makes the call: the API (and the scripted one, its stand-in in the tests). The
 // claude-cli backend writes a transcript of text and would drop the image, so there the check is skipped, as it is for
 // a PDF; a skipped or failed check never stops the receipt.
+//
+// What it may spend: the agent's caps (agent/spend.ts capFor, as the agent loop asks before each turn), with our
+// support store's, which the check's cost is recorded against: past TORAN_MONTHLY_CAP_USD, or past that store's own
+// cap, the check is skipped (why 'cap'). And at most DAILY_CHECKS checks for one phone in an Israel day, counted from
+// the audit's pay_receipt rows (why 'limit'). Either way the receipt still goes to accounts, whose own limit holds.
+
+export const DAILY_CHECKS = 5;
 
 export type Verdict = 'ok' | 'mismatch' | 'unknown';
 export type DateVerdict = 'ok' | 'too_old' | 'future' | 'unknown';
@@ -32,7 +40,7 @@ export type DateVerdict = 'ok' | 'too_old' | 'future' | 'unknown';
 export type Seen = { isTransfer: boolean | null; amount: number | null; currency: string | null; date: string | null; payeeName: string | null; accountDigits: string | null; reference: string | null };
 
 export type Check =
-  | { readable: false; why: 'pdf' | 'no_vision' | 'failed' | 'unparsed' }
+  | { readable: false; why: 'pdf' | 'no_vision' | 'cap' | 'limit' | 'failed' | 'unparsed' }
   | {
       readable: true;
       isTransfer: boolean | null;
@@ -160,10 +168,28 @@ export function compare(seen: Seen, exp: Expected, today: string = israelDate())
 }
 
 /** The store a check's cost is recorded against: our support's (src/company.ts), or none while it is not set up. */
-async function supportStore(app: App): Promise<number | null> {
+async function supportStore(app: App): Promise<{ id: number; config: any } | null> {
   const domain = String(app.env.TORAN_SUPPORT_STORE || '').trim().toLowerCase();
-  const s = await app.db.one<{ id: number }>("SELECT id FROM stores WHERE platform = 'company' ORDER BY (domain = $1) DESC, id LIMIT 1", [domain]);
-  return s?.id ?? null;
+  return app.db.one<{ id: number; config: any }>("SELECT id, config FROM stores WHERE platform = 'company' ORDER BY (domain = $1) DESC, id LIMIT 1", [domain]);
+}
+
+/**
+ * Past a cap, as the agent loop asks it (capFor): the support store's and TORAN_MONTHLY_CAP_USD. With no support store,
+ * only the global one (a store of no id whose own cap is never reached). Only the paid API has caps.
+ */
+async function capped(app: App): Promise<boolean> {
+  const store = (await supportStore(app)) || { id: 0, config: { capUsd: Number.MAX_VALUE } };
+  return Boolean(await capFor(app, store));
+}
+
+/** The checks one phone had today in Israel: its receipts whose check made a model call (the audit's pay_receipt rows). */
+async function checksToday(app: App, phone: string): Promise<number> {
+  const r = await app.db.one<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM audit WHERE action = 'pay_receipt' AND actor = $1 AND at >= ($2::date::timestamp AT TIME ZONE 'Asia/Jerusalem')
+       AND (detail->'check'->>'readable' = 'true' OR detail->'check'->>'why' IN ('failed', 'unparsed'))`,
+    [`wa:${phone}`, israelDate()],
+  );
+  return r?.n || 0;
 }
 
 /** The one model call: the image and our line, the fixed prompt, no tools. Null when the answer holds no object. */
@@ -181,19 +207,22 @@ async function readImage(app: App, file: { type: string; data: string }): Promis
     maxRetries: 1,
     signal: AbortSignal.timeout(TIMEOUT_MS * 2),
   });
-  await usage(app.db, { storeId: await supportStore(app), conversationId: null, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag: 'pay_check' });
+  await usage(app.db, { storeId: (await supportStore(app))?.id ?? null, conversationId: null, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag: 'pay_check' });
   const answer = res.content.map((b) => (b.type === 'text' ? String((b as { text: string }).text) : '')).join('\n');
   const o = firstObject(answer);
   return o ? readSeen(o) : null;
 }
 
 /**
- * The receipt's check: skipped for a PDF and on a backend with no eyes, else what the model read compared with what is
- * due (asked of `expected` only then). Never throws: a failed call is a check that says so.
+ * The receipt's check: skipped for a PDF, on a backend with no eyes, past a cap and past the phone's checks for the day,
+ * else what the model read compared with what is due (asked of `expected` only then). Never throws: a failed call is a
+ * check that says so.
  */
-export async function checkReceipt(app: App, file: { type: string; data: string }, expected: () => Promise<Expected>): Promise<Check> {
+export async function checkReceipt(app: App, file: { type: string; data: string }, expected: () => Promise<Expected>, phone: string): Promise<Check> {
   if (!IMAGES.has(file.type)) return { readable: false, why: 'pdf' };
   if (!VISION.has(app.llm.backend)) return { readable: false, why: 'no_vision' };
+  if (await capped(app)) return { readable: false, why: 'cap' };
+  if ((await checksToday(app, phone)) >= DAILY_CHECKS) return { readable: false, why: 'limit' };
   let seen: Seen | null;
   try {
     seen = await readImage(app, file);

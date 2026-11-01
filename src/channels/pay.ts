@@ -21,9 +21,9 @@ import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
 //                checks it is an image or a PDF of at most RECEIPT_MAX by its bytes, has a model read a screenshot
 //                and code compare it with what is due (payCheck.ts), and hands it to accounts with the code, the
 //                phone and that check (POST /internal/pay/receipt), where the operator sees it beside the payment to
-//                record. The check is advice: a screenshot the model says is no transfer is not passed on, and an
-//                amount that differs is said to the customer; nothing else follows from it. Toran never records
-//                money, and keeps no amount, no bank details and no file
+//                record. The check is advice: a screenshot the model says is no transfer still goes, marked so, and
+//                the customer is asked for the bank's own; an amount that differs is said to the customer; nothing
+//                else follows from it. Toran never records money, and keeps no amount, no bank details and no file
 //
 // Both are read on our number before anything else but a demo request (demo.ts), so a verified owner who pays gets
 // this, not their assistant; on a separate owner line too (route.ts). A text from a phone that waits goes where it
@@ -64,6 +64,17 @@ const msg = {
 
 /** Shekels as accounts writes them (its copy.js ils): 990, or 1,746.40 when there are agorot. */
 export const shekels = (n: number) => Number(n).toLocaleString('he-IL', Number.isInteger(Number(n)) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const TOTAL_WORDS = /סך\s+הכו?ל/;
+
+/**
+ * Accounts' summary without the lines that say the total again (one with "סך הכול", or with the total itself as a
+ * whole number, 1,746.40 but not 11,746.40), since our own first line says it: the customer reads the amount once.
+ */
+export function withoutTotal(summary: string, total: string): string {
+  const amount = new RegExp(`(?<![\\d.,])${total.replace(/[.,]/g, '\\$&')}(?![\\d]|[.,]\\d)`);
+  return summary.split('\n').filter((l) => l.trim() && !TOTAL_WORDS.test(l) && !amount.test(l)).join('\n');
+}
 
 /** 'YYYY-MM-DD' as Israelis write a date: 31.12.2026. */
 const dayHe = (d: string) => d.split('-').reverse().join('.');
@@ -143,7 +154,7 @@ export async function payCode(app: App, adapter: ChannelAdapter, inbound: Inboun
     return say(msg.noDetails(business, total), 'pay_no_details');
   }
   await event(app.db, null, 'pay_code', { code, outcome: 'ok', workspace });
-  return say(msg.due(business, total, due.summary, due.payHow), 'pay');
+  return say(msg.due(business, total, withoutTotal(due.summary, total), due.payHow), 'pay');
 }
 
 type Wait = { code: string; workspace_id: number; workspace_name: string; created_at: string | Date };
@@ -198,9 +209,14 @@ async function expectedOf(app: App, wait: Wait): Promise<Expected> {
 const verdicts = (c: Check) =>
   c.readable ? { readable: true, isTransfer: c.isTransfer, amount: c.amount.verdict, seen: c.amount.seen, expected: c.amount.expected, date: c.date.verdict, account: c.account.verdict } : { readable: false, why: c.why };
 
-/** The answer to a receipt accounts took: the amount the screenshot shows when it is not the amount due. */
-const tookLine = (c: { amount?: unknown; seen?: unknown; expected?: unknown } | null | undefined) =>
-  c?.amount === 'mismatch' && typeof c.seen === 'number' && typeof c.expected === 'number' ? msg.mismatch(shekels(c.seen), shekels(c.expected)) : msg.received;
+/**
+ * The answer to a receipt accounts took: a request for the bank's own confirmation when the model saw no transfer, the
+ * amount the screenshot shows when it is not the amount due, else the usual line.
+ */
+const tookLine = (c: { isTransfer?: unknown; amount?: unknown; seen?: unknown; expected?: unknown } | null | undefined) => {
+  if (c?.isTransfer === false) return msg.notTransfer;
+  return c?.amount === 'mismatch' && typeof c.seen === 'number' && typeof c.expected === 'number' ? msg.mismatch(shekels(c.seen), shekels(c.expected)) : msg.received;
+};
 
 /**
  * A photo or a document (an attachment with Meta's media id, meta.ts) on our number on Meta, from a phone that waits
@@ -223,15 +239,10 @@ export async function payReceipt(app: App, adapter: ChannelAdapter, inbound: Inb
     await event(app.db, null, 'pay_receipt', { outcome: 'unreadable', why: got.why, code: wait.code, workspace });
     return say(msg.unreadable, 'pay_receipt_refused');
   }
-  const check = await checkReceipt(app, got.file, () => expectedOf(app, wait));
+  // Not a transfer, by the model's word, still goes to accounts (isTransfer false), so a mistake of the model's never
+  // leaves a customer unseen; the customer is asked for the bank's own confirmation.
+  const check = await checkReceipt(app, got.file, () => expectedOf(app, wait), inbound.from);
   const seen = verdicts(check);
-  // Not a transfer, by the model's word: it does not go to accounts, and the customer is asked for the bank's own.
-  if (check.readable && check.isTransfer === false) {
-    const detail = { outcome: 'not_transfer', code: wait.code, workspace, type: got.file.type, bytes: got.size, check: seen };
-    await event(app.db, null, 'pay_receipt', { ...detail, msg: inbound.id });
-    await audit(app.db, { actor: `wa:${inbound.from}`, action: 'pay_receipt', detail });
-    return say(msg.notTransfer, 'pay_receipt_refused');
-  }
   const r = await call(app, 'POST', '/internal/pay/receipt', { code: wait.code, phone: inbound.from, file: got.file, check }, RECEIPT_TIMEOUT_MS);
   const outcome = sentOutcome(r);
   const error = String(r.body?.error || '');

@@ -7,12 +7,14 @@ import path from 'node:path';
 import { ROOT } from '../src/core/paths.ts';
 import { handleInbound } from '../src/wa/router.ts';
 import { parseWebhook } from '../src/channels/meta.ts';
+import { withoutTotal } from '../src/channels/pay.ts';
 import { ownerByPhone } from '../src/owners/identity.ts';
 import type { Attachment } from '../src/channels/types.ts';
 import { type Script, scriptedClient } from '../src/agent/llm/scripted.ts';
 import type { TurnReq } from '../src/agent/llm/types.ts';
 import { israelDate } from '../src/core/clock.ts';
 import { syncCompany } from '../src/company.ts';
+import { forgetMonthSpend } from '../src/agent/spend.ts';
 import { INTERNAL_TOKEN, META_DEMO, testApp } from './helpers.ts';
 
 // Paying over WhatsApp (src/channels/pay.ts): a PAY code from accounts' button gets the amount and the transfer's
@@ -210,7 +212,8 @@ test('a PAY code: the amount with VAT, accounts\' lines, the transfer\'s details
     // A new code from the same phone takes the wait over.
     s.accounts.code('PAY-ZZ9YY8', due('PAY-ZZ9YY8', { workspace: { id: 8, name: 'מאפיית הכרמל' }, total: 990, summary: 'תורן, החבילה הקטנה: 990 ₪' }));
     const again = await s.write(CUSTOMER, 'PAY-ZZ9YY8');
-    assert.match(again.reply!, /לתשלום על המנוי של מאפיית הכרמל: 990 ₪, כולל מע״מ\.\nתורן, החבילה הקטנה: 990 ₪\n/);
+    // Its only summary line restates the total (990), so the amount is said once, by our own line.
+    assert.match(again.reply!, /לתשלום על המנוי של מאפיית הכרמל: 990 ₪, כולל מע״מ\.\n\nפרטי ההעברה:\n/);
     assert.deepEqual({ ...(await s.wait(CUSTOMER)) }, { code: 'PAY-ZZ9YY8', workspace_id: 8, workspace_name: 'מאפיית הכרמל', week: true });
     assert.equal((await s.app.db.one<any>('SELECT COUNT(*)::int AS n FROM pay_waits')).n, 1);
   } finally {
@@ -293,7 +296,14 @@ test('accounts\' own examples (test/fixtures/contracts/pay.json) are read as the
     s.accounts.code(owed.code, owed);
     const r = await s.write(CUSTOMER, `היי, אני רוצה לשלם על המנוי של ${owed.workspace.name}. ${owed.code.toLowerCase()}`);
     assert.equal(r.action, 'pay');
-    assert.ok(r.reply!.includes(`לתשלום על המנוי של ${owed.workspace.name}: 1,746.40 ₪, כולל מע״מ.\n${owed.summary.join('\n')}\n\nפרטי ההעברה:\n${owed.payHow}\n\n`));
+    // Accounts' summary says the total again ("סך הכול לתשלום עכשיו: 1,746.40 ₪..."): that line goes, and the amount is
+    // read once, in our own line; the line about the plan stays.
+    const restates = owed.summary.filter((l: string) => l.includes('סך הכול'));
+    assert.ok(restates.length >= 1, 'the fixture has the line that restates the total');
+    const kept = owed.summary.filter((l: string) => !l.includes('סך הכול') && !l.includes('1,746.40'));
+    assert.ok(r.reply!.includes(`לתשלום על המנוי של ${owed.workspace.name}: 1,746.40 ₪, כולל מע״מ.\n${kept.join('\n')}\n\nפרטי ההעברה:\n${owed.payHow}\n\n`));
+    assert.equal(r.reply!.split('1,746.40').length - 1, 1, 'the total once');
+    for (const l of restates) assert.ok(!r.reply!.includes(l));
     s.meta.files.set('7001', { bytes: JPEG, mime: 'image/jpeg' });
     assert.equal((await s.write(CUSTOMER, '', photo('7001'))).action, 'pay_receipt');
     const body = s.accounts.receipts[0];
@@ -534,11 +544,18 @@ test('the check: what the model read goes with the receipt, compared in code; an
     assert.equal(m.state.checks.length, 2);
     assert.equal(s.accounts.receipts.length, 2);
 
-    // No transfer, by the model's word: not passed on, and the customer is asked for the bank's own.
+    // No transfer, by the model's word: still passed on, marked so, for the operator to see (a mistake of the model's
+    // strands nobody), and the customer is asked for the bank's own; the same message again says the same.
     m.state.answer = JSON.stringify({ ...READ(), is_transfer_confirmation: false });
-    assert.deepEqual(await s.write(CUSTOMER, '', photo('7001')), { action: 'pay_receipt_refused', reply: NOT_TRANSFER });
-    assert.equal(s.accounts.receipts.length, 2);
-    assert.deepEqual((await s.events('pay_receipt')).map((e) => e.outcome), ['sent', 'sent', 'not_transfer']);
+    const nt = `pay-${seq++}`;
+    assert.deepEqual(await s.write(CUSTOMER, '', photo('7001'), nt), { action: 'pay_receipt', reply: NOT_TRANSFER });
+    assert.equal(s.accounts.receipts.length, 3);
+    assert.equal(s.accounts.receipts[2].check.isTransfer, false);
+    assert.equal(s.accounts.receipts[2].check.amount.verdict, 'unknown', 'nothing compared');
+    assert.equal((await s.write(CUSTOMER, '', photo('7001'), nt)).reply, NOT_TRANSFER);
+    assert.equal(s.accounts.receipts.length, 3);
+    assert.equal((await s.app.db.query<any>("SELECT 1 FROM events WHERE kind = 'operator_alert' AND data->>'key' = 'pay_mismatch:7'")).length, 1, 'no mismatch said for it');
+    assert.deepEqual((await s.events('pay_receipt')).map((e) => e.outcome), ['sent', 'sent', 'sent']);
     const ledger = JSON.stringify(await s.app.db.query('SELECT data FROM events')) + JSON.stringify(await s.app.db.query('SELECT detail FROM audit'));
     assert.ok(!ledger.includes('55512345') && !ledger.includes('"payeeName"'), 'neither the reference nor the payee is in the events or the audit');
   } finally {
@@ -628,4 +645,39 @@ test('no check on a backend without eyes, and a check that fails, never stop the
   } finally {
     await s.close();
   }
+});
+
+test('the check spends within the agent\'s caps and 5 checks a phone an Israel day; past either it is skipped and the receipt still goes', async () => {
+  const m = checkModel();
+  const s = await paying(m.script);
+  try {
+    // The paid API's stand-in, a cent a call: the caps apply to it only (agent/spend.ts capFor).
+    s.app.llm = scriptedClient(m.script, { as: 'api', usd: 0.01 });
+    s.app.env.TORAN_MONTHLY_CAP_USD = '1';
+    forgetMonthSpend();
+    await s.app.db.query("INSERT INTO usage (kind, usd, api_usd, tag) VALUES ('llm', 2, 2, 'earlier')");
+    assert.deepEqual(await s.write(CUSTOMER, '', photo('7001')), { action: 'pay_receipt', reply: RECEIVED });
+    assert.deepEqual(s.accounts.receipts[0].check, { readable: false, why: 'cap' });
+    assert.equal(m.state.checks.length, 0, 'past the monthly cap: no model call');
+
+    // Under the cap again: five checks for this phone today, then the sixth receipt goes unchecked.
+    await s.app.db.query("DELETE FROM usage WHERE tag = 'earlier'");
+    forgetMonthSpend();
+    for (let i = 0; i < 5; i++) assert.equal((await s.write(CUSTOMER, '', photo('7001'))).reply, RECEIVED);
+    assert.equal(m.state.checks.length, 5);
+    assert.deepEqual(await s.write(CUSTOMER, '', photo('7001')), { action: 'pay_receipt', reply: RECEIVED });
+    assert.deepEqual(s.accounts.receipts.at(-1).check, { readable: false, why: 'limit' });
+    assert.equal(m.state.checks.length, 5);
+    assert.equal(s.accounts.receipts.length, 7, 'every receipt posted: accounts keeps its own limit');
+    assert.equal((await s.app.db.one<any>("SELECT COUNT(*)::int AS n FROM usage WHERE tag = 'pay_check'")).n, 5);
+  } finally {
+    forgetMonthSpend();
+    await s.close();
+  }
+});
+
+test('a summary line that restates the total goes: "סך הכול", or the total itself as a whole number', () => {
+  const summary = ['תדר: 1,746.40 ₪ החודש', 'עוד מנוי: 11,746.40 ₪', 'סך הכל לתשלום: כמו למעלה', 'תורן: 1,746.405 משהו', '', 'דמי הקמה: 990 ₪'].join('\n');
+  assert.equal(withoutTotal(summary, '1,746.40'), ['עוד מנוי: 11,746.40 ₪', 'תורן: 1,746.405 משהו', 'דמי הקמה: 990 ₪'].join('\n'));
+  assert.equal(withoutTotal('דמי הקמה: 990 ₪\nתורן: 1,990 ₪', '990'), 'תורן: 1,990 ₪');
 });

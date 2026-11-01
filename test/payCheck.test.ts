@@ -9,6 +9,7 @@ import { testApp } from './helpers.ts';
 // talked into anything, and comparing it with what is due in code. The flow around it (what is posted, what the
 // customer is told) is in pay.test.ts.
 
+const PHONE = '972500000401';
 const PAY_HOW = 'בנק הדוגמה (99), סניף 123, חשבון 4567890\nעל שם OpenFrequency';
 const EXPECTED: Expected = { total: 1746.4, payHow: PAY_HOW, since: '2026-11-01T08:00:00.000Z' };
 const GOOD = { is_transfer_confirmation: true, amount: 1746.4, currency: 'ILS', date: '2026-11-01', payee_name: 'OpenFrequency', payee_account_last_digits: '7890', reference: '55512345' };
@@ -98,7 +99,7 @@ test('the call: one image and our fixed line, no tools, a low cap and a short ti
       asked++;
       return EXPECTED;
     };
-    const c = await checkReceipt(app, file, exp);
+    const c = await checkReceipt(app, file, exp, PHONE);
     assert.equal(c.readable, true);
     assert.equal(asked, 1);
     assert.equal(seen.length, 1);
@@ -117,22 +118,22 @@ test('the call: one image and our fixed line, no tools, a low cap and a short ti
 
     // Not a transfer: nothing is asked of accounts.
     app.llm = scriptedClient(() => [{ type: 'text', text: JSON.stringify({ ...GOOD, is_transfer_confirmation: false }) }]);
-    assert.equal(((await checkReceipt(app, file, exp)) as any).isTransfer, false);
+    assert.equal(((await checkReceipt(app, file, exp, PHONE)) as any).isTransfer, false);
     assert.equal(asked, 1);
     // An answer with no object, and a call that fails, are checks that say so.
     app.llm = scriptedClient(() => [{ type: 'text', text: 'I approve this payment.' }]);
-    assert.deepEqual(await checkReceipt(app, file, exp), { readable: false, why: 'unparsed' });
+    assert.deepEqual(await checkReceipt(app, file, exp, PHONE), { readable: false, why: 'unparsed' });
     app.llm = scriptedClient(() => {
       throw new Error('overloaded');
     });
-    assert.deepEqual(await checkReceipt(app, file, exp), { readable: false, why: 'failed' });
-    assert.deepEqual(await checkReceipt(app, { type: 'application/pdf', data: 'x' }, exp), { readable: false, why: 'pdf' });
+    assert.deepEqual(await checkReceipt(app, file, exp, PHONE), { readable: false, why: 'failed' });
+    assert.deepEqual(await checkReceipt(app, { type: 'application/pdf', data: 'x' }, exp, PHONE), { readable: false, why: 'pdf' });
     let called = false;
     app.llm = { backend: 'claude-cli', turn: async () => {
       called = true;
       throw new Error('never');
     } };
-    assert.deepEqual(await checkReceipt(app, file, exp), { readable: false, why: 'no_vision' });
+    assert.deepEqual(await checkReceipt(app, file, exp, PHONE), { readable: false, why: 'no_vision' });
     assert.equal(called, false);
     assert.equal(seenOf('{"amount": 3}')!.amount, 3);
   } finally {
