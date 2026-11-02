@@ -161,6 +161,18 @@
           }
         },
         {
+          "case": "the same file as one of the workspace's receipts that waits or was marked paid: that receipt, nothing kept again and nobody emailed",
+          "status": 200,
+          "body": {
+            "id": 7,
+            "workspace": {
+              "id": 3,
+              "name": "Dana Shop"
+            },
+            "again": true
+          }
+        },
+        {
           "case": "the phone is not international digits",
           "status": 400,
           "body": {

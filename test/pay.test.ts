@@ -380,6 +380,25 @@ test('a receipt Toran cannot read: too big by Meta\'s word or as it comes, not a
   }
 });
 
+test('the same picture sent again: accounts answers 200 with the receipt it kept (pay.json, "again"), and the customer hears what a first one hears, nothing more', async () => {
+  const contract = JSON.parse(readFileSync(path.join(ROOT, 'test', 'fixtures', 'contracts', 'pay.json'), 'utf8'));
+  const again = contract.routes[1].answers.find((a: any) => a.status === 200 && a.body.again === true);
+  assert.ok(again, 'the contract has the case');
+  const s = await setup();
+  try {
+    s.accounts.code('PAY-AB2CD3', due('PAY-AB2CD3'));
+    await s.write(CUSTOMER, 'PAY-AB2CD3');
+    s.meta.files.set('9101', { bytes: JPEG, mime: 'image/jpeg' });
+    s.accounts.receipt = { status: again.status, body: again.body };
+    assert.deepEqual(await s.write(CUSTOMER, '', photo('9101')), { action: 'pay_receipt', reply: RECEIVED });
+    const a = await s.app.db.one<any>("SELECT detail FROM audit WHERE action = 'pay_receipt' ORDER BY id DESC LIMIT 1");
+    assert.deepEqual([a.detail.outcome, a.detail.id], ['sent', again.body.id]);
+    assert.equal((await s.app.db.query("SELECT 1 FROM events WHERE kind = 'operator_alert'")).length, 0, 'no alert');
+  } finally {
+    await s.close();
+  }
+});
+
 test('accounts refuses a receipt: too large or a bad type, more than 5 a day, the code ended meanwhile, or down', async () => {
   const s = await setup();
   try {
