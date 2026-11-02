@@ -1,3 +1,7 @@
+// Not sent since 2026-11-02 (the owner: "managing teder through whatsapp, only through the dashboard"): every one of
+// them is about the owner's Teder account, and nothing of Teder's goes to WhatsApp now (owners/notify.ts
+// TEDER_ON_WHATSAPP). They stay here as the record of what was approved at Meta, until they are deleted there.
+//
 // The WhatsApp templates the owner line sends outside the 24 hours after the owner's last message, when Meta allows
 // nothing else. All of them are utility templates in Hebrew (he), each about the owner's own Teder account, and each
 // asks for a one-word reply that opens the window, so the full message (the covers, the images, the caption) goes out

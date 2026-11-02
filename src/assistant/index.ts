@@ -24,7 +24,9 @@ import { hostsIn } from '../agent/guard.ts';
 // Every number in an answer must be in a tool result, the owner's words or the chat so far; an answer with any other
 // number is asked again once, then replaced with a plain "not found".
 //
-// On the owner line (src/owners/) the same assistant also serves Teder, for an owner whose workspace has it: the
+// Unused since 2026-11-02 (the owner: "managing teder through whatsapp, only through the dashboard"): owners/line.ts
+// never passes `teder` now, so no model call has the teder_ tools. They are kept as the record of what they did. On
+// the owner line (src/owners/) the same assistant also served Teder, for an owner whose workspace has it: the
 // teder_ tools below see the posts waiting and act on them by the number the owner saw. Those act at once, on the
 // owner's own words (docs/owner-line.md), and only on a number the owner's message names (mentioned()), so the model
 // cannot approve what the owner did not ask for. The covers, images and captions go to the owner from Teder's answer,

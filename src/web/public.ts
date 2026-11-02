@@ -72,7 +72,8 @@ import { errorPage } from './pages/basic.ts';
 //                              when nothing was there (accounts' docs/contracts/workspaces-delete.json)
 //   POST /internal/teder/events Teder's news for an owner (Teder's docs/assistant-api.md): from this machine only, no
 //                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET in the direction teder->toran
-//                              (owners/teder.ts). Kept once by its id and handled by the worker (owners/events.ts).
+//                              (owners/teder.ts). Kept once by its id and handled by the worker (owners/events.ts),
+//                              which sends nothing since 2026-11-02: Teder is managed on its own dashboard only.
 //
 // Pitch pages get their own CSP: the store's logo and product photo load from its CDN
 // (https), and the dashboard may frame the page for its preview.

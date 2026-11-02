@@ -9,7 +9,8 @@ import type { WaProvider } from './whatsapp.ts';
 // Twilio (whatsapp.ts). Each is a number of our own business, connected to our Meta app, and named by its Meta id:
 //
 //   META_DEMO_PHONE_ID    the demo number (demo.ts): codes bind a phone to a store, our support answers the rest
-//   META_OWNER_PHONE_ID   the owner line (owners/line.ts): business owners and their assistant, Teder's news
+//   META_OWNER_PHONE_ID   the owner line (owners/line.ts): a Toran store's owners and their assistant (Teder's news
+//                         stopped on 2026-11-02: Teder is managed on its own dashboard only)
 //
 // Either, both or neither may be set; a line that is not set stays on Twilio (or the simulator), as before. A message
 // Meta sends us for one of these numbers is routed to that line (route.ts) before any store's account is looked at, so
@@ -70,7 +71,7 @@ export const ourLines = async (app: App): Promise<Lines> => withOne(app.env, awa
 /** What our one number does, in the order its messages are read. */
 export type Role = 'owner' | 'demo' | 'support';
 export const ROLE_HE: Record<Role, string> = {
-  owner: 'הקו של בעלי העסקים: מי שהמספר שלו מחובר לחשבון ב-OpenFrequency מדבר עם העוזר שלו',
+  owner: 'הקו של בעלי העסקים: בעל חנות בתורן שהמספר שלו מחובר לחשבון ב-OpenFrequency מדבר עם העוזר שלו',
   demo: 'הדמו: מי ששלח קוד מעמוד של חנות, או שהדמו שלו עוד פתוח',
   support: 'התמיכה שלנו: כל השאר, עם שאלות על תורן, על תדר ועל המחירים',
 };

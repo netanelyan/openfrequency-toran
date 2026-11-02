@@ -409,7 +409,9 @@ test('the owner line: an answer that failed to go out is sent when the message c
   const teder = await fakeTeder();
   Object.assign(app.env, accounts.env, teder.env, { TORAN_ASSISTANT_WA: '972500000888' });
   try {
-    accounts.link({ phone: '972500000123', workspace: 7 });
+    // The owner of a Toran store with Teder: "הפסק" is kept in accounts, once (an owner with Teder alone is our support's).
+    await app.db.query("INSERT INTO stores (domain, url, name, platform, source, slug, workspace_id) VALUES ('mp.example', 'https://mp.example/', 'מ', 'shopify', 'seed', 'mp-x1', 7)");
+    accounts.link({ phone: '972500000123', workspace: 7, products: ['teder', 'toran'] });
     failSends(app.wa, [1]);
     const msg = { channel: 'whatsapp' as const, from: '972500000123', text: 'הפסק', id: 'own-1', at: Date.now(), to: '972500000888' };
     await assert.rejects(handleInbound(app, msg));

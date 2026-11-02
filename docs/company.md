@@ -113,7 +113,7 @@ website's. There is no second number and no Twilio. Once it is connected to Meta
 | --- | --- | --- |
 | 1 | A message with a code: `REQ-...` (the website's demo form) or `DEMO-...` (a pitch page's button); a pitch page's own message to us ("take this page down", "about the page") | the demo request (Toran's or Teder's, one of each per number: docs/operator.md section 3), or the demo as that store; the page's message is kept for you. A code comes first, so a business owner who presses a pitch page's button still gets the demo |
 | 2 | A message with a `PAY-...` code (accounts' "לתשלום בוואטסאפ" button), or a photo or a document from a phone that sent one in the last 7 days | the payment (`src/channels/pay.ts`, docs/operator.md section 7): the amount and the transfer's details from accounts, then the receipt handed to accounts. A PAY code is read right after a `REQ-` code, and a receipt before the owner routing, so a business owner who pays gets this, not their assistant. A text from that phone goes on to the rows below |
-| 3 | A business owner whose number accounts verified, or a `LINK-...` code from accounts | the owner's assistant (docs/owner-line.md), Teder's news included |
+| 3 | A business owner whose number accounts verified, or a `LINK-...` code from accounts | the owner of a Toran store: their assistant (docs/owner-line.md), with Toran's tools only. An owner with Teder and no Toran store: our support, as in row 5 (since 2026-11-02 Teder is managed on its dashboard only, and none of its news goes to WhatsApp) |
 | 4 | A phone bound to a demo in the last 7 days | that store's demo agent |
 | 5 | Anyone else | our support: this store, its prompt and its three tools |
 
@@ -161,9 +161,9 @@ owner's pause ends by itself after the 12 hours.
    OpenFrequency's business, choose to connect the existing WhatsApp Business app number, and approve on the phone with
    the code Meta shows. The page says "המספר שלנו מחובר. מעכשיו תורן עונה בו לבעלי העסקים, לדמו ולתמיכה." and shows
    "מה המספר הזה עושה" with the three roles. No restart: it is on from this moment.
-4. **The owner line's templates** (docs/whatsapp-templates.md): create them in WhatsApp Manager on this number's
-   WhatsApp account; once Meta approves them, `META_TEMPLATES=teder_posts_ready,...` and restart. Until then Teder's
-   news outside the 24 hours is skipped as `no_template`.
+4. **The owner line's templates:** none since 2026-11-02. All five were about Teder, and none of Teder's news goes to
+   WhatsApp now (docs/owner-line.md, first section); `META_TEMPLATES` can stay empty, and the five approved on
+   2026-10-31 can be deleted in WhatsApp Manager.
 5. **Try each role**, from a personal phone:
    - **Support:** from a number accounts does not know, with no demo, write "כמה עולה תורן?". Our support answers, and
      the conversation is in this store's inbox.

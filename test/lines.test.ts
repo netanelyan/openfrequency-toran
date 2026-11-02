@@ -9,6 +9,7 @@ import { drain } from '../src/jobs/worker.ts';
 import { J } from '../src/db/index.ts';
 import { handleTederEvent, handleTederReady } from '../src/owners/events.ts';
 import { DISCLOSURE } from '../src/owners/notify.ts';
+import { tederHere } from '../src/owners/line.ts';
 import { syncCompany } from '../src/company.ts';
 import type { Block, TurnReq } from '../src/agent/llm/types.ts';
 import type { Script } from '../src/agent/llm/scripted.ts';
@@ -134,7 +135,7 @@ const lastResult = (req: TurnReq) => {
   return Array.isArray(last.content) ? String((last.content.find((b: any) => b.type === 'tool_result') as any)?.content || '') : '';
 };
 
-test('the owner line on Meta: linking, the assistant, Teder\'s news (images inside the 24 hours, the approved template by its name outside them) and our support all go out from the owner line through the Cloud API', async () => {
+test('the owner line on Meta: linking, where Teder is managed (none of Teder\'s news, no template) and our support all go out from the owner line through the Cloud API', async () => {
   const script: Script = (req) => (lastResult(req) ? say('תורן עולה 250 ₪ לחודש, לא כולל מע״מ.') : toolUse('get_plans', {}));
   const app = await testApp({ script });
   const accounts = await fakeOwnerAccounts();
@@ -157,36 +158,21 @@ test('the owner line on Meta: linking, the assistant, Teder\'s news (images insi
     assert.equal(g.from(DEMO_ID).length, 0, 'nothing from the demo number');
     assert.equal(app.wa.outbox!.length, 0, 'nothing through Twilio or the simulator');
 
-    // Teder's news to an owner who never wrote: the approved template, by its name, in Hebrew, from the owner line.
+    // Teder's news (off since 2026-11-02, Teder is managed on its own dashboard): nothing goes out through Meta, not
+    // even a template Meta approved and META_TEMPLATES lists, and an owner with Teder alone hears where the dashboard
+    // is, from the owner line, through the Cloud API.
     accounts.link({ phone: OWNER, workspace: WS });
     for (const [id, hook] of [[11, 'איך לשמור על הגב בריצה'], [12, 'מה לאכול לפני מרתון'], [13, '5 טעויות בבחירת נעלי ריצה']] as const) {
       teder.add({ id, workspace: WS, hook });
       const ev = `evt_${seq++}`;
       await app.db.query('INSERT INTO teder_events (id, type, workspace_id, data) VALUES ($1, $2, $3, $4::jsonb)', [ev, 'post.ready', WS, J({ post: { id: String(id), coverLine: hook, image: `https://teder.test/m/${id}/instagram/1?e=1&s=x` }, redoOf: null })]);
-      await handleTederEvent(app, ev);
+      assert.deepEqual(await handleTederEvent(app, ev), { skipped: 'teder_on_dashboard' });
     }
-    await handleTederReady(app, WS);
-    const t = toOwner();
-    assert.equal(t.length, 1);
-    assert.deepEqual(t[0].body.template, { name: 'teder_posts_ready', language: { code: 'he' }, components: [{ type: 'body', parameters: [{ type: 'text', text: '3 מצגות' }] }] });
-
-    // The owner answers the template: inside the window the covers go as images, from the owner line.
+    assert.deepEqual(await handleTederReady(app, WS), { skipped: 'teder_on_dashboard' });
+    assert.equal(toOwner().length, 0, 'no template, no covers');
     await write('הצג');
-    const shown = toOwner().slice(1);
-    assert.equal(shown.filter((c) => c.body.type === 'image').length, 3);
-    assert.ok(shown.find((c) => c.body.type === 'image')!.body.image.link.startsWith('https://teder.test/m/'));
-
-    // A template Meta has not approved (not in META_TEMPLATES) is not sent.
-    await app.db.query("UPDATE owner_numbers SET last_inbound_at = now() - interval '25 hours'");
-    app.env.META_TEMPLATES = '';
-    const n = toOwner().length;
-    teder.add({ id: 14, workspace: WS, hook: 'עוד אחת' });
-    const ev = `evt_${seq++}`;
-    await app.db.query('INSERT INTO teder_events (id, type, workspace_id, data) VALUES ($1, $2, $3, $4::jsonb)', [ev, 'post.ready', WS, J({ post: { id: '14', coverLine: 'עוד אחת', image: 'https://teder.test/m/14/instagram/1?e=1&s=x' }, redoOf: null })]);
-    await handleTederEvent(app, ev);
-    await handleTederReady(app, WS);
-    assert.equal(toOwner().length, n);
-    assert.equal((await app.db.one<any>('SELECT status, reason FROM owner_notifications ORDER BY id DESC LIMIT 1')).reason, 'no_template');
+    assert.deepEqual(toOwner().map((c) => [c.body.type, c.body.text?.body]), [['text', `${DISCLOSURE}\n\n${tederHere('https://teder.openfrequency.co.il')}`]]);
+    assert.equal(teder.calls.length, 0, 'nothing asked of Teder');
 
     // Our support on the owner line, and the operator's reply from the inbox: from the owner line, through Meta.
     const { storeId } = await syncCompany(app, {

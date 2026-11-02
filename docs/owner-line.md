@@ -1,9 +1,41 @@
-# The owner line: one WhatsApp number for Toran and Teder
+# The owner line: one WhatsApp number for a Toran store's owners
+
+## Since 2026-11-02: Teder is managed on its dashboard only
+
+The owner decided on 2026-11-02: "managing teder through whatsapp, only through the dashboard. the demo stays". So:
+
+- **Nothing of Teder's goes to WhatsApp.** No post.ready list, reminder, unposted bundle, published note, quota line
+  or weekly summary, and no template, whatever `META_TEMPLATES` or `TWILIO_TEMPLATES` say.
+  `src/owners/notify.ts` `TEDER_ON_WHATSAPP` is false: `owners/events.ts` ends every `teder_event` and `teder_ready`
+  job with `{ skipped: 'teder_on_dashboard' }` before it asks accounts or Teder anything, and `pushToOwner` refuses
+  too. Teder's signed events are still checked and acknowledged at `POST /internal/teder/events` (so Teder does not
+  retry them), and Teder itself stopped sending them (openfrequency-teder, `src/autonomy/runner.js`).
+- **An owner whose workspace has Teder and no Toran store is our support's**, on whichever of our numbers they wrote
+  to, exactly as a number nobody linked: `storeChannel()` with our support's account (src/company.ts). Our support's
+  status (the website's `src/support.mjs`) says Teder's posts are approved on Teder's dashboard,
+  https://teder.openfrequency.co.il. Nothing of theirs is kept on the line (no `owner_numbers` row is touched), so an
+  answer the operator writes from our phone lands in that support conversation. Without our support, one line says
+  where Teder is managed, at most once an hour: "את המצגות של תדר מאשרים עכשיו רק בלוח הבקרה של תדר: <TEDER_URL>.
+  שם גם מתקנים אותן ורואים מה עלה." (`line.ts` `tederHere`).
+- **An owner of a Toran store whose workspace also has Teder** keeps the assistant, with Toran's tools only (no
+  `teder_` tool, no Teder in the prompt). A reply about Teder's posts that the reader in code understands ("אשר את 1",
+  "הצג", "סטטוס", a number past the list) gets that same line, and nothing reaches Teder. "הפסק" is still kept as
+  the owner's word (here and in accounts) and answered with where Teder is; "התחל" records no opt-in.
+- **A link code** from a workspace with Teder alone is still claimed (accounts no longer makes one for such a
+  workspace) and answered with where Teder is managed; with Toran, "אפשר לכתוב לי כאן על החנות."
+- **What stays:** the Teder demo by WhatsApp code (channels/request.ts), paying over WhatsApp (channels/pay.ts, read
+  before the owner line), our support, and the owner line for a Toran store's owners.
+
+The code for Teder on the line (posts.ts, teder.ts, the teder_ tools in src/assistant, the templates) is kept, unused,
+as the record of what it did. The rest of this document describes the line as it was built; where it speaks of Teder
+on WhatsApp, the section above wins.
+
+## How the line was built
 
 A business owner writes to one WhatsApp number (`TORAN_ASSISTANT_WA`) and talks to their assistant about Toran (the
-store's conversations), Teder (the posts waiting for approval), or both, whichever their workspace has. Teder writes
-to them on the same number when posts are ready, when it is time to post, when the month's quota runs low, and once
-a week. Three services take part:
+store's conversations), Teder (the posts waiting for approval), or both, whichever their workspace has. Until
+2026-11-02 Teder wrote to them on the same number when posts were ready, when it was time to post, when the month's
+quota ran low, and once a week. Three services take part:
 
 ```
             the owner's phone
@@ -27,15 +59,16 @@ Toran tells accounts which number sent it (the same pattern as the website's dem
 
 ### The flow
 
-1. On their home page in accounts, a customer (`client_owner` or `client_member`) taps "לחבר את הוואטסאפ". The form
-   has one checkbox: whether they agree to get Teder's and Toran's updates on WhatsApp. This is the opt-in, kept with
-   its time.
+1. On their home page in accounts, a customer (`client_owner` or `client_member`) of a workspace with Toran taps
+   "לחבר את הוואטסאפ". Until 2026-11-02 the form had one checkbox, whether they agree to get Teder's and Toran's
+   updates on WhatsApp (the opt-in, kept with its time); the updates were Teder's alone, so the box went with them,
+   and a workspace with Teder alone has no link form (openfrequency-accounts' docs/internal-owner-phone.md).
 2. Accounts makes a code `LINK-XXXXXX` (6 of `ABCDEFGHJKMNPQRSTUVWXYZ23456789`), good for 30 minutes and for one use.
    It shows the code and a `https://wa.me/<OF_ASSISTANT_WA>?text=LINK-XXXXXX` button.
 3. The customer sends it. Toran calls `POST /internal/owner-phone/claim` with the code and the number that sent it.
    Accounts links the number to that user and workspace, marks it verified now, and copies the opt-in with its time.
-4. The home page lists the linked numbers. Each one can be removed, and its updates turned on or off. Turning them on
-   counts as an opt-in, with its time and the source `accounts`.
+4. The home page lists the linked numbers, and each one can be removed. (Until 2026-11-02 its updates could be turned
+   on or off there too, an opt-in with its time and the source `accounts`.)
 
 ### Tables (accounts)
 
@@ -124,8 +157,8 @@ Toran maps an owner's "line 1 / line 2" of a slide to Teder's fields. On the cov
 | `identity.ts` | The accounts client for the routes above. A number is asked about live on every message. If accounts cannot be reached, nobody is an owner (fail closed). |
 | `teder.ts` | The signed Teder client and the signature check on events |
 | `intents.ts` | Owner replies about posts read in code: approve, reject (with a reason), shorter, edit a line, show, the bundle, every post, "all but". A message the parser does not wholly understand goes to the model. |
-| `line.ts` | One message from an owner's number, end to end, in order: identity, "הפסק" and "התחל", the rate limit, the disclosure, Toran's pending "כן", the parser, then the model with Toran's tools and Teder's |
-| `notify.ts` | The only place Toran writes to someone who did not just write. It sends only to a verified number that opted in and did not opt out, within the per-number limit (Teder already held its events through quiet time). Inside the 24 hours it sends text and images; outside them it sends an approved template only. Every attempt is recorded in `owner_notifications`, whatever happened to it. |
+| `line.ts` | One message from an owner's number, end to end, in order: identity (an owner with Teder and no Toran store goes to our support here), the rate limit, the disclosure, "הפסק" and "התחל", Toran's pending "כן", the parser (a reply about Teder's posts is told where the dashboard is), then the model with Toran's tools |
+| `notify.ts` | Off since 2026-11-02 (`TEDER_ON_WHATSAPP`). The only place Toran wrote to someone who did not just write. It sends only to a verified number that opted in and did not opt out, within the per-number limit (Teder already held its events through quiet time). Inside the 24 hours it sends text and images; outside them it sends an approved template only. Every attempt is recorded in `owner_notifications`, whatever happened to it. |
 | `posts.ts` | What the line does with posts: show the posts waiting (and keep their order), act on numbered ones, send one ready to post, say the status. The reader in code and the model's tools both use it. |
 | `events.ts` | The text and images for each Teder event. Teder's post.ready events, one per post, are gathered for 90 seconds and sent as one numbered list of everything waiting. |
 | `templates.ts` | The utility templates, as submitted to Meta (docs/whatsapp-templates.md), and what each is sent by on the provider in use |

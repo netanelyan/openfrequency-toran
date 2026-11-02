@@ -186,7 +186,9 @@ Toran has no login of its own. A browser without a session goes to
 
 ## The owner line (Twilio, a second number)
 
-The number business owners write to, about Toran and Teder (docs/owner-line.md).
+The number a Toran store's owners write to (docs/owner-line.md). Since 2026-11-02 Teder is managed on its dashboard
+only: none of Teder's news is sent, so step 2 (the templates) is not needed any more. Step 3's secret can stay: Teder
+signs its connect links with it too.
 
 1. **A second WhatsApp sender** on the same Twilio account, with its "A message comes in" webhook pointing at the
    same `https://<pitch host>/wa/twilio`. Toran tells the two numbers apart by the number each message was written

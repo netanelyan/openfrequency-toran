@@ -308,7 +308,7 @@ number above takes every role a setting leaves out:
 | Setting | The number | Known everywhere else as |
 | --- | --- | --- |
 | `META_DEMO_PHONE_ID` | the demo number, which is also our public number and support | `DEMO_WA_NUMBER` (the pitch pages' button) |
-| `META_OWNER_PHONE_ID` | the owner line | `TORAN_ASSISTANT_WA` (accounts' link code, Teder's news) |
+| `META_OWNER_PHONE_ID` | the owner line | `TORAN_ASSISTANT_WA` (accounts' link code; Teder's news until 2026-11-02) |
 
 A message Meta sends for one of these ids goes to the demo number's router or to the owner line, exactly as Twilio's
 does: codes bind, owners reach their assistant, strangers get our support (`TORAN_SUPPORT_STORE`). It is never
@@ -335,16 +335,14 @@ try them; App Review is what the stores need):
    curl -s -X POST "https://graph.facebook.com/v23.0/<our WhatsApp account id>/subscribed_apps" -H "Authorization: Bearer <META_SYSTEM_TOKEN>"
    ```
    It answers `{"success":true}`.
-6. **The owner line's five templates** (docs/whatsapp-templates.md). In WhatsApp Manager, Message templates, create
-   each one exactly as the sheet says: its name, Utility, Hebrew, the body, the footer, the quick reply buttons. Once
-   Meta approves them, list their names in `META_TEMPLATES`. A template not listed is not sent, and the owner
-   notifications record it as skipped. Add a payment method to our WhatsApp account: Meta bills each template.
+6. **The owner line's five templates:** skip this step since 2026-11-02. They were all about Teder, and Teder is
+   managed on its dashboard only now, so none of them is sent whatever `META_TEMPLATES` says (docs/owner-line.md,
+   first section; docs/whatsapp-templates.md keeps them as the record of what was submitted).
 7. **`.env`**, then restart:
    ```
    META_DEMO_PHONE_ID=<the demo number's Phone number ID>
    META_OWNER_PHONE_ID=<the owner line's Phone number ID>
    META_SYSTEM_TOKEN=<item 4, optional>
-   META_TEMPLATES=teder_posts_ready,teder_post_reminder,teder_post_unposted,teder_quota_low,teder_weekly_summary
    DEMO_WA_NUMBER=<the demo number, digits only>          # already set
    TORAN_ASSISTANT_WA=<the owner line, digits only>       # already set, the same as OF_ASSISTANT_WA in accounts
    ```

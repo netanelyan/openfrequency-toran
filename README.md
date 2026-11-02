@@ -59,7 +59,7 @@ copy the message, mark it sent, see the chats.
 | `src/pitch` | the pitch page, its sample chat, its tracking |
 | `src/wa` | the WhatsApp demo router and the BSP providers (Twilio, a simulator) |
 | `src/ops` | the operator's dashboard: who to write to today, the conversations, the funnels, the money (docs/operator.md) |
-| `src/owners` | the owner line: one WhatsApp number for business owners, about Toran and Teder (docs/owner-line.md) |
+| `src/owners` | the owner line: one WhatsApp number for a Toran store's owners; Teder is managed on its dashboard only since 2026-11-02, and none of its news is sent (docs/owner-line.md) |
 | `src/orders.ts` | a store's own orders (Shopify, WooCommerce, Wix) with the owner's read-only key, for get_order_status |
 | `src/auto` | the store's automatic messages: its platform's webhooks and readings, consent and the quiet link to stop the reminders (`/u/<token>`, src/web/unsubscribe.ts), quiet time, the WhatsApp templates on the store's own account |
 | `src/company.ts` | a company store: Toran answering our own support from the site's export, and on our one WhatsApp number as owner line, demo number and support (docs/company.md) |

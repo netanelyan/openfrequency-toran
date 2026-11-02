@@ -1025,3 +1025,35 @@ subdomains." The dashboard followed the device's setting and had no switch.
 
 **Not changed:** the pitch pages, a page that is gone and the message-settings page stay light only, as decided on
 2026-10-22: they are the store's, in its colours, with no switch.
+
+## 2026-11-02: Teder is managed on its dashboard only, not on WhatsApp
+
+The owner: "managing teder through whatsapp, only through the dashboard. the demo stays".
+
+**Decided:** none of Teder's news goes to an owner's WhatsApp (`src/owners/notify.ts` `TEDER_ON_WHATSAPP` false: the
+`teder_event` and `teder_ready` jobs end with `{ skipped: 'teder_on_dashboard' }` before asking accounts or Teder
+anything, and `pushToOwner` refuses), so no owner-line template is sent. A reply about Teder's posts approves, rejects
+or edits nothing: an owner with Teder and no Toran store is answered by our support, like any number nobody linked
+(its status says Teder is approved on Teder's dashboard); an owner of a Toran store keeps the assistant with Toran's
+tools only, and a reply about Teder's posts, read in code, gets one line: "את המצגות של תדר מאשרים עכשיו רק בלוח
+הבקרה של תדר: https://teder.openfrequency.co.il. שם גם מתקנים אותן ורואים מה עלה." "הפסק" is still kept as the owner's
+word; "התחל" records no opt-in.
+
+**Alternatives:** an environment switch (refused: the owner's word is the switch, and a setting left on a server would
+bring the messages back unasked); deleting the Teder half of `src/owners` and the teder_ tools (refused for now: more
+churn than turning it off, and the code is the record of what the five approved templates and the API did); sending
+a Teder owner's message to the assistant with no tools (refused: it would answer about posts it cannot see).
+
+**Why our support for an owner with Teder alone:** they are a paying customer with questions about billing and setup,
+which our support answers; nothing of theirs is kept on the line, so the operator's answer from our phone lands in
+the support conversation (`lineEcho` picks the newest).
+
+**What stays:** the Teder demo by WhatsApp code, paying over WhatsApp, our support, and the owner line for a Toran
+store's owners. Teder's signed events are still acknowledged at `/internal/teder/events`; Teder stopped sending them.
+
+**Tested** (test/owners.test.ts, lines.test.ts, message-path.test.ts): every event type, inside the 24 hours and out,
+with every template's SID and name set, sends nothing and asks nothing; "אשר את 1 ו-3, את 2 תעשה קצר יותר" from an
+owner with Teder alone reaches our support and nothing at Teder; without our support, the line once an hour; an owner
+of a Toran store's model has no teder_ tool and no Teder in the prompt, and their "מאשר את כולן", "אשר את 4" and "הצג"
+get the line; "הפסק" kept, "התחל" turning nothing on; the link code's answer for a workspace with Teder alone and for
+one with Toran.

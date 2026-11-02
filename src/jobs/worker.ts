@@ -47,9 +47,10 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 //                into the company store when it changed (jobs/reread.ts)
 //   teder_lead   a Teder demo asked for on the website, its code just sent from WhatsApp: handed to Teder (its POST
 //                /internal/lead, channels/request.ts handToTeder), tried again while Teder does not take it
-//   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts)
+//   teder_event  Teder's news for a workspace's owners, on the owner line (owners/events.ts); off since 2026-11-02,
+//                each job ends with nothing sent
 //   teder_ready  the posts waiting for a workspace's approval, as one numbered list, a moment after Teder's post.ready
-//                events stop coming
+//                events stop coming; off since 2026-11-02 too
 //   auto_setup, auto_hook, auto_poll, auto_send   the automatic messages (cart, payment, shipping, review): a
 //                store's webhooks registered, one webhook, a reading of its orders and checkouts, the messages due
 //                (auto/jobs.ts)

@@ -28,7 +28,8 @@ import { botLine, botName, markIntroduced } from '../agent/intro.ts';
 //   asking for the demo link, and nothing else; or, when our support is set up
 //   (src/company.ts), our support agent
 //   a business owner accounts verified, or a link code, goes to the owner's assistant
-//   (owners/line.ts), before any binding
+//   (owners/line.ts), before any binding; an owner with Teder and no Toran store is
+//   answered there by our support, since Teder is managed on its dashboard only
 //
 // The demo ends back into our support, when it is set up: after BINDING_DAYS, or when
 // the person writes just "תמיכה" or "עזרה" (SUPPORT_WORD). The binding goes, one short

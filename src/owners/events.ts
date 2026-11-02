@@ -3,7 +3,7 @@ import type { App } from '../app.ts';
 import { enqueue } from '../jobs/queue.ts';
 import type { Part } from '../channels/send.ts';
 import { ownersOf, type Owner } from './identity.ts';
-import { pushToOwner, type Push } from './notify.ts';
+import { pushToOwner, TEDER_ON_WHATSAPP, type Push } from './notify.ts';
 import { platformsHe, readyMessage, sendBundle } from './posts.ts';
 import { isPostId, tederClient, type TederPost } from './teder.ts';
 
@@ -15,6 +15,14 @@ import { isPostId, tederClient, type TederPost } from './teder.ts';
 //
 // A post.ready names one post, and a run makes several at once: they are gathered for READY_WAIT_MS, then the whole
 // list of posts waiting goes as one numbered message (teder_ready), so "1" always means what the owner sees.
+//
+// OFF since 2026-11-02 (the owner: "managing teder through whatsapp, only through the dashboard"): Teder's posts are
+// approved, fixed and followed on Teder's own dashboard only, so none of its news goes to an owner's WhatsApp. An
+// event Teder still sends is acknowledged and kept (web/public.ts), and its job ends here with nothing sent and
+// nothing asked of accounts or Teder, a job queued before the switch included. The code below it is kept, unused, as
+// the record of what the line did (docs/owner-line.md).
+
+const OFF = { skipped: 'teder_on_dashboard' } as const;
 
 export const EVENT_TYPES = ['post.ready', 'post.reminder', 'post.published', 'post.unposted', 'quota.low', 'weekly.summary'] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -94,6 +102,7 @@ async function pushAll(app: App, owners: Owner[], push: Push) {
 
 /** The teder_event job. */
 export async function handleTederEvent(app: App, id: string): Promise<Record<string, unknown>> {
+  if (!TEDER_ON_WHATSAPP) return OFF;
   const row = await app.db.one<{ id: string; type: EventType; workspace_id: number; at: string | null; data: any }>('SELECT id, type, workspace_id, at, data FROM teder_events WHERE id = $1', [id]);
   if (!row) return { skipped: 'no_event' };
   const ev: TederEvent = { id: row.id, type: row.type, workspace: row.workspace_id, at: row.at || undefined, data: row.data };
@@ -110,6 +119,7 @@ export async function handleTederEvent(app: App, id: string): Promise<Record<str
 
 /** The teder_ready job: every post waiting now, as one numbered list, once per list. */
 export async function handleTederReady(app: App, workspaceId: number): Promise<Record<string, unknown>> {
+  if (!TEDER_ON_WHATSAPP) return OFF;
   const owners = await tederOwners(app, workspaceId);
   if (!owners.length) return { sent: 0, numbers: 0 };
   const r = await tederClient(app, workspaceId, toran).pending();

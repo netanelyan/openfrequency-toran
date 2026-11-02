@@ -24,6 +24,13 @@ import type { PostId } from './teder.ts';
 //                      it every time)
 //
 // A rule that cannot be checked (accounts or Teder did not answer) stops the message: the caller retries later.
+//
+// OFF since 2026-11-02 (the owner: "managing teder through whatsapp, only through the dashboard"): every message this
+// file would start is about the owner's Teder account, and Teder is managed on its own dashboard now, so nothing is
+// started at all. owners/events.ts ends Teder's events before they get here; pushToOwner refuses too, sending nothing.
+
+/** Teder's news on the owner's WhatsApp, the only thing Toran ever started to an owner: off. */
+export const TEDER_ON_WHATSAPP = false;
 
 export const PUSHES_PER_DAY = 8;
 const WINDOW_MARGIN_MS = 10 * 60_000;
@@ -69,6 +76,7 @@ async function record(app: App, p: Push, phone: string, status: Outcome | 'defer
 
 /** One message (in parts) Toran starts to one owner, under every rule above. */
 export async function pushToOwner(app: App, owner: Owner, p: Push): Promise<Outcome> {
+  if (!TEDER_ON_WHATSAPP) return 'skipped';
   const phone = owner.phone;
   if (p.eventId && (await app.db.one("SELECT 1 FROM owner_notifications WHERE event_id = $1 AND phone = $2 AND status = 'sent'", [p.eventId, phone]))) return 'sent';
   const row = await rememberOwner(app, owner);
