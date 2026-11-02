@@ -1,0 +1,53 @@
+{
+  "name": "signup",
+  "doc": "docs/setup.md, \"GET /internal/signup\"",
+  "servedBy": [
+    "accounts"
+  ],
+  "calledBy": [
+    "teder"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/signup",
+      "listener": "127.0.0.1:4741 (accounts' internal listener: loopback socket and Host only, never proxied)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
+      "notes": "Read only: what /signup goes by. `open` is OF_SIGNUP=1; `products` are the products /signup takes now (OF_SIGNUP_PRODUCTS, every product when it is empty), and none while it is closed. Teder compares its OF_SIGNUP_OPEN with \"teder\" in `products` once at start.",
+      "answers": [
+        {
+          "case": "open, for the products OF_SIGNUP_PRODUCTS names",
+          "status": 200,
+          "body": {
+            "open": true,
+            "products": [
+              "teder"
+            ]
+          }
+        },
+        {
+          "case": "closed: OF_SIGNUP is not 1, so no product",
+          "status": 200,
+          "body": {
+            "open": false,
+            "products": []
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}
