@@ -316,6 +316,18 @@ What keeps a customer's message from being lost or delayed without anyone knowin
   deleted, 200 with every count 0 when nothing was there; 401 `bad_token` without the right token; 503
   `not_configured` when `OF_INTERNAL_TOKEN` is unset or short here; 403 from anywhere but this machine. accounts reads
   only the status and treats anything but a 2xx as a failure.
+- **A payment recorded in accounts**: `POST /internal/entitlement/changed` (src/billing/changed.ts), as accounts'
+  contract has it (openfrequency-accounts `docs/contracts/entitlement-changed.json`): `{ workspace, reason }` from
+  accounts the moment a workspace's access changes (a payment recorded, comp, a subscription saved by hand, a
+  cancellation or its undo, a product or the workspace turned off or on). Toran marks the answer it keeps about that
+  workspace (src/billing/entitlement.ts, `changedAt` in the settings table, so the worker asks again too), and the next
+  page, customer's message or automatic message asks accounts afresh instead of up to 5 minutes later; the answer
+  stays underneath for the 24 hours accounts may be down, and nothing opens or stops until accounts says so. 200
+  `{ ok: true, workspace, cleared }` (`cleared` false when nothing was kept for it); 401 `bad_token`, 403 `forbidden`
+  from anywhere but this machine or through Caddy, 405 for a GET, 400 `bad_workspace`, 503 `not_configured`. accounts
+  waits 2 seconds, never sends it again, and logs a failure. Toran's pay page has no "בדקו שוב" button (Teder's has):
+  no customer pays for Toran yet (sign-up offers Teder alone, and the workspaces from before the paywall are
+  complimentary), and with this notice the store's next page after the payment is already its dashboard.
 
 ## 7. Paying over WhatsApp: a PAY code and its receipt
 

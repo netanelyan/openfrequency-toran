@@ -12,7 +12,10 @@ import { markServiceResumed, markServiceStopped } from '../jobs/retention.ts';
 // `allowed` is the only thing acted on. The answer is kept in the settings table (entitlement:<workspace>), so the
 // dashboard and the answer path read the same one and a restart keeps it:
 //
-//   - an answer under FRESH_MS (5 minutes) old is used as it is, nothing is asked
+//   - an answer under FRESH_MS (5 minutes) old is used as it is, nothing is asked, unless accounts said since that the
+//     workspace's access changed (POST /internal/entitlement/changed, billing/changed.ts: a payment recorded, comp, a
+//     cancellation): then the next check asks afresh, so a store that just paid is answered again at once. The answer
+//     stays kept underneath, marked (changedAt), for the 24 hours below
 //   - 404 no_workspace (an id accounts never had) is an answer: not allowed. A deleted workspace is a 200, access off.
 //   - when accounts cannot answer (down, a timeout, a 5xx, a 401, a shape that is not the contract's), the last answer
 //     it gave stands for up to STALE_MS (24 hours): a paying store is never stopped by a hiccup. Asked again after
@@ -39,7 +42,7 @@ const MIN_TOKEN = 32;
 
 type Env = Record<string, string | undefined>;
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
-export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; checkedAt: string };
+export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; checkedAt: string; changedAt?: string };
 export type View = { workspace: number; allowed: boolean; known: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; checkedAt: string | null; source: 'fresh' | 'cache' | 'stale' | 'unknown' };
 
 const keyOf = (workspaceId: number) => `entitlement:${workspaceId}`;
@@ -51,6 +54,17 @@ export async function lastKnown(db: Db, workspaceId: number): Promise<Kept | nul
 
 async function keep(db: Db, workspaceId: number, k: Kept) {
   await db.query('INSERT INTO settings (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [keyOf(workspaceId), J(k)]);
+}
+
+/**
+ * accounts said the workspace's access changed: the kept answer is marked (changedAt), so the next check asks accounts
+ * instead of using it for the rest of its 5 minutes. The answer itself stays, standing the 24 hours accounts may then be
+ * down, and `allowed` is not touched: nothing opens or stops until accounts says so. In the database, so the worker,
+ * which answers the store's customers in its own process, asks again too. Returns whether an answer was kept.
+ */
+export async function markChanged(db: Db, workspaceId: number, t = Date.now()): Promise<boolean> {
+  const row = await db.one<{ key: string }>("UPDATE settings SET value = jsonb_set(value, '{changedAt}', to_jsonb($2::text)) WHERE key = $1 RETURNING key", [keyOf(workspaceId), new Date(t).toISOString()]);
+  return Boolean(row);
 }
 
 /** A 200 is believed only in the shape the contract gives it, and for the workspace asked about. */
@@ -67,6 +81,8 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
   const token = String(env.OF_INTERNAL_TOKEN || '').trim();
   const failedAt = new Map<number, number>();
   const asking = new Map<number, Promise<View>>();
+  // When accounts last said a workspace's access changed (changed() below), for a question out at that moment.
+  const changedSince = new Map<number, number>();
 
   const view = (workspace: number, k: Kept | null, source: View['source'], t: number): View => {
     const fresh = Boolean(k && t - Date.parse(k.checkedAt) < STALE_MS);
@@ -105,6 +121,11 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
       return stale();
     }
     failedAt.delete(workspaceId);
+    // accounts said the access changed after this question left, so its answer may be from before the change (a payment
+    // committed while it was out): kept marked, and the next check asks again.
+    const since = Math.max(Date.parse((await lastKnown(db, workspaceId))?.changedAt ?? '') || 0, changedSince.get(workspaceId) ?? 0);
+    if (since > t) next.changedAt = new Date(since).toISOString();
+    else changedSince.delete(workspaceId);
     await keep(db, workspaceId, next);
     await planAccess(db, workspaceId, next.allowed);
     return view(workspaceId, next, 'fresh', t);
@@ -115,13 +136,24 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
     async check(workspaceId: number): Promise<View> {
       const t = clock();
       const kept = await lastKnown(db, workspaceId);
-      if (kept && t - Date.parse(kept.checkedAt) < FRESH_MS) return view(workspaceId, kept, 'cache', t);
+      if (kept && !kept.changedAt && t - Date.parse(kept.checkedAt) < FRESH_MS) return view(workspaceId, kept, 'cache', t);
       if (t - (failedAt.get(workspaceId) || -Infinity) < RETRY_MS) return view(workspaceId, kept, 'stale', t);
       const inFlight = asking.get(workspaceId);
       if (inFlight) return inFlight;
       const p = ask(workspaceId).finally(() => asking.delete(workspaceId));
       asking.set(workspaceId, p);
       return p;
+    },
+    /**
+     * accounts said the workspace's access changed (billing/changed.ts): the next check asks it afresh, even within a
+     * minute of a question that failed. A question already out may have left before the change: what it brings back is
+     * kept marked, and the check after it asks again. Returns whether an answer was kept for it.
+     */
+    async changed(workspaceId: number): Promise<boolean> {
+      const t = clock();
+      changedSince.set(workspaceId, t);
+      failedAt.delete(workspaceId);
+      return markChanged(db, workspaceId, t);
     },
   };
 }

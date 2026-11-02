@@ -70,6 +70,7 @@ export async function fakeAccounts() {
   const answers = new Map<string, Canned>();
   const entitlements = new Map<number, 'unpaid' | 'gone' | 'down'>();
   let calls = 0;
+  let entitlementCalls = 0;
   const server = http.createServer((req, res) => {
     calls++;
     const url = new URL(req.url || '/', 'http://internal');
@@ -79,6 +80,7 @@ export async function fakeAccounts() {
     };
     // The paywall's question (src/billing/entitlement.ts): every workspace has paid, unless a test said otherwise.
     if (url.pathname === '/internal/entitlement') {
+      entitlementCalls++;
       if (req.headers.authorization !== `Bearer ${INTERNAL_TOKEN}`) return out(401, { error: 'bad_token' });
       const ws = Number(url.searchParams.get('workspace'));
       const e = entitlements.get(ws);
@@ -102,6 +104,10 @@ export async function fakeAccounts() {
     env: { OF_INTERNAL_TOKEN: INTERNAL_TOKEN, OF_ACCOUNTS_INTERNAL: `http://127.0.0.1:${port}`, OF_ACCOUNTS_URL: 'https://accounts.test' },
     get calls() {
       return calls;
+    },
+    /** How many times the paywall's question was asked. */
+    get entitlementCalls() {
+      return entitlementCalls;
     },
     /** A new session id that answers `answer`; returns { sid, cookie } (the cookie as a browser on plain HTTP sends it). */
     session(answer: Canned) {

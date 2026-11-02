@@ -38,7 +38,7 @@ the new build. If it does not come, it rolls back. `--skip-tests` only for a com
   with its way forward written down.
 - **Order between repositories:** deploy the one that serves an internal API before the one that calls it. Today:
   accounts (`/internal/session`, `/internal/entitlement`) before Toran, and Toran (`/internal/setup`, `/internal/lead`,
-  `/internal/ops`) before accounts starts asking for anything new of it.
+  `/internal/ops`, `/internal/entitlement/changed`) before accounts starts asking for anything new of it.
 - **Health:** `/healthz` is liveness (`ok` and the commit). `/readyz` is readiness: 200 when the database answers, a
   worker loop of this build ran in the last two minutes, and no customer's message has waited five minutes for a loop;
   503 with the same JSON otherwise. The uptime monitor watches `/readyz`.
@@ -162,7 +162,9 @@ Toran has no login of its own. A browser without a session goes to
   never ask accounts.
 - The paywall (`src/billing/entitlement.ts`): for a customer's workspace Toran also asks accounts'
   `GET /internal/entitlement?workspace=<id>&product=toran` (same token), keeps the answer 5 minutes in the settings
-  table, and lets the last answer stand 24 hours while accounts does not answer. A workspace not allowed sees the pay
+  table, and lets the last answer stand 24 hours while accounts does not answer. When accounts records a payment (or
+  another change to access) it tells Toran at once, `POST /internal/entitlement/changed` (src/billing/changed.ts,
+  docs/operator.md section 6), and the next page or message asks afresh. A workspace not allowed sees the pay
   page (402); its customers' messages get no model call and go to the owner as handoffs; its automatic messages are
   skipped as `unpaid`. The operator, view-as and stores in no workspace are never asked about.
 - Under `/admin/toran`, accounts sends `X-OF-Operator: <payload>.<signature>` instead of the superadmin's cookie

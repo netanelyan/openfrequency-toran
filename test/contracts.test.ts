@@ -204,9 +204,24 @@ const setup = (s: S, ws: number, token: string | null = INTERNAL_TOKEN) => ask(s
 const ops = (s: S, token: string | null = INTERNAL_TOKEN) => ask(s, 'GET', '/internal/ops', token);
 const act = (s: S, p: string, body: unknown, token: string | null = INTERNAL_TOKEN) => ask(s, 'POST', `/internal/ops/${p}`, token, body);
 const readyStore = (s: S, domain: string) => store(s, domain, { status: 'page_ready', approved_at: ago(1), page_built_at: ago(1), contact_whatsapp: '972500000316' });
+const CHANGED = 'entitlement-changed /internal/entitlement/changed';
+/** accounts' notice (its src/web/changed.js): the bearer, a JSON body, and any headers a case adds. */
+const changed = (s: S, body: unknown, headers: Record<string, string> = {}) =>
+  fetch(`${s.base}/internal/entitlement/changed`, { method: 'POST', headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }).then(got);
 
 /** Each case, by "<contract> <path> :: <case>": its state made and asked, as one or more labelled requests. */
 const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
+  // A workspace whose answer Toran keeps (as its paywall left it), then one it never asked about.
+  [`${CHANGED} :: cleared: the next page or check asks accounts afresh`]: async (s) => {
+    await s.app.db.query("INSERT INTO settings (key, value) VALUES ('entitlement:7', $1::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [JSON.stringify({ allowed: false, access: 'unpaid', paidThrough: null, cancelAt: null, graceUntil: null, checkedAt: new Date().toISOString() })]);
+    return { 'a workspace with a kept answer': await changed(s, { workspace: 7, reason: 'paid' }) };
+  },
+  [`${CHANGED} :: nothing kept for that workspace (never asked about, or deleted)`]: async (s) => ({ 'never asked about': await changed(s, { workspace: 78, reason: 'paid' }) }),
+  [`${CHANGED} :: no workspace id in the body (a positive integer)`]: async (s) => ({ 'no workspace': await changed(s, {}), 'a string': await changed(s, { workspace: '7' }) }),
+  [`${CHANGED} :: no token, or the wrong one`]: (s) => badToken((token) => ask(s, 'POST', '/internal/entitlement/changed', token, { workspace: 7 })),
+  [`${CHANGED} :: not from this machine, or through Caddy`]: async (s) => ({ 'through Caddy': await changed(s, { workspace: 7 }, { 'x-forwarded-for': '203.0.113.9' }) }),
+  [`${CHANGED} :: another method than POST`]: async (s) => ({ GET: await ask(s, 'GET', '/internal/entitlement/changed') }),
+  [`${CHANGED} :: OF_INTERNAL_TOKEN unset or short here`]: (s) => unsetHere(s, () => changed(s, { workspace: 7 })),
   [`${DEL} :: deleted`]: async (s) => (await customerStore(s, 42, 'mine.example'), { 'a workspace with a store, a chat and a message': await del(s, 42) }),
   [`${DEL} :: nothing of that workspace here (never seen, or deleted already)`]: async (s) => {
     await customerStore(s, 43, 'gone.example');
@@ -321,8 +336,8 @@ function differences(g: Got, a: Answer, contract: string): string[] {
 const served = Object.entries(contracts).filter(([, c]) => c.servedBy.includes('toran'));
 const caseKeys = served.flatMap(([name, c]) => c.routes.flatMap((r) => r.answers.map((a) => `${name} ${r.path} :: ${a.case}`)));
 
-test('Toran serves at least the workspace delete, the setup checklist and the dashboard, and every entry here names one of their cases', () => {
-  for (const name of ['workspaces-delete', 'setup', 'toran-ops']) assert.ok(served.some(([n]) => n === name), name);
+test('Toran serves at least the workspace delete, the setup checklist, the dashboard and the notice that access changed, and every entry here names one of their cases', () => {
+  for (const name of ['workspaces-delete', 'setup', 'toran-ops', 'entitlement-changed']) assert.ok(served.some(([n]) => n === name), name);
   for (const key of [...Object.keys(RUN), ...Object.keys(NOT_HERE), ...Object.keys(DISAGREES)]) assert.ok(caseKeys.includes(key), `${key}: no such case in the contracts`);
   for (const key of Object.keys(NOT_HERE)) assert.ok(!RUN[key] && !DISAGREES[key], `${key}: listed as not asked, and asked`);
 });

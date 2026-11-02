@@ -1,0 +1,81 @@
+{
+  "name": "entitlement-changed",
+  "doc": "docs/setup.md, \"When access changes: POST /internal/entitlement/changed\"",
+  "servedBy": [
+    "teder",
+    "toran"
+  ],
+  "calledBy": [
+    "accounts"
+  ],
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/internal/entitlement/changed",
+      "listener": "the product's internal address on this machine: OF_TEDER_INTERNAL (127.0.0.1:4700) or OF_TORAN_INTERNAL (127.0.0.1:4710)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more), from a loopback socket and not through Caddy (no X-Forwarded-For)",
+      "request": {
+        "body": {
+          "workspace": 7,
+          "reason": "paid"
+        }
+      },
+      "notes": "accounts sends it once a change to a workspace's access is committed (a payment recorded; also a subscription saved by hand, comp, a cancellation and its undo, a product turned on or off, the workspace disabled or enabled), to each product the workspace has, and never waits for it: 2 seconds, then a line in its log and nothing more. The product drops the answer it keeps from GET /internal/entitlement for that workspace, so its next page or check asks accounts afresh instead of up to 5 minutes later; the last answer stays kept underneath for the 24 hours accounts may be down. reason is for the product's log (paid, subscription, comp, cancelled, resumed, product, workspace); a product acts the same on every one, and on one it does not know. Idempotent: a workspace it never asked about answers 200 with cleared false. The checks come in this order: 503, 403, 401, 405, 400.",
+      "answers": [
+        {
+          "case": "cleared: the next page or check asks accounts afresh",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "workspace": 7,
+            "cleared": true
+          }
+        },
+        {
+          "case": "nothing kept for that workspace (never asked about, or deleted)",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "workspace": 7,
+            "cleared": false
+          }
+        },
+        {
+          "case": "no workspace id in the body (a positive integer)",
+          "status": 400,
+          "body": {
+            "error": "bad_workspace"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "not from this machine, or through Caddy",
+          "status": 403,
+          "body": {
+            "error": "forbidden"
+          }
+        },
+        {
+          "case": "another method than POST",
+          "status": 405,
+          "body": {
+            "error": "method_not_allowed"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}
