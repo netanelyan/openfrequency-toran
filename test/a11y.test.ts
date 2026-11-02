@@ -77,7 +77,7 @@ test('every page Toran serves carries the accessibility panel, its stylesheet an
     assert.ok(code.includes("const KEY = 'of-a11y';") && code.includes("['big', 'contrast', 'links', 'still']"), 'the website\'s key and switches');
     const css = await (await s.get('/static/a11y.css')).text();
     for (const rule of ['.a11y-w { position: fixed;', 'html.a-big body { zoom: 1.2; }', 'html.a-links a {', 'html.a-still *,', '.tabbar ~ .a11y-w {', 'body:has(.actionbar) .tabbar ~ .a11y-w {', '.dock.show ~ .a11y-w {']) assert.ok(css.includes(rule), `a11y.css: ${rule}`);
-    assert.match(await (await s.get('/static/style.css')).text(), /html\.a-contrast \{ --ink-2: #1d1d1f;[^]*@media \(prefers-color-scheme: dark\) \{\n  html\.a-contrast \{ --ink-2: #f5f5f7;/);
+    assert.match(await (await s.get('/static/style.css')).text(), /html\.a-contrast \{ --ink-2: #1d1d1f;[^]*\nhtml\[data-theme="dark"\]\.a-contrast \{ --ink-2: #f5f5f7;/);
     assert.match(await (await s.get('/static/pitch.css')).text(), /html\.a-contrast \{ --ink-2: #1d1d1f;/);
   } finally {
     await s.close();

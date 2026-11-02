@@ -14,6 +14,7 @@ import { errorPage, notFoundPage, refusalPage } from './pages/basic.ts';
 import { dashboardRoutes, headerCounts, storesCss } from './routes.ts';
 import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
+import { themed, themeOf } from './theme.ts';
 import { boundaryOf, parseMultipart, type Upload } from './multipart.ts';
 import { MAX_BYTES } from '../channels/files.ts';
 import { readiness, revision } from '../health.ts';
@@ -101,6 +102,8 @@ function refererPath(referer: string | undefined, origin: string | null, viaAdmi
 
 function send(req: IncomingMessage, res: ServerResponse, status: number, body: string | Buffer, type: string, extra: Record<string, string | string[]> = {}) {
   const headers: Record<string, string | string[]> = { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin', 'content-security-policy': DASH_CSP, 'x-frame-options': 'DENY', ...extra };
+  // A page is rendered light; a reader whose of-theme cookie says dark gets it dark before it paints (theme.ts).
+  if (/html/.test(type) && !Buffer.isBuffer(body)) body = themed(String(body ?? ''), themeOf(cookies(req)));
   const base = BASE.get(req);
   if (base && /html|json|css/.test(type)) body = underBase(Buffer.isBuffer(body) ? body.toString('utf8') : String(body ?? ''), type, base);
   let buf = Buffer.isBuffer(body) ? body : Buffer.from(String(body ?? ''));
@@ -151,6 +154,8 @@ const STATIC_FILES: Record<string, { file: string; type: string; cache: string }
   // The accessibility panel on every page (brand.ts a11yHead and a11yWidget).
   '/static/a11y.css': { file: path.join(STATIC, 'a11y.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/a11y.js': { file: path.join(STATIC, 'a11y.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
+  // Light or dark, the choice every OpenFrequency site shares (theme.ts).
+  '/static/theme.js': { file: path.join(STATIC, 'theme.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   // The card a pitch page's link shows where it is sent (WhatsApp, email apps): drawn by openfrequency-web's scripts/og.mjs.
   '/static/og-toran.png': { file: path.join(STATIC, 'og-toran.png'), type: 'image/png', cache: 'public, max-age=604800' },
   // Heebo (OFL, fonts/HEEBO-LICENSE.txt), served from here so a pitch page never calls Google Fonts.

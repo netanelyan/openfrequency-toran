@@ -1,4 +1,5 @@
 import { a11yHead, a11yWidget, toranMark, ofMark, iconLinks } from '../brand.ts';
+import { themeButton, themeHead, themeMeta } from './theme.ts';
 
 // The pieces every page is made of. Pages are functions from data to HTML strings: no
 // framework, so a page can be tested by reading it. Every value that came from outside
@@ -140,13 +141,11 @@ export function layout(ctx: PageCtx, body: string): string {
     : `<a class="spend" href="/plan" title="שיחות החודש: ${p.used.toLocaleString('en-US')} מתוך ${p.cap.toLocaleString('en-US')} בחבילה">${ringOf(p.cap ? Math.min(100, Math.round((p.used / p.cap) * 100)) : 0)}<span class="lbl">שיחות</span><span class="amt num ltr"><b>${p.used.toLocaleString('en-US')}</b><span> / ${p.cap.toLocaleString('en-US')}</span></span></a>`;
   const flash = ctx.flash ? ` data-flash="${esc(ctx.flash)}"` : '';
   return `<!doctype html>
-<html lang="he" dir="rtl"${ctx.side === 'mini' ? ' class="side-mini"' : ''}>
+<html lang="he" dir="rtl" data-theme="light"${ctx.side === 'mini' ? ' class="side-mini"' : ''}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#eeeff2" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+${themeMeta()}
 <meta name="robots" content="noindex, nofollow">
 <meta name="apple-mobile-web-app-title" content="תורן">
 <title>${esc(ctx.title)} · תורן</title>
@@ -154,6 +153,7 @@ export function layout(ctx: PageCtx, body: string): string {
 <link rel="stylesheet" href="/static/style.css?v=${ctx.v || 1}">
 <link rel="stylesheet" href="/static/stores.css?v=${ctx.v || 1}">
 ${a11yHead(ctx.v || 1)}
+${themeHead(ctx.v || 1)}
 ${iconLinks()}
 <link rel="manifest" href="/static/manifest.webmanifest">
 </head>
@@ -166,6 +166,7 @@ ${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צ�
   <nav class="nav" aria-label="ראשי">${nav}</nav>
   <div class="tools">
     ${meter}
+    ${themeButton()}
     ${ctx.logout ? `<a class="logout" href="${esc(ctx.logout)}" title="יציאה">${icon('logout')}<span class="lbl">יציאה</span></a>` : ''}
   </div>
 </div></header>

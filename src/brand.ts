@@ -77,7 +77,10 @@ export const ofMark = (size: number, opts?: MarkOpts) => mark('openfrequency', s
 /** Teder's mark: for the family on /brand only. */
 export const tederMark = (size: number, opts?: MarkOpts) => mark('teder', GLYPHS.teder, size, opts);
 
-/** The tokens as CSS custom properties: /static/brand.css, loaded by the dashboard and every pitch page. */
+/**
+ * The tokens as CSS custom properties: /static/brand.css, loaded by the dashboard and every pitch page. Dark is a
+ * choice (web/theme.ts), never the device's: a pitch page, light only, has no data-theme and keeps the light blue.
+ */
 export function brandCss(): string {
   return `/* Generated from src/brand.ts: the family's colours, radii and fonts. Edit them there. */
 :root {
@@ -96,7 +99,7 @@ export function brandCss(): string {
   --r-pill: ${TOKENS.radiusPill};
   --r-mark: ${TOKENS.radiusMark};
 }
-@media (prefers-color-scheme: dark) { :root { --accent: ${COLORS.accentTextDark}; } }
+:root[data-theme="dark"] { --accent: ${COLORS.accentTextDark}; }
 svg.mk { display: block; flex: none; }
 `;
 }

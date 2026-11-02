@@ -91,7 +91,7 @@ const mayStart = (r: DashReq) => !r.scope.operator && !r.ctx.readOnly && Number(
 async function setupPage(app: App, r: DashReq, title: string, active: string) {
   const st = Number(r.scope.workspaceId) > 0 ? storeState(await setupStoreOf(app, Number(r.scope.workspaceId))) : null;
   const add = mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a>` : '';
-  const actions = (first: string) => (first || support(app) ? `<p class="mt12 m0">${first}${writeUs(app)}</p>` : '');
+  const actions = (first: string) => (first || support(app) ? `<p class="row mt12 m0">${first}${writeUs(app)}</p>` : '');
   const box = st?.status === 'working'
     ? `<div class="empty" data-wait-job="${st.job}"${support(app) ? ` data-help="${esc(support(app)!)}"` : ''}>${icon('clock')}<b>קוראים את האתר שלכם</b>תורן קורא את המוצרים, המחירים ודפי המדיניות. זה לוקח דקה או שתיים, והדף יתעדכן לבד.</div>`
     : st?.verify

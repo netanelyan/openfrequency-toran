@@ -2,7 +2,8 @@
 //
 // Screenshots of the fictional store only (start `npm run demo` first): the brand page,
 // the dashboard's pages and the pitch page, on a phone (390 wide) and a desk (1440), in
-// light and dark. Written to docs/screenshots/, the one folder media may be committed in.
+// light and dark. Written to docs/screenshots/, the one folder media may be committed in. Dark is a choice, never the
+// device's (src/web/theme.ts): each dark shot carries the cookie the theme button writes, of-theme=dark.
 
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -42,6 +43,7 @@ const shots: { name: string; path: string; full?: boolean }[] = [
 for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk', { width: 1440, height: 900 }]] as const) {
   for (const scheme of ['light', 'dark'] as const) {
     const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, locale: 'he-IL', colorScheme: scheme });
+    await ctx.addCookies([{ name: 'of-theme', value: scheme, url: base }]);
     const page = await ctx.newPage();
     // The first visit goes through the demo's stand-in for accounts, which signs the browser in and comes back.
     await page.goto(`${base}/`);

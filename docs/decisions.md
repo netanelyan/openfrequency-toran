@@ -1004,3 +1004,24 @@ block, which a customer's text cannot imitate (PRA-AI-001).
 once, with and without a name, in English, never in the sample chat, and the model told not to introduce itself; a
 person announced once and stored as sent; "כאן שוב" after a person; the honest lines and both prompts without "why"
 words; the owner saving, refusing and clearing a name.
+
+## 2026-11-02: light first, and one light-or-dark choice for every OpenFrequency site
+
+The owner: "make sure that every repo starts on light mode. changing it on one subdomain changes it on all of the
+subdomains." The dashboard followed the device's setting and had no switch.
+
+**What changed.**
+- The choice is the cookie `of-theme`, `light` or `dark`, shared with openfrequency.co.il, Teder and accounts: written
+  for `.openfrequency.co.il` on any of them (the host alone anywhere else), `Path=/; Max-Age=31536000; SameSite=Lax`,
+  and `Secure` on https. No cookie, or any other value, is light; `prefers-color-scheme` is never asked.
+- Every page the dashboard renders (the operator's, a customer's, under accounts' /admin, the refusals, the errors, not
+  found) is rendered light (`data-theme="light"`, one `color-scheme`, one `theme-color`); `send()` gives a reader whose
+  cookie says dark the same page dark before it paints (`src/web/theme.ts` themed()). Every dark rule in style.css and
+  brand.css hangs on `[data-theme="dark"]`.
+- The website's button (moon and sun, `aria-pressed`, the name "מצב כהה") is in the top bar of every dashboard page (on
+  a desk at the foot of the side bar, beside "יציאה") and beside the accessibility button on a page with no bar.
+  `static/theme.js` flips the page at once, writes the cookie and updates the metas; it loads in the head, so a cookie
+  the server did not see (accounts' /admin passes Toran only its `tn_` cookies) still turns the page dark before paint.
+
+**Not changed:** the pitch pages, a page that is gone and the message-settings page stay light only, as decided on
+2026-10-22: they are the store's, in its colours, with no switch.

@@ -1,5 +1,6 @@
 import { a11yHead, a11yWidget, accessibilityLink, iconLinks, toranMark } from '../../brand.ts';
 import { esc, icon, layout, type PageCtx } from '../ui.ts';
+import { themeButton, themeHead, themeMeta } from '../theme.ts';
 
 /** Why accounts let nobody in, in OpenFrequency's voice. No redirect from any of them, so no loop with accounts. */
 const REFUSALS = {
@@ -14,16 +15,17 @@ const REFUSALS = {
 export function refusalPage(kind: keyof typeof REFUSALS, href: string): string {
   const r = REFUSALS[kind];
   return `<!doctype html>
-<html lang="he" dir="rtl">
+<html lang="he" dir="rtl" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+${themeMeta()}
 <meta name="robots" content="noindex, nofollow">
 <title>${esc(r.title)} · תורן</title>
 <link rel="stylesheet" href="/static/brand.css">
 <link rel="stylesheet" href="/static/style.css">
 ${a11yHead()}
+${themeHead()}
 ${iconLinks()}
 </head>
 <body class="login">
@@ -34,6 +36,7 @@ ${iconLinks()}
   <a class="btn primary" href="${esc(href)}">${esc(r.link)}</a>
   <p class="small muted mt12 m0">${accessibilityLink()}</p>
 </main>
+${themeButton('corner')}
 ${a11yWidget()}
 </body>
 </html>`;
@@ -52,16 +55,17 @@ const ERROR_TITLE: Record<number, string> = { 400: 'הבקשה לא הובנה',
 export function errorPage(status: number, text: string, back = '/'): string {
   const title = ERROR_TITLE[status] || 'משהו לא עבד';
   return `<!doctype html>
-<html lang="he" dir="rtl">
+<html lang="he" dir="rtl" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+${themeMeta()}
 <meta name="robots" content="noindex, nofollow">
 <title>${esc(title)} · תורן</title>
 <link rel="stylesheet" href="/static/brand.css">
 <link rel="stylesheet" href="/static/style.css">
 ${a11yHead()}
+${themeHead()}
 ${iconLinks()}
 </head>
 <body class="login">
@@ -72,6 +76,7 @@ ${iconLinks()}
   <div class="row">${back !== '/' ? `<a class="btn primary" href="${esc(back)}">חזרה לדף הקודם</a>` : ''}<a class="btn${back === '/' ? ' primary' : ''}" href="/">להיום</a></div>
   <p class="small muted mt12 m0">${accessibilityLink()}</p>
 </main>
+${themeButton('corner')}
 ${a11yWidget()}
 </body>
 </html>`;

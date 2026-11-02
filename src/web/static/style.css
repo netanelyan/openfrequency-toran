@@ -6,8 +6,10 @@
    the action, green/orange/red for status. The family's tokens (brand colours, the blue, radii, fonts) come from
    /static/brand.css, generated from src/brand.ts, and load before this file.
 
-   Dropped from Teder's: the account switcher (one owner, many stores, no accounts), the slide strip, the
-   charts, and the dead theme toggle. The appearance follows the system setting. */
+   Dropped from Teder's: the account switcher (one owner, many stores, no accounts), the slide strip and the
+   charts. Light or dark is the reader's choice, shared by every OpenFrequency site (the cookie of-theme,
+   src/web/theme.ts): the page is light unless <html> says data-theme="dark", which the server renders from the
+   cookie, and the device's own setting is never asked. Every dark rule hangs on [data-theme="dark"]. */
 
 :root {
   color-scheme: light;
@@ -54,63 +56,61 @@
   --top: 66px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #111113;
-    --wall: radial-gradient(120% 80% at 85% -10%, #2c2c30 0%, rgba(44, 44, 48, 0) 55%),
-      linear-gradient(160deg, #1c1c1f 0%, #0b0b0d 30%, #2a2a2e 52%, #0e0e10 76%, #1f1f22 100%);
-    --surface: rgba(44, 44, 48, 0.55);
-    --surface-hi: rgba(58, 58, 62, 0.55);
-    --edge: rgba(255, 255, 255, 0.1);
-    --rim: rgba(255, 255, 255, 0.14);
-    --shadow-tile: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px -14px rgba(0, 0, 0, 0.7);
-    --solid: #2c2c2e;
-    --inset: rgba(255, 255, 255, 0.06);
-    --fill: rgba(118, 118, 128, 0.24);
-    --fill-2: rgba(118, 118, 128, 0.32);
-    --pill: #2c2c2e;
-    --seg-on: #636366;
-    --field: rgba(0, 0, 0, 0.3);
-    --line: rgba(255, 255, 255, 0.08);
-    --line-2: rgba(255, 255, 255, 0.16);
-    --ink: #f5f5f7;
-    --ink-2: #d2d2d7;
-    --ink-3: #a1a1a6;
-    --ink-p: #b8b8bd;
-    --accent-p: #2997ff;
-    --ok: #30d158;
-    --ok-bg: #0f2a17;
-    --warn: #ff9f0a;
-    --warn-bg: #2d1f08;
-    --bad: #ff6961;
-    --bad-bg: #2d1213;
-    --bad-ink: #1d1d1f;
-    --badge: #ff6961;
-    --badge-ink: #1d1d1f;
-    --bar: rgba(22, 22, 23, 0.8);
-    --bar-float: rgba(30, 30, 32, 0.78);
-    --bar-edge: rgba(255, 255, 255, 0.1);
-    --toast: rgba(58, 58, 60, 0.9);
-    --shadow-float: 0 8px 30px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.4);
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111113;
+  --wall: radial-gradient(120% 80% at 85% -10%, #2c2c30 0%, rgba(44, 44, 48, 0) 55%),
+    linear-gradient(160deg, #1c1c1f 0%, #0b0b0d 30%, #2a2a2e 52%, #0e0e10 76%, #1f1f22 100%);
+  --surface: rgba(44, 44, 48, 0.55);
+  --surface-hi: rgba(58, 58, 62, 0.55);
+  --edge: rgba(255, 255, 255, 0.1);
+  --rim: rgba(255, 255, 255, 0.14);
+  --shadow-tile: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px -14px rgba(0, 0, 0, 0.7);
+  --solid: #2c2c2e;
+  --inset: rgba(255, 255, 255, 0.06);
+  --fill: rgba(118, 118, 128, 0.24);
+  --fill-2: rgba(118, 118, 128, 0.32);
+  --pill: #2c2c2e;
+  --seg-on: #636366;
+  --field: rgba(0, 0, 0, 0.3);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --ink: #f5f5f7;
+  --ink-2: #d2d2d7;
+  --ink-3: #a1a1a6;
+  --ink-p: #b8b8bd;
+  --accent-p: #2997ff;
+  --ok: #30d158;
+  --ok-bg: #0f2a17;
+  --warn: #ff9f0a;
+  --warn-bg: #2d1f08;
+  --bad: #ff6961;
+  --bad-bg: #2d1213;
+  --bad-ink: #1d1d1f;
+  --badge: #ff6961;
+  --badge-ink: #1d1d1f;
+  --bar: rgba(22, 22, 23, 0.8);
+  --bar-float: rgba(30, 30, 32, 0.78);
+  --bar-edge: rgba(255, 255, 255, 0.1);
+  --toast: rgba(58, 58, 60, 0.9);
+  --shadow-float: 0 8px 30px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 @media (prefers-contrast: more) {
   :root { --ink-2: #1d1d1f; --ink-3: #424245; --ink-p: #1d1d1f; --line: #c7c7cc; --line-2: #8e8e93; --bar: #fafafc; --bar-float: #fafafc; --bar-edge: #8e8e93; --surface: rgba(255, 255, 255, 0.94); --surface-hi: rgba(255, 255, 255, 0.94); --edge: #c7c7cc; }
 }
-@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
-  :root { --ink-2: #f5f5f7; --ink-3: #d2d2d7; --ink-p: #f5f5f7; --line: #545458; --line-2: #8e8e93; --bar: #161617; --bar-float: #1e1e20; --bar-edge: #8e8e93; --surface: rgba(29, 29, 31, 0.96); --surface-hi: rgba(29, 29, 31, 0.96); --edge: #545458; }
+@media (prefers-contrast: more) {
+  :root[data-theme="dark"] { --ink-2: #f5f5f7; --ink-3: #d2d2d7; --ink-p: #f5f5f7; --line: #545458; --line-2: #8e8e93; --bar: #161617; --bar-float: #1e1e20; --bar-edge: #8e8e93; --surface: rgba(29, 29, 31, 0.96); --surface-hi: rgba(29, 29, 31, 0.96); --edge: #545458; }
 }
 @media (prefers-reduced-transparency: reduce) {
   :root { --bar: #fafafc; --bar-float: #fafafc; --toast: #1d1d1f; --surface: #ffffff; --surface-hi: #ffffff; --inset: #f5f5f7; --fill: #e8e8ed; --fill-2: #dcdce1; --field: #ffffff; }
 }
-@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-  :root { --bar: #161617; --bar-float: #1e1e20; --toast: #3a3a3c; --surface: #1d1d1f; --surface-hi: #1d1d1f; --inset: #2a2a2c; --fill: #2c2c2e; --fill-2: #3a3a3c; --field: #161617; }
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-theme="dark"] { --bar: #161617; --bar-float: #1e1e20; --toast: #3a3a3c; --surface: #1d1d1f; --surface-hi: #1d1d1f; --inset: #2a2a2c; --fill: #2c2c2e; --fill-2: #3a3a3c; --field: #161617; }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root { --bar: #fafafc; --bar-float: #fafafc; --toast: #1d1d1f; --surface: rgba(255, 255, 255, 0.9); --surface-hi: rgba(255, 255, 255, 0.9); }
-  @media (prefers-color-scheme: dark) { :root { --bar: #161617; --bar-float: #1e1e20; --toast: #3a3a3c; --surface: rgba(29, 29, 31, 0.92); --surface-hi: rgba(29, 29, 31, 0.92); } }
+  :root[data-theme="dark"] { --bar: #161617; --bar-float: #1e1e20; --toast: #3a3a3c; --surface: rgba(29, 29, 31, 0.92); --surface-hi: rgba(29, 29, 31, 0.92); }
 }
 
 * { box-sizing: border-box; }
@@ -185,6 +185,24 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
 .top .logout:hover { text-decoration: none; background: var(--fill-2); color: var(--ink); }
 .top .logout svg.i { width: 18px; height: 18px; }
 @media (max-width: 520px) { .top .logout { padding: 0; } .top .logout .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } }
+/* Light or dark, one tap from every page: the website's own button (theme.ts themeButton, openfrequency-web's .theme), a
+   moon while light and a sun while dark. In the top bar it is one of the tools, round like the sign-out beside it; on a
+   page with no bar (a refusal, an error) it stands beside the accessibility panel's button, glass like it, 12px apart.
+   static/theme.js shows it from the head (.theme-js on <html>), so it is there at the first paint, and a page without
+   script never has a button that does nothing. */
+.theme { display: none; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color 0.2s ease, transform 0.16s cubic-bezier(0.23, 1, 0.32, 1); }
+.theme-js .theme { display: grid; }
+.theme:active { transform: scale(0.94); }
+.theme svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.theme .sun, [data-theme="dark"] .theme .moon { display: none; }
+[data-theme="dark"] .theme .sun { display: block; }
+@media (hover: hover) { .theme:hover { background: var(--fill); } }
+.top .theme { flex: none; width: 40px; height: 40px; background: var(--fill); color: var(--ink-2); }
+.top .theme svg { width: 20px; height: 20px; }
+@media (hover: hover) { .top .theme:hover { background: var(--fill-2); color: var(--ink); } }
+.theme.corner { position: fixed; z-index: 45; bottom: calc(16px + env(safe-area-inset-bottom)); inset-inline-end: 76px; width: 48px; height: 48px; background: var(--bar-float); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); box-shadow: var(--shadow-float), inset 0 0 0 1px var(--bar-edge); }
+.theme.corner svg { width: 24px; height: 24px; }
+@media (hover: hover) { .theme.corner:hover { background: var(--bar-float); } }
 
 .sidetoggle { display: none; }
 
@@ -210,9 +228,13 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
   .top .tools { grid-column: 1 / -1; grid-row: 3; align-self: end; margin: 0; }
   .spend { width: 100%; min-height: 48px; padding: 0 12px; border-radius: 14px; gap: 10px; }
   .spend .amt { margin-inline-start: auto; }
-  .top .tools { flex-direction: column; align-items: stretch; gap: 4px; }
-  .top .logout { justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 12px; border-radius: 12px; background: none; }
+  /* The foot of the side bar: the month's meter across, then signing out and, at its end, light or dark. */
+  .top .tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+  .spend { grid-column: 1 / -1; }
+  .top .logout { grid-column: 1; grid-row: 2; justify-content: flex-start; gap: 12px; min-height: 42px; padding: 0 12px; border-radius: 12px; background: none; }
   .top .logout svg.i { color: var(--ink-3); }
+  .top .theme { grid-column: 2; grid-row: 2; width: 42px; height: 42px; border-radius: 12px; background: none; color: var(--ink-3); }
+  .top .theme:hover { background: var(--fill); color: var(--ink); }
 
   .side-mini .top .wrap { grid-template-columns: 1fr; grid-template-rows: auto auto auto 1fr; justify-items: center; padding: 16px 10px 10px; }
   .side-mini .brand { padding: 0; }
@@ -222,7 +244,9 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
   .side-mini .nav a { justify-content: center; padding: 0; }
   .side-mini .nav a > span, .side-mini .spend .lbl, .side-mini .spend .amt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .side-mini .nav .badge { position: absolute; top: 3px; inset-inline-start: calc(50% + 2px); margin: 0; min-width: 16px; height: 16px; line-height: 16px; font-size: 10px; padding: 0 4px; }
-  .side-mini .top .tools { grid-row: 4; justify-self: center; }
+  .side-mini .top .tools { grid-row: 4; justify-self: center; grid-template-columns: 44px; }
+  .side-mini .top .logout, .side-mini .top .theme { grid-column: 1; grid-row: auto; }
+  .side-mini .top .theme { width: 44px; height: 44px; }
   .side-mini .spend { width: 44px; min-height: 44px; padding: 0; justify-content: center; border-radius: 12px; }
   .side-mini .top .logout { width: 44px; min-height: 44px; padding: 0; justify-content: center; }
   .side-mini .top .logout .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -495,8 +519,11 @@ a.kpi:hover { text-decoration: none; background: var(--inset); }
 .list .t small { color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list .go { margin-inline-start: auto; color: var(--ink-3); transform: rotate(90deg); }
 .empty { text-align: center; padding: 40px 24px; color: var(--ink-3); background: var(--surface); border-radius: var(--r); font-size: 13px; box-shadow: inset 0 0 0 1px var(--edge); }
-.empty svg.i { width: 30px; height: 30px; color: var(--ink-3); margin-bottom: 8px; stroke-width: 1.5; }
+.empty > svg.i { width: 30px; height: 30px; color: var(--ink-3); margin-bottom: 8px; stroke-width: 1.5; }
 .empty b { display: block; color: var(--ink); font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+/* An empty state's buttons: centred under its words, 8px apart side by side or wrapped on a phone, each icon in its
+   button's own colour and size (the large grey one above is the state's own icon alone). */
+.empty .row { justify-content: center; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px; margin: 0; }
 .kv dt { color: var(--ink-3); }
 .kv dd { margin: 0; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
@@ -604,7 +631,7 @@ body.login { min-height: 100vh; display: grid; place-items: center; padding: 24p
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .top .wrap, .tabbar, .actionbar, #toast, .card, .panel, .list { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .top .wrap, .tabbar, .actionbar, #toast, .card, .panel, .list, .theme.corner { backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 
 /* On a desk, a pointer needs less than a thumb. A phone keeps its 44px targets. */
@@ -677,7 +704,7 @@ body.ro form[method="post"] { display: none; }
    page lands where its outline was. Shimmer and bar are CSS animations, which keep moving while the browser is busy
    fetching; with reduced motion both stay, still (the rule above turns every animation off). */
 :root { --sk-hi: rgba(255, 255, 255, 0.6); --sk-ease: cubic-bezier(0.23, 1, 0.32, 1); }
-@media (prefers-color-scheme: dark) { :root { --sk-hi: rgba(255, 255, 255, 0.07); } }
+:root[data-theme="dark"] { --sk-hi: rgba(255, 255, 255, 0.07); }
 
 .loadbar { position: fixed; inset-inline: 0; top: 0; height: 3px; z-index: 60; pointer-events: none; opacity: 0; transition: opacity 0.15s ease-out; }
 .loadbar::before { content: ''; position: absolute; inset: 0; background: var(--accent-fill); transform: scaleX(0); transform-origin: right; }
@@ -732,6 +759,4 @@ html.sk-on #main > :not(.sk-page) { display: none; }
    as Increase Contrast above, a step further: the quiet text comes up to the ink, the hairlines darken and the glass goes
    solid, light and dark. */
 html.a-contrast { --ink-2: #1d1d1f; --ink-3: #424245; --ink-p: #1d1d1f; --line: #8e8e93; --line-2: #424245; --bar: #ffffff; --bar-float: #ffffff; --bar-edge: #424245; --surface: #ffffff; --surface-hi: #ffffff; --edge: #424245; }
-@media (prefers-color-scheme: dark) {
-  html.a-contrast { --ink-2: #f5f5f7; --ink-3: #e5e5ea; --ink-p: #f5f5f7; --line: #8e8e93; --line-2: #d2d2d7; --bar: #000000; --bar-float: #000000; --bar-edge: #d2d2d7; --surface: #000000; --surface-hi: #000000; --edge: #d2d2d7; --solid: #000000; }
-}
+html[data-theme="dark"].a-contrast { --ink-2: #f5f5f7; --ink-3: #e5e5ea; --ink-p: #f5f5f7; --line: #8e8e93; --line-2: #d2d2d7; --bar: #000000; --bar-float: #000000; --bar-edge: #d2d2d7; --surface: #000000; --surface-hi: #000000; --edge: #d2d2d7; --solid: #000000; }
