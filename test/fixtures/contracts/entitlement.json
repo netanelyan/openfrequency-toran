@@ -47,7 +47,7 @@
           ]
         },
         {
-          "case": "due: the paid period is over, the 14 days of grace",
+          "case": "due: the paid period is over, in its 72 hours of grace",
           "status": 200,
           "body": {
             "workspace": 7,
@@ -57,7 +57,7 @@
             "allowed": true,
             "paidThrough": "2026-11-21T21:59:59.999Z",
             "cancelAt": null,
-            "graceUntil": "2026-12-06T21:59:59.999Z",
+            "graceUntil": "2026-11-24T21:59:59.999Z",
             "plan": {
               "name": "full",
               "slideshows": 40,

@@ -134,7 +134,7 @@ function call(s: Awaited<ReturnType<typeof serve>>, { url, headers, remote }: { 
   });
 }
 
-test("every answer accounts' entitlement contract gives is believed, 'due' (the 14 days of grace) and an access value Toran does not know included: only `allowed` is acted on", async () => {
+test("every answer accounts' entitlement contract gives is believed, 'due' (the grace after a paid month) and an access value Toran does not know included: only `allowed` is acted on", async () => {
   const s = await serve();
   try {
     const t = Date.parse('2026-11-01T10:00:00Z');

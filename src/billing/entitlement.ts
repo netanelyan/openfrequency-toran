@@ -33,8 +33,8 @@ export const FRESH_MS = 5 * 60_000;
 export const STALE_MS = 24 * 3_600_000;
 export const RETRY_MS = 60_000;
 /**
- * The access values accounts' contract lists. `due` (the 14 days of grace after a paid period, still allowed) came on
- * 2026-10-29. Only `allowed` is acted on, so a value not in this list is still an answer: refusing it as malformed would
+ * The access values accounts' contract lists. `due` (the grace after a paid period, still allowed: 72 hours from 2026-11-03, 14 days for
+ * a workspace on older terms until its change date) came on 2026-10-29. Only `allowed` is acted on, so a value not in this list is still an answer: refusing it as malformed would
  * read accounts as down and stop a paying store after STALE_MS.
  */
 export const ACCESS = ['paid', 'comp', 'due', 'unpaid', 'cancelled', 'off'];
