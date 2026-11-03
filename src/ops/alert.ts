@@ -194,7 +194,7 @@ export async function alertNotDelivered(app: App, s: { id: string; error: string
   if (!s.id) return false;
   const r = await app.db.one<{ key: string }>("SELECT data->>'key' AS key FROM events WHERE store_id IS NULL AND kind = 'operator_alert_wa' AND data->>'id' = $1 LIMIT 1", [s.id]);
   if (!r) return false;
-  const code = Number(/^(d+):/.exec(String(s.error || ''))?.[1]) || null;
+  const code = Number(/^(\d+):/.exec(String(s.error || ''))?.[1]) || null;
   await refused(app, r.key, code, `not delivered: ${cleanLine(s.error || 'no reason given', 200)}`);
   app.log(`[alert] !!! WhatsApp FAILED: Meta took the alert ${r.key} and then could not deliver it (${cleanLine(s.error || 'no reason given', 200)}). No WhatsApp alert is tried for ${WA_HOUR_MINUTES} minutes`);
   return true;

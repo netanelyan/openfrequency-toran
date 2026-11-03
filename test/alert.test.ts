@@ -207,6 +207,8 @@ test("a message Meta took and then could not deliver (its webhook's failed statu
     const status = { account: META_DEMO.META_DEMO_PHONE_ID, id: 'wamid.alert-1', status: 'failed', to: NUMBER, error: '131049: This message was not delivered to maintain healthy ecosystem engagement.' };
     await deliveryStatus(app, status);
     assert.ok(logs.some((l) => l.startsWith('[alert] !!! WhatsApp FAILED: Meta took the alert cap:global:2026-11 and then could not deliver it (131049: ')), logs.join('\n'));
+    // Kept with Meta's code, read from the front of its error.
+    assert.equal((await app.db.one<{ code: string }>("SELECT data->>'code' AS code FROM events WHERE kind = 'operator_alert_wa' AND data->>'ok' = 'false'"))?.code, '131049');
     assert.equal(await alert.alertOperator(app, 'queue_old', 'הודעות מחכות', 'שלוש', { run: fakeCommand().run }), true);
     assert.equal(meta.calls.length, 1, 'not tried in the hour after');
     assert.ok(logs.some((l) => /^\[alert\] !!! WhatsApp to …0493 NOT SENT: Meta refused one at /.test(l)));
