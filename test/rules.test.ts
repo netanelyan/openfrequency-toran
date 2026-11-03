@@ -66,3 +66,47 @@ test('no file in the repository names a real store (the pre-commit check, run as
   const out = execFileSync(process.execPath, [path.join(ROOT, 'scripts/check-public.ts')], { cwd: ROOT, encoding: 'utf8' });
   assert.match(out, /check:public ok/);
 });
+
+test("check:public in a worktree reads the main checkout's private folder, so a commit made there is checked too", async () => {
+  // 2026-11-03: in .claude/worktrees/<name>, which has no private/ of its own, the check read no private name at all
+  // (Teder's let a real handle into its public repository that way).
+  const { execFileSync, spawnSync } = await import('node:child_process');
+  const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const os = await import('node:os');
+  const main = mkdtempSync(path.join(os.tmpdir(), 'toran-public-main-'));
+  const tree = path.join(main, '.claude', 'worktrees', 'w');
+  const { TORAN_HOME, ...rest } = process.env;
+  const run = (env: Record<string, string> = {}) => {
+    execFileSync('git', ['add', '-f', '.'], { cwd: tree });
+    return spawnSync(process.execPath, [path.join(ROOT, 'scripts/check-public.ts')], { env: { ...rest, CHECK_PUBLIC_ROOT: tree, ...env }, encoding: 'utf8' });
+  };
+  try {
+    const git = (...a: string[]) => execFileSync('git', a, { cwd: main, stdio: 'pipe' });
+    git('init', '-q');
+    writeFileSync(path.join(main, '.gitignore'), 'private/\n.claude/\n');
+    writeFileSync(path.join(main, 'a.ts'), 'export const a = 1;\n');
+    git('add', '.');
+    git('-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-q', '-m', 'first');
+    git('worktree', 'add', '-q', tree, '-b', 'w');
+    mkdirSync(path.join(tree, 'docs'), { recursive: true });
+    writeFileSync(path.join(tree, 'docs', 'a.md'), 'a reply for zzsecretstore today\n');
+    // With no private folder beside either, only the generic checks run, as before.
+    const bare = run();
+    assert.equal(bare.status, 0, bare.stderr);
+    assert.match(bare.stdout, /0 private names checked/);
+    // The main checkout's private folder names the store: the worktree's commit is refused.
+    mkdirSync(path.join(main, 'private'), { recursive: true });
+    writeFileSync(path.join(main, 'private', 'public-denylist.txt'), 'zzsecretstore\n');
+    const out = run();
+    assert.equal(out.status, 1, 'the name is refused in the worktree');
+    // TORAN_HOME still decides when it is set.
+    const empty = mkdtempSync(path.join(os.tmpdir(), 'toran-private-'));
+    try {
+      assert.equal(run({ TORAN_HOME: empty }).status, 0);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(main, { recursive: true, force: true });
+  }
+});
