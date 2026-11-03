@@ -29,6 +29,8 @@ const ADAPTERS = ['src/channels/whatsapp.ts', 'src/channels/email.ts', 'src/chan
 // The store's automatic messages (a cart, a payment, a shipment, a review) are the one place a store's customer gets a
 // message they did not just ask for, on the store's own number or email, with every rule in code before the send.
 const AUTO = 'src/auto/send.ts';
+/** The only callers of a WhatsApp provider's push() (channels/whatsapp.ts, THE RULE). */
+const PUSHERS = ['src/channels/send.ts', 'src/owners/notify.ts', 'src/ops/alert.ts'];
 
 test('nothing sends outreach: messages and mail go out only from send.ts, in answer to an inbound message, or from the store\'s automatic messages; no SMS', () => {
   for (const f of src) {
@@ -40,7 +42,13 @@ test('nothing sends outreach: messages and mail go out only from send.ts, in ans
     // Instagram's in social.ts.)
     if (/api\.twilio\.com|graph\.facebook\.com|graph\.instagram\.com|api\.resend\.com|360dialog/i.test(text) && !ADAPTERS.includes(r)) assert.fail(`${r} talks to a messaging API`);
     assert.ok(!/nodemailer|smtp|sendgrid|mailgun|\bses\b.*send/i.test(text) || r === 'test/rules.test.ts', `${r} sends mail`);
+    // push(), a WhatsApp message Toran starts: an image in an answer, the owner line's, and the operator's own alerts.
+    if (/(?:\bwa|metaLinesAdapter\([^)]*\)|Wa\([^)]*\))\.push\(/.test(text)) assert.ok(PUSHERS.includes(r), `${r} starts WhatsApp messages`);
   }
+  // The operator's alert is always the one approved template, to the number the operator set.
+  const alert = readFileSync(path.join(ROOT, 'src/ops/alert.ts'), 'utf8');
+  assert.match(alert, /\.push\(to, \{ template: \{ name: OPERATOR_ALERT\.name, sid: OPERATOR_ALERT\.name, vars: alertParams\(title, body\) \}, from: null \}\)/);
+  assert.match(alert, /const to = alertNumber\(app\.env\);\n\s+if \(!to\)/);
   // The only send is in reply(), which always answers an inbound message, after the channel's rules allow it.
   const send = readFileSync(path.join(ROOT, 'src/channels/send.ts'), 'utf8');
   assert.equal((send.match(/\.send\(/g) || []).length, 1);

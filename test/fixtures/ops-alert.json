@@ -1,0 +1,25 @@
+{
+  "name": "ops-alert",
+  "doc": "Teder hands an operator alert to Toran, which sends it on to the owner's WhatsApp (Toran src/ops/alertRoute.ts and src/ops/alert.ts, docs/operator.md section 6; Teder src/notify/operator.js, docs/operator-notes.md). It is between Teder and Toran alone, so it is not one of openfrequency-accounts' contracts: this file is kept byte for byte the same in both repositories' test/fixtures, and each side's test reads it.",
+  "servedBy": ["toran"],
+  "calledBy": ["teder"],
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/internal/ops/alert",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+      "request": {
+        "body": { "key": "nothing-drafted:demo", "title": "Teder: עציץ ושמש drafted nothing in 24 hours", "body": "blocked: the batch was not read", "everyMinutes": 1200 }
+      },
+      "answers": [
+        { "case": "taken and said now: in Toran's log, and on WhatsApp when TORAN_ALERT_WA is set", "status": 200, "body": { "ok": true, "due": true } },
+        { "case": "the same key again inside everyMinutes: nothing said", "status": 200, "body": { "ok": true, "due": false } },
+        { "case": "OF_INTERNAL_TOKEN is not set on Toran", "status": 503, "body": { "error": "not_configured" } },
+        { "case": "not from this machine, or through Caddy", "status": 403, "body": { "error": "forbidden" } },
+        { "case": "no token, or a wrong one", "status": 401, "body": { "error": "bad_token" } },
+        { "case": "a GET", "status": 405, "body": { "error": "method_not_allowed" } },
+        { "case": "a body that is not an alert: key [A-Za-z0-9_.:@-]{1,120}, title 1 to 500 characters, body a string up to 4000, everyMinutes a whole number 1 to 43200", "status": 400, "body": { "error": "bad_alert" } }
+      ]
+    }
+  ]
+}

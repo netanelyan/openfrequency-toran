@@ -10,6 +10,7 @@ import { lineNumber, lineOf, oneNumber, withOne, type Line } from './lines.ts';
 import { isCompany, supportAccount } from '../company.ts';
 import { conversationOf, handOver, type Account } from './store.ts';
 import { openConversation, sentByUs } from './conversations.ts';
+import { alertNotDelivered } from '../ops/alert.ts';
 import type { RouteResult } from './demo.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 
@@ -228,9 +229,13 @@ async function lineEcho(app: App, echo: Echo, line: Line) {
   return { action: 'owner_echo', conversationId: where.id, line: where.kind };
 }
 
-/** A delivery report: only a failure is kept, with Meta's reason, so a reply that never arrived is visible. */
+/**
+ * A delivery report: only a failure is kept, with Meta's reason, so a reply that never arrived is visible. One of the
+ * operator's own alerts (ops/alert.ts) is also said loudly in the log, and holds the phone for the hour after it.
+ */
 export async function deliveryStatus(app: App, s: Status) {
   if (s.status !== 'failed') return;
+  await alertNotDelivered(app, s);
   const a = await app.db.one<{ store_id: number }>("SELECT store_id FROM channel_accounts WHERE channel = 'whatsapp' AND external_id = $1", [s.account]);
   await event(app.db, a?.store_id ?? null, 'wa_failed', { id: s.id, error: s.error });
 }

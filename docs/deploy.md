@@ -37,8 +37,10 @@ the new build. If it does not come, it rolls back. `--skip-tests` only for a com
   needed no rollback has run on it. A migration that rewrites data (like 020) is marked "no rollback" in its commit,
   with its way forward written down.
 - **Order between repositories:** deploy the one that serves an internal API before the one that calls it. Today:
-  accounts (`/internal/session`, `/internal/entitlement`) before Toran, and Toran (`/internal/setup`, `/internal/lead`,
-  `/internal/ops`, `/internal/entitlement/changed`) before accounts starts asking for anything new of it.
+  accounts (`/internal/session`, `/internal/entitlement`) before Toran, Toran (`/internal/setup`, `/internal/lead`,
+  `/internal/ops`, `/internal/entitlement/changed`) before accounts starts asking for anything new of it, and Toran
+  (`/internal/ops/alert`) before Teder hands it alerts. A Teder deployed first only logs, for each alert, that Toran did
+  not take it.
 - **Health:** `/healthz` is liveness (`ok` and the commit). `/readyz` is readiness: 200 when the database answers, a
   worker loop of this build ran in the last two minutes, and no customer's message has waited five minutes for a loop;
   503 with the same JSON otherwise. The uptime monitor watches `/readyz`.
@@ -113,6 +115,7 @@ from `releases/`, the old checkout's files at the top of `/opt/toran` (everythin
    | `DEMO_WA_NUMBER` | the demo number in digits, for the pitch page buttons |
    | `TORAN_ASSISTANT_WA`, `TWILIO_TEMPLATES` | the owner line and its approved templates (see below) |
    | `OF_ASSISTANT_SECRET`, `TEDER_INTERNAL` | Teder on the owner line: the same secret in Teder's `.env` |
+   | `TORAN_ALERT_WA` | optional: your own WhatsApp number, for the alerts ("Alerts on your WhatsApp" below) |
    | `BRAVE_API_KEY` | optional, for discovery by search |
 
 3. **Start the database.** Postgres with pgvector, on 127.0.0.1:5433 (`TORAN_DB_PORT` changes it), with its memory
@@ -227,6 +230,26 @@ with the store's name. A subdomain keeps the main domain's own mail where it is.
 
 Toran never answers auto-replies, mailing lists, bounces or no-reply senders. Its own replies say
 `Auto-Submitted: auto-replied`, and an address that bounced or complained gets no more mail.
+
+## Alerts on your WhatsApp
+
+Toran's alerts, and Teder's, which Teder posts to Toran's `POST /internal/ops/alert` on this machine, reach the
+operator's own WhatsApp as one template message each, from our number on Meta (src/ops/alert.ts, docs/operator.md
+section 6).
+
+1. **The template.** `operator_alert`, in WhatsApp Manager on the account that holds our number, exactly as
+   docs/whatsapp-templates.md has it (submitted 2026-11-03, in review). Nothing is set in Toran when it is approved.
+2. **The number.** In `/opt/toran/private/.env`: `TORAN_ALERT_WA=<your number>`, in any spelling. Our number must be
+   on Meta already (`META_DEMO_PHONE_ID` or our one number, and `META_SYSTEM_TOKEN`), as it is since 2026-10-31.
+   Restart Toran.
+3. **Teder.** Nothing to set: Teder hands its alerts to `http://127.0.0.1:4710` with `OF_INTERNAL_TOKEN`, which both
+   already have (Teder's `OF_TORAN_INTERNAL` names another address, `off` stops it).
+4. **Check it.** `journalctl -u toran | grep '\[alert\]'`: each alert's line, then `WhatsApp to …<last four>: sent`.
+   Before the template is approved, `[alert] !!! WhatsApp to …<last four> FAILED: ... 132001 ...` once, and no
+   WhatsApp alert for the hour after. Teder's side: `journalctl -u openfrequency | grep 'Toran did not take'` is empty
+   while Toran takes them.
+5. **What it costs.** Meta bills each template it delivers to our WhatsApp account, at its Utility rate (or its
+   Marketing rate, should it file the template there). At most 10 alerts reach the phone in an hour.
 
 ## Development
 

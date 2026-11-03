@@ -13,11 +13,13 @@ import type { ChannelAdapter, ChannelLimits, Inbound, Sent } from './types.ts';
 //   sim      the simulator: inbound from the dev page and the tests, outbound into an
 //            in-memory outbox. No network.
 //
-// THE RULE: nothing is ever sent to a person who did not write first, with one exception. send() takes the
+// THE RULE: nothing is ever sent to a person who did not write first, with two exceptions. send() takes the
 // inbound message it answers, and send.ts is the only caller; the 24-hour service window is checked there before
-// every send. push() is the exception, for the owner line only (src/owners/): an image in answer to the owner, or a
+// every send. push() is the exception, for the owner line (src/owners/): an image in answer to the owner, or a
 // message Toran starts to a business owner's verified, opted-in number, and outside the 24 hours that is an approved
-// template only. send.ts (images in an answer) and owners/notify.ts are its only callers.
+// template only; and for the operator's own alerts (ops/alert.ts), to the number the operator set in TORAN_ALERT_WA,
+// always the approved template operator_alert. send.ts (images in an answer), owners/notify.ts and ops/alert.ts are its
+// only callers (test/rules.test.ts).
 
 export type { Inbound, Sent };
 

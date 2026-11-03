@@ -288,10 +288,35 @@ What keeps a customer's message from being lost or delayed without anyone knowin
   14 days, each with "להריץ שוב". `GET /internal/ops` carries the same counts as `jobs`.
 - **Alerts** (src/ops/alert.ts): a lost message, a customer message waiting over 5 minutes, a store at 80% or past its
   cap, the cap over every store, a store spending over `TORAN_STORE_HOUR_ALERT_USD` ($5) in an hour, a store past
-  `TORAN_STORE_TURNS_PER_HOUR` (200) answers or `TORAN_NEW_SENDERS_PER_HOUR` (30) new email senders in an hour. Each
-  goes to the log, and to `TORAN_ALERT_CMD` or `/usr/local/bin/of-alert` when it exists. **UNVERIFIED:** of-alert is
-  not on the server as of 2026-10-29 (SERVER-FACTS.md); check with `ls -l /usr/local/bin/of-alert`. Until it is, an
-  alert is a log line only (`journalctl -u toran | grep '\[alert\]'`).
+  `TORAN_STORE_TURNS_PER_HOUR` (200) answers or `TORAN_NEW_SENDERS_PER_HOUR` (30) new email senders in an hour, and
+  Teder's alerts, which Teder hands over (below). Each goes to the log (`journalctl -u toran | grep '\[alert\]'`), to
+  `TORAN_ALERT_CMD` or `/usr/local/bin/of-alert` when it exists, and, with `TORAN_ALERT_WA` set, to the operator's own
+  WhatsApp. **UNVERIFIED:** of-alert was not on the server on 2026-11-03 (SERVER-FACTS.md; neither `TORAN_ALERT_CMD`
+  nor `TORAN_ALERT_WA` was set); check with `ls -l /usr/local/bin/of-alert`.
+- **Alerts on WhatsApp** (the owner, 2026-11-03: "alerts can be sent to my own whatsapp"). `TORAN_ALERT_WA` is the
+  operator's number in any spelling (`050-000-0123`, `+972 50-000-0123`), read as international digits. Each alert is
+  one message from our number on Meta's Cloud API (the demo line's number and token: `META_DEMO_PHONE_ID` or our one
+  number, `META_SYSTEM_TOKEN`), always the approved template `operator_alert` (docs/whatsapp-templates.md): the
+  alert's title as `{{1}}` (Toran's start "תורן: ", Teder's "Teder: "), its body as `{{2}}`, each on one line and
+  clipped so the message is at most 1,024 characters. How often, over both products:
+  - the same alert (its key) once in its own window (Toran's own: 30 minutes for a queue, a week for a lost message, a
+    day for a cap; Teder's: its own window, 20 hours for an account that drafted nothing), as before;
+  - on the phone, one key at most once an hour, at most 10 alerts in any hour, and none for an hour after Meta refuses
+    one. What the phone does not get is still in the log and the command.
+  - Until Meta approves the template, every try is refused (code 132001): one loud line, `[alert] !!! WhatsApp to
+    …<last four> FAILED: ... (operator_alert is not approved in WhatsApp Manager ...)`, then for the hour each alert is
+    `[alert] !!! WhatsApp to …<last four> NOT SENT: Meta refused one at <time> UTC ...`. Nothing to set when it is
+    approved: the next alert after the hour goes. A message Meta took and then reported failed (its webhook) is said
+    the same way, `[alert] !!! WhatsApp FAILED: Meta took the alert <key> and then could not deliver it (...)`.
+    `journalctl -u toran | grep '\[alert\] !!!'` lists every one.
+  - Each try is an event of kind `operator_alert_wa` (`{ key, ok, id | code, error }`), and a sent one a usage row
+    (`wa_alert`).
+- **Teder's alerts:** `POST /internal/ops/alert` (src/ops/alertRoute.ts), from this machine with `OF_INTERNAL_TOKEN`,
+  never through Caddy: `{ key, title, body, everyMinutes }` answers `200 { ok, due }` (`due` false: the same key inside
+  its window), and `401 bad_token`, `403 forbidden`, `405 method_not_allowed`, `400 bad_alert`, `503 not_configured`.
+  Toran runs no command for it (Teder runs its own). The example both sides' tests read is
+  `test/fixtures/ops-alert.json`, the same file in Teder: it is not one of accounts' contracts, since only Teder and
+  Toran use it.
 - **Spend caps** (src/agent/spend.ts): each store's month against its plan's conversations, twice, at $0.25 each
   ($150 for 300, $750 for 1,500; the operator's `stores.config.capUsd` replaces it), beside `TORAN_MONTHLY_CAP_USD`
   over every store. Past the store's cap only that store hands off.

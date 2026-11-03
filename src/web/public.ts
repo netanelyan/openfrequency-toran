@@ -20,6 +20,7 @@ import { opsRoutes } from '../ops/api.ts';
 import { setupRoutes } from '../setup.ts';
 import { eraseRoutes } from '../erase.ts';
 import { changedRoutes } from '../billing/changed.ts';
+import { alertRoutes } from '../ops/alertRoute.ts';
 import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
 import { unsubscribeRoutes } from './unsubscribe.ts';
 import { errorPage } from './pages/basic.ts';
@@ -75,6 +76,10 @@ import { errorPage } from './pages/basic.ts';
 //                              about it is asked again on the next page or message (billing/changed.ts). From this
 //                              machine, with OF_INTERNAL_TOKEN: 401 bad_token, 403 forbidden, 405 for a GET, 503
 //                              not_configured (accounts' docs/contracts/entitlement-changed.json)
+//   POST /internal/ops/alert   one of Teder's operator alerts, sent on to the owner's WhatsApp like Toran's own
+//                              (ops/alertRoute.ts, ops/alert.ts). From this machine, with OF_INTERNAL_TOKEN: 401
+//                              bad_token, 403 forbidden, 405 for a GET, 400 bad_alert, 503 not_configured
+//                              (test/fixtures/ops-alert.json, the same file in Teder)
 //   POST /internal/teder/events Teder's news for an owner (Teder's docs/assistant-api.md): from this machine only, no
 //                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET in the direction teder->toran
 //                              (owners/teder.ts). Kept once by its id and handled by the worker (owners/events.ts),
@@ -305,6 +310,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
     ...setupRoutes(app),
     ...eraseRoutes(app),
     ...changedRoutes(app),
+    ...alertRoutes(app),
     ['POST', /^\/internal\/lead$/, async (r) => {
       if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
       let body: any = {};

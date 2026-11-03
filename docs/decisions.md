@@ -1057,3 +1057,49 @@ owner with Teder alone reaches our support and nothing at Teder; without our sup
 of a Toran store's model has no teder_ tool and no Teder in the prompt, and their "מאשר את כולן", "אשר את 4" and "הצג"
 get the line; "הפסק" kept, "התחל" turning nothing on; the link code's answer for a workspace with Teder alone and for
 one with Toran.
+
+## 2026-11-03: the operator's alerts on the operator's own WhatsApp
+
+The owner: "alerts can be sent to my own whatsapp". Until now every alert, Toran's and Teder's, went to a command
+(`TORAN_ALERT_CMD`, else `/usr/local/bin/of-alert`) that is not on the server, so each one was a log line only.
+
+**Decided:** `TORAN_ALERT_WA` is the operator's number in any spelling, read as international digits (empty: no
+WhatsApp, as before). Each alert is one message from our number on Meta's Cloud API (the demo line's number and token),
+always the approved template `operator_alert` (UTILITY, he; src/ops/alert.ts, docs/whatsapp-templates.md), its title
+as `{{1}}` and its body as `{{2}}`. The log and the command stay, side by side. Teder posts its alerts to Toran,
+`POST /internal/ops/alert` (src/ops/alertRoute.ts, under the same locks as the other internal routes), and Toran sends
+them on the same way; Teder keeps its own command.
+
+**Why a template always:** outside the 24 hours after the operator last wrote to our number WhatsApp takes nothing
+else, and a template goes inside them too, so one kind of message is always delivered and there is no window to track.
+
+**Approved or not is Meta's to say:** the template goes by its name and Meta's refusal is read, instead of a list of
+approved names in the settings like the owner line's `META_TEMPLATES` (refused: the alert after Meta approves goes with no
+setting to change and no restart; a list can say approved when Meta has not, which fails the same way, or miss an
+approval, which keeps every alert off the phone without a word; and `META_TEMPLATES` is the owner line's, unused since
+2026-11-02). A refusal is a loud log line (`[alert] !!! ... FAILED`), never a throw, and holds the phone for an hour; so
+does a message Meta takes and later reports failed (its webhook's failed status, waStore.ts deliveryStatus).
+
+**How often, over both products:** the same key once in its own window, as before (Teder's keys as `teder:<key>`, in
+Teder's window); on the phone, one key at most once an hour, at most 10 alerts in any hour, and none for an hour after
+Meta refuses one. A stuck problem is one message an hour at most, not one a minute; a burst of different ones is ten.
+
+**The values:** one line each (every newline, tab and run of spaces one space, so never more than four in a row, as
+Meta requires), never empty (a dash), the title at most 200 characters and the body at most what is left of 1,024 once
+the template's own text and the title are in, each clipped with "…".
+
+**The contract:** the route is between Teder and Toran alone, so it is not in accounts' docs/contracts, and Teder and
+Toran share no contract file of their own (the assistant API between them is prose in Teder's docs/assistant-api.md).
+Its example, test/fixtures/ops-alert.json, is the same file in both repositories; each side's test reads it, and each
+checks the other's copy is byte-identical when that checkout is beside it.
+
+**The template's text** was submitted on 2026-11-03 and is in review; Meta's precheck called it Marketing, so it may be
+approved as that (still sent by its name) or rejected (every try refused, loudly).
+
+**Tested** (test/alert.test.ts): one template to the number in international digits through a fake Meta, with the
+values flattened and clipped to 1,024; not set, nothing sent; Meta refusing (132001), a log line, no throw, no second
+try in the hour, the command still run; Meta not answering, or no number of ours on Meta; a message reported failed
+later; the same key twice in its window once, a short window once an hour on the phone, ten an hour at most; the route
+refusing without the token, from another machine, through Caddy, by GET and seventeen kinds of bad body, and taking Teder's
+example; the example the same as Teder's. test/rules.test.ts: push() only from send.ts, owners/notify.ts and
+ops/alert.ts, and the alert always the template.
