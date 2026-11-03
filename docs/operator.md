@@ -413,3 +413,38 @@ file: accounts has them.
    `pay_receipt` (sent, unreadable, refused, too_many, gone, unavailable), and an audit row `pay_receipt`
    with the code, the workspace, the file's kind and size, the check's verdicts and amounts, and accounts' id. Never the
    transfer's details, the payee's name, the reference or the file.
+
+## 8. Payment reminders on WhatsApp: `POST /internal/pay/remind`
+
+The owner, 2026-11-03: "add a reminder to pay for the new month, whatsapp, email and dashboard. A user has 72 hours to
+pay for a new month once their subscription has ended". accounts decides who gets a reminder and when (its
+docs/setup.md, the daily job), and Toran sends it (`src/billing/remind.ts`). The contract is accounts'
+`docs/contracts/pay-remind.json` (`test/fixtures/contracts` here).
+
+- **Which.** Three a paid month at most, beside the billing emails, which go whatever happens here: `soon1` on the last
+  paid day, `due` the first day after it, `last` on the last day of the grace (72 hours, or 14 days for a workspace
+  still on the older terms; accounts' dates, Toran counts none). Never the week-before email's `soon7`, nor `stopped`.
+  Each goes to every number accounts verified for the workspace's owners (`user_phones`; not a member's, not one whose
+  latest word is "הפסק"), and only in manual mode with `OF_PAYMENT_METHOD` set in accounts, so that the button's
+  answer has the transfer's details. A workspace with no linked number gets the email alone.
+- **The request.** `{ workspace, phone, kind, business, products, paidUntil, graceUntil, code }` from accounts on this
+  machine, with `OF_INTERNAL_TOKEN`, never through Caddy, answered `200 { ok, sent, why }`: `why` is null when sent,
+  `already` (this workspace, kind, paid period and phone went before: a retry sends nothing), `held` (the limits below)
+  or `failed` (Meta refused or did not answer, or none of our numbers is on Meta). Refusals: `503 not_configured`,
+  `403 forbidden`, `401 bad_token`, `405 method_not_allowed`, `400 bad_reminder`.
+- **The message.** Always the approved template `payment_reminder` (UTILITY, he, docs/whatsapp-templates.md) from our
+  number on Meta, the owner line's (`META_OWNER_PHONE_ID`, else the demo number or our one number): the products'
+  names, the business, the last paid day and the grace's last day with its weekday, and one quick reply button,
+  "לתשלום", whose payload is the workspace's payment code, never shown. Pressed, it comes back as "לתשלום PAY-XXXXXX"
+  (`src/channels/meta.ts`), and section 7 answers it as it answers accounts' own button: the amount, the transfer's
+  details, and a wait for the receipt.
+- **The limits.** The same reminder to the same phone once; at most 3 to a phone in any 7 days; none for 60 minutes
+  after Meta refuses one (before the approval, every one is refused, code 132001).
+- **What you see.** `journalctl -u toran | grep '\[remind\]'`: `[remind] WhatsApp to …<last four> (workspace <id>,
+  <kind>): sent`, or why not. A refusal is loud, `[remind] !!! WhatsApp to …<last four> (workspace <id>, <kind>)
+  FAILED: ... (payment_reminder is not approved in WhatsApp Manager ...)`, and you get one alert a day about it
+  (`pay_remind_failed`); a message Meta took and then reported failed (its webhook) is loud the same way. A number in
+  the log is its last four digits; the code is in no log line.
+- **What is kept.** Each try is an event of kind `pay_reminder_wa` (`{ key, workspace, kind, phone, state, id | code,
+  error }`, `state` sending, sent, failed or undelivered), and a sent one a usage row (`wa_pay_reminder`). They go with
+  the workspace when accounts deletes it, and with every event after 13 months.

@@ -30,7 +30,7 @@ const ADAPTERS = ['src/channels/whatsapp.ts', 'src/channels/email.ts', 'src/chan
 // message they did not just ask for, on the store's own number or email, with every rule in code before the send.
 const AUTO = 'src/auto/send.ts';
 /** The only callers of a WhatsApp provider's push() (channels/whatsapp.ts, THE RULE). */
-const PUSHERS = ['src/channels/send.ts', 'src/owners/notify.ts', 'src/ops/alert.ts'];
+const PUSHERS = ['src/channels/send.ts', 'src/owners/notify.ts', 'src/ops/alert.ts', 'src/billing/remind.ts'];
 
 test('nothing sends outreach: messages and mail go out only from send.ts, in answer to an inbound message, or from the store\'s automatic messages; no SMS', () => {
   for (const f of src) {
@@ -42,13 +42,19 @@ test('nothing sends outreach: messages and mail go out only from send.ts, in ans
     // Instagram's in social.ts.)
     if (/api\.twilio\.com|graph\.facebook\.com|graph\.instagram\.com|api\.resend\.com|360dialog/i.test(text) && !ADAPTERS.includes(r)) assert.fail(`${r} talks to a messaging API`);
     assert.ok(!/nodemailer|smtp|sendgrid|mailgun|\bses\b.*send/i.test(text) || r === 'test/rules.test.ts', `${r} sends mail`);
-    // push(), a WhatsApp message Toran starts: an image in an answer, the owner line's, and the operator's own alerts.
+    // push(), a WhatsApp message Toran starts: an image in an answer, the owner line's, the operator's own alerts, and
+    // the payment reminders accounts hands over.
     if (/(?:\bwa|metaLinesAdapter\([^)]*\)|Wa\([^)]*\))\.push\(/.test(text)) assert.ok(PUSHERS.includes(r), `${r} starts WhatsApp messages`);
   }
   // The operator's alert is always the one approved template, to the number the operator set.
   const alert = readFileSync(path.join(ROOT, 'src/ops/alert.ts'), 'utf8');
   assert.match(alert, /\.push\(to, \{ template: \{ name: OPERATOR_ALERT\.name, sid: OPERATOR_ALERT\.name, vars: alertParams\(title, body\) \}, from: null \}\)/);
   assert.match(alert, /const to = alertNumber\(app\.env\);\n\s+if \(!to\)/);
+  // A payment reminder is always the one approved template, to the number accounts handed over, its button the code.
+  const remind = readFileSync(path.join(ROOT, 'src/billing/remind.ts'), 'utf8');
+  assert.equal((remind.match(/\.push\(/g) || []).length, 1);
+  assert.match(remind, /\.push\(r\.phone, \{ template: \{ name: PAYMENT_REMINDER\.name, sid: PAYMENT_REMINDER\.name, vars: reminderParams\(r\), payload: r\.code \}, from: lineNumber\(app\.env, 'owner'\) \}\)/);
+  assert.ok(remind.indexOf('await heldBack(app, r.phone)') > 0 && remind.indexOf('await heldBack(app, r.phone)') < remind.indexOf('.push('), 'the limits are read before the send');
   // The only send is in reply(), which always answers an inbound message, after the channel's rules allow it.
   const send = readFileSync(path.join(ROOT, 'src/channels/send.ts'), 'utf8');
   assert.equal((send.match(/\.send\(/g) || []).length, 1);

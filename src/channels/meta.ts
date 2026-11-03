@@ -180,12 +180,22 @@ export const signBody = (appSecret: string, raw: string) => `sha256=${createHmac
 export type Echo = { account: string; to: string; id: string; text: string; at: number };
 export type Status = { account: string; id: string; status: string; to: string | null; error: string | null };
 
+/**
+ * A template's quick reply button whose payload is a payment code: the payment reminder's "לתשלום" (billing/remind.ts),
+ * which carries the workspace's PAY-XXXXXX unseen. The code rides after the button's text, so the pay flow reads it
+ * (pay.ts PAY_RE) as it reads the message accounts' "לתשלום בוואטסאפ" writes. Any other payload is left out, as before.
+ */
+const PAY_PAYLOAD = /^PAY-[A-Z0-9]{6}$/i;
+
 const textOf = (m: any): string => {
   switch (m?.type) {
     case 'text':
       return String(m.text?.body || '');
-    case 'button':
-      return String(m.button?.text || '');
+    case 'button': {
+      const text = String(m.button?.text || '');
+      const payload = String(m.button?.payload || '').trim();
+      return PAY_PAYLOAD.test(payload) && !text.includes(payload) ? `${text} ${payload}`.trim() : text;
+    }
     case 'interactive':
       return String(m.interactive?.button_reply?.title || m.interactive?.list_reply?.title || '');
     default:
@@ -267,8 +277,9 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
 
 /**
  * The Cloud API's body for one message: text, an image with its caption, or an approved template (Hebrew, its body's
- * variables in order, and the end of its URL button's address, `url`, where it has one). A template is named by the
- * name Meta approved, which WaOut carries in `sid` (Twilio's word).
+ * variables in order, the end of its URL button's address, `url`, where it has one, and the payload its quick reply
+ * button sends back, `payload`, where it has one). A template is named by the name Meta approved, which WaOut carries
+ * in `sid` (Twilio's word).
  */
 export function outBody(to: string, msg: WaOut): Record<string, unknown> {
   const base = { messaging_product: 'whatsapp', recipient_type: 'individual', to };
@@ -277,6 +288,7 @@ export function outBody(to: string, msg: WaOut): Record<string, unknown> {
     const components = [
       ...(vars.length ? [{ type: 'body', parameters: vars }] : []),
       ...(msg.template.url ? [{ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: msg.template.url }] }] : []),
+      ...(msg.template.payload ? [{ type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: msg.template.payload }] }] : []),
     ];
     return { ...base, type: 'template', template: { name: msg.template.sid, language: { code: 'he' }, ...(components.length ? { components } : {}) } };
   }

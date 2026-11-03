@@ -53,6 +53,8 @@ export async function eraseWorkspace(app: App, workspaceId: number) {
     out.ownerNotifications = await del(t, 'DELETE FROM owner_notifications WHERE workspace_id = $1 RETURNING id', [workspaceId]);
     out.ownerLists = await del(t, 'DELETE FROM owner_lists WHERE workspace_id = $1 RETURNING id', [workspaceId]);
     out.tederEvents = await del(t, 'DELETE FROM teder_events WHERE workspace_id = $1 RETURNING id', [workspaceId]);
+    // The payment reminders accounts handed over for it (billing/remind.ts), each with the owner's number.
+    out.payReminders = await del(t, "DELETE FROM events WHERE store_id IS NULL AND kind = 'pay_reminder_wa' AND data->>'workspace' = $1 RETURNING id", [String(workspaceId)]);
     out.assistantMessages = await del(t, 'DELETE FROM assistant_messages WHERE workspace_id = $1 OR store_id = ANY($2::int[]) RETURNING id', [workspaceId, ids]);
     out.ownerNumbers = await del(t, 'DELETE FROM owner_numbers WHERE workspace_id = $1 RETURNING phone', [workspaceId]);
     out.demoRequests = await del(t, 'DELETE FROM demo_requests WHERE store_id = ANY($1::int[]) RETURNING id', [ids]);

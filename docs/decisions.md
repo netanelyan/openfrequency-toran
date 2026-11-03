@@ -1103,3 +1103,39 @@ later; the same key twice in its window once, a short window once an hour on the
 refusing without the token, from another machine, through Caddy, by GET and seventeen kinds of bad body, and taking Teder's
 example; the example the same as Teder's. test/rules.test.ts: push() only from send.ts, owners/notify.ts and
 ops/alert.ts, and the alert always the template.
+
+## 2026-11-03: reminders to pay for the new month on the owner's WhatsApp
+
+The owner: "add a reminder to pay for the new month, whatsapp, email and dashboard. A user has 72 hours to pay for a new
+month once their subscription has ended". accounts sends the emails and shows the banner; the WhatsApp part is here.
+
+**Decided:** accounts' daily run hands Toran, on this machine, one request for each reminder it owes on WhatsApp
+(`POST /internal/pay/remind`, accounts' docs/contracts/pay-remind.json): the last paid day, the first day after it and
+the last day of the grace, so three a paid month at most, to each number its owners verified, beside the email, which
+goes first and whatever Toran answers. Toran sends the approved template `payment_reminder` (UTILITY, he;
+src/billing/remind.ts, docs/whatsapp-templates.md) from our number.
+
+**One body for all three:** fixed text, with variables only for facts (the products, the business, the last paid day,
+the grace's last day with its weekday): Meta's precheck filed `operator_alert`, whose variables are free sentences, as
+Marketing, and a reminder about the customer's own subscription is a plain account update.
+
+**The button pays in the same chat:** a quick reply, "לתשלום", whose payload is the workspace's payment code, so the
+customer never sees a code and has one thing to do. Pressed, it comes back with the code to the pay flow
+(channels/pay.ts), which answers with the amount and the details and then takes the transfer's picture, as for
+accounts' own "לתשלום בוואטסאפ". A URL button to accounts' /setup would only lead back to that button. **UNVERIFIED:**
+that Meta's webhook gives a pressed quick reply as `type: "button"` with the payload set on the message is from Meta's
+documentation; it has not been tried on our number.
+
+**Never twice, never a storm:** accounts sends each reminder once (its billing_notices), and Toran sends the same
+workspace, kind, paid period and phone once (`already`); a phone gets at most 3 in 7 days, and nothing goes for an hour
+after Meta refuses one. Down, slow or refused is a log line on both sides, never a throw; accounts stops asking for the
+rest of that run after one that does not answer.
+
+**Tested** (test/pay-remind.test.ts): the template and its samples as in docs/whatsapp-templates.md, Meta's rules for
+a body, and the voice; the values as accounts writes them, both products, a month's end, the older terms' date and the
+week the clocks go forward; the contract's example sent once from our number with its payload, a retry and two at once
+sent once; 3 in 7 days; Meta refusing (a loud line, the hour held for every number, the operator told), Meta down, no
+number of ours; a reminder reported undelivered; the owner line's number; the button pressed through the webhook to the
+pay flow's answer and its wait; the route's refusals and twenty bad bodies; the reminders deleted with the workspace.
+test/contracts.test.ts: every case of pay-remind.json asked of the real route. test/rules.test.ts: push() also from
+billing/remind.ts, always the template.

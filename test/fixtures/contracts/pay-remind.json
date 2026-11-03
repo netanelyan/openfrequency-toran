@@ -1,0 +1,106 @@
+{
+  "name": "pay-remind",
+  "doc": "docs/setup.md, \"The daily job\" (the WhatsApp reminders); Toran's docs/operator.md, \"Payment reminders on WhatsApp\", and docs/whatsapp-templates.md",
+  "servedBy": [
+    "toran"
+  ],
+  "calledBy": [
+    "accounts"
+  ],
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/internal/pay/remind",
+      "listener": "Toran's internal address on this machine: OF_TORAN_INTERNAL (127.0.0.1:4710)",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more), from a loopback socket and not through Caddy (no X-Forwarded-For)",
+      "request": {
+        "body": {
+          "workspace": 7,
+          "phone": "972500000123",
+          "kind": "due",
+          "business": "Noa Shop",
+          "products": [
+            "teder"
+          ],
+          "paidUntil": "2026-11-21",
+          "graceUntil": "2026-11-24",
+          "code": "PAY-AB2CD3"
+        }
+      },
+      "notes": "accounts' daily run sends one for each reminder it owes on WhatsApp: soon1 (the last paid day), due (the first day after it) and last (the last day of the grace), each once for each paid period (billing_notices), to each number in user_phones of the workspace's owners whose latest word is not an opt-out, beside the email, which goes first and whatever Toran answers. Only in manual mode with OF_PAYMENT_METHOD set, so that Toran can give the transfer's details. phone is international digits; products are teder and toran, one or both when both fall due the same day with the same dates; paidUntil and graceUntil are Israel days, accounts' own (graceLast: 72 hours, or 14 days for a workspace still on the older terms), and Toran counts no day itself; code is the workspace's payment code, the payload of the template's quick reply button, which comes back as a message with the code to the pay flow (pay.json) and is never shown. Toran sends the approved template payment_reminder from our number: {{1}} the products' names, {{2}} the business, {{3}} paidUntil, {{4}} graceUntil with its weekday. Idempotent: the same workspace, kind, paidUntil and phone again is already, never a second message. A phone gets at most 3 in 7 days; after Meta refuses one, none is tried for 60 minutes. accounts waits 20 seconds; a 200 of any of the four cases is a line in its log when not sent, and anything else (another status, no answer, no token configured) is a line in its log, and no more reminders are tried in that run: nothing is sent again later. The checks come in this order: 503, 403, 401, 405, 400.",
+      "answers": [
+        {
+          "case": "sent: Meta took the template",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "sent": true,
+            "why": null
+          }
+        },
+        {
+          "case": "sent before: the same workspace, kind, paid period and phone (a retry)",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "sent": false,
+            "why": "already"
+          }
+        },
+        {
+          "case": "held: 3 to this phone in the last 7 days, or Meta refused one in the last 60 minutes",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "sent": false,
+            "why": "held"
+          }
+        },
+        {
+          "case": "not sent: Meta refused it (payment_reminder not approved yet: 132001) or did not answer, or none of our numbers is on Meta",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "sent": false,
+            "why": "failed"
+          }
+        },
+        {
+          "case": "not a reminder: a field missing or not in its form",
+          "status": 400,
+          "body": {
+            "error": "bad_reminder"
+          }
+        },
+        {
+          "case": "no token, or the wrong one",
+          "status": 401,
+          "body": {
+            "error": "bad_token"
+          }
+        },
+        {
+          "case": "not from this machine, or through Caddy",
+          "status": 403,
+          "body": {
+            "error": "forbidden"
+          }
+        },
+        {
+          "case": "another method than POST",
+          "status": 405,
+          "body": {
+            "error": "method_not_allowed"
+          }
+        },
+        {
+          "case": "OF_INTERNAL_TOKEN unset or short here",
+          "status": 503,
+          "body": {
+            "error": "not_configured"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -251,6 +251,22 @@ section 6).
 5. **What it costs.** Meta bills each template it delivers to our WhatsApp account, at its Utility rate (or its
    Marketing rate, should it file the template there). At most 10 alerts reach the phone in an hour.
 
+## Payment reminders on WhatsApp
+
+accounts' daily run hands Toran its reminders to pay for the new month (docs/operator.md section 8), and Toran sends
+each as the template `payment_reminder` from our number.
+
+1. **The template.** Create `payment_reminder` in WhatsApp Manager (Message templates, Create template), on the
+   account that holds our number, exactly as docs/whatsapp-templates.md has it: Utility, Hebrew, the body, its four
+   samples and one Quick reply button, "לתשלום". Nothing is set in Toran when it is approved.
+2. **Nothing else to set.** accounts reaches Toran at `http://127.0.0.1:4710` (its `OF_TORAN_INTERNAL` default) with
+   `OF_INTERNAL_TOKEN`, which both have; our number is on Meta since 2026-10-31. Deploy Toran before accounts, so the
+   route is there when accounts' first run asks for it (until then accounts logs one line a run and sends the emails).
+3. **Check it.** `journalctl -u toran | grep '\[remind\]'`. Before the approval, `[remind] !!! ... FAILED: ... 132001
+   ...` and no reminder for the hour after; the customer still gets the email.
+4. **What it costs.** Meta bills each one it delivers to our WhatsApp account at its Utility rate (or its Marketing
+   rate, should it file the template there): at most three a paid month for each linked number.
+
 ## Development
 
 There is nothing to install beyond `npm install`:

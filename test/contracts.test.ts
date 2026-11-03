@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../src/core/paths.ts';
-import { INTERNAL_TOKEN } from './helpers.ts';
+import { INTERNAL_TOKEN, META_DEMO } from './helpers.ts';
 import { serve } from './serve.ts';
 
 // The contracts between accounts, Teder and Toran (openfrequency-accounts docs/contracts, PRA-QA-003), held against
@@ -25,7 +25,7 @@ import { serve } from './serve.ts';
 // has to go (or change), so a fix on either side cannot pass unseen.
 
 type Answer = { case: string; status: number; body: any; nullable?: string[] };
-type ContractRoute = { method: string; path: string; answers: Answer[] };
+type ContractRoute = { method: string; path: string; request?: { body?: any }; answers: Answer[] };
 type Contract = { name: string; doc: string; servedBy: string[]; calledBy: string[]; kind?: string; routes: ContractRoute[] };
 
 const DIR = path.join(ROOT, 'test', 'fixtures', 'contracts');
@@ -208,6 +208,23 @@ const CHANGED = 'entitlement-changed /internal/entitlement/changed';
 /** accounts' notice (its src/web/changed.js): the bearer, a JSON body, and any headers a case adds. */
 const changed = (s: S, body: unknown, headers: Record<string, string> = {}) =>
   fetch(`${s.base}/internal/entitlement/changed`, { method: 'POST', headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }).then(got);
+const REMIND = 'pay-remind /internal/pay/remind';
+/** accounts' payment reminder (its src/web/daily.js), the contract's example unless a case changes it. */
+const remindAsk = (s: S, over: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
+  fetch(`${s.base}/internal/pay/remind`, { method: 'POST', headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json', ...headers }, body: JSON.stringify({ ...contracts['pay-remind'].routes[0].request!.body, ...over }) }).then(got);
+/**
+ * Our number on Meta, as a stand-in: it takes every message, or refuses each as a template it does not have (code
+ * 132001). Every reminder tried before is forgotten (unless `clear` is false), so each case starts from none.
+ */
+async function onMeta(s: S, refuse = false, clear = true) {
+  Object.assign(s.app.env, META_DEMO);
+  s.app.log = () => {};
+  s.app.graph = (async () =>
+    refuse
+      ? new Response(JSON.stringify({ error: { message: '(#132001) Template name does not exist in the translation', code: 132001 } }), { status: 400, headers: { 'content-type': 'application/json' } })
+      : new Response(JSON.stringify({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.contract' }] }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch;
+  if (clear) await s.app.db.query("DELETE FROM events WHERE kind IN ('pay_reminder_wa', 'operator_alert', 'operator_alert_wa')");
+}
 
 /** Each case, by "<contract> <path> :: <case>": its state made and asked, as one or more labelled requests. */
 const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
@@ -222,6 +239,34 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
   [`${CHANGED} :: not from this machine, or through Caddy`]: async (s) => ({ 'through Caddy': await changed(s, { workspace: 7 }, { 'x-forwarded-for': '203.0.113.9' }) }),
   [`${CHANGED} :: another method than POST`]: async (s) => ({ GET: await ask(s, 'GET', '/internal/entitlement/changed') }),
   [`${CHANGED} :: OF_INTERNAL_TOKEN unset or short here`]: (s) => unsetHere(s, () => changed(s, { workspace: 7 })),
+  [`${REMIND} :: sent: Meta took the template`]: async (s) => (await onMeta(s), { 'the example': await remindAsk(s) }),
+  [`${REMIND} :: sent before: the same workspace, kind, paid period and phone (a retry)`]: async (s) => {
+    await onMeta(s);
+    await remindAsk(s);
+    return { 'the example again': await remindAsk(s) };
+  },
+  [`${REMIND} :: held: 3 to this phone in the last 7 days, or Meta refused one in the last 60 minutes`]: async (s) => {
+    await onMeta(s);
+    for (const kind of ['soon1', 'due', 'last']) await remindAsk(s, { kind });
+    const fourth = await remindAsk(s, { kind: 'soon1', paidUntil: '2026-11-23', graceUntil: '2026-11-26', products: ['toran'] });
+    // Meta refuses one, and then takes them again: the hour after it holds every number.
+    await onMeta(s, true);
+    await remindAsk(s);
+    await onMeta(s, false, false);
+    return { 'a fourth in the week': fourth, 'within the hour after a refusal': await remindAsk(s, { phone: '972500000124' }) };
+  },
+  [`${REMIND} :: not sent: Meta refused it (payment_reminder not approved yet: 132001) or did not answer, or none of our numbers is on Meta`]: async (s) => {
+    await onMeta(s, true);
+    const refused = await remindAsk(s);
+    await onMeta(s);
+    delete s.app.env.META_DEMO_PHONE_ID;
+    return { 'Meta refusing': refused, 'none of our numbers on Meta': await remindAsk(s) };
+  },
+  [`${REMIND} :: not a reminder: a field missing or not in its form`]: async (s) => ({ 'soon7, never on WhatsApp': await remindAsk(s, { kind: 'soon7' }), 'a local phone': await remindAsk(s, { phone: '0500000123' }), 'no code': await remindAsk(s, { code: null }) }),
+  [`${REMIND} :: no token, or the wrong one`]: (s) => badToken((token) => ask(s, 'POST', '/internal/pay/remind', token, contracts['pay-remind'].routes[0].request!.body)),
+  [`${REMIND} :: not from this machine, or through Caddy`]: async (s) => ({ 'through Caddy': await remindAsk(s, {}, { 'x-forwarded-for': '203.0.113.9' }) }),
+  [`${REMIND} :: another method than POST`]: async (s) => ({ GET: await ask(s, 'GET', '/internal/pay/remind') }),
+  [`${REMIND} :: OF_INTERNAL_TOKEN unset or short here`]: (s) => unsetHere(s, () => remindAsk(s)),
   [`${DEL} :: deleted`]: async (s) => (await customerStore(s, 42, 'mine.example'), { 'a workspace with a store, a chat and a message': await del(s, 42) }),
   [`${DEL} :: nothing of that workspace here (never seen, or deleted already)`]: async (s) => {
     await customerStore(s, 43, 'gone.example');
@@ -336,8 +381,8 @@ function differences(g: Got, a: Answer, contract: string): string[] {
 const served = Object.entries(contracts).filter(([, c]) => c.servedBy.includes('toran'));
 const caseKeys = served.flatMap(([name, c]) => c.routes.flatMap((r) => r.answers.map((a) => `${name} ${r.path} :: ${a.case}`)));
 
-test('Toran serves at least the workspace delete, the setup checklist, the dashboard and the notice that access changed, and every entry here names one of their cases', () => {
-  for (const name of ['workspaces-delete', 'setup', 'toran-ops', 'entitlement-changed']) assert.ok(served.some(([n]) => n === name), name);
+test('Toran serves at least the workspace delete, the setup checklist, the dashboard, the notice that access changed and the payment reminder, and every entry here names one of their cases', () => {
+  for (const name of ['workspaces-delete', 'setup', 'toran-ops', 'entitlement-changed', 'pay-remind']) assert.ok(served.some(([n]) => n === name), name);
   for (const key of [...Object.keys(RUN), ...Object.keys(NOT_HERE), ...Object.keys(DISAGREES)]) assert.ok(caseKeys.includes(key), `${key}: no such case in the contracts`);
   for (const key of Object.keys(NOT_HERE)) assert.ok(!RUN[key] && !DISAGREES[key], `${key}: listed as not asked, and asked`);
 });

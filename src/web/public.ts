@@ -21,6 +21,7 @@ import { setupRoutes } from '../setup.ts';
 import { eraseRoutes } from '../erase.ts';
 import { changedRoutes } from '../billing/changed.ts';
 import { alertRoutes } from '../ops/alertRoute.ts';
+import { remindRoutes } from '../billing/remind.ts';
 import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
 import { unsubscribeRoutes } from './unsubscribe.ts';
 import { errorPage } from './pages/basic.ts';
@@ -311,6 +312,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
     ...eraseRoutes(app),
     ...changedRoutes(app),
     ...alertRoutes(app),
+    ...remindRoutes(app),
     ['POST', /^\/internal\/lead$/, async (r) => {
       if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
       let body: any = {};

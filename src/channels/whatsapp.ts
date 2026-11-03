@@ -13,18 +13,22 @@ import type { ChannelAdapter, ChannelLimits, Inbound, Sent } from './types.ts';
 //   sim      the simulator: inbound from the dev page and the tests, outbound into an
 //            in-memory outbox. No network.
 //
-// THE RULE: nothing is ever sent to a person who did not write first, with two exceptions. send() takes the
+// THE RULE: nothing is ever sent to a person who did not write first, with three exceptions. send() takes the
 // inbound message it answers, and send.ts is the only caller; the 24-hour service window is checked there before
 // every send. push() is the exception, for the owner line (src/owners/): an image in answer to the owner, or a
 // message Toran starts to a business owner's verified, opted-in number, and outside the 24 hours that is an approved
-// template only; and for the operator's own alerts (ops/alert.ts), to the number the operator set in TORAN_ALERT_WA,
-// always the approved template operator_alert. send.ts (images in an answer), owners/notify.ts and ops/alert.ts are its
-// only callers (test/rules.test.ts).
+// template only; for the operator's own alerts (ops/alert.ts), to the number the operator set in TORAN_ALERT_WA,
+// always the approved template operator_alert; and for the payment reminders accounts hands over (billing/remind.ts),
+// to a workspace owner's number accounts verified, always the approved template payment_reminder. send.ts (images in an
+// answer), owners/notify.ts, ops/alert.ts and billing/remind.ts are its only callers (test/rules.test.ts).
 
 export type { Inbound, Sent };
 
-/** One message push() sends: text, an image (with its caption), or an approved template with its variables. */
-export type WaOut = { text?: string; mediaUrl?: string; template?: { name: string; sid: string; vars: string[]; url?: string }; from?: string | null };
+/**
+ * One message push() sends: text, an image (with its caption), or an approved template with its variables, the end of
+ * its URL button's address (`url`) or the payload its quick reply button sends back (`payload`, Meta's Cloud API only).
+ */
+export type WaOut = { text?: string; mediaUrl?: string; template?: { name: string; sid: string; vars: string[]; url?: string; payload?: string }; from?: string | null };
 
 export interface WaProvider extends ChannelAdapter {
   channel: 'whatsapp';
