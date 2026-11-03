@@ -85,7 +85,7 @@ test('the template is defined in code as it was submitted to Meta, and docs/what
     category: 'UTILITY',
     language: 'he',
     body: 'עדכון על החשבון שלכם ב-OpenFrequency:\n{{1}}\n{{2}}\nאת הפרטים המלאים אפשר לראות בלוח הבקרה של החשבון.',
-    example: ['תדר: החשבון football לא הכין פוסט היום', 'בבדיקה של הבוקר לא נמצאה טיוטה חדשה.'],
+    example: ['תדר: השירות הופעל מחדש אחרי תקלה', 'הבדיקה של 08:00 לא הצליחה להתחבר לשירות הפרסום.'],
   });
   const doc = readFileSync(path.join(ROOT, 'docs', 'whatsapp-templates.md'), 'utf8');
   assert.equal(typeof alert.alertTemplateDoc, 'function');

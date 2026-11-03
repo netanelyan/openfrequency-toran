@@ -34,7 +34,7 @@ way. Changing the template means changing it here (`src/ops/alert.ts`) and in Wh
 | Category | Utility |
 | Language | Hebrew (he) |
 | Header, footer, buttons | none |
-| Variables (sample) | {{1}} = תדר: החשבון football לא הכין פוסט היום; {{2}} = בבדיקה של הבוקר לא נמצאה טיוטה חדשה. |
+| Variables (sample) | {{1}} = תדר: השירות הופעל מחדש אחרי תקלה; {{2}} = הבדיקה של 08:00 לא הצליחה להתחבר לשירות הפרסום. |
 
 The body, four lines, exactly:
 
@@ -45,7 +45,7 @@ The body, four lines, exactly:
 את הפרטים המלאים אפשר לראות בלוח הבקרה של החשבון.
 ```
 
-As the owner reads it: עדכון על החשבון שלכם ב-OpenFrequency: / תדר: החשבון football לא הכין פוסט היום / בבדיקה של הבוקר לא נמצאה טיוטה חדשה. / את הפרטים המלאים אפשר לראות בלוח הבקרה של החשבון.
+As the owner reads it: עדכון על החשבון שלכם ב-OpenFrequency: / תדר: השירות הופעל מחדש אחרי תקלה / הבדיקה של 08:00 לא הצליחה להתחבר לשירות הפרסום. / את הפרטים המלאים אפשר לראות בלוח הבקרה של החשבון.
 
 ## The owner line (not sent since 2026-11-02)
 
