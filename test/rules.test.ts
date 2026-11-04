@@ -105,6 +105,9 @@ test("check:public in a worktree reads the main checkout's private folder, so a 
     writeFileSync(path.join(main, 'private', 'public-denylist.txt'), 'zzsecretstore\n');
     const out = run();
     assert.equal(out.status, 1, 'the name is refused in the worktree');
+    // A private/ of the worktree's own (running Toran there makes one, holding none of the lists) changes nothing.
+    mkdirSync(path.join(tree, 'private', 'models'), { recursive: true });
+    assert.equal(run().status, 1, 'still refused with an empty private/ in the worktree');
     // TORAN_HOME still decides when it is set.
     const empty = mkdtempSync(path.join(os.tmpdir(), 'toran-private-'));
     try {

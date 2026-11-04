@@ -94,18 +94,20 @@ const fictional = (s: string) => {
 const real: string[] = [];
 // A worktree (.claude/worktrees/<name>) has no private/ of its own, and checked no private name at all until
 // 2026-11-03 (Teder's check had let a real handle into its public repository that way): there, without TORAN_HOME,
-// the main checkout's private/ is the one read.
+// the main checkout's private/ is the one read, even when the worktree has a private/ too (running Toran or its tests
+// there makes one, holding none of the lists).
 function privateHome(): string {
   if (String(process.env.TORAN_HOME || '').trim()) return home();
   const own = path.join(ROOT, 'private');
-  if (existsSync(own)) return own;
   try {
+    const dir = path.resolve(ROOT, git('rev-parse', '--git-dir').toString().trim());
     const common = path.resolve(ROOT, git('rev-parse', '--git-common-dir').toString().trim());
     const main = path.join(path.dirname(common), 'private');
-    return path.basename(common) === '.git' && existsSync(main) ? main : own;
+    if (dir !== common && path.basename(common) === '.git' && existsSync(main)) return main;
   } catch {
-    return own;
+    /* not a worktree we can read: its own folder */
   }
+  return own;
 }
 const h = privateHome();
 for (const f of ['known-stores.txt', 'public-denylist.txt']) {
