@@ -7,7 +7,7 @@ import type { ChannelAdapter, Inbound } from '../channels/types.ts';
 import { cleanLine } from '../core/hebrew.ts';
 import { J } from '../db/index.ts';
 import { audit, event, usage } from '../db/log.ts';
-import { internalRefusal } from '../ops/api.ts';
+import { internalRefusal } from '../ops/internal.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { setConsent } from '../owners/identity.ts';
 

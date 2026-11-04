@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
 import type { App } from '../app.ts';
 import type { Out, Req, Route } from '../web/server.ts';
 import { accountsLinks, ADMIN } from '../web/accounts.ts';
@@ -8,6 +7,7 @@ import { funnels } from './funnel.ts';
 import { demoLine, oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
 import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, sendTederDirect, setNext, type Kind } from './actions.ts';
 import { queueState } from '../jobs/queue.ts';
+import { internalRefusal } from './internal.ts';
 
 // The operator's dashboard, as data for accounts' /admin, where it is shown (docs/operator.md section 4). Toran's
 // own site shows Toran only; this is the work behind the dashboard: who to write to today, the conversations, the
@@ -19,31 +19,8 @@ import { queueState } from '../jobs/queue.ts';
 //
 // From this machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For, like /internal/lead.
 
-/** The caller is accounts (or Teder) on this machine: the shared token, a loopback socket, and not through Caddy. */
-export function local(app: App, r: Req): boolean {
-  const token = String(app.env.OF_INTERNAL_TOKEN || '').trim();
-  if (token.length < 32 || r.req.headers['x-forwarded-for']) return false;
-  if (!/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(r.req.socket.remoteAddress || '')) return false;
-  const got = Buffer.from(String(r.req.headers.authorization || ''));
-  const want = Buffer.from(`Bearer ${token}`);
-  return got.length === want.length && timingSafeEqual(got, want);
-}
-
-/**
- * Why an internal call from accounts is refused, as accounts' contracts say it (test/fixtures/contracts: setup.json,
- * toran-ops.json, workspaces-delete.json; Teder answers the same): 503 not_configured when OF_INTERNAL_TOKEN is not set
- * here, 403 forbidden when the call is not from this machine or came through Caddy, 401 bad_token when the bearer is
- * missing or wrong. Null when it may go on.
- */
-export function internalRefusal(app: App, r: Req): Out | null {
-  const token = String(app.env.OF_INTERNAL_TOKEN || '').trim();
-  if (token.length < 32) return { status: 503, json: { error: 'not_configured' } };
-  if (r.req.headers['x-forwarded-for'] || !/^(127.0.0.1|::1|::ffff:127.0.0.1)$/.test(r.req.socket.remoteAddress || '')) return { status: 403, json: { error: 'forbidden' } };
-  const got = Buffer.from(String(r.req.headers.authorization || ''));
-  const want = Buffer.from(`Bearer ${token}`);
-  if (got.length !== want.length || !timingSafeEqual(got, want)) return { status: 401, json: { error: 'bad_token' } };
-  return null;
-}
+/** The caller is accounts (or Teder) on this machine: src/ops/internal.ts, here for its importers. */
+export { internalRefusal };
 
 /** A lead's page, where the operator opens it: Toran's dashboard under accounts' /admin (web/server.ts, ADMIN). */
 const leadUrl = (app: App, id: number | string | null) => (id == null ? null : `${accountsLinks(app.env).home}${ADMIN}/lead/${id}`);
