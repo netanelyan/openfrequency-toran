@@ -1126,6 +1126,12 @@ accounts' own "לתשלום בוואטסאפ". A URL button to accounts' /setup 
 that Meta's webhook gives a pressed quick reply as `type: "button"` with the payload set on the message is from Meta's
 documentation; it has not been tried on our number.
 
+**Who, decided 2026-11-04** (the owner approved the wording, and the coordinator's two follow-ups): besides the owners'
+linked numbers, the number the workspace last paid from, the phone of its latest receipt marked paid. That number wrote
+to us about this very payment, and the operator confirmed the money came from it; a receipt still waiting or marked
+"לא הגיע" may be a mistake or a stranger, so its number gets nothing. "הפסק" covers every number, and is checked here,
+since only Toran hears it (pay_remind_stops); accounts' own opt-out still covers a linked number.
+
 **Never twice, never a storm:** accounts sends each reminder once (its billing_notices), and Toran sends the same
 workspace, kind, paid period and phone once (`already`); a phone gets at most 3 in 7 days, and nothing goes for an hour
 after Meta refuses one. Down, slow or refused is a log line on both sides, never a throw; accounts stops asking for the

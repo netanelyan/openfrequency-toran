@@ -255,6 +255,15 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
     await onMeta(s, false, false);
     return { 'a fourth in the week': fourth, 'within the hour after a refusal': await remindAsk(s, { phone: '972500000124' }) };
   },
+  [`${REMIND} :: stopped: the number wrote "הפסק" to us after a reminder, and not "התחל" since`]: async (s) => {
+    await onMeta(s);
+    await s.app.db.query("INSERT INTO pay_remind_stops (phone) VALUES ('972500000123') ON CONFLICT (phone) DO NOTHING");
+    try {
+      return { 'a number that wrote הפסק': await remindAsk(s) };
+    } finally {
+      await s.app.db.query('DELETE FROM pay_remind_stops');
+    }
+  },
   [`${REMIND} :: not sent: Meta refused it (payment_reminder not approved yet: 132001) or did not answer, or none of our numbers is on Meta`]: async (s) => {
     await onMeta(s, true);
     const refused = await remindAsk(s);

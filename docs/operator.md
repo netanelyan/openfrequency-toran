@@ -425,13 +425,15 @@ docs/setup.md, the daily job), and Toran sends it (`src/billing/remind.ts`). The
   paid day, `due` the first day after it, `last` on the last day of the grace (72 hours, or 14 days for a workspace
   still on the older terms; accounts' dates, Toran counts none). Never the week-before email's `soon7`, nor `stopped`.
   Each goes to every number accounts verified for the workspace's owners (`user_phones`; not a member's, not one whose
-  latest word is "הפסק"), and only in manual mode with `OF_PAYMENT_METHOD` set in accounts, so that the button's
-  answer has the transfer's details. A workspace with no linked number gets the email alone.
+  latest word there is an opt-out), and to the number the workspace last paid from (the phone of its latest receipt
+  you marked paid, which wrote to us about the payment), each number once, and only in manual mode with
+  `OF_PAYMENT_METHOD` set in accounts, so that the button's answer has the transfer's details. A workspace with
+  neither gets the email alone.
 - **The request.** `{ workspace, phone, kind, business, products, paidUntil, graceUntil, code }` from accounts on this
   machine, with `OF_INTERNAL_TOKEN`, never through Caddy, answered `200 { ok, sent, why }`: `why` is null when sent,
-  `already` (this workspace, kind, paid period and phone went before: a retry sends nothing), `held` (the limits below)
-  or `failed` (Meta refused or did not answer, or none of our numbers is on Meta). Refusals: `503 not_configured`,
-  `403 forbidden`, `401 bad_token`, `405 method_not_allowed`, `400 bad_reminder`.
+  `already` (this workspace, kind, paid period and phone went before: a retry sends nothing), `held` (the limits below),
+  `stopped` (the number wrote "הפסק", below) or `failed` (Meta refused or did not answer, or none of our numbers is on
+  Meta). Refusals: `503 not_configured`, `403 forbidden`, `401 bad_token`, `405 method_not_allowed`, `400 bad_reminder`.
 - **The message.** Always the approved template `payment_reminder` (UTILITY, he, docs/whatsapp-templates.md) from our
   number on Meta, the owner line's (`META_OWNER_PHONE_ID`, else the demo number or our one number): the products'
   names, the business, the last paid day and the grace's last day with its weekday, and one quick reply button,
@@ -440,6 +442,15 @@ docs/setup.md, the daily job), and Toran sends it (`src/billing/remind.ts`). The
   details, and a wait for the receipt.
 - **The limits.** The same reminder to the same phone once; at most 3 to a phone in any 7 days; none for 60 minutes
   after Meta refuses one (before the approval, every one is refused, code 132001).
+- **"הפסק".** Checked here, for every number: a number that got a reminder and writes "הפסק" (or "תפסיק", "תפסיקו",
+  "stop", the owner line's words) to our number, on the demo router or the owner line, is answered "רשמנו. מעכשיו לא
+  נשלח לכם כאן תזכורות לתשלום, והן ימשיכו להגיע במייל. כדי לקבל אותן כאן שוב, כותבים "התחל"." and kept in
+  `pay_remind_stops`; every reminder to it is `stopped` until it writes "התחל" ("רשמנו. נזכיר לכם כאן שוב לשלם על
+  החודש הבא, כמו במייל."). Accounts is told as well (`POST /internal/owner-phone/consent`), which counts for a number
+  linked there; the number a workspace paid from is often linked to nobody, and accounts never hears a word from it, so
+  Toran's row is what holds it. It is read right after a demo request and a payment code, before everything else; a
+  "הפסק" from a number that never got a reminder goes where it went before. The row stays while it stands, as the
+  record of what the person asked (not deleted with a workspace: it is the number's).
 - **What you see.** `journalctl -u toran | grep '\[remind\]'`: `[remind] WhatsApp to …<last four> (workspace <id>,
   <kind>): sent`, or why not. A refusal is loud, `[remind] !!! WhatsApp to …<last four> (workspace <id>, <kind>)
   FAILED: ... (payment_reminder is not approved in WhatsApp Manager ...)`, and you get one alert a day about it

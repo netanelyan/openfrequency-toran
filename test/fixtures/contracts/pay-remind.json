@@ -27,7 +27,7 @@
           "code": "PAY-AB2CD3"
         }
       },
-      "notes": "accounts' daily run sends one for each reminder it owes on WhatsApp: soon1 (the last paid day), due (the first day after it) and last (the last day of the grace), each once for each paid period (billing_notices), to each number in user_phones of the workspace's owners whose latest word is not an opt-out, beside the email, which goes first and whatever Toran answers. Only in manual mode with OF_PAYMENT_METHOD set, so that Toran can give the transfer's details. phone is international digits; products are teder and toran, one or both when both fall due the same day with the same dates; paidUntil and graceUntil are Israel days, accounts' own (graceLast: 72 hours, or 14 days for a workspace still on the older terms), and Toran counts no day itself; code is the workspace's payment code, the payload of the template's quick reply button, which comes back as a message with the code to the pay flow (pay.json) and is never shown. Toran sends the approved template payment_reminder from our number: {{1}} the products' names, {{2}} the business, {{3}} paidUntil, {{4}} graceUntil with its weekday. Idempotent: the same workspace, kind, paidUntil and phone again is already, never a second message. A phone gets at most 3 in 7 days; after Meta refuses one, none is tried for 60 minutes. accounts waits 20 seconds; a 200 of any of the four cases is a line in its log when not sent, and anything else (another status, no answer, no token configured) is a line in its log, and no more reminders are tried in that run: nothing is sent again later. The checks come in this order: 503, 403, 401, 405, 400.",
+      "notes": "accounts' daily run sends one for each reminder it owes on WhatsApp: soon1 (the last paid day), due (the first day after it) and last (the last day of the grace), each once for each paid period (billing_notices), to each number in user_phones of the workspace's owners whose latest word is not an opt-out and to the number the workspace last paid from (the phone of its latest receipt the operator marked paid), each number once, beside the email, which goes first and whatever Toran answers. Only in manual mode with OF_PAYMENT_METHOD set, so that Toran can give the transfer's details. phone is international digits; products are teder and toran, one or both when both fall due the same day with the same dates; paidUntil and graceUntil are Israel days, accounts' own (graceLast: 72 hours, or 14 days for a workspace still on the older terms), and Toran counts no day itself; code is the workspace's payment code, the payload of the template's quick reply button, which comes back as a message with the code to the pay flow (pay.json) and is never shown. Toran sends the approved template payment_reminder from our number: {{1}} the products' names, {{2}} the business, {{3}} paidUntil, {{4}} graceUntil with its weekday. Idempotent: the same workspace, kind, paidUntil and phone again is already, never a second message. A number that wrote \"הפסק\" to us after a reminder (and not \"התחל\" since) gets none: stopped, kept in Toran, whatever accounts knows of the number. A phone gets at most 3 in 7 days; after Meta refuses one, none is tried for 60 minutes. accounts waits 20 seconds; a 200 of any of the four cases is a line in its log when not sent, and anything else (another status, no answer, no token configured) is a line in its log, and no more reminders are tried in that run: nothing is sent again later. The checks come in this order: 503, 403, 401, 405, 400.",
       "answers": [
         {
           "case": "sent: Meta took the template",
@@ -54,6 +54,15 @@
             "ok": true,
             "sent": false,
             "why": "held"
+          }
+        },
+        {
+          "case": "stopped: the number wrote \"הפסק\" to us after a reminder, and not \"התחל\" since",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "sent": false,
+            "why": "stopped"
           }
         },
         {

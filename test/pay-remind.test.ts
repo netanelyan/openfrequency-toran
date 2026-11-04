@@ -264,6 +264,63 @@ test('the button comes back with the code unseen, and the pay flow answers it wi
   }
 });
 
+// ---- "הפסק"
+
+test('"הפסק" after a reminder stops them for that number, whoever it is, on our number and on the owner line; "התחל" starts them again; a "הפסק" from anyone else goes on as before', async () => {
+  // Accounts' consent route: the paid-from number is linked to nobody there (404 not_linked); every call kept.
+  const consent: any[] = [];
+  const accounts = http.createServer(async (req, res) => {
+    let raw = '';
+    for await (const c of req) raw += c;
+    if (req.url === '/internal/owner-phone/consent') consent.push(JSON.parse(raw));
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_linked' }));
+  });
+  await new Promise<void>((r) => accounts.listen(0, '127.0.0.1', r));
+  const OWNER_LINE = '666777888999000';
+  const { app, meta, logs } = await remindApp({ OF_INTERNAL_TOKEN: INTERNAL_TOKEN, OF_ACCOUNTS_INTERNAL: `http://127.0.0.1:${(accounts.address() as AddressInfo).port}`, DEMO_WA_NUMBER: '972500000900', META_OWNER_PHONE_ID: OWNER_LINE, TORAN_ASSISTANT_WA: '972500000901' });
+  let n = 0;
+  const write = (from: string, text: string, line: 'demo' | 'owner' = 'demo') =>
+    handleInbound(app, { channel: 'whatsapp', from, text, id: `wamid.in-${n++}`, at: Date.now(), account: line === 'demo' ? META_DEMO.META_DEMO_PHONE_ID : OWNER_LINE, to: line === 'demo' ? '972500000900' : '972500000901' });
+  const base = remind.readReminder(JSON.stringify(EXAMPLE))!;
+  try {
+    assert.equal((await remind.sendReminder(app, { ...base, kind: 'soon1' })).sent, true);
+    const r = await write(PHONE, 'הפסק');
+    assert.deepEqual([r.action, r.reply], ['pay_remind_stop', remind.STOP_SAID.stopped]);
+    assert.equal(meta.calls.at(-1)!.body.text.body, remind.STOP_SAID.stopped, 'one line back, in the chat');
+    assert.ok(await app.db.one('SELECT 1 FROM pay_remind_stops WHERE phone = $1', [PHONE]), 'kept here');
+    assert.deepEqual(consent, [{ phone: PHONE, optIn: false, source: 'whatsapp' }], 'accounts told');
+    // From now: stopped, whatever accounts sends, and nothing at Meta.
+    const calls = meta.calls.length;
+    assert.deepEqual(await remind.sendReminder(app, base), { sent: false, why: 'stopped' });
+    assert.deepEqual(await remind.sendReminder(app, { ...base, kind: 'last', workspace: 8 }), { sent: false, why: 'stopped' }, 'for any workspace');
+    assert.equal(meta.calls.length, calls);
+    assert.ok(logs.some((l) => /^\[remind\] WhatsApp to …0123 \(workspace 7, due\): not sent \(the number wrote "הפסק" on \d{4}-\d\d-\d\d\); accounts' email is not affected$/.test(l)), logs.join('\n'));
+    // "התחל" on the owner line: they start again, said back, and accounts told.
+    const back = await write(PHONE, 'התחל', 'owner');
+    assert.deepEqual([back.action, back.reply], ['pay_remind_start', remind.STOP_SAID.started]);
+    assert.equal(meta.calls.at(-1)!.path, `${OWNER_LINE}/messages`, 'answered from the line it came to');
+    assert.equal(await app.db.one('SELECT 1 FROM pay_remind_stops WHERE phone = $1', [PHONE]), null);
+    assert.deepEqual(consent.at(-1), { phone: PHONE, optIn: true, source: 'whatsapp' });
+    assert.equal((await remind.sendReminder(app, base)).sent, true);
+    // "הפסק" on the owner line works the same, and "תפסיקו" and "STOP" are the same word.
+    assert.equal((await write(PHONE, 'STOP', 'owner')).action, 'pay_remind_stop');
+    assert.equal((await write(PHONE, ' תפסיקו. ')).action, 'pay_remind_stop', 'said again: still stopped');
+    assert.equal((await remind.sendReminder(app, { ...base, kind: 'last' })).why, 'stopped');
+    // Someone who never got a reminder: their "הפסק" and "התחל" are not ours, and go on where they went before.
+    for (const word of ['הפסק', 'התחל']) assert.notEqual((await write(OTHER, word)).action, word === 'הפסק' ? 'pay_remind_stop' : 'pay_remind_start');
+    assert.equal(await app.db.one('SELECT 1 FROM pay_remind_stops WHERE phone = $1', [OTHER]), null);
+    // A sentence with the word in it is not the word.
+    assert.notEqual((await write(PHONE, 'אל תפסיק לשלוח')).action, 'pay_remind_start');
+    noFullNumber(logs);
+    const kept = JSON.stringify(await app.db.query("SELECT data FROM events WHERE kind IN ('pay_reminder_stop', 'pay_reminder_start')"));
+    assert.ok(!kept.includes(PHONE), 'the events keep the last four digits');
+  } finally {
+    await app.db.close();
+    await new Promise<void>((r) => accounts.close(() => r()));
+  }
+});
+
 // ---- POST /internal/pay/remind
 
 type S = Awaited<ReturnType<typeof serve>>;

@@ -12,9 +12,10 @@ after the person last wrote to us. Three sets:
 - **The operator's alert, \`operator_alert\`**, sent since 2026-11-03: each of Toran's and Teder's alerts, to the
   operator's own number (\`TORAN_ALERT_WA\`), from \`src/ops/alert.ts\`. It goes as this template always, inside the 24
   hours too, so it is never refused for the window.
-- **The payment reminder, \`payment_reminder\`**: accounts' reminders to pay for the new month, to a workspace owner's
-  number accounts verified, from \`src/billing/remind.ts\`. Not created in WhatsApp Manager yet: see its section.
 - **The owner line's five**, not sent since 2026-11-02, kept below as the record of what was approved.
+- **The payment reminder, \`payment_reminder\`**: accounts' reminders to pay for the new month, to a workspace owner's
+  number accounts verified and to the number a workspace last paid from, from \`src/billing/remind.ts\`. Not created in
+  WhatsApp Manager yet: see its section.
 
 This file is written from \`src/ops/alert.ts\`, \`src/billing/remind.ts\` and \`src/owners/templates.ts\`. Change the
 templates there, then run \`node scripts/templates-doc.ts\`; a test fails while the two differ.
@@ -40,7 +41,8 @@ ${alertTemplateDoc()}
 The owner, 2026-11-03: "add a reminder to pay for the new month, whatsapp, email and dashboard. A user has 72 hours to
 pay for a new month once their subscription has ended". openfrequency-accounts' daily run decides who gets one and when
 (its docs/setup.md, the daily job): the last paid day, the first day after it and the last day of the grace, to each
-number its owners verified, once each, beside the email. It hands each one to Toran on this machine
+number its owners verified and to the number the workspace last paid from (its latest receipt marked paid), once
+each, beside the email. It hands each one to Toran on this machine
 (\`POST /internal/pay/remind\`, accounts' docs/contracts/pay-remind.json), and Toran sends this template from our
 number.
 
@@ -56,7 +58,8 @@ still sent by its name, at Meta's Marketing rate.
 The button's payload is the workspace's payment code (\`PAY-XXXXXX\`), set on each message and never shown. Pressed, it
 comes back to our number with the code, and Toran answers with the amount and the transfer's details, then takes the
 transfer's picture as the receipt, as when the customer presses "לתשלום בוואטסאפ" in their account. A phone gets at
-most ${REMIND_WEEK_MAX} reminders in ${REMIND_WEEK_DAYS} days, and the same one never twice.
+most ${REMIND_WEEK_MAX} reminders in ${REMIND_WEEK_DAYS} days, and the same one never twice. A number that writes "הפסק" to us
+after a reminder gets none until it writes "התחל" (\`pay_remind_stops\`); the emails go on.
 
 ${reminderTemplateDoc()}
 ## The owner line (not sent since 2026-11-02)

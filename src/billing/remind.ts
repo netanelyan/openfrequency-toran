@@ -1,19 +1,24 @@
 import type { App } from '../app.ts';
 import type { Out, Req, Route } from '../web/server.ts';
+import type { RouteResult } from '../channels/demo.ts';
 import { lineNumber, metaLinesAdapter } from '../channels/lines.ts';
+import { reply } from '../channels/send.ts';
+import type { ChannelAdapter, Inbound } from '../channels/types.ts';
 import { cleanLine } from '../core/hebrew.ts';
 import { J } from '../db/index.ts';
-import { usage } from '../db/log.ts';
+import { audit, event, usage } from '../db/log.ts';
 import { internalRefusal } from '../ops/api.ts';
 import { alertOperator } from '../ops/alert.ts';
+import { setConsent } from '../owners/identity.ts';
 
 // POST /internal/pay/remind: openfrequency-accounts hands Toran a payment reminder for one owner's WhatsApp (the owner,
 // 2026-11-03: "add a reminder to pay for the new month, whatsapp, email and dashboard. A user has 72 hours to pay for a
 // new month once their subscription has ended"). Accounts' daily run (its src/web/daily.js) decides who and when, by its
 // own rule for the grace (72 hours, or 14 days for a workspace still on the older terms): the day before the paid month
 // ends (soon1), the first day after it (due) and the last day of the grace (last), to each number accounts verified for
-// the workspace's owners, once each, beside the email, which goes whatever happens here. The contract is accounts'
-// docs/contracts/pay-remind.json (test/fixtures/contracts here).
+// the workspace's owners and to the number the workspace last paid from (its latest receipt marked paid), once each,
+// beside the email, which goes whatever happens here. The contract is accounts' docs/contracts/pay-remind.json
+// (test/fixtures/contracts here).
 //
 // Toran sends it from our number on Meta's Cloud API (channels/lines.ts, the owner line's number, which is where
 // accounts' "לתשלום בוואטסאפ" leads), always the approved template payment_reminder below: outside the 24 hours after
@@ -28,12 +33,21 @@ import { alertOperator } from '../ops/alert.ts';
 //   200 { ok: true, sent: true,  why: null }        Meta took it
 //   200 { ok: true, sent: false, why: 'already' }   this reminder (workspace, kind, paid period) went to this phone before
 //   200 { ok: true, sent: false, why: 'held' }      the limits below hold it
+//   200 { ok: true, sent: false, why: 'stopped' }   the number wrote "הפסק" after a reminder (reminderWord, below)
 //   200 { ok: true, sent: false, why: 'failed' }    Meta refused it or did not answer, or none of our numbers is on Meta
 //
 // The limits, from the events of kind pay_reminder_wa (each try: { key, workspace, kind, phone, state, id | code,
 // error }): a reminder goes to a phone once (a retry is 'already'); a phone gets at most REMIND_WEEK_MAX in any
 // REMIND_WEEK_DAYS; and after Meta refuses one (before the approval, every one is refused) none is tried for
-// REMIND_HOLD_MINUTES. Every outcome but sent is a log line, a refusal a loud one ("[remind] !!! ..."), and the
+// REMIND_HOLD_MINUTES.
+//
+// "הפסק" stops them, here, for any number: a number that got a reminder and writes "הפסק" (or "תפסיק", "stop", as the
+// owner line reads it) to our number is kept in pay_remind_stops and gets none until it writes "התחל" (reminderWord,
+// read on our number before anything but a demo request and a payment code). Toran keeps it because Toran hears it:
+// accounts knows the number it paid from only by its receipts, and the owner line keeps "הפסק" only from an owner of a
+// Toran store. Accounts is told too (its POST /internal/owner-phone/consent), which counts for a number linked there.
+//
+// Every outcome but sent is a log line, a refusal a loud one ("[remind] !!! ..."), and the
 // operator hears of a refusal once a day (ops/alert.ts). Nothing here throws. A number in a log line is its last four
 // digits.
 
@@ -122,7 +136,7 @@ export const reminderFilled = (vars: string[]) => PAYMENT_REMINDER.body.replace(
 /** Any run of 8 digits or more (a phone, our number's Meta id) as its last four, for a log line. */
 const masked = (s: string) => s.replace(/\d{8,}/g, (d) => `…${d.slice(-4)}`);
 
-export type Outcome = { sent: boolean; why: 'already' | 'held' | 'failed' | null };
+export type Outcome = { sent: boolean; why: 'already' | 'held' | 'stopped' | 'failed' | null };
 
 /** Meta's code for a template it does not have in that language: not approved yet, rejected, or never created. */
 const NO_SUCH_TEMPLATE = 132001;
@@ -150,6 +164,11 @@ export async function sendReminder(app: App, r: Reminder): Promise<Outcome> {
   const same = `kind = 'pay_reminder_wa' AND data->>'key' = $1 AND data->>'phone' = $2 AND (data->>'state' = 'sent' OR (data->>'state' = 'sending' AND at > now() - interval '${SENDING_MINUTES} minutes'))`;
   let claim: { id: number | string } | null;
   try {
+    const stop = await app.db.one<{ stopped_at: Date | string }>('SELECT stopped_at FROM pay_remind_stops WHERE phone = $1', [r.phone]);
+    if (stop) {
+      app.log(`[remind] ${who}: not sent (the number wrote "הפסק" on ${new Date(stop.stopped_at).toISOString().slice(0, 10)}); accounts' email is not affected`);
+      return { sent: false, why: 'stopped' };
+    }
     if (await app.db.one(`SELECT 1 FROM events WHERE ${same}`, [key, r.phone])) {
       app.log(`[remind] ${who}: not sent (it went before); nothing to do`);
       return { sent: false, why: 'already' };
@@ -204,6 +223,47 @@ export async function reminderNotDelivered(app: App, s: { id: string; error: str
   await mark(app, r.id, { state: 'undelivered', error });
   app.log(`[remind] !!! WhatsApp to …${String(r.data?.phone || '').slice(-4)} (workspace ${r.data?.workspace}, ${r.data?.kind}) FAILED: Meta took the payment reminder and then could not deliver it (${error}); accounts' email is not affected`);
   return true;
+}
+
+/** A whole message that stops the reminders, or starts them again: the owner line's words (owners/line.ts STOP, START). */
+export const STOP_WORD = /^\s*(?:הפסק|תפסיק|תפסיקו|stop|unsubscribe)\s*[.!]*\s*$/i;
+export const START_WORD = /^\s*(?:התחל|תתחיל|תתחילו|start)\s*[.!]*\s*$/i;
+
+/** What Toran says back, in the reminders' own voice. */
+export const STOP_SAID = {
+  stopped: 'רשמנו. מעכשיו לא נשלח לכם כאן תזכורות לתשלום, והן ימשיכו להגיע במייל. כדי לקבל אותן כאן שוב, כותבים "התחל".',
+  started: 'רשמנו. נזכיר לכם כאן שוב לשלם על החודש הבא, כמו במייל.',
+};
+
+/**
+ * "הפסק" from a number that got a payment reminder: no more of them to it (pay_remind_stops), accounts told, one line
+ * back; "התחל" from a number that stopped them: they start again. Null for anything else, which goes on as before: a
+ * "הפסק" from a number that never got a reminder is the owner line's, or a store's, as it always was.
+ */
+export async function reminderWord(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult | null> {
+  const text = String(inbound.text || '');
+  const stop = STOP_WORD.test(text);
+  if (!stop && !START_WORD.test(text)) return null;
+  const phone = inbound.from;
+  const stopped = await app.db.one('SELECT 1 FROM pay_remind_stops WHERE phone = $1', [phone]);
+  if (stop) {
+    const got = stopped || (await app.db.one("SELECT 1 FROM events WHERE store_id IS NULL AND kind = 'pay_reminder_wa' AND data->>'phone' = $1 AND data->>'state' IN ('sent', 'undelivered') LIMIT 1", [phone]));
+    if (!got) return null;
+    await app.db.query('INSERT INTO pay_remind_stops (phone) VALUES ($1) ON CONFLICT (phone) DO UPDATE SET stopped_at = now()', [phone]);
+    // As the owner line keeps an owner's "הפסק" (owners/line.ts), for a number that is one.
+    await app.db.query('UPDATE owner_numbers SET opted_out_at = now() WHERE phone = $1', [phone]);
+  } else {
+    if (!stopped) return null;
+    await app.db.query('DELETE FROM pay_remind_stops WHERE phone = $1', [phone]);
+  }
+  // Accounts keeps the word for a number linked there; for any other it answers not_linked, and the row here is all.
+  const told = await setConsent(app, phone, !stop);
+  if (!told.ok && told.reason !== 'not_linked' && told.reason !== 'disabled') app.log(`[remind] WhatsApp …${phone.slice(-4)} wrote "${stop ? 'הפסק' : 'התחל'}": kept here, and accounts could not be told (${told.reason})`);
+  await event(app.db, null, stop ? 'pay_reminder_stop' : 'pay_reminder_start', { last4: phone.slice(-4) });
+  await audit(app.db, { actor: `wa:${phone}`, action: stop ? 'pay_reminder_stop' : 'pay_reminder_start', detail: { accounts: told.ok ? 'told' : told.reason } });
+  const line = stop ? STOP_SAID.stopped : STOP_SAID.started;
+  await reply(app, adapter, inbound, line, null, null);
+  return { action: stop ? 'pay_remind_stop' : 'pay_remind_start', reply: line };
 }
 
 export function remindRoutes(app: App): Route<Req>[] {
