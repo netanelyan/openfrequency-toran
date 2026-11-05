@@ -17,6 +17,7 @@ import { J } from '../db/index.ts';
 import { secretOf, verify } from '../owners/teder.ts';
 import { EVENT_TYPES } from '../owners/events.ts';
 import { opsRoutes } from '../ops/api.ts';
+import { storesRoutes } from '../ops/stores.ts';
 import { setupRoutes } from '../setup.ts';
 import { eraseRoutes } from '../erase.ts';
 import { changedRoutes } from '../billing/changed.ts';
@@ -68,6 +69,8 @@ import { errorPage } from './pages/basic.ts';
 //                              (channels/request.ts).
 //   GET  /internal/ops         the operator's dashboard as data, for accounts' /admin (ops/api.ts); its POSTs are
 //                              the dashboard's buttons. From this machine only, with OF_INTERNAL_TOKEN
+//   GET  /internal/stores      the stores Toran found (qualified), for Teder's operator page of leads (ops/stores.ts):
+//                              since=<ISO>&limit=<1-500>, in the order they changed. The same checks as /internal/ops
 //   GET  /internal/setup       a workspace's setup steps, for accounts' /setup checklist (src/setup.ts): the same
 //                              checks as /internal/ops
 //   POST /internal/workspaces/<id>/delete  a workspace deleted in accounts: everything of it here (src/erase.ts). From
@@ -308,6 +311,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       return { json: { ok: true } };
     }],
     ...opsRoutes(app),
+    ...storesRoutes(app),
     ...setupRoutes(app),
     ...eraseRoutes(app),
     ...changedRoutes(app),

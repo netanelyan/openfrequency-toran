@@ -10,7 +10,8 @@ import type { Score } from './score.ts';
 // new find with any key in common is the same lead, merged into it.
 //
 // Discovery never overwrites what the owner did: a lead past `new` keeps its status,
-// and only its signals and score are refreshed.
+// and only its signals and score are refreshed. The contacts and the social profiles
+// (signals.social) it already has are kept: a new find fills only what is missing.
 
 export type SavedLead = { id: number; created: boolean; mergedBy: string | null };
 
@@ -45,6 +46,8 @@ export async function saveLead(db: Db, d: Detection, s: Score, source: string, d
     whatsappNumbers: d.home.whatsappNumbers,
     whatsappWidget: d.home.whatsappWidget,
     phones: d.home.phones,
+    // The store's own profiles, only the networks found (full https URLs, signals.ts socialProfile).
+    social: Object.fromEntries(Object.entries(d.home.social || {}).filter(([, v]) => v)),
     shekel: d.home.shekel,
     storeLocator: d.home.storeLocator,
     franchiseOf: d.franchiseOf,
@@ -61,7 +64,10 @@ export async function saveLead(db: Db, d: Detection, s: Score, source: string, d
     const hit = await findByKeys(t, keys);
     if (hit) {
       await t.query(
-        `UPDATE stores SET signals = $2::jsonb, score = $3, score_breakdown = $4::jsonb, qualified = $5, reject_reason = $6, platform = $7,
+        // signals.social: the profiles already kept win (the right side of ||), a new find fills only a network missing.
+        `UPDATE stores SET signals = $2::jsonb || jsonb_build_object('social', COALESCE($2::jsonb->'social', '{}'::jsonb)
+             || CASE WHEN jsonb_typeof(signals->'social') = 'object' THEN jsonb_strip_nulls(signals->'social') ELSE '{}'::jsonb END),
+           score = $3, score_breakdown = $4::jsonb, qualified = $5, reject_reason = $6, platform = $7,
            contact_email = COALESCE(contact_email, $8), contact_whatsapp = COALESCE(contact_whatsapp, $9), contact_phone = COALESCE(contact_phone, $10), updated_at = now()
          WHERE id = $1`,
         [hit.store_id, J(signals), s.score, J(s.breakdown), s.qualified, s.reject, d.platform, d.email, d.whatsapp, d.phone],

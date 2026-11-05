@@ -11,6 +11,14 @@ import { hebrewRatio } from '../core/hebrew.ts';
 // whatsapp.com/send?phone=, whatsapp://, and the chat-widget plugins that inject the
 // button with JS) is recognised; Hebrew is a share of the visible letters, not "three
 // Hebrew letters somewhere".
+//
+// The store's own Instagram, TikTok and Facebook (socialProfile): the first real profile of each, from the links in
+// document order, then from anywhere else in the HTML (JSON-LD's sameAs, a theme's settings). A share button, a post,
+// a reel or a video, the Facebook pixel and its plugins are not a profile, and neither is the platform's own account
+// (a theme left pointing at Shopify's or Wix's) or a placeholder.
+
+/** A store's profiles, each a full https URL in one form: www.instagram.com/<handle>/, www.tiktok.com/@<handle>, www.facebook.com/<page>. */
+export type Social = { instagram: string | null; tiktok: string | null; facebook: string | null };
 
 export type HomeSignals = {
   title: string;
@@ -25,6 +33,7 @@ export type HomeSignals = {
   whatsappNumbers: string[];
   whatsappWidget: string | null; // the marker that showed a chat button without a number in the HTML
   phones: string[];
+  social: Social;
   shekel: boolean;
   storeLocator: boolean; // a "find a branch" page: a chain
   cartMarkers: boolean;
@@ -63,6 +72,98 @@ const POLICY_TEXT = /משלוח|החזר|החלפ|ביטול|תקנון|מדינ
 const LOCATOR = /איתור\s*סניפ|סניפי\s*הרשת|סניפים|הסניפים שלנו|רשימת\s*(?:ה)?חנויות|חנויות\s*הרשת|store\s*locator|find a store|our stores/i;
 const LOCATOR_HREF = /store-?locator|\/(?:pages\/)?(?:branches|stores|our-stores|snifim|סניפים)\/?$/i;
 const CART = /\/cart\b|add[-_ ]to[-_ ]cart|הוסף?\s*ל(?:סל|עגלה)|הוספה\s*ל(?:סל|עגלה)|לסל הקניות|checkout/i;
+
+// ---- social profiles
+const IG_HOST = /^(?:www\.|m\.)?(?:instagram\.com|instagr\.am)$/;
+const TT_HOST = /^(?:www\.|m\.)?tiktok\.com$/;
+// facebook.com and fb.com, bare or on www, m, web, mobile, touch or a language (he-il.facebook.com); never l. or lm.
+// (the outbound redirect), business. or developers.
+const FB_HOST = /^(?:(?:www|m|web|mobile|touch|[a-z]{2}-[a-z]{2})\.)?(?:facebook\.com|fb\.com)$/;
+/** Instagram's own paths: a post, a reel, the explore page, a share link, the login. */
+const IG_NOT = new Set(['p', 'reel', 'reels', 'tv', 'explore', 'stories', 'accounts', 'direct', 'about', 'legal', 'developer', 'web', 's', 'share', 'oauth', 'challenge', 'emails', 'api', 'static', 'privacy', 'terms', 'help', 'lite', 'download', 'nametag', 'session', 'embed', 'invites', 'topics', 'locations', 'tags']);
+/** Facebook's own paths: the share and like buttons, the pixel (/tr), the dialogs, a post, a photo, a group, an event. */
+const FB_NOT = new Set(['sharer', 'share', 'dialog', 'tr', 'plugins', 'login', 'logout', 'recover', 'home', 'events', 'groups', 'watch', 'hashtag', 'help', 'policies', 'privacy', 'legal', 'terms', 'business', 'ads', 'marketplace', 'gaming', 'photo', 'photos', 'video', 'videos', 'story', 'permalink', 'posts', 'search', 'settings', 'notes', 'messages', 'messenger', 'friends', 'reel', 'reels', 'stories', 'media', 'fundraisers', 'jobs', 'places', 'public', 'about', 'connect', 'fbml', 'careers', 'directory', 'lite', 'mobile', 'notifications', 'bookmarks', 'saved', 'live', 'me', 'ajax', 'security', 'campaign', 'offsite_event', 'l', 'pages', 'people', 'pg', 'profile', 'n', 'x', 'a']);
+/** A TikTok profile's path: @ and the handle. Everything else on tiktok.com is TikTok's own (a video, an embed, a tag). */
+const TT_HANDLE = /^@([a-z0-9._]{2,24})$/i;
+/**
+ * The platforms' and the networks' own accounts, which a theme links to until the store fills in its own, and a
+ * theme's placeholders: never the store's. Compared in lower case without dots, dashes and underscores.
+ */
+const NOT_THE_STORE = new Set(['shopify', 'shopifyplus', 'wix', 'wixcom', 'woocommerce', 'wordpress', 'wordpressdotcom', 'automattic', 'elementor', 'magento', 'adobe', 'bigcommerce', 'squarespace', 'godaddy', 'konimbo', 'cashcow', 'facebook', 'instagram', 'tiktok', 'meta', 'openfrequency', 'username', 'yourusername', 'yourname', 'yourpage', 'yourbrand', 'yourstore', 'yourshop', 'yourcompany', 'yourhandle', 'pagename', 'handle', 'account', 'page', 'profile', 'example', 'test']);
+/** A path segment with its %-escapes read; a malformed one is left as it is (and then refused as a name). */
+const decoded = (s: string) => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+const ownAccount = (name: string) => NOT_THE_STORE.has(name.toLowerCase().replace(/[._-]/g, ''));
+/** A file on the network's site (its embed script, an image), which a name with a dot in it can look like. */
+const FILE = /\.(?:js|php|html?|css|json|xml|png|jpe?g|gif|svg|webp|ico)$/i;
+/** Social URLs anywhere in the HTML: in a script's JSON (slashes escaped as \/ or /), JSON-LD's sameAs, an attribute. */
+const SOCIAL_IN_HTML = /(?:https?:)?\/\/(?:[a-z0-9-]+\.)?(?:instagram\.com|instagr\.am|tiktok\.com|facebook\.com|fb\.com)\/[^\s"'<>\\()]*/gi;
+
+/**
+ * The network and the profile's URL in its one form, when a link is a store's profile on Instagram, TikTok or
+ * Facebook; null for anything else (a share button, a post, the pixel, the platform's own account).
+ */
+export function socialProfile(href: string): { network: keyof Social; url: string } | null {
+  let u: URL;
+  try {
+    u = new URL(href.startsWith('//') ? `https:${href}` : href);
+  } catch {
+    return null;
+  }
+  if (!/^https?:$/.test(u.protocol)) return null;
+  const host = u.hostname.toLowerCase();
+  const parts = u.pathname.split('/').filter(Boolean);
+  if (IG_HOST.test(host)) {
+    // instagram.com/_u/<handle> is the app's deep link to a profile.
+    const p = parts[0] === '_u' ? parts.slice(1) : parts;
+    const h = p.length === 1 ? p[0].toLowerCase() : '';
+    if (!/^[a-z0-9._]{1,30}$/.test(h) || /^\.|\.$|\.\./.test(h) || FILE.test(h) || IG_NOT.has(h) || ownAccount(h)) return null;
+    return { network: 'instagram', url: `https://www.instagram.com/${h}/` };
+  }
+  if (TT_HOST.test(host)) {
+    const h = parts.length === 1 ? TT_HANDLE.exec(parts[0])?.[1]?.toLowerCase() : null;
+    if (!h || ownAccount(h)) return null;
+    return { network: 'tiktok', url: `https://www.tiktok.com/@${h}` };
+  }
+  if (FB_HOST.test(host)) {
+    const first = (parts[0] || '').toLowerCase();
+    // A profile with no name of its own, and the older forms of a Page with no name of its own.
+    if (first === 'profile.php' && parts.length === 1) {
+      const id = u.searchParams.get('id') || '';
+      return /^\d{5,20}$/.test(id) ? { network: 'facebook', url: `https://www.facebook.com/profile.php?id=${id}` } : null;
+    }
+    if ((first === 'pages' || first === 'people') && parts.length === 3 && /^\d{5,20}$/.test(parts[2]) && !ownAccount(decoded(parts[1]))) return { network: 'facebook', url: `https://www.facebook.com/${first}/${parts[1]}/${parts[2]}` };
+    // facebook.com/pg/<page>/... is an older address of the Page itself.
+    const page = first === 'pg' ? parts[1] : parts.length === 1 ? parts[0] : '';
+    if (!page) return null;
+    const name = decoded(page);
+    if (!/^[\p{L}\p{N}._-]{2,100}$/u.test(name) || FILE.test(name) || /^v\d+(\.\d+)?$/i.test(name) || FB_NOT.has(name.toLowerCase()) || ownAccount(name)) return null;
+    return { network: 'facebook', url: `https://www.facebook.com/${page}` };
+  }
+  return null;
+}
+
+/** The first real profile of each network, from the links in document order, then from the rest of the HTML. */
+function socialOf(hrefs: string[], html: string, base: URL): Social {
+  const found: Social = { instagram: null, tiktok: null, facebook: null };
+  const inHtml = [...html.replace(/\\\/|\\u002f/gi, '/').matchAll(SOCIAL_IN_HTML)].map((m) => m[0].replace(/&amp;/g, '&'));
+  for (const href of [...hrefs, ...inHtml]) {
+    let abs: string;
+    try {
+      abs = href.startsWith('//') ? `https:${href}` : new URL(href, base).toString();
+    } catch {
+      continue;
+    }
+    const p = socialProfile(abs);
+    if (p && !found[p.network]) found[p.network] = p.url;
+  }
+  return found;
+}
 
 export function readHome(html: string, pageUrl: string): HomeSignals {
   const $ = cheerio.load(html);
@@ -161,6 +262,7 @@ export function readHome(html: string, pageUrl: string): HomeSignals {
     whatsappNumbers: [...wa].slice(0, 5),
     whatsappWidget,
     phones: [...phones].slice(0, 5),
+    social: socialOf(hrefs.map((h) => h.href), html, base),
     shekel: /₪|ש"ח|ש״ח|\bILS\b|שקל/.test(text),
     storeLocator: LOCATOR.test(text) || hrefs.some(({ href, text: t }) => LOCATOR_HREF.test(href.split('?')[0]) || /^(?:סניפים|איתור סניף|הסניפים שלנו|חנויות הרשת)$/.test(t)),
     cartMarkers: CART.test(html),

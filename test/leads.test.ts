@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canonicalDomain, toIntl, cleanEmail, leadKeys } from '../src/core/urls.ts';
-import { parseRobots, robotsAllows } from '../src/core/http.ts';
+import { FetchError, parseRobots, robotsAllows } from '../src/core/http.ts';
 import { hebrewRatio, normalize, searchTerms } from '../src/core/hebrew.ts';
-import { readHome } from '../src/leads/signals.ts';
-import { detect } from '../src/leads/detect.ts';
+import { readHome, socialProfile } from '../src/leads/signals.ts';
+import { detect, type Detection } from '../src/leads/detect.ts';
+import { saveLead } from '../src/leads/store.ts';
 import { scoreStore, restrictedCategory, QUALIFY_AT } from '../src/leads/score.ts';
 import { discover } from '../src/leads/discover.ts';
 import { exampleFetcher, EXAMPLE_URL } from '../src/demo.ts';
@@ -108,4 +109,124 @@ test('discovery saves the store once, remembers it, and merges a second find by 
   assert.equal(again.stats.leads, 0);
   assert.equal(again.stats.skipped, 3);
   await app.db.close();
+});
+
+// ---- the store's own Instagram, TikTok and Facebook (signals.ts socialProfile), kept in signals.social
+
+const SOCIAL_HOME = `<!doctype html><html lang="he" dir="rtl"><head><title>כלי חרס של נורית</title>
+<script type="application/ld+json">{"@context":"https:\\/\\/schema.org","@type":"Organization","sameAs":["https:\\/\\/www.facebook.com\\/sharer\\/sharer.php?u=x","https:\\/\\/www.tiktok.com\\/@kli.cheres"]}</script>
+<script>fbq('init', '1'); var px = 'https://www.facebook.com/tr?id=1234567890&ev=PageView';</script>
+</head><body>
+<a href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fkli-cheres.example%2F">שתפו</a>
+<a href="https://www.facebook.com/share.php?u=https://kli-cheres.example/">שתפו</a>
+<a href="https://facebook.com/dialog/share?app_id=1&href=x">שתפו</a>
+<a href="https://www.facebook.com/plugins/page.php?href=x">עמוד</a>
+<a href="https://www.instagram.com/p/C0abc123xyz/">פוסט</a>
+<a href="https://www.instagram.com/reel/C0abc123xyz/">ריל</a>
+<a href="https://www.instagram.com/explore/tags/pottery/">תגית</a>
+<a href="https://www.tiktok.com/@kli.cheres.old/video/7300000000000000000">סרטון</a>
+<a href="https://www.instagram.com/shopify">Shopify</a>
+<a href="https://www.facebook.com/wix">Wix</a>
+<a href="https://instagram.com/Kli.Cheres?igshid=abc123">אינסטגרם</a>
+<a href="https://m.facebook.com/kli.cheres.pottery/">פייסבוק</a>
+<a href="https://www.instagram.com/second.account/">חשבון נוסף</a>
+<p>חנות כלי חרס בעבודת יד</p></body></html>`;
+
+test("the store's own Instagram, TikTok and Facebook: the first real profile of each, never a share link, a post or the platform's account", () => {
+  const s = readHome(SOCIAL_HOME, 'https://kli-cheres.example/');
+  assert.deepEqual(s.social, {
+    instagram: 'https://www.instagram.com/kli.cheres/', // the first profile link; the post, reel, explore and Shopify's before it are not
+    tiktok: 'https://www.tiktok.com/@kli.cheres', // a video's link is not a profile; JSON-LD's sameAs is, its slashes escaped
+    facebook: 'https://www.facebook.com/kli.cheres.pottery', // past the share buttons, the plugin, the pixel and Wix's own page
+  });
+  const none = readHome('<html><body><a href="https://twitter.com/kli">x</a><a href="/instagram">i</a></body></html>', 'https://kli-cheres.example/');
+  assert.deepEqual(none.social, { instagram: null, tiktok: null, facebook: null }, 'none: all null');
+  const theme = readHome('<html><body><script>var settings = {"social_instagram":"https:\\u002F\\u002Finstagram.com\\u002Fkli.cheres"};</script></body></html>', 'https://kli-cheres.example/');
+  assert.equal(theme.social.instagram, 'https://www.instagram.com/kli.cheres/', "a theme's settings, its slashes written \\u002F");
+});
+
+test('a profile link is one of the three forms; everything else is null', () => {
+  const cases: [string, string | null][] = [
+    ['https://fb.com/kli.cheres', 'https://www.facebook.com/kli.cheres'],
+    ['https://www.fb.com/kli.cheres/', 'https://www.facebook.com/kli.cheres'],
+    ['http://he-il.facebook.com/kli.cheres?ref=page_internal', 'https://www.facebook.com/kli.cheres'],
+    ['https://web.facebook.com/pg/kli.cheres/about/', 'https://www.facebook.com/kli.cheres'],
+    ['https://www.facebook.com/profile.php?id=100012345678', 'https://www.facebook.com/profile.php?id=100012345678'],
+    ['https://www.facebook.com/pages/Kli-Cheres/123456789012', 'https://www.facebook.com/pages/Kli-Cheres/123456789012'],
+    ['https://www.facebook.com/%D7%9B%D7%9C%D7%99-%D7%97%D7%A8%D7%A1', 'https://www.facebook.com/%D7%9B%D7%9C%D7%99-%D7%97%D7%A8%D7%A1'],
+    ['//www.instagram.com/kli.cheres', 'https://www.instagram.com/kli.cheres/'],
+    ['https://www.instagram.com/_u/kli.cheres', 'https://www.instagram.com/kli.cheres/'],
+    ['https://instagr.am/kli_cheres', 'https://www.instagram.com/kli_cheres/'],
+    ['https://m.tiktok.com/@Kli.Cheres?lang=he', 'https://www.tiktok.com/@kli.cheres'],
+    ['https://www.facebook.com/kli.cheres/posts/1234567890', null],
+    ['https://www.facebook.com/kli.cheres/photos/a.1/2/', null],
+    ['https://www.facebook.com/tr?id=1&ev=PageView', null],
+    ['https://www.facebook.com/2008/fbml', null],
+    ['https://www.facebook.com/sharer.php?u=x', null],
+    ['https://www.facebook.com/share/p/abc123/', null],
+    ['https://www.facebook.com/groups/1234567', null],
+    ['https://www.facebook.com/events/1234567', null],
+    ['https://www.facebook.com/watch/?v=1', null],
+    ['https://www.facebook.com/profile.php', null],
+    ['https://l.facebook.com/l.php?u=https://kli-cheres.example/', null],
+    ['https://business.facebook.com/kli.cheres', null],
+    ['https://www.facebook.com/', null],
+    ['https://www.facebook.com/WordPress', null],
+    ['https://www.facebook.com/woocommerce/', null],
+    ['https://www.instagram.com/wix/', null],
+    ['https://www.instagram.com/your_username', null],
+    ['https://www.instagram.com/stories/kli.cheres/123/', null],
+    ['https://www.instagram.com/accounts/login/', null],
+    ['https://www.instagram.com/embed.js', null],
+    ['https://www.tiktok.com/@shopify', null],
+    ['https://www.tiktok.com/video/7300000000000000000', null],
+    ['https://www.tiktok.com/embed/v2/7300000000000000000', null],
+    ['https://vm.tiktok.com/ZSabc123/', null],
+    ['https://twitter.com/kli', null],
+    ['https://kli-cheres.example/instagram', null],
+    ['mailto:hello@kli-cheres.example', null],
+    ['https://www.facebook.com/%E0%A4%A', null], // a malformed escape: refused, not thrown
+  ];
+  for (const [href, want] of cases) assert.equal(socialProfile(href)?.url ?? null, want, href);
+  assert.equal(socialProfile('https://fb.com/kli.cheres')?.network, 'facebook');
+});
+
+test("the contact page's profiles fill the networks the home page had none of", async () => {
+  const pages: Record<string, string> = {
+    'https://shop.example/': '<html lang="he"><body><p>חנות</p><a href="/pages/contact">צור קשר</a><a href="https://www.instagram.com/home.handle/">ig</a><a href="/cart">סל</a></body></html>',
+    'https://shop.example/pages/contact': '<html lang="he"><body><a href="mailto:hello@shop.example">מייל</a><a href="https://www.instagram.com/contact.handle/">ig</a><a href="https://www.facebook.com/shop.page">fb</a></body></html>',
+  };
+  const fetcher = async (url: string) => {
+    const text = pages[url];
+    if (text == null) throw new FetchError('not found', 'http', url, 404);
+    return { url, status: 200, contentType: 'text/html', text, headers: {} };
+  };
+  const d = await detect('shop.example', { fetcher });
+  assert.equal(d.email, 'hello@shop.example', 'the contact page was read');
+  assert.deepEqual(d.home.social, { instagram: 'https://www.instagram.com/home.handle/', tiktok: null, facebook: 'https://www.facebook.com/shop.page' });
+});
+
+test('signals.social is kept on the lead, and a later find fills a missing network but never replaces one already kept', async () => {
+  const app = await testApp();
+  try {
+    const found = (body: string) => {
+      const home = readHome(`<html lang="he"><body><p>חנות כלי חרס</p>${body}</body></html>`, 'https://kli-cheres.example/');
+      return { input: 'kli-cheres.example', url: 'https://kli-cheres.example/', domain: 'kli-cheres.example', name: 'כלי חרס של נורית', platform: 'shopify', platformEvidence: '', productCount: 14, productCountSource: 'products.json', productCountCapped: false, newestProductAt: null, catalogHebrewRatio: null, catalogSample: [], home, rendered: false, email: home.emails[0] || null, whatsapp: home.whatsappNumbers[0] || null, phone: null, franchiseOf: null, errors: [] } as Detection;
+    };
+    const score = { score: 80, breakdown: [], qualified: true, reject: null };
+    const mail = '<a href="mailto:hello@kli-cheres.example">m</a>';
+    const first = await saveLead(app.db, found(`<a href="https://www.instagram.com/kli.cheres/">ig</a>${mail}`), score, 'seed');
+    const social = async () => (await app.db.one<any>('SELECT signals FROM stores WHERE id = $1', [first.id])).signals.social;
+    assert.deepEqual(await social(), { instagram: 'https://www.instagram.com/kli.cheres/' }, 'only the networks found');
+    const again = await saveLead(app.db, found(`<a href="https://www.instagram.com/someone.else/">ig</a><a href="https://www.facebook.com/kli.cheres">fb</a>${mail}`), score, 'crawl');
+    assert.equal(again.id, first.id, 'the same lead');
+    assert.deepEqual(await social(), { instagram: 'https://www.instagram.com/kli.cheres/', facebook: 'https://www.facebook.com/kli.cheres' }, 'Instagram kept, Facebook filled in');
+    await saveLead(app.db, found(mail), score, 'crawl');
+    assert.deepEqual(await social(), { instagram: 'https://www.instagram.com/kli.cheres/', facebook: 'https://www.facebook.com/kli.cheres' }, 'a find with none takes nothing away');
+    const s = await app.db.one<any>('SELECT signals, contact_email FROM stores WHERE id = $1', [first.id]);
+    assert.equal(s.contact_email, 'hello@kli-cheres.example');
+    assert.equal(s.signals.productCount, 14, 'the rest of the signals refreshed as before');
+  } finally {
+    await app.db.close();
+  }
 });

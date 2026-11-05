@@ -1145,3 +1145,39 @@ number of ours; a reminder reported undelivered; the owner line's number; the bu
 pay flow's answer and its wait; the route's refusals and twenty bad bodies; the reminders deleted with the workspace.
 test/contracts.test.ts: every case of pay-remind.json asked of the real route. test/rules.test.ts: push() also from
 billing/remind.ts, always the template.
+
+## 2026-11-05: Teder's operator page of leads reads the stores Toran found, from GET /internal/stores
+
+**Decided:** Teder's operator page of leads reads the stores Toran found from Toran's `GET /internal/stores`
+(`src/ops/stores.ts`, docs/operator.md section 4), on this machine with the internal token, and keeps its own
+outreach on them in Teder. Toran gives every qualified store with its contacts, its own Instagram, TikTok and
+Facebook, its place in Toran's funnel and `optedOut`, paged by the moment it last changed.
+
+**The profiles** are read where the emails and the WhatsApp are, on the home page (and the contact page when it is
+read; `src/leads/signals.ts` `socialProfile`): the first real profile of each network, kept in `signals.social` as a
+full https URL in one form. A share button, a post, a video, the pixel and the platform's own account are not a
+profile. A later find fills a network that is missing and never replaces one kept, as the contacts are kept.
+
+**An opted-out store is given, flagged, not left out:** one that says no after Teder copied it has to reach Teder for
+Teder to drop it. The flags: the takedown asked or done, skipped, lost (with any reason; a "לא" to the first message is
+recorded so), and a customer's own store.
+
+**The moment is the database's:** `stores.changed_at` (migration 046), set by a trigger on every insert and update,
+and only when a field the route gives changes. `updated_at` could not be it: some paths set it and some do not (two
+write `contact_whatsapp` without it), and it also moves for things Teder is not given. A trigger, as migration 006
+keeps a message's channel, so that no UPDATE written later can forget it. The rows that share a page's last moment
+all come in that page, so none falls between two pages.
+
+**Alternatives:**
+- Teder finding the stores itself: a second crawler, and a second record of who said no.
+- Toran pushing each change to Teder: a second write path with its retries; a read when Teder wants one keeps one copy
+  here, as `GET /internal/demos` does the other way.
+- A line setting `updated_at` in each of the 35 UPDATEs of stores: the next one written forgets it.
+- Leaving opted-out stores out: Teder would keep the copy it already had and could write to them.
+
+**Tested** (test/stores.test.ts, test/leads.test.ts): no token, a wrong one, through Caddy and not configured refused
+as `/internal/ops` refuses them, and a bad since or limit; only qualified stores, each field as the contract has it,
+every opted-out flag, a pilot not opted out, reopen undoing lost; three pages and the last one's null next, a change by
+a path that never sets `updated_at` bringing a store back, a field Teder is not given not; rows at one moment kept in
+one page; the profiles in an HTML page among share links, posts, the pixel and Shopify's and Wix's accounts, 39
+links one by one, the contact page filling a network, and a later find never replacing a profile kept.

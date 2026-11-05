@@ -14,9 +14,10 @@ their outreach.
    openfrequency.co.il   ── POST /internal/lead {url, code, product?} ▶ Toran  (a demo request, by its REQ- code)
    Toran (the worker)    ── POST /internal/lead {url, whatsapp} ──▶ Teder  (a Teder request, once its number wrote)
    Toran (our number)    ── GET /internal/pay, POST /internal/pay/receipt ──▶ accounts  (paying over WhatsApp, section 7)
+   Teder (leads page)    ── GET /internal/stores ─────────▶ Toran     (the stores Toran found, section 4)
 ```
 
-All seven routes are local-only. They take `Authorization: Bearer <OF_INTERNAL_TOKEN>` (the same value in every
+All eight routes are local-only. They take `Authorization: Bearer <OF_INTERNAL_TOKEN>` (the same value in every
 service's `.env`, 32 characters or more), and they refuse a request that has `X-Forwarded-For`, or that comes from
 a socket that is not loopback. Every answer is JSON with `Cache-Control: no-store`.
 
@@ -223,6 +224,51 @@ what the action takes.
 
 It answers `200 { "ok": true, "message": "<Hebrew line for the operator>" }`, or `400 { "ok": false, "error":
 "<Hebrew line>" }` for an action the rules refuse (a second reminder, a link past its 24 hours).
+
+### `GET /internal/stores?since=<ISO moment>&limit=<1-500>`
+
+Teder's operator page of leads reads the stores Toran found from here (`src/ops/stores.ts`), and keeps its own outreach
+on them in Teder. The same checks as `/internal/ops` (503 `not_configured`, 403 `forbidden` from anywhere but this
+machine or through Caddy, 401 `bad_token`), then 400 `bad_since` (not an ISO moment with its zone) or `bad_limit` (not
+a whole number from 1). `since` is optional; `limit` is 200 when left out, and 500 at most (more is read as 500).
+
+```json
+{
+  "stores": [
+    { "id": 12, "domain": "kli-cheres.example", "url": "https://kli-cheres.example/", "name": "כלי חרס של נורית",
+      "platform": "shopify", "score": 82, "toranStatus": "page_ready",
+      "contact": { "email": "hello@kli-cheres.example", "whatsapp": "972500000401", "phone": null },
+      "social": { "instagram": "https://www.instagram.com/kli.cheres/", "tiktok": null, "facebook": "https://www.facebook.com/kli.cheres" },
+      "optedOut": false, "updatedAt": "2026-11-05T08:12:03.417902Z" }
+  ],
+  "next": "2026-11-05T08:12:03.417902Z"
+}
+```
+
+- Only qualified stores (a score of 55 or more and nothing that rejects it, `src/leads/score.ts`). A store scored
+  again below that, or deleted here (its workspace deleted in accounts), is no longer listed; a read with no `since`
+  shows every store there is.
+- `name` is the store's name as the dashboard shows it (the owner's edit, then the brand's, then the site's), null
+  when there is none. `platform` is null when it is not known. `toranStatus` is the lead's place in Toran's funnel: new,
+  page_ready, sent, opened, demo_started, pilot, paid or skipped (migration 001); pilot and paid are Toran's customers.
+- `contact.whatsapp` and `contact.phone` are international digits as stored (`src/core/urls.ts` `toIntl`): the
+  country code first, with no plus, spaces or dashes, 10 to 15 digits (`9725XXXXXXXX` for an Israeli mobile, `972`
+  and the number without its 0 for a landline); null when none was found.
+- `social` is the store's own profiles, found on its home page (or its contact page, when that is read): each a full
+  https URL in one form, `https://www.instagram.com/<handle>/`, `https://www.tiktok.com/@<handle>`,
+  `https://www.facebook.com/<page>` (or `profile.php?id=<id>`, `pages/<name>/<id>`, `people/<name>/<id>`). A share
+  button, a post, a reel, a video, the pixel and the platform's own account (Shopify's, Wix's, WooCommerce's) are not
+  profiles. A later scan of the store fills a network that is missing and never replaces one already kept.
+- `optedOut` is true when anything in Toran says not to write to the store: its owner asked to take its pitch page
+  down, or it was taken down; the operator skipped it; it was marked not interested, with any reason (a "לא" to the
+  first message reaches the operator's own WhatsApp and is recorded so); or it is a customer's own store, in a
+  workspace. Teder drops it. `src/ops/stores.ts` lists every flag, and the ones left out and why.
+- The order is `updatedAt`, the oldest first: the moment a field given here last changed (`stores.changed_at`, which
+  a trigger keeps on every insert and update, whatever path makes it: migration 046). `next` is the last row's
+  `updatedAt` when the page is full, else null; Teder asks again with `since=<next>` (rows after it, not at it). Give
+  `next` back as it is: it has microseconds, and a moment cut to milliseconds only gives a row or two again. The rows
+  that share the moment of a page's last row all come in that page, a little over `limit` if need be, so none falls
+  between two pages.
 
 ## 5. The setup checklist: `GET /internal/setup?workspace=<id>`
 

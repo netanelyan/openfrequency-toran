@@ -21,7 +21,8 @@ import { readHome, type HomeSignals } from './signals.ts';
 // A free Wix site at <user>.wixsite.com/<site> is detected from its path (urls.ts
 // siteBase): its sitemap is /<site>/store-products-sitemap.xml, the host's root a 404.
 //
-// A contact page is read only when the home page gave no email. A page that is almost
+// A contact page is read only when the home page gave no email; its profiles fill the networks the home page had
+// none of. A page that is almost
 // all JavaScript (under 300 characters of text) is rendered headless when a browser is
 // available, and the signals are read again from what it rendered.
 
@@ -204,7 +205,8 @@ export async function detect(input: string, { fetcher, render }: { fetcher: Fetc
     try {
       const c = await fetcher(signals.contactLinks[0], { accept: 'text/html' });
       const cs = readHome(c.text, c.url);
-      signals = { ...signals, emails: cs.emails, phones: signals.phones.length ? signals.phones : cs.phones, whatsappNumbers: signals.whatsappNumbers.length ? signals.whatsappNumbers : cs.whatsappNumbers };
+      const social = { instagram: signals.social.instagram || cs.social.instagram, tiktok: signals.social.tiktok || cs.social.tiktok, facebook: signals.social.facebook || cs.social.facebook };
+      signals = { ...signals, emails: cs.emails, phones: signals.phones.length ? signals.phones : cs.phones, whatsappNumbers: signals.whatsappNumbers.length ? signals.whatsappNumbers : cs.whatsappNumbers, social };
     } catch (e: any) {
       errors.push(`contact page: ${e.code || e.message}`);
     }
