@@ -65,14 +65,17 @@ const https = (v: unknown) => (typeof v === 'string' && v.startsWith('https://')
 
 export async function foundStores(app: App, { since = null, limit = STORES_LIMIT }: { since?: string | null; limit?: number } = {}): Promise<{ stores: FoundStore[]; next: string | null }> {
   const n = Math.max(1, Math.min(STORES_MAX, Math.floor(limit) || STORES_LIMIT));
+  // $1 goes in as text and Postgres reads it as a moment: typed timestamptz, the postgres driver made it a Date first,
+  // which threw on '-infinity' (every call without since answered 500 on the server, 2026-11-05) and would have cut
+  // a since's microseconds to milliseconds, so a full page could come back again and again. PGlite passes text either way.
   const rows = await app.db.query<any>(
     `SELECT id, domain, url, name, brand->>'name' AS brand_name, brand_override->>'name' AS override_name, platform, score, status,
             contact_email, contact_whatsapp, contact_phone,
             signals->'social'->>'instagram' AS instagram, signals->'social'->>'tiktok' AS tiktok, signals->'social'->>'facebook' AS facebook,
             ${OPTED_OUT} AS opted_out, to_char(changed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS changed
        FROM stores
-      WHERE qualified AND changed_at > $1::timestamptz
-        AND changed_at <= COALESCE((SELECT changed_at FROM stores WHERE qualified AND changed_at > $1::timestamptz ORDER BY changed_at OFFSET $2::int - 1 LIMIT 1), 'infinity'::timestamptz)
+      WHERE qualified AND changed_at > $1::text::timestamptz
+        AND changed_at <= COALESCE((SELECT changed_at FROM stores WHERE qualified AND changed_at > $1::text::timestamptz ORDER BY changed_at OFFSET $2::int - 1 LIMIT 1), 'infinity'::timestamptz)
       ORDER BY changed_at, id`,
     [since || '-infinity', n],
   );
