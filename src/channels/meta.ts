@@ -183,7 +183,7 @@ export type Status = { account: string; id: string; status: string; to: string |
 /**
  * A template's quick reply button whose payload is a payment code: the payment reminder's "לתשלום" (billing/remind.ts),
  * which carries the workspace's PAY-XXXXXX unseen. The code rides after the button's text, so the pay flow reads it
- * (pay.ts PAY_RE) as it reads the message accounts' "לתשלום בוואטסאפ" writes. Any other payload is left out, as before.
+ * (pay.ts PAY_RE) as it reads the message accounts' "לתשלום אוטומטי בוואטסאפ" writes. Any other payload is left out, as before.
  */
 const PAY_PAYLOAD = /^PAY-[A-Z0-9]{6}$/i;
 

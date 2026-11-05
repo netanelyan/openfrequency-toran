@@ -44,14 +44,16 @@ const RECEIPT_TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png'
 /** An upload of up to 5MB, base64 in JSON, to a service on the same machine. */
 const RECEIPT_TIMEOUT_MS = 20_000;
 
-const HELLO = 'כאן תורן, הבוט של OpenFrequency.';
+// The bot says it is a bot (docs/decisions.md, the owner: "the person has to know that he speaks with a bot"), without
+// the company's name: the owner, 2026-11-05, "No need to write OpenFrequency each time, in the payment message".
+const HELLO = 'כאן תורן, הבוט שלנו.';
 
 const msg = {
   due: (business: string, total: string, summary: string, payHow: string) =>
-    `${HELLO}\n\nלתשלום על המנוי של ${business}: ${total} ₪, כולל מע״מ.${summary ? `\n${summary}` : ''}\n\nפרטי ההעברה:\n${payHow}\n\nאחרי ההעברה שולחים לי כאן צילום מסך של האישור. נציג יבדוק שההעברה הגיעה, ותקבלו מייל כשהתשלום נרשם.`,
+    `${HELLO}\n\nלתשלום על המנוי של ${business}: ${total} ₪, כולל מע״מ.${summary ? `\n${summary}` : ''}\n\nפרטי ההעברה:\n${payHow}\n\nאחרי ההעברה שולחים לי כאן את האסמכתא, צילום מסך של האישור מהבנק. נציג יבדוק שההעברה הגיעה, ותקבלו מייל כשהתשלום נרשם.`,
   nothingDue: (business: string, paidThrough: string | null) => `${HELLO}\n\n${paidThrough ? `המנוי של ${business} משולם עד ${dayHe(paidThrough)}, אז כרגע אין מה לשלם.` : `על המנוי של ${business} אין כרגע מה לשלם.`}`,
   noDetails: (business: string, total: string) => `${HELLO}\n\nלתשלום על המנוי של ${business}: ${total} ₪, כולל מע״מ. את פרטי ההעברה ישלח לכם כאן נציג.`,
-  gone: 'הקישור הזה לתשלום כבר לא בתוקף. אפשר ללחוץ שוב על "לתשלום בוואטסאפ" בחשבון שלכם ב־accounts.openfrequency.co.il.',
+  gone: 'הקישור הזה לתשלום כבר לא בתוקף. אפשר ללחוץ שוב על "לתשלום אוטומטי בוואטסאפ" בחשבון שלכם ב־accounts.openfrequency.co.il.',
   down: 'לא הצלחתי לבדוק את הסכום כרגע. אפשר לשלוח את ההודעה שוב בעוד כמה דקות.',
   received: 'קיבלתי את האישור, תודה. נציג יבדוק שההעברה הגיעה, ותקבלו מייל כשהתשלום נרשם.',
   unreadable: 'לא הצלחתי לפתוח את הקובץ. אפשר לשלוח אותו שוב כתמונה?',

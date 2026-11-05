@@ -21,7 +21,7 @@ import { setConsent } from '../owners/identity.ts';
 // (test/fixtures/contracts here).
 //
 // Toran sends it from our number on Meta's Cloud API (channels/lines.ts, the owner line's number, which is where
-// accounts' "לתשלום בוואטסאפ" leads), always the approved template payment_reminder below: outside the 24 hours after
+// accounts' "לתשלום אוטומטי בוואטסאפ" leads), always the approved template payment_reminder below: outside the 24 hours after
 // the owner last wrote to us WhatsApp takes nothing else. Its one button, "לתשלום", is a quick reply whose payload is
 // the workspace's payment code (PAY-XXXXXX), never shown: pressed, it comes back as a message with the code
 // (channels/meta.ts textOf), which the pay flow answers with the amount and the transfer's details and a wait for the

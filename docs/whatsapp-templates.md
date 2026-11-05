@@ -71,7 +71,7 @@ still sent by its name, at Meta's Marketing rate.
 
 The button's payload is the workspace's payment code (`PAY-XXXXXX`), set on each message and never shown. Pressed, it
 comes back to our number with the code, and Toran answers with the amount and the transfer's details, then takes the
-transfer's picture as the receipt, as when the customer presses "לתשלום בוואטסאפ" in their account. A phone gets at
+transfer's picture as the receipt, as when the customer presses "לתשלום אוטומטי בוואטסאפ" in their account. A phone gets at
 most 3 reminders in 7 days, and the same one never twice. A number that writes "הפסק" to us
 after a reminder gets none until it writes "התחל" (`pay_remind_stops`); the emails go on.
 

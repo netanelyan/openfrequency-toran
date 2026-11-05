@@ -216,7 +216,7 @@ test("a reminder Meta took and then could not deliver: a loud line, kept as unde
   }
 });
 
-test('with its own owner line on Meta, the reminder goes from the owner line, where accounts\' "לתשלום בוואטסאפ" leads', async () => {
+test('with its own owner line on Meta, the reminder goes from the owner line, where accounts\' "לתשלום אוטומטי בוואטסאפ" leads', async () => {
   const { app, meta } = await remindApp({ META_OWNER_PHONE_ID: '666777888999000', TORAN_ASSISTANT_WA: '972500000901', DEMO_WA_NUMBER: '972500000900' });
   try {
     assert.equal((await remind.sendReminder(app, remind.readReminder(JSON.stringify(EXAMPLE))!)).sent, true);
@@ -252,7 +252,7 @@ test('the button comes back with the code unseen, and the pay flow answers it wi
     const r = await handleInbound(app, { ...m, at: Date.now() });
     assert.equal(r.action, 'pay');
     assert.deepEqual(asked, ['GET /internal/pay?code=PAY-AB2CD3']);
-    assert.match(r.reply!, /^כאן תורן, הבוט של OpenFrequency\.\n\nלתשלום על המנוי של Noa Shop: 932\.20 ₪, כולל מע״מ\.\nתדר, החבילה המלאה: 790 ₪ לחודש, לא כולל מע״מ\.\n\nפרטי ההעברה:\nהעברה בנקאית לחשבון 12-345-678901\n\nאחרי ההעברה שולחים לי כאן צילום מסך של האישור\./);
+    assert.match(r.reply!, /^כאן תורן, הבוט שלנו\.\n\nלתשלום על המנוי של Noa Shop: 932\.20 ₪, כולל מע״מ\.\nתדר, החבילה המלאה: 790 ₪ לחודש, לא כולל מע״מ\.\n\nפרטי ההעברה:\nהעברה בנקאית לחשבון 12-345-678901\n\nאחרי ההעברה שולחים לי כאן את האסמכתא, צילום מסך של האישור מהבנק\./);
     assert.ok(!r.reply!.includes('PAY-'), 'the answer shows no code');
     assert.equal(meta.calls.length, 1, 'one answer, inside the 24 hours the press opened');
     assert.equal(meta.calls[0].body.to, PHONE);

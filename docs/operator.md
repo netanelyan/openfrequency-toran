@@ -402,7 +402,7 @@ What keeps a customer's message from being lost or delayed without anyone knowin
 
 ## 7. Paying over WhatsApp: a PAY code and its receipt
 
-Payment is a bank transfer that you record in accounts' `/admin`. Accounts gives each customer a "לתשלום בוואטסאפ"
+Payment is a bank transfer that you record in accounts' `/admin`. Accounts gives each customer a "לתשלום אוטומטי בוואטסאפ"
 button that opens WhatsApp to our number with `היי, אני רוצה לשלם על המנוי של <business>. PAY-XXXXXX` filled in.
 Toran's part is `src/channels/pay.ts`, read on our number right after a `REQ-` code (docs/company.md, the table), and
 on a separate owner line before the assistant. Toran never records money and keeps no amount, no bank details and no
