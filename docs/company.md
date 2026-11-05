@@ -50,9 +50,12 @@ Handoffs land in the operator's inbox like any store's.
 2. **Copy it to the server and sync:**
    ```
    scp openfrequency-toran/private/support/openfrequency.json tiyul-vps:/opt/toran/private/support/
-   ssh tiyul-vps 'cd /opt/toran && sudo -u toran npm run company -- sync private/support/openfrequency.json'
+   ssh tiyul-vps 'cd /opt/toran && sudo -u toran env TORAN_HOME=/opt/toran/private TORAN_ENV=prod NODE_ENV=production /opt/node24/bin/node scripts/company.ts sync private/support/openfrequency.json'
    ```
-   It prints the store's id and its email address. `npm run company -- show` lists what it holds.
+   It prints the store's id and its email address. The same with `show` in place of `sync private/...` lists what it
+   holds. On the server, `npm run company` does not work: npm runs the system's Node 20 (`/usr/bin/node`), which
+   cannot load a .ts file (ERR_UNKNOWN_FILE_EXTENSION, 2026-11-05), and it would not have the service's TORAN_HOME;
+   the service itself runs `/opt/node24/bin/node` (deploy/toran.service). Locally `npm run company` is fine.
 3. **Email:** on `/admin/toran/lead/<id>`, "לחבר מייל" gives it `support@in.openfrequency.co.il`. Mail to that
    address is answered by the agent (docs/connecting-channels.md, step 1).
 4. **WhatsApp (optional):** `TORAN_SUPPORT_STORE=openfrequency.co.il` in `private/.env`, then restart. Two of our
