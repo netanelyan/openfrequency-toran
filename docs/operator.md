@@ -236,7 +236,8 @@ a whole number from 1). `since` is optional; `limit` is 200 when left out, and 5
 {
   "stores": [
     { "id": 12, "domain": "kli-cheres.example", "url": "https://kli-cheres.example/", "name": "כלי חרס של נורית",
-      "platform": "shopify", "score": 82, "toranStatus": "page_ready",
+      "platform": "shopify", "about": "קרמיקה שאני מעצבת ושורפת בסטודיו בקיבוץ. ספלים, קערות וכלי הגשה לשימוש יומיומי, כל אחד קצת אחר.",
+      "score": 82, "toranStatus": "page_ready",
       "contact": { "email": "hello@kli-cheres.example", "whatsapp": "972500000401", "phone": null },
       "social": { "instagram": "https://www.instagram.com/kli.cheres/", "tiktok": null, "facebook": "https://www.facebook.com/kli.cheres" },
       "optedOut": false, "updatedAt": "2026-11-05T08:12:03.417902Z" }
@@ -251,6 +252,13 @@ a whole number from 1). `since` is optional; `limit` is 200 when left out, and 5
 - `name` is the store's name as the dashboard shows it (the owner's edit, then the brand's, then the site's), null
   when there is none. `platform` is null when it is not known. `toranStatus` is the lead's place in Toran's funnel: new,
   page_ready, sent, opened, demo_started, pilot, paid or skipped (migration 001); pilot and paid are Toran's customers.
+- `about` is a line about the store in its own words (`src/leads/about.ts`): its home page's meta description (or
+  og:description when there is none), else its `<title>`, as the scan kept them. HTML entities are decoded, tags and
+  invisible characters dropped, whitespace collapsed, an em or en dash made a plain hyphen, and it is cut to 160
+  characters at a word, with "…" when cut. A title (or a description built like one, `<name> | <slogan>`) loses the
+  parts that are the store's name, its domain or a filler word ("Home", "דף הבית", "חנות"). null when nothing is
+  left, when it is the platform's text ("Powered by Shopify", "Just another WordPress site", "Shopify"), or when its
+  letters are mostly neither Hebrew nor Latin. Added on 2026-11-05; a reader that does not know it can leave it.
 - `contact.whatsapp` and `contact.phone` are international digits as stored (`src/core/urls.ts` `toIntl`): the
   country code first, with no plus, spaces or dashes, 10 to 15 digits (`9725XXXXXXXX` for an Israeli mobile, `972`
   and the number without its 0 for a landline); null when none was found.
@@ -264,11 +272,12 @@ a whole number from 1). `since` is optional; `limit` is 200 when left out, and 5
   first message reaches the operator's own WhatsApp and is recorded so); or it is a customer's own store, in a
   workspace. Teder drops it. `src/ops/stores.ts` lists every flag, and the ones left out and why.
 - The order is `updatedAt`, the oldest first: the moment a field given here last changed (`stores.changed_at`, which
-  a trigger keeps on every insert and update, whatever path makes it: migration 046). `next` is the last row's
-  `updatedAt` when the page is full, else null; Teder asks again with `since=<next>` (rows after it, not at it). Give
-  `next` back as it is: it has microseconds, and a moment cut to milliseconds only gives a row or two again. The rows
-  that share the moment of a page's last row all come in that page, a little over `limit` if need be, so none falls
-  between two pages.
+  a trigger keeps on every insert and update, whatever path makes it: migration 046; 047 adds the description and
+  the title `about` is made from, and moved every qualified store that has one, so a reader reads them again).
+  `next` is the last row's `updatedAt` when the page is full, else null; Teder asks again with `since=<next>` (rows
+  after it, not at it). Give `next` back as it is: it has microseconds, and a moment cut to milliseconds only gives a
+  row or two again. The rows that share the moment of a page's last row all come in that page, a little over `limit`
+  if need be, so none falls between two pages.
 
 ## 5. The setup checklist: `GET /internal/setup?workspace=<id>`
 

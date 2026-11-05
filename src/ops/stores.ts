@@ -1,6 +1,7 @@
 import type { App } from '../app.ts';
 import type { Out, Req, Route } from '../web/server.ts';
 import { displayName } from '../ingest/brand.ts';
+import { storeAbout } from '../leads/about.ts';
 import { internalRefusal } from './internal.ts';
 
 // The stores Toran found, for Teder's operator page of leads, which reads them here and keeps its own outreach on
@@ -12,10 +13,15 @@ import { internalRefusal } from './internal.ts';
 // internalRefusal: 503 not_configured, 403 forbidden, 401 bad_token); then 400 bad_since or bad_limit.
 //
 // Every qualified store (score 55 or more and nothing that rejects it, leads/score.ts) whose fields here changed after
-// `since`, in the order they changed (stores.changed_at, which the database keeps on every write: migration 046), the
-// oldest first. `next` is the last row's updatedAt when the page is full, else null: the caller asks again with
-// since=next, as it is (it has microseconds). The rows that changed at the very moment of the page's last row all come
-// in that page, a little over `limit` if need be, so that none falls between two pages.
+// `since`, in the order they changed (stores.changed_at, which the database keeps on every write: migrations 046 and
+// 047), the oldest first. `next` is the last row's updatedAt when the page is full, else null: the caller asks again
+// with since=next, as it is (it has microseconds). The rows that changed at the very moment of the page's last row all
+// come in that page, a little over `limit` if need be, so that none falls between two pages.
+//
+// about is a line about the store in its own words, from its home page's description, else its title, as detection
+// kept them (leads/about.ts storeAbout): cleaned, cut to 160 characters at a word, null when it says nothing the name
+// does not (only the name, "Home", the platform's default text) or is not Hebrew or English. Teder shows it on the
+// lead's card under the name.
 //
 // optedOut is true when anything in Toran says not to write to the store (Teder drops it):
 //   takedown_asked_at   its owner asked to take its pitch page down, from the page's footer or in a message from it
@@ -43,6 +49,7 @@ export type FoundStore = {
   url: string;
   name: string | null;
   platform: string | null;
+  about: string | null;
   score: number | null;
   toranStatus: string;
   contact: { email: string | null; whatsapp: string | null; phone: string | null };
@@ -71,6 +78,7 @@ export async function foundStores(app: App, { since = null, limit = STORES_LIMIT
   const rows = await app.db.query<any>(
     `SELECT id, domain, url, name, brand->>'name' AS brand_name, brand_override->>'name' AS override_name, platform, score, status,
             contact_email, contact_whatsapp, contact_phone,
+            signals->>'description' AS description, signals->>'title' AS title,
             signals->'social'->>'instagram' AS instagram, signals->'social'->>'tiktok' AS tiktok, signals->'social'->>'facebook' AS facebook,
             ${OPTED_OUT} AS opted_out, to_char(changed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS changed
        FROM stores
@@ -79,19 +87,23 @@ export async function foundStores(app: App, { since = null, limit = STORES_LIMIT
       ORDER BY changed_at, id`,
     [since || '-infinity', n],
   );
-  const stores = rows.map((r): FoundStore => ({
-    id: Number(r.id),
-    domain: r.domain,
-    url: r.url,
-    name: displayName(r.override_name, r.brand_name, r.name),
-    platform: r.platform && r.platform !== 'unknown' ? r.platform : null,
-    score: r.score == null ? null : Number(r.score),
-    toranStatus: r.status,
-    contact: { email: r.contact_email || null, whatsapp: r.contact_whatsapp || null, phone: r.contact_phone || null },
-    social: { instagram: https(r.instagram), tiktok: https(r.tiktok), facebook: https(r.facebook) },
-    optedOut: Boolean(r.opted_out),
-    updatedAt: r.changed,
-  }));
+  const stores = rows.map((r): FoundStore => {
+    const name = displayName(r.override_name, r.brand_name, r.name);
+    return {
+      id: Number(r.id),
+      domain: r.domain,
+      url: r.url,
+      name,
+      platform: r.platform && r.platform !== 'unknown' ? r.platform : null,
+      about: storeAbout({ description: r.description, title: r.title, names: [name, r.override_name, r.brand_name, r.name], domain: r.domain }),
+      score: r.score == null ? null : Number(r.score),
+      toranStatus: r.status,
+      contact: { email: r.contact_email || null, whatsapp: r.contact_whatsapp || null, phone: r.contact_phone || null },
+      social: { instagram: https(r.instagram), tiktok: https(r.tiktok), facebook: https(r.facebook) },
+      optedOut: Boolean(r.opted_out),
+      updatedAt: r.changed,
+    };
+  });
   return { stores, next: stores.length >= n ? stores[stores.length - 1].updatedAt : null };
 }
 
