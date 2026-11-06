@@ -33,3 +33,15 @@ A message a few days after delivery asking for a review; the review then shows o
 - Needs: the delivery event; a review link or a reply Toran collects; a way to publish it on the store (the
   platform's own reviews, or a review app the store uses) only with the customer's permission to show it.
 - Asked once per order, never again after a no or no answer.
+
+## TODO: A chat on the store's website
+
+Toran answering inside the store's own site, as a chat button in the corner, beside WhatsApp, Instagram, Messenger
+and email.
+
+- Why: many customers ask while they are on the product page, and won't open WhatsApp for it.
+- Needs: a small script the store adds (a Shopify app embed, a WooCommerce plugin, a Wix app, or one line of code);
+  the same agent and answers as the other channels; handing over to a person in the store's inbox; the chat
+  answers on the page, or moves to WhatsApp when the customer wants to continue there.
+- Nothing like it exists yet: Toran's only "widget" code today detects other chat widgets on a lead's site
+  (src/leads/signals.ts).
