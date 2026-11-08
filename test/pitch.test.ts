@@ -238,6 +238,25 @@ test('nobody approves a page by hand: it approves itself once nothing is missing
   }
 });
 
+test('on sale, the pitch page shows the plans with "להצטרף" to accounts\' sign-up; before, "לכתוב לתורן" as it was', () => {
+  const closed = pitchPage(fake(), { env: ENV });
+  assert.match(closed, /<span>לכתוב לתורן<\/span>/);
+  assert.doesNotMatch(closed, /signup\?p=toran/, 'no sign-up while Toran is not on sale');
+
+  const env = { ...ENV, TORAN_SIGNUP_OPEN: '1', OF_ACCOUNTS_URL: 'https://accounts.example' };
+  const one = pitchPage(fake(), { env });
+  assert.match(one, /<a class="join" href="https:\/\/accounts\.example\/signup\?p=toran&amp;plan=store" rel="noopener">להצטרף בחבילת חנות<\/a>/);
+  assert.match(one, /עד 300 שיחות בחודש/);
+  assert.doesNotMatch(one, /plan=big/, 'the big plan only when its price is set');
+  assert.match(one, /<span>לנסות אותו קודם בוואטסאפ<\/span>/, 'trying it first stays');
+
+  const two = pitchPage(fake({ offer: { ...fake().offer, bigMonthly: 1190 } }), { env });
+  assert.match(two, /<a class="join quiet" href="https:\/\/accounts\.example\/signup\?p=toran&amp;plan=big" rel="noopener">להצטרף בחבילת חנות גדולה<\/a>/);
+  assert.match(two, /עד 1,500 שיחות בחודש/);
+  assert.match(two, /<span class="num">1,190<\/span>/);
+  assert.doesNotMatch(two, / style="/);
+});
+
 test('every pitch page says what Toran connects to (the store platforms it reads), and promises nothing it does not do', async () => {
   const html = pitchPage(fake(), { env: ENV });
   assert.match(html, /<h2 id="links-h">מותאם לחנות שלכם\. החיבור לחנות עלינו\.<\/h2>/);
