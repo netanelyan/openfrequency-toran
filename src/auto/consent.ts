@@ -12,6 +12,9 @@ import { now } from '../core/clock.ts';
 //               consent plugins that keep it on the order, Wix's contact's subscription. Each row keeps its source and
 //               the platform's own time of it. "out" from the link in every marketing message (source 'link'):
 //               the page /u/<token> (web/unsubscribe.ts), or a mail client's one-click unsubscribe (RFC 8058).
+//   orders      payment and shipping (the order updates). Only from the page of message settings: "out" when the
+//               customer chooses to stop them there, "in" when they take it back (source 'link'). The owner, 2026-11-06:
+//               "the customer can turn them off".
 //   all         every automatic message. Only ever "out": the customer wrote "הסר" or "STOP" (or pressed the old
 //               templates' "הסר" button), on the channel they wrote on. Nothing says to write it any more; it still
 //               works.
@@ -27,7 +30,7 @@ import { now } from '../core/clock.ts';
 // every channel.
 
 export type Channel = 'whatsapp' | 'email';
-export type Consent = { channel: Channel; address: string; scope: 'marketing' | 'all'; state: 'in' | 'out'; source: string; at: string };
+export type Consent = { channel: Channel; address: string; scope: 'marketing' | 'orders' | 'all'; state: 'in' | 'out'; source: string; at: string };
 
 /** The address as consent is kept by: a phone in international digits, an email lower-cased. */
 export const addressOf = (channel: Channel, s: string | null | undefined): string | null => {
@@ -45,17 +48,23 @@ export async function recordConsent(db: Db, storeId: number, rows: Consent[]) {
   }
 }
 
-/** What this customer allows on this channel now: every automatic message (updates), and marketing too, with its source. */
-export async function consentOf(db: Db, storeId: number, channel: Channel, raw: string): Promise<{ updates: boolean; marketing: boolean; source: string | null }> {
+/**
+ * What this customer allows on this channel now: any automatic message at all (updates, false after "הסר"), the order
+ * updates (orders: payment and shipping, unless they stopped them on the page), and marketing too, with its source.
+ */
+export async function consentOf(db: Db, storeId: number, channel: Channel, raw: string): Promise<{ updates: boolean; orders: boolean; marketing: boolean; source: string | null }> {
   const address = addressOf(channel, raw);
-  if (!address) return { updates: false, marketing: false, source: null };
+  if (!address) return { updates: false, orders: false, marketing: false, source: null };
   const rows = await db.query<{ scope: string; state: string; source: string }>('SELECT scope, state, source FROM auto_consent WHERE store_id = $1 AND channel = $2 AND address = $3 ORDER BY at, id', [storeId, channel, address]);
   let out = false;
+  let ordersOut = false;
   let marketing: string | null = null;
   // The "yes" the latest link "out" put aside, while nothing came after it, for the link's undo.
   let aside: { source: string | null } | null = null;
   for (const r of rows) {
-    if (r.scope === 'all' && r.state === 'out') {
+    if (r.scope === 'orders') {
+      ordersOut = r.state === 'out';
+    } else if (r.scope === 'all' && r.state === 'out') {
       out = true;
       marketing = null;
       aside = null;
@@ -72,7 +81,7 @@ export async function consentOf(db: Db, storeId: number, channel: Channel, raw: 
       marketing = null;
     }
   }
-  return { updates: !out, marketing: !out && Boolean(marketing), source: marketing };
+  return { updates: !out, orders: !out && !ordersOut, marketing: !out && Boolean(marketing), source: marketing };
 }
 
 /** The source of a consent row from the link in a marketing message: its page, or a mail client's one-click. */
@@ -92,9 +101,9 @@ export async function stopToken(db: Db, storeId: number, channel: Channel, raw: 
   return r!.token;
 }
 
-export type StopLink = { token: string; store_id: number; channel: Channel; address: string; stopped_at: string | null };
+export type StopLink = { token: string; store_id: number; channel: Channel; address: string; stopped_at: string | null; orders_stopped_at?: string | null };
 
-export const linkOf = (db: Db, token: string) => (isToken(token) ? db.one<StopLink>('SELECT token, store_id, channel, address, stopped_at FROM auto_links WHERE token = $1', [token]) : Promise.resolve(null));
+export const linkOf = (db: Db, token: string) => (isToken(token) ? db.one<StopLink>('SELECT token, store_id, channel, address, stopped_at, orders_stopped_at FROM auto_links WHERE token = $1', [token]) : Promise.resolve(null));
 
 /** The link's address and the customer's other one, where one of this store's orders or checkouts carried both. */
 async function addressesOf(db: Db, l: StopLink): Promise<{ channel: Channel; address: string }[]> {
@@ -129,6 +138,28 @@ export async function undoFromLink(app: App, l: StopLink) {
   await recordConsent(app.db, l.store_id, who.map((w) => ({ ...w, scope: 'marketing' as const, state: 'in' as const, source: LINK, at })));
   await app.db.query('UPDATE auto_links SET stopped_at = NULL WHERE token = $1', [l.token]);
   await event(app.db, l.store_id, 'auto_link_undo', { channel: l.channel });
+}
+
+/** The customer stopped the store's order updates from the page: payment and shipping, on every channel of theirs. */
+export async function stopOrdersFromLink(app: App, l: StopLink) {
+  const at = new Date(now()).toISOString();
+  const who = await addressesOf(app.db, l);
+  await recordConsent(app.db, l.store_id, who.map((w) => ({ ...w, scope: 'orders' as const, state: 'out' as const, source: LINK, at })));
+  for (const w of who) {
+    const field = w.channel === 'whatsapp' ? 'phone' : 'email';
+    await app.db.query(`UPDATE auto_events SET status = 'skipped', why = 'opted_out' WHERE store_id = $1 AND status = 'waiting' AND kind IN ('payment', 'shipping') AND lower(contact->>'${field}') = $2`, [l.store_id, w.address]);
+  }
+  await app.db.query('UPDATE auto_links SET orders_stopped_at = $2 WHERE token = $1', [l.token, at]);
+  await event(app.db, l.store_id, 'auto_orders_stop', { channel: l.channel, channels: who.map((w) => w.channel) });
+}
+
+/** Their order updates back, on the same addresses. */
+export async function undoOrdersFromLink(app: App, l: StopLink) {
+  const at = new Date(now()).toISOString();
+  const who = await addressesOf(app.db, l);
+  await recordConsent(app.db, l.store_id, who.map((w) => ({ ...w, scope: 'orders' as const, state: 'in' as const, source: LINK, at })));
+  await app.db.query('UPDATE auto_links SET orders_stopped_at = NULL WHERE token = $1', [l.token]);
+  await event(app.db, l.store_id, 'auto_orders_undo', { channel: l.channel });
 }
 
 /** A whole message that asks to stop: "הסר", "הסירו אותי", "STOP", "unsubscribe". */

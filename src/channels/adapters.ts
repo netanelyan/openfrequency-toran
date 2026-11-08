@@ -5,11 +5,13 @@ import { waAccountAdapter, type WaAccount } from './meta.ts';
 import { dmAdapter, isSocial } from './social.ts';
 import { zernioAdapter } from './zernio.ts';
 import type { Channel, ChannelAdapter } from './types.ts';
+import { webAdapter } from './web.ts';
 
 /** The adapter a channel's messages go through here; a channel whose code is off has none (config.ts). */
 export function adapterFor(app: App, channel: Channel = 'whatsapp'): ChannelAdapter {
   if (channel === 'whatsapp') return app.wa;
   if (channel === 'email' && app.mail && enabledChannels(app.env).has('email')) return app.mail;
+  if (channel === 'web') return webAdapter();
   throw new Error(`no adapter for channel ${channel}`);
 }
 

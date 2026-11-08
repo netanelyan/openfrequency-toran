@@ -199,7 +199,8 @@ test('the messages: every template has words on both sides of each variable, the
       assert.match(mail, /\n\nכלי חרס\n\nלא רוצים לקבל מאיתנו תזכורות כאלה\? אפשר להפסיק כאן:\nhttps:\/\/toran\.test\/u\/t$/);
     } else {
       assert.equal(req.components.length, 1, `${key}: a body and nothing else`);
-      assert.doesNotMatch(mail, /להפסיק/, `${key}: an update on an order has no link to stop`);
+      // An update on an order: its own quiet line, to stop order updates (the owner, 2026-11-06).
+      assert.match(mail, /\n\nכלי חרס\n\nלא רוצים לקבל מאיתנו עדכונים על הזמנות\? אפשר להפסיק כאן:\nhttps:\/\/toran\.test\/u\/t$/, `${key}: the order updates' line`);
     }
   }
   assert.equal(templateRequest('cart', 'כלי חרס', 'https://toran.test').category, 'MARKETING');
@@ -419,7 +420,7 @@ test('opt-out: "הסר" on the store\'s WhatsApp is answered with one line, reco
     assert.equal(g.sent[0].type, 'text', 'the answer is an ordinary reply inside the 24 hours');
     const c = await app.db.one<any>("SELECT source, scope, state FROM auto_consent WHERE store_id = $1 AND address = $2", [id, CUSTOMER]);
     assert.deepEqual(c, { source: 'customer:הסר', scope: 'all', state: 'out' });
-    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', '050-000-0321'), { updates: false, marketing: false, source: null });
+    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', '050-000-0321'), { updates: false, orders: false, marketing: false, source: null });
     // A payment after it: not sent.
     setNow(T0 + 10 * MIN);
     await record(app, id, 'shopify', { happenings: [{ key: 'shopify:order:5009:paid', message: 'paid', ref: '#1049', at: iso(T0 + 10 * MIN), contact: { name: 'דנה', phone: CUSTOMER, email: null }, vars: { order: '#1049' } }], consent: [], placed: [] }, 'webhook');
@@ -627,7 +628,7 @@ test('the link in a reminder: a quiet page in the store\'s colour, stop and undo
       { channel: 'email', address: DANA, scope: 'marketing', state: 'out' },
       { channel: 'whatsapp', address: CUSTOMER, scope: 'marketing', state: 'out' },
     ]);
-    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, marketing: false, source: null });
+    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, orders: true, marketing: false, source: null });
     assert.equal((await consentOf(app.db, id, 'email', DANA)).marketing, false, 'on every channel');
     // Twice is once.
     await page(s, `/u/${token}`, form('do=stop'));
@@ -651,7 +652,7 @@ test('the link in a reminder: a quiet page in the store\'s colour, stop and undo
     html = await (await page(s, `/u/${token}?kept=1`)).text();
     assert.match(html, /בסדר, התזכורות מ(-)?<bdi>[^<]+<\/bdi> ימשיכו להגיע\./);
     assert.match(html, /כן, להפסיק/);
-    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, marketing: true, source: 'shopify:sms_marketing_consent' });
+    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, orders: true, marketing: true, source: 'shopify:sms_marketing_consent' });
     assert.equal((await consentOf(app.db, id, 'email', DANA)).marketing, true);
     // An undo never gives a "yes" nobody gave: a customer with no consent who stops and undoes still has none.
     const t2 = (await stopToken(app.db, id, 'whatsapp', OTHER))!;
@@ -701,7 +702,7 @@ test('email: a reminder ends with its link, List-Unsubscribe names the page and 
     const res = await fetch(`${s.base}/u/${token}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'List-Unsubscribe=One-Click' });
     assert.equal(res.status, 200);
     assert.match(await res.text(), /סגור, לא נשלח לכם יותר תזכורות/);
-    assert.deepEqual(await consentOf(app.db, id, 'email', DANA), { updates: true, marketing: false, source: null });
+    assert.deepEqual(await consentOf(app.db, id, 'email', DANA), { updates: true, orders: true, marketing: false, source: null });
     assert.equal((await app.db.one<any>("SELECT source FROM auto_consent WHERE store_id = $1 AND state = 'out'", [id])).source, 'link');
     assert.equal((await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'auto_link_stop'", [id])).data.via, 'one-click');
 
@@ -711,7 +712,8 @@ test('email: a reminder ends with its link, List-Unsubscribe names the page and 
     const paid = app.mail!.outbox!.filter((x) => !x.notice).at(-1)!;
     assert.match(String(paid.subject), /קיבלנו את התשלום/);
     assert.ok(!('List-Unsubscribe' in (paid.headers as any)) && !('List-Unsubscribe-Post' in (paid.headers as any)));
-    assert.doesNotMatch(paid.text, /\/u\//);
+    // Its own quiet link, to stop order updates (the owner, 2026-11-06), with no one-click: it is not marketing.
+    assert.match(paid.text, /עדכונים על הזמנות\? אפשר להפסיק כאן:\nhttps:\/\/toran\.test\/u\/[\w-]{24}\?about=orders$/);
   } finally {
     await done(s);
   }
@@ -754,6 +756,78 @@ test('a store whose old marketing templates ("כתבו הסר") Meta approved: t
     const last = g.sent.at(-1);
     assert.equal(last.template.name, MESSAGES.cart.template);
     assert.equal(last.template.components[1].sub_type, 'url');
+  } finally {
+    await done(s);
+  }
+});
+
+// ---- the order updates, a choice of their own (the owner, 2026-11-06, docs/todo.md: "the customer can turn them off")
+
+test('order updates: a second choice on the customer\'s page; stopped there, payment and shipping stop on every channel, the reminders go on, and they come back', async () => {
+  const { s, app, id, g } = await shopifyOn();
+  try {
+    const dana = { name: 'דנה', phone: CUSTOMER, email: DANA };
+    await record(app, id, 'shopify', { happenings: [], placed: [], consent: [yes('whatsapp', CUSTOMER), yes('email', DANA)] }, 'poll');
+    // An order of hers with both, so the page's stop reaches her email too.
+    await record(app, id, 'shopify', happening('paid', '6000', T0, dana), 'webhook');
+    const token = (await stopToken(app.db, id, 'whatsapp', CUSTOMER))!;
+
+    // From a reminder: the reminders lead, the order updates are the quieter second card.
+    let html = await (await page(s, `/u/${token}`)).text();
+    assert.match(html, /<h1>לא לקבל יותר תזכורות/);
+    assert.match(html, /<h2>עדכונים על הזמנות<\/h2>/);
+    assert.ok(html.includes(`<form method="post" action="/u/${token}"><input type="hidden" name="do" value="orders-off"><button class="grey" type="submit">להפסיק גם אותן</button></form>`));
+    // From an order update: they lead, as the one main button, and the form keeps where she came from.
+    html = await (await page(s, `/u/${token}?about=orders`)).text();
+    assert.ok(html.indexOf('stop-orders') < html.indexOf('לא לקבל יותר תזכורות'), 'the order updates first');
+    assert.match(html, /<h1>לא לקבל יותר עדכונים על הזמנות מ(-)?<bdi>[^<]+<\/bdi>\?<\/h1>/);
+    assert.ok(html.includes(`<form method="post" action="/u/${token}?about=orders"><input type="hidden" name="do" value="orders-off"><button class="stop-btn" type="submit">כן, להפסיק</button></form>`));
+
+    // Stop them: recorded as 'orders' out for the phone and the email; the reminders untouched.
+    let res = await page(s, `/u/${token}?about=orders`, form('do=orders-off'));
+    assert.deepEqual([res.status, res.headers.get('location')], [303, `/u/${token}?about=orders`]);
+    html = await (await page(s, `/u/${token}?about=orders`)).text();
+    assert.match(html, /סגור, לא נשלח לכם עדכונים על הזמנות מ(-)?<bdi>[^<]+<\/bdi>\./);
+    assert.match(html, /name="do" value="orders-on"><button class="grey" type="submit">בעצם כן, להחזיר אותם<\/button>/);
+    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, orders: false, marketing: true, source: 'shopify:sms_marketing_consent' });
+    assert.equal((await consentOf(app.db, id, 'email', DANA)).orders, false, 'on every channel');
+
+    // A payment is not sent on either channel; a cart reminder still is.
+    setNow(T0 + 61 * MIN);
+    await record(app, id, 'shopify', happening('paid', '6001', now(), dana), 'webhook');
+    await record(app, id, 'shopify', happening('cart', 'tok-o', T0, dana), 'webhook');
+    const before = g.sent.length;
+    await sendDue(app);
+    const rows = await events(app, id);
+    const paid = rows.find((e: any) => e.key.endsWith(':6001:paid'));
+    assert.equal(paid.status, 'skipped');
+    assert.equal(paid.why, 'whatsapp: order updates opted out; email: order updates opted out');
+    assert.deepEqual(g.sent.slice(before).map((b) => b.template.name), [MESSAGES.cart.template], 'the reminder goes');
+
+    // Back: the next payment goes again.
+    res = await page(s, `/u/${token}`, form('do=orders-on'));
+    assert.deepEqual([res.status, res.headers.get('location')], [303, `/u/${token}?orders=kept`]);
+    assert.match(await (await page(s, `/u/${token}?orders=kept`)).text(), /בסדר, העדכונים על הזמנות ימשיכו להגיע\./);
+    assert.equal((await consentOf(app.db, id, 'whatsapp', CUSTOMER)).orders, true);
+    // "הסר" keeps its meaning: everything, order updates too.
+    await handleInbound(app, { channel: 'whatsapp', from: CUSTOMER, text: 'הסר', id: 'wamid.in-o1', account: PHONE_ID, at: Date.now() });
+    assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: false, orders: false, marketing: false, source: null });
+  } finally {
+    await done(s);
+  }
+});
+
+test('order updates by email carry their own quiet line to the page, opened on the order updates', async () => {
+  const { s, app, id } = await shopifyOn({ whatsapp: false });
+  try {
+    const dana = { name: 'דנה', phone: null, email: DANA };
+    setNow(T0 + 61 * MIN);
+    await record(app, id, 'shopify', happening('paid', '7000', now(), dana), 'webhook');
+    await sendDue(app);
+    const mail = (app.mail as any).outbox.at(-1);
+    const token = (await stopToken(app.db, id, 'email', DANA))!;
+    assert.ok(mail.text.endsWith(`\n\nלא רוצים לקבל מאיתנו עדכונים על הזמנות? אפשר להפסיק כאן:\nhttps://toran.test/u/${token}?about=orders`), mail.text);
+    assert.equal(mail.headers?.['List-Unsubscribe'], undefined, 'no one-click for an order update: it is not marketing');
   } finally {
     await done(s);
   }

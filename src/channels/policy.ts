@@ -17,6 +17,9 @@ export const LIMITS: Record<Channel, ChannelLimits> = {
   // which is about 500 Hebrew letters.
   messenger: { maxChars: 2000, window: { hours: 24 }, outside: 'tag', humanAgent: { hours: 7 * 24 }, markup: 'plain', attachments: { inbound: true, outbound: false } },
   instagram: { maxChars: 1000, maxBytes: 1000, window: { hours: 24 }, outside: 'tag', humanAgent: { hours: 7 * 24 }, markup: 'plain', attachments: { inbound: true, outbound: false } },
+  // The chat on the store's website (channels/web.ts): no provider and no window, an answer is kept and read back by
+  // the visitor's chat whenever they open it again. Text only, both ways.
+  web: { maxChars: 2000, window: null, outside: null, markup: 'plain', attachments: { inbound: false, outbound: false } },
 };
 
 export type SendPlan = { ok: true; mode: 'response' | 'human_agent' } | { ok: false; reason: 'window_closed' };

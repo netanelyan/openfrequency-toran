@@ -19,10 +19,12 @@ export type ChannelState = 'off' | 'demo' | 'live';
 const STATES: ChannelState[] = ['off', 'demo', 'live'];
 
 /** The channels of a conversation the inbox shows (the others are the CLI, the pitch builder and the evals). */
-export const MESSAGING: Channel[] = ['whatsapp', 'email', 'messenger', 'instagram'];
+// The chat on the store's own site (web.ts) is one of them, though it is no channel of the website's list above: every
+// store can turn it on in Settings, with no setting of the server's and no provider.
+export const MESSAGING: Channel[] = ['whatsapp', 'email', 'messenger', 'instagram', 'web'];
 export const messagingSql = (column = 'channel') => `${column} IN (${MESSAGING.map((c) => `'${c}'`).join(', ')})`;
 
-export const CHANNEL_HE: Record<AnyChannel, string> = { whatsapp: 'וואטסאפ', email: 'מייל', messenger: 'מסנג׳ר', instagram: 'אינסטגרם' };
+export const CHANNEL_HE: Record<AnyChannel | 'web', string> = { whatsapp: 'וואטסאפ', email: 'מייל', messenger: 'מסנג׳ר', instagram: 'אינסטגרם', web: 'צ׳אט באתר' };
 
 /** The channels whose code is on here. */
 export function enabledChannels(env: Record<string, string | undefined>): Set<AnyChannel> {

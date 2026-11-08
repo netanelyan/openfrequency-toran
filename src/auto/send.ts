@@ -143,7 +143,7 @@ async function placed(app: App, storeId: number, platform: string, p: Placed, ca
     [storeId, keys, p.at, p.contact.phone || '-', p.contact.email || '-'],
   );
   // Kept while carts are on, so a checkout read after its order (a reading's order) is still known to be ordered.
-  if (cartOn) await app.db.query("INSERT INTO auto_events (store_id, key, kind, message, ref, contact, vars, source, happened_at, due_at, status, why) VALUES ($1, $2, 'order', 'placed', $3, $4::jsonb, $5::jsonb, 'platform', $6, $6, 'noted', NULL) ON CONFLICT (store_id, key) DO NOTHING", [storeId, `${platform}:placed:${p.id}`, p.id, J(p.contact), J({ checkout: p.checkout }), p.at]);
+  if (cartOn) await app.db.query("INSERT INTO auto_events (store_id, key, kind, message, ref, contact, vars, source, happened_at, due_at, status, why) VALUES ($1, $2, 'order', 'placed', $3, $4::jsonb, $5::jsonb, 'platform', $6, $6, 'noted', NULL) ON CONFLICT (store_id, key) DO NOTHING", [storeId, `${platform}:placed:${p.id}`, p.id, J(p.contact), J({ checkout: p.checkout, total: p.total ?? null, currency: p.currency ?? null }), p.at]);
 }
 
 async function happen(app: App, storeId: number, settings: Record<Kind, Setting>, h: Happening, source: string): Promise<boolean> {
@@ -268,6 +268,7 @@ async function deliver(app: App, ev: any): Promise<Outcome> {
     else if (!ok!.ok) no.push('whatsapp: template not approved');
     else if (!phone) no.push('whatsapp: no phone');
     else if (!allowed!.updates) no.push('whatsapp: opted out');
+    else if (!marketing && !allowed!.orders) no.push('whatsapp: order updates opted out');
     else if (marketing && !allowed!.marketing) no.push('whatsapp: no consent');
     else if (!complete(m, vars)) no.push('whatsapp: no link');
     else {
@@ -298,11 +299,13 @@ async function deliver(app: App, ev: any): Promise<Outcome> {
     else if (!to) no.push('email: no address');
     else if (bounced) no.push('email: suppressed');
     else if (!allowed!.updates) no.push('email: opted out');
+    else if (!marketing && !allowed!.orders) no.push('email: order updates opted out');
     else if (marketing && !allowed!.marketing) no.push('email: no consent');
     else if (m !== 'shipped' && !complete(m, vars)) no.push('email: no link');
     else {
-      const link = marketing ? stopUrl(app.env, (await stopToken(app.db, ev.store_id, 'email', to))!) : '';
-      const { subject, text } = emailText(m, store, vars, link);
+      // Every email has the quiet link to the customer's page: a reminder's to stop reminders, an order update's to stop order updates.
+      const link = stopUrl(app.env, (await stopToken(app.db, ev.store_id, 'email', to))!);
+      const { subject, text } = emailText(m, store, vars, marketing ? link : `${link}?about=orders`);
       const own = await ownAddress(app, ev.store_id);
       const replyTo = own?.replyTo || account.external_id;
       // The page's address first, then the reply; the one-click POST only where the page is on https (RFC 8058).

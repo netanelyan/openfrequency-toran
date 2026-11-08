@@ -1,4 +1,6 @@
 import type { App } from '../../app.ts';
+import { reviewsPanel, webChatPanel } from './webchat.ts';
+import { cartLine, cartReport, moneyHe, monthNow } from '../../auto/report.ts';
 import { now } from '../../core/clock.ts';
 import { audit } from '../../db/log.ts';
 import { J } from '../../db/index.ts';
@@ -34,6 +36,8 @@ import { setupStoreOf, storeState } from '../../setup.ts';
 // review queue, the follow-ups, a lead's page) are not theirs; server.ts sends a customer from them to these.
 
 const TZ = 'Asia/Jerusalem';
+/** Where the carts' months are: the automatic messages on Settings (pages/auto.ts). */
+const CARTS_HREF = '/settings#carts';
 const MONTH_START = `(date_trunc('month', now() AT TIME ZONE '${TZ}') AT TIME ZONE '${TZ}')`;
 /** The two weeks after a store's first channel is connected, when we read its conversations with the owner. */
 const FIRST_DAYS = 14;
@@ -129,6 +133,8 @@ async function today(app: App, r: DashReq) {
   const used = usage.reduce((a, u) => a + u.usage.thisMonth, 0);
   const cap = usage.reduce((a, u) => a + u.usage.cap, 0);
   const waitingAll = r.ctx.waiting?.chats ?? waiting.length;
+  // The cart reminders' month (auto/report.ts), a line of the month's numbers once one went out.
+  const carts = (await cartReport(app.db, stores.map((s) => s.id), 1)).find((m) => m.month === monthNow());
   const row = (c: any) => conversationRow({ ...c, store: many ? nameOf.get(c.store_id) : null });
   const weeks = firstWeeks(stores);
   const channels = await Promise.all(stores.map(async (s) => ({ s, rows: await channelsOf(app, s) })));
@@ -144,6 +150,7 @@ ${weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הר
     <a href="/plan"><span class="l">שיחות החודש</span><span class="cnt num ltr">${num(used)} / ${num(cap)}</span></a>
     <a href="/chats?state=alone"><span class="l">ענה לבד החודש</span><span class="cnt ${month?.alone ? 'ok' : 'zero'}">${month?.alone || 0}</span></a>
     <a href="/chats?state=fixed"><span class="l">תיקנתם החודש</span><span class="cnt ${month?.fixed ? 'sig' : 'zero'}">${month?.fixed || 0}</span></a>
+    ${carts ? `<a href="${CARTS_HREF}" title="${esc(cartLine(carts))}"><span class="l">עגלות שחזרו החודש</span><span class="cnt ${carts.recovered ? 'ok' : 'zero'}">${carts.recovered}${moneyHe(carts.money) ? ` · ${esc(moneyHe(carts.money))}` : ''}</span></a>` : ''}
   </div>
 </div>
 <section class="group"><header><h2>מחכות לכם</h2>${waitingAll > waiting.length ? `<a class="end small" href="/chats?state=waiting">כולן</a>` : ''}</header>
@@ -316,7 +323,7 @@ export async function customerSettings(app: App, r: DashReq) {
       ? `<h3 class="small mt16">המייל</h3><p class="small m0">מעבירים לכתובת <bdi class="ltr">${esc(mail.external_id)}</bdi> את המייל של החנות, למשל ב-Gmail: הגדרות, "העברה ו-POP/IMAP", "הוספת כתובת להעברה". Gmail שולח לשם קוד אישור, והוא מופיע אצלכם בשיחות. תורן עונה משם בשם החנות.</p>${r.ctx.readOnly ? '' : `<div class="row mt8">${postButton(r.ctx, `/lead/${s.id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>`}${await mailDomainPanel(app, r, s.id, mail.external_id)}`
       : `<h3 class="small mt16">המייל</h3><p class="small m0">החנות מקבלת כתובת משלה, <bdi class="ltr">${esc(address)}</bdi>, ומעבירה אליה את המייל שלה. תורן עונה משם בשם החנות, ומה שהוא לא יודע מגיע אליכם.</p>${r.ctx.readOnly ? '' : `<div class="row mt8">${postButton(r.ctx, `/lead/${s.id}/channels/email`, 'לחבר את המייל', { cls: 'btn sm primary', fields: { on: '1' } })}</div>`}`;
     return `<section class="panel" id="channels"><header><h2>הערוצים של ${esc(s.name)}</h2></header>${channelList(await channelsOf(app, s))}${email}
-  <p class="small muted mt12 m0">רוצים לעצור את תורן בערוץ אחד, או בכולם? ${support(app) ? `<a href="${esc(support(app)!)}" target="_blank" rel="noopener">כתבו לנו בוואטסאפ</a>` : 'כתבו לנו'}, ואנחנו מכבים אותו. בשיחה אחת עוצרים אותו מכאן, כשעונים בה בעצמכם.</p></section>${await autoPanel(app, r, s)}`;
+  <p class="small muted mt12 m0">רוצים לעצור את תורן בערוץ אחד, או בכולם? ${support(app) ? `<a href="${esc(support(app)!)}" target="_blank" rel="noopener">כתבו לנו בוואטסאפ</a>` : 'כתבו לנו'}, ואנחנו מכבים אותו. בשיחה אחת עוצרים אותו מכאן, כשעונים בה בעצמכם.</p></section>${await autoPanel(app, r, s)}${await webChatPanel(app, r, s)}${await reviewsPanel(app, r, s)}`;
   }));
   const body = `<div class="head"><h1>הגדרות</h1></div>
 <div class="cols">

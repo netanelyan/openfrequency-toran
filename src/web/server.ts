@@ -102,6 +102,9 @@ function refererPath(referer: string | undefined, origin: string | null, viaAdmi
 
 function send(req: IncomingMessage, res: ServerResponse, status: number, body: string | Buffer, type: string, extra: Record<string, string | string[]> = {}) {
   const headers: Record<string, string | string[]> = { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin', 'content-security-policy': DASH_CSP, 'x-frame-options': 'DENY', ...extra };
+  // A route clears a header it must not carry by giving it as '': the store's chat frame (widget.ts) is framed by the
+  // store's own site, so it drops X-Frame-Options and says who may frame it in its CSP instead.
+  for (const k of Object.keys(headers)) if (headers[k] === '') delete headers[k];
   // A page is rendered light; a reader whose of-theme cookie says dark gets it dark before it paints (theme.ts).
   if (/html/.test(type) && !Buffer.isBuffer(body)) body = themed(String(body ?? ''), themeOf(cookies(req)));
   const base = BASE.get(req);
@@ -151,6 +154,9 @@ const STATIC_FILES: Record<string, { file: string; type: string; cache: string }
   '/static/pitch.css': { file: path.join(STATIC, 'pitch.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.js': { file: path.join(STATIC, 'pitch.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/wa-connect.js': { file: path.join(STATIC, 'wa-connect.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
+  // The chat on a store's site and its reviews block (web/widget.ts): inside a frame on the store's page.
+  '/static/chat.css': { file: path.join(STATIC, 'chat.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
+  '/static/chat.js': { file: path.join(STATIC, 'chat.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   // The accessibility panel on every page (brand.ts a11yHead and a11yWidget).
   '/static/a11y.css': { file: path.join(STATIC, 'a11y.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/a11y.js': { file: path.join(STATIC, 'a11y.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },

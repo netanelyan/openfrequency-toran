@@ -72,7 +72,9 @@ async function inboxPane(app: App, r: DashReq, current = 0) {
   const op = r.scope.operator;
   const filter = op && ['handoff', 'miss'].includes(sp.get('filter') || '') ? sp.get('filter')! : '';
   const storeId = Number(sp.get('store') || 0);
-  const shown = MESSAGING.filter((ch) => enabledChannels(app.env).has(ch));
+  // The chat on the store's site (channels/web.ts) is a tab only where one of the stores here has it on.
+  const web = Boolean(await app.db.one(`SELECT 1 FROM channel_accounts a JOIN stores s ON s.id = a.store_id WHERE a.channel = 'web' AND ${storesOf(r.scope, 's')} LIMIT 1`));
+  const shown = MESSAGING.filter((ch) => (ch === 'web' ? web : enabledChannels(app.env).has(ch)));
   const channel = (shown as string[]).includes(sp.get('channel') || '') ? sp.get('channel')! : '';
   const q = String(sp.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 80);
   const state = (Object.keys(STATE_HE) as InboxState[]).includes(sp.get('state') as InboxState) ? (sp.get('state') as InboxState) : '';

@@ -1,47 +1,57 @@
 # Toran: to do
 
-Products the owner wants on Toran, for when we work on them (the owner, 2026-11-06). None is built yet. Each one
-writes to a customer first, so outside WhatsApp's 24-hour window each needs a template Meta approves
-(docs/whatsapp-templates.md), and each needs the store's own events (a cart, a shipment, a delivery) from its
-platform.
+Products the owner wants on Toran (the owner, 2026-11-06). The automatic messages themselves (an abandoned cart, a
+payment, a shipment, a review request) were built on 2026-10-25 (`src/auto/`, docs/customer.md "Automatic messages");
+on 2026-11-08 the owner asked to build what was still missing ("build the todo stuff we have for toran"), and this file
+says, for each, what is built and what is left.
 
-## TODO: Abandoned carts
+## Abandoned carts: built, with the money report
 
-A WhatsApp message to whoever left the cart without paying, with the link back to it.
+A WhatsApp message (or an email) to whoever left the cart without paying, with the link back to it: built 2026-10-25.
 
-- Why first: the easiest of the three to sell, because the owner can see money that came back (carts recovered,
-  and their total).
-- Needs: the store's abandoned-cart events and the cart link (Shopify, WooCommerce, Wix); the customer's WhatsApp
-  number and their consent to marketing messages (a cart reminder is advertising under the Israeli spam law, section
-  30A: consent, "פרסומת" where it applies, and a way to stop); a Marketing template; one reminder per cart, never on
-  Shabbat or a holiday, and stop the moment they pay.
-- Report: carts reminded, carts recovered, the money recovered, per month.
+- **Report (2026-11-08):** carts reminded, carts recovered and the money recovered, per month (`src/auto/report.ts`).
+  A cart counts as recovered when an order is placed within 7 days after its reminder went out, by the same checkout
+  or the same phone or email; the money is the order's total (else the cart's), each currency apart. On the store's
+  Settings (the automatic messages, "מה העגלות החזירו", three months) and on Today ("עגלות שחזרו החודש").
+- **Left:** nothing. It is the reminder's share, not proof the reminder caused the order, and the page says "חזרו
+  והזמינו".
 
-## TODO: Order updates
+## Order updates: built, and the customer can turn them off
 
-"ההזמנה נשלחה", the tracking link, and delivered, all on WhatsApp.
+"התשלום התקבל", "ההזמנה נשלחה" with the tracking link, and delivered: built 2026-10-25.
 
-- Why: it saves the store the "where's my order" questions.
-- Needs: the store's fulfilment and delivery events and the carrier's tracking link; Utility templates (one per
-  update); the customer can turn them off.
-- Builds on: order status Toran already looks up for the person who placed the order (src/orders.ts).
+- **Built 2026-11-08:** the customer's page of message settings (`/u/<token>`, `src/web/unsubscribe.ts`) has a second
+  choice, for the order updates, apart from the reminders; every order email ends with a quiet line to it
+  (`?about=orders`). Consent scope `orders`, migration 060.
+- **Left:** a WhatsApp order update has no button to that page. Adding one changes the Utility templates, which every
+  store would then submit to Meta again; until then a customer reaches it from a reminder's button or an email, or
+  writes "הסר" (which stops everything).
 
-## TODO: Reviews after delivery
+## Reviews after delivery: built, collected in the chat and shown on the store's site
 
-A message a few days after delivery asking for a review; the review then shows on the store's site.
+A message a few days after delivery asking for a review: built 2026-10-25, with the owner's review link.
 
-- Needs: the delivery event; a review link or a reply Toran collects; a way to publish it on the store (the
-  platform's own reviews, or a review app the store uses) only with the customer's permission to show it.
-- Asked once per order, never again after a no or no answer.
+- **Built 2026-11-08** (`src/reviews.ts`, migration 061): the customer may answer the request in the conversation with a
+  rating (1 to 5, or stars) and a sentence; Toran keeps it and asks once whether it may be shown with their first name;
+  the owner sees it on Settings ("ביקורות שנאספו") and approves or hides it; the store's site shows the approved ones
+  in a reviews block of the chat's script (`<div data-toran-reviews></div>`, `src/web/widget.ts`). Nothing is shown
+  without both the customer's yes and the owner's approval.
+- **Left:** publishing into the platform's own reviews. Shopify has no product reviews API of its own (its reviews
+  are apps'); WooCommerce has products/reviews in its REST API, which needs a Read/Write key and the order's product:
+  for later, when a store asks.
 
-## TODO: A chat on the store's website
+## A chat on the store's website: built
 
-Toran answering inside the store's own site, as a chat button in the corner, beside WhatsApp, Instagram, Messenger
-and email.
+Toran answering inside the store's own site, as a chat button in the corner (`src/channels/web.ts`,
+`src/web/widget.ts`, `src/web/static/chat.js`, `chat.css`, `src/web/pages/webchat.ts`).
 
-- Why: many customers ask while they are on the product page, and won't open WhatsApp for it.
-- Needs: a small script the store adds (a Shopify app embed, a WooCommerce plugin, a Wix app, or one line of code);
-  the same agent and answers as the other channels; handing over to a person in the store's inbox; the chat
-  answers on the page, or moves to WhatsApp when the customer wants to continue there.
-- Nothing like it exists yet: Toran's only "widget" code today detects other chat widgets on a lead's site
-  (src/leads/signals.ts).
+- **Built 2026-11-08:** the owner turns it on in Settings ("צ׳אט באתר") and adds one line, `<script
+  src="https://<toran>/w/<key>.js" async></script>`, with plain steps for Shopify (theme.liquid), WooCommerce (WPCode)
+  and Wix (Custom Code). The chat is a frame of ours that only the store's own domains may show (CSP frame-ancestors),
+  so a copied line shows nothing elsewhere. The channel `web`: the same agent and answers, the same inbox, counted in
+  the plan; the owner answers from the inbox and the visitor reads it; "להמשיך בוואטסאפ" when the store's own WhatsApp
+  number is connected. No cookies: the visitor is a random id in the frame's own storage. 12 messages a minute a
+  visitor, 60 an address.
+- **Left:** a Shopify theme app embed and a WordPress plugin (one click instead of pasting a line), and answers that
+  arrive at once instead of the frame asking every few seconds. Shopify's `theme.liquid` path is from Shopify's edit-code
+  article and the theme convention, not quoted from it: UNVERIFIED in their words.

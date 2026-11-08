@@ -16,6 +16,7 @@ import { socialRoutes } from './pages/social.ts';
 import { mailDomainRoutes } from './pages/mailDomain.ts';
 import { ordersRoutes } from './pages/orders.ts';
 import { autoRoutes } from './pages/auto.ts';
+import { webChatRoutes } from './pages/webchat.ts';
 import { startRoutes } from './pages/start.ts';
 import { queueRoutes } from './pages/queue.ts';
 
@@ -57,6 +58,7 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
     ...mailDomainRoutes(app),
     ...ordersRoutes(app),
     ...autoRoutes(app),
+    ...webChatRoutes(app),
     ...homeRoutes(app),
     ...leadRoutes(app),
     ...reviewRoutes(app),

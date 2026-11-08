@@ -37,6 +37,7 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 //   wa_token     a store's WhatsApp token, read again once a day: renewed before it ends, or the store asked to
 //                connect again (channels/waStore.ts checkToken)
 //   dm_inbound   a message to a store's Facebook Page (Messenger) or Instagram account: the same as wa_inbound
+//   web_inbound  a message in the chat on a store's own site (channels/web.ts): the same
 //   dm_echo      the owner answered from the Page's inbox or the Instagram app (channels/socialStore.ts)
 //   zernio_echo  the same, for a Page or account connected through Zernio, unless it is the Page's own instant reply
 //                (channels/zernio.ts)
@@ -95,6 +96,7 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
     case 'wa_token':
       return checkToken(app, Number(p.accountId));
     case 'dm_inbound':
+    case 'web_inbound':
       return handleInbound(app, p);
     case 'dm_echo':
       return socialEcho(app, p);

@@ -19,6 +19,8 @@ superadmin viewing a workspace as its customer sees the customer's dashboard, re
 | The first two weeks we go over the conversations with you | A banner on Today, and a line in the plan, until 14 days after the store's first channel was connected. |
 | No commitment; to stop, write to us; the conversations are kept 30 days so you can export them | `/plan#stop`: the website's text, a WhatsApp link to OpenFrequency (`TORAN_OWNER_WHATSAPP`), and `/export/conversations.csv` for the account's owner. |
 | The owner asks Toran about the store | `/assistant`, unchanged. |
+| A chat on the store's own site (docs/todo.md, the owner 2026-11-06) | Settings, "צ׳אט באתר": turned on by the owner, one line to add (with the steps for Shopify, WooCommerce and Wix), the sites it may show on. The channel `web` (`src/channels/web.ts`, `src/web/widget.ts`): the same agent, the same inbox ("צ׳אט באתר"), counted as a conversation like the others; the owner answers from the inbox and the visitor reads it. |
+| Reviews shown on the store's site (docs/todo.md) | A customer answering a review request with a rating is asked once whether it may be shown with their first name (`src/reviews.ts`); Settings, "ביקורות שנאספו", to show or hide each; the site shows the approved ones where it has `<div data-toran-reviews></div>`. |
 
 The price, the founding offer, the setup fee, the invoices and the people in the account are accounts'. Toran never
 quotes a price to a customer; `/plan` and `/settings` link to accounts for them.
@@ -68,6 +70,14 @@ state shows. Else email, from the store's email channel. The phone or the email 
   then "סגור, לא נשלח לכם יותר תזכורות מ<store>. עדכונים על הזמנות שעשיתם (תשלום ומשלוח) ימשיכו להגיע." with
   "בעצם כן, להמשיך לקבל" to undo it. It stops the cart and the review from that store on every channel (source
   `link`); payment and shipping go on. Nothing says "write הסר" any more
+- the order updates (payment and shipping) are a choice of their own on the same page (the owner, 2026-11-06: "the
+  customer can turn them off"): a second card, "עדכונים על הזמנות", with "להפסיק גם אותן", and its undo "בעצם כן,
+  להחזיר אותם". It is recorded as consent of scope `orders` (source `link`) for the customer's addresses, and payment
+  and shipping skip them with "order updates opted out". Every order email ends with its own quiet line, "לא רוצים
+  לקבל מאיתנו עדכונים על הזמנות? אפשר להפסיק כאן:", to `/u/<token>?about=orders`, where the order updates lead as the
+  page's one main button (no `List-Unsubscribe`: it is not marketing). On WhatsApp the order templates keep no button
+  (adding one means each store submits them again), so a customer reaches the page from a reminder's button or an
+  order email, or writes "הסר", which still stops everything
 - "הסר" or "STOP" from the customer still stops all of them, answered with one line; a message from the customer
   drops a cart reminder or a review request still waiting
 - one cart reminder a checkout, none once an order is placed, nothing twice for the same event, no cart or review to

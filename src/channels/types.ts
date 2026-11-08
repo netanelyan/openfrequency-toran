@@ -3,7 +3,7 @@
 // WhatsApp, Resend or the simulator for email, Meta for Messenger and Instagram). Everything past the adapter
 // (routing, the agent, the ledgers) sees only these types.
 
-export type Channel = 'whatsapp' | 'email' | 'messenger' | 'instagram';
+export type Channel = 'whatsapp' | 'email' | 'messenger' | 'instagram' | 'web'; // web: the chat on the store's own site (web.ts)
 
 /** One message a customer sent, as its adapter parsed it. */
 export type Inbound = {
