@@ -55,6 +55,8 @@ export function accountsLinks(env: Env = process.env) {
     login: (next: string) => `${base}/login?next=${encodeURIComponent(next)}`,
     logout: `${base}/logout`,
     admin: `${base}/admin`,
+    /** The new workspace's checklist, every product's steps on one page (src/setup.ts answers Toran's). */
+    setup: `${base}/setup`,
   };
 }
 

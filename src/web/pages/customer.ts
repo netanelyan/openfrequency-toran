@@ -27,7 +27,9 @@ import { ordersOn, ordersPanel } from './orders.ts';
 import { autoPanel } from './auto.ts';
 import { KIND_KEYS, KINDS } from '../../auto/messages.ts';
 import { settingsOf } from '../../auto/send.ts';
-import { setupStoreOf, storeState } from '../../setup.ts';
+import { activeChannels, setupOf, setupStoreOf, storeState, type Setup, type Step } from '../../setup.ts';
+import { waLink } from '../../pitch/page.ts';
+import { webAccountOf } from '../../channels/web.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -59,14 +61,21 @@ const support = (app: App) => {
 };
 const writeUs = (app: App, label = 'לכתוב לנו בוואטסאפ', cls = 'btn sm') => (support(app) ? `<a class="${cls}" href="${esc(support(app)!)}" target="_blank" rel="noopener">${icon('send')}${label}</a>` : '');
 
-/** Each of the website's four channels for one store: connected, on our demo number, or still to come. */
-async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel; on: boolean; text: string }[]> {
+/** The web chat: on the store's site (it opened there once), switched on and waiting for its line, or off. */
+async function webChatState(app: App, storeId: number): Promise<'on' | 'waiting' | 'off'> {
+  const a = await webAccountOf(app, storeId);
+  return a?.status !== 'active' ? 'off' : a.meta?.first_seen_at ? 'on' : 'waiting';
+}
+
+/** Each of the website's four channels for one store, and the web chat: connected, on our demo number, or still to come. */
+async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel | 'web'; on: boolean; text: string }[]> {
   const accounts = await app.db.query<{ channel: string; external_id: string }>("SELECT channel, external_id FROM channel_accounts WHERE store_id = $1 AND status = 'active'", [s.id]);
   const has = (ch: string) => accounts.find((a) => a.channel === ch);
   const code = enabledChannels(app.env);
   const states = await channelStates(app.db);
   const wa = await waAccountOf(app, s.id);
   const mail = has('email');
+  const web = await webChatState(app, s.id);
   return [
     { ch: 'whatsapp', on: wa?.status === 'active', text: waLine(wa && wa.status !== 'off' ? wa : null, s, storeConnectReady(app.env)) },
     { ch: 'email', on: Boolean(mail), text: mail ? `מחובר, <bdi class="ltr">${esc(mail.external_id)}</bdi>` : code.has('email') && app.mail ? 'לא מחובר. מחברים בהגדרות.' : 'בקרוב' },
@@ -74,10 +83,11 @@ async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel; on: boo
       const a = await socialAccountOf(app, s.id, ch);
       return { ch, on: a?.status === 'active', text: socialLine(a && a.status !== 'off' ? a : null, ch, s, dmConnectReady(app.env, ch)) };
     }))),
+    { ch: 'web' as const, on: web === 'on', text: web === 'on' ? 'פועל באתר' : web === 'waiting' ? 'מופעל, ומחכה שהשורה שלו תתווסף לאתר. <a href="/settings#webchat">לשורה</a>' : 'לא מופעל. <a href="/settings#webchat">מפעילים בהגדרות</a>' },
   ];
 }
 
-const channelList = (rows: { ch: AnyChannel; on: boolean; text: string }[]) => `<dl class="kv">${rows.map((c) => `<dt>${esc(CHANNEL_HE[c.ch])}</dt><dd>${c.text}</dd>`).join('')}</dl>`;
+const channelList = (rows: { ch: AnyChannel | 'web'; on: boolean; text: string }[]) => `<dl class="kv">${rows.map((c) => `<dt>${esc(CHANNEL_HE[c.ch])}</dt><dd>${c.text}</dd>`).join('')}</dl>`;
 
 /** The first two weeks, while they last: the date they end. */
 function firstWeeks(stores: Store[]): number | null {
@@ -116,6 +126,61 @@ async function readingBanner(app: App, r: DashReq): Promise<string> {
   return '';
 }
 
+// ---- What's left, and trying Toran (TORAN-READINESS.md P0-3, P0-5; the owner, 2026-11-08: ready for customers like
+// Teder, whose home says what is left until the account is live)
+
+const STEP_MARK: Record<Step['status'], [string, string]> = { done: ['check', 'ok'], working: ['clock', 'sig'], attention: ['alert', 'bad'], todo: ['plus', ''], soon: ['clock', 'ghost'] };
+
+/** The step to do now: the first required one not done, else the first optional one that can be done. */
+export function nextStep(st: Setup): Step | null {
+  const open = (x: Step) => x.status !== 'done' && x.status !== 'soon' && x.href;
+  return st.steps.find((x) => x.required && open(x)) || st.steps.find((x) => open(x) && x.status !== 'working') || null;
+}
+
+/**
+ * On Today until setup is done: how many steps are done, the next one as the one button, the rest folded, and the way
+ * to accounts' checklist. Nothing once every required step is done (the store answers on a channel).
+ */
+function setupBlock(app: App, st: Setup | null): string {
+  if (!st || st.ready) return '';
+  const counted = st.steps.filter((x) => x.status !== 'soon');
+  const done = counted.filter((x) => x.status === 'done').length;
+  const next = nextStep(st);
+  const rel = (href: string | null) => (href ? href.replace(/^https?:\/\/[^/]+/, '') || '/' : null);
+  const item = (x: Step) => {
+    const [ic, cls] = STEP_MARK[x.status];
+    const href = rel(x.href);
+    const label = `<span class="ico ${cls}">${icon(ic)}</span><span class="t"><b>${esc(x.title)}</b>${x.detail ? `<small>${esc(x.detail)}</small>` : ''}</span>`;
+    return href && x.status !== 'done' ? `<a href="${esc(href)}">${label}</a>` : `<div class="li">${label}</div>`;
+  };
+  return `<section class="panel setupbox" id="setup"><header><h2>מה נשאר</h2><span class="end chip">${done} מתוך ${counted.length}</span></header>
+  ${next ? `<p class="m0"><b>${esc(next.title)}</b>${next.detail ? `<br><span class="muted">${esc(next.detail)}</span>` : ''}</p><p class="mt12 m0"><a class="btn primary" href="${esc(rel(next.href)!)}">${icon('chev')}להמשיך</a></p>` : ''}
+  <details class="mt12"><summary class="small">כל הצעדים</summary><div class="list mt8">${st.steps.map(item).join('')}</div><p class="small muted mt8 m0">אותם צעדים, עם תדר אם יש לכם, בדף <a href="${esc(accountsLinks(app.env).setup)}">ההקמה בחשבון</a>.</p></details>
+</section>`;
+}
+
+/** Talking to their own Toran on our demo number, before customers do: tagged demo, never counted (channels/demo.ts). */
+function tryCard(app: App, s: Store, short = false): string {
+  if (!s.demo_code || s.taken_down_at) return '';
+  const href = waLink(app.env, s.demo_code, s.name);
+  if (!href) return '';
+  return `<section class="panel" id="try"><header><h2>לנסות את תורן</h2></header>
+  <p class="m0">${short ? 'שואלים שאלה של לקוח, ורואים מה תורן עונה.' : `שואלים את תורן בוואטסאפ מה שלקוח של ${esc(s.name)} היה שואל: מחיר, משלוח, אם משהו במלאי. הכפתור פותח שיחה עם הקוד של החנות כבר כתוב בה, ושולחים אותו כמו שהוא.`}</p>
+  <p class="mt12 m0"><a class="btn${short ? '' : ' primary'}" href="${esc(href)}" target="_blank" rel="noopener">${icon('chat')}לשאול את תורן בוואטסאפ</a></p>
+  <p class="small muted mt8 m0">השיחה מסומנת דמו ולא נספרת בחבילה.</p>
+</section>`;
+}
+
+/** In the first day after the site was read, until the owner opens what Toran knows: what was read, and the way there. */
+async function readRecap(app: App, s: Store): Promise<string> {
+  const seen = await app.db.one<{ ingested_at: string | null; knowledge_seen_at: string | null }>('SELECT ingested_at, knowledge_seen_at FROM stores WHERE id = $1', [s.id]);
+  if (!seen?.ingested_at || seen.knowledge_seen_at || now() - new Date(seen.ingested_at).getTime() > 86_400_000) return '';
+  const n = await app.db.one<{ products: number; policies: number }>('SELECT (SELECT COUNT(*)::int FROM products WHERE store_id = $1 AND gone_at IS NULL) AS products, (SELECT COUNT(*)::int FROM policies WHERE store_id = $1) AS policies', [s.id]);
+  const products = n?.products === 1 ? 'מוצר אחד' : `${num(n?.products || 0)} מוצרים`;
+  const policies = n?.policies === 1 ? 'דף מדיניות אחד' : `${num(n?.policies || 0)} דפי מדיניות`;
+  return `<div class="banner info">${icon('book')}<div><b>קראנו את האתר: ${products} ו${policies}</b><p>מכאן תורן עונה ללקוחות. כדאי לעבור על זה פעם אחת ולהוסיף תשובות משלכם.</p></div><a class="btn sm" href="/lead/${s.id}/knowledge">לבדוק מה תורן יודע</a></div>`;
+}
+
 // ---- Today
 
 async function today(app: App, r: DashReq) {
@@ -140,11 +205,20 @@ async function today(app: App, r: DashReq) {
   const channels = await Promise.all(stores.map(async (s) => ({ s, rows: await channelsOf(app, s) })));
   // A store's WhatsApp that has to be connected again (channels/waStore.ts) comes first: customers are waiting on it.
   const reconnect = (await Promise.all(stores.map(async (s) => waBanner(await waAccountOf(app, s.id), s.id)))).join('');
+  // Until the store answers customers on a channel, Today is about what is left (TORAN-READINESS.md P0-3): the next
+  // step, trying Toran, and none of the month's zeros.
+  const ws = Number(r.scope.workspaceId);
+  const setup = !r.scope.operator && ws > 0 ? await setupOf(app, ws) : null;
+  const live = (await Promise.all(stores.map((s) => activeChannels(app, s.id)))).some((x) => x.length > 0);
+  const recap = many ? '' : await readRecap(app, stores[0]);
+  const tried = setup?.steps.find((x) => x.key === 'test')?.status === 'done';
+  const notLive = `<div class="banner warn" id="not-live">${icon('alert')}<div><b>תורן עוד לא עונה ללקוחות</b><p>הוא מתחיל לענות מהרגע שמחברים ערוץ אחד: וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר. עד אז אפשר לנסות אותו בעצמכם.</p></div></div>`;
 
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(dayHe(now()))}${many ? '' : ` · ${esc(stores[0].name)}`}</p></div>
-${reading}${reconnect}
-${weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
-<div class="kpis">
+${reading}${reconnect}${recap}
+${live ? '' : `${notLive}${setupBlock(app, setup)}${many ? '' : tryCard(app, stores[0])}`}
+${live && weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
+${live ? `<div class="kpis">
   <a class="kpi lead" href="/chats?state=waiting"><span class="l">${waitingAll === 1 ? 'שאלה מחכה לכם' : 'שאלות מחכות לכם'}</span><span class="v">${waitingAll}</span><span class="s">${waitingAll ? 'מה שאין עליו תשובה באתר, ותורן העביר אליכם' : 'כל מה שנשאל קיבל תשובה'}</span></a>
   <div class="kpi side">
     <a href="/plan"><span class="l">שיחות החודש</span><span class="cnt num ltr">${num(used)} / ${num(cap)}</span></a>
@@ -159,6 +233,7 @@ ${weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הר
 <section class="group mt24"><header><h2>שיחות אחרונות</h2><a class="end small" href="/chats">כל השיחות</a></header>
   ${recent.length ? `<div class="list">${recent.map(row).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.</div>`}
 </section>
+${setup && !tried && !many ? tryCard(app, stores[0], true) : ''}` : ''}
 <section class="group mt24"><header><h2>הערוצים</h2><a class="end small" href="/settings#channels">הגדרות</a></header>
   ${channels.map(({ s, rows }) => `<div class="panel${many ? ' mt12' : ''}">${many ? `<header><h3>${esc(s.name)}</h3></header>` : ''}${channelList(rows)}</div>`).join('')}
 </section>
@@ -208,6 +283,7 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
       <h3 class="small mt16">משאיר לכם</h3><ul class="m0">${(orders ? LEAVES_YOU.map((x) => (x === LEAVES_YOU[2] ? ORDER_LEAVES : x)) : LEAVES_YOU).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       <p class="small muted mt12 m0">כשאין לו תשובה, הוא אומר ללקוח שהוא לא בטוח ושהעביר את השאלה לנציג, במקום לנחש, והשאלה מגיעה אליכם ל<a href="/chats?state=waiting">שיחות</a>.</p>
     </section>
+    ${r.scope.operator ? '' : tryCard(app, s, true)}
     <section class="panel" id="bot-name"><header><h2>השם של הבוט</h2></header>
       <p class="small muted m0">ככה הוא פותח כל שיחה, כדי שהלקוח ידע שעונה לו בוט: <q>${esc(botLine('first', botName(s), s.name))}</q>. כשאתם עונים בעצמכם, הלקוח מקבל לפני ההודעה שלכם: <q>${esc(personLine(s.name))}</q></p>
       ${ro ? '' : `<form class="mt12" method="post" action="/lead/${id}/bot-name">${csrfField(r.ctx)}<label class="f">השם<small>עד ${NAME_MAX} תווים. משאירים ריק, והוא פשוט הבוט של ${esc(s.name)}.</small><input type="text" name="agent_name" value="${esc(s.agent_name || '')}" maxlength="${NAME_MAX}" dir="auto"></label><div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div></form>`}

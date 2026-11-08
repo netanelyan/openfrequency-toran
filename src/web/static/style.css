@@ -927,3 +927,7 @@ code.snippet { flex: 1 1 280px; min-width: 0; padding: 10px 12px; border-radius:
 ul.reviews { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 li.review { padding: 12px 14px; border-radius: var(--r-m); background: var(--inset); box-shadow: inset 0 0 0 1px var(--line); }
 li.review .stars { color: var(--warn); letter-spacing: 1px; font-weight: 600; }
+
+/* Today's "מה נשאר" (pages/customer.ts setupBlock): a step that is done is a row, not a link, laid out like the links. */
+.list .li { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.setupbox details > summary { cursor: pointer; }
