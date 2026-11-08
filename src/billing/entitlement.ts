@@ -1,6 +1,7 @@
 import type { Db } from '../db/index.ts';
 import { J } from '../db/index.ts';
 import { markServiceResumed, markServiceStopped } from '../jobs/retention.ts';
+import { israelDate } from '../core/clock.ts';
 
 // Whether a workspace has paid for Toran: openfrequency-accounts owns subscriptions, Toran asks (Teder's
 // src/billing/entitlement.js, ported).
@@ -43,7 +44,7 @@ const MIN_TOKEN = 32;
 type Env = Record<string, string | undefined>;
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; checkedAt: string; changedAt?: string };
-export type View = { workspace: number; allowed: boolean; known: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; checkedAt: string | null; source: 'fresh' | 'cache' | 'stale' | 'unknown' };
+export type View = { workspace: number; allowed: boolean; known: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; checkedAt: string | null; source: 'fresh' | 'cache' | 'stale' | 'unknown' };
 
 const keyOf = (workspaceId: number) => `entitlement:${workspaceId}`;
 
@@ -86,7 +87,7 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
 
   const view = (workspace: number, k: Kept | null, source: View['source'], t: number): View => {
     const fresh = Boolean(k && t - Date.parse(k.checkedAt) < STALE_MS);
-    return { workspace, allowed: Boolean(fresh && k!.allowed === true), known: fresh, access: k?.access ?? null, paidThrough: k?.paidThrough ?? null, cancelAt: k?.cancelAt ?? null, checkedAt: k?.checkedAt ?? null, source: k ? source : 'unknown' };
+    return { workspace, allowed: Boolean(fresh && k!.allowed === true), known: fresh, access: k?.access ?? null, paidThrough: k?.paidThrough ?? null, cancelAt: k?.cancelAt ?? null, graceUntil: k?.graceUntil ?? null, checkedAt: k?.checkedAt ?? null, source: k ? source : 'unknown' };
   };
 
   async function ask(workspaceId: number): Promise<View> {
@@ -191,6 +192,37 @@ export function entitlementOf(app: { db: Db; env: Env; log?: (line: string) => v
     clients.set(app.db, c);
   }
   return c;
+}
+
+/** How many of the last days paid for remind the owner that the next month can be paid (Teder's, the same). */
+export const REMIND_DAYS = 7;
+export type PayReminder = { state: 'soon' | 'due'; until: string };
+
+/**
+ * What the dashboard reminds a customer of, as Teder's payReminder (TORAN-READINESS.md P1-3; the owner, 2026-11-03: a
+ * reminder to pay for the new month on WhatsApp, email and the dashboard, and 72 hours to pay after it ends):
+ *   { state: 'soon', until: paidThrough }  paid, and today (Israel) is one of the last REMIND_DAYS days paid for
+ *   { state: 'due', until: graceUntil }    the month paid for is over, and Toran works until graceUntil
+ *   null                                   anything else (comp, cancelled, off, unpaid: the paywall says it; no answer)
+ * The days are accounts' instants, never a count of ours: one missing or already past reminds of nothing.
+ */
+export function payReminder(ent: View | null, t = Date.now()): PayReminder | null {
+  if (!ent?.known || !ent.allowed) return null;
+  const at = (iso: string | null | undefined) => {
+    const ms = typeof iso === 'string' ? Date.parse(iso) : NaN;
+    return Number.isFinite(ms) && t <= ms ? new Date(ms).toISOString() : null;
+  };
+  if (ent.access === 'paid') {
+    const until = at(ent.paidThrough);
+    if (!until) return null;
+    const daysLeft = Math.round((Date.parse(israelDate(Date.parse(until))) - Date.parse(israelDate(t))) / 86_400_000);
+    return daysLeft < REMIND_DAYS ? { state: 'soon', until } : null;
+  }
+  if (ent.access === 'due') {
+    const until = at(ent.graceUntil);
+    return until ? { state: 'due', until } : null;
+  }
+  return null;
 }
 
 /** May this store's channels be answered and its automatic messages sent? A store in no workspace always may. */

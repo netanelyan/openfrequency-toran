@@ -18,7 +18,7 @@ import { themed, themeOf } from './theme.ts';
 import { boundaryOf, parseMultipart, type Upload } from './multipart.ts';
 import { MAX_BYTES } from '../channels/files.ts';
 import { readiness, revision } from '../health.ts';
-import { entitlementOf } from '../billing/entitlement.ts';
+import { entitlementOf, payReminder, type PayReminder } from '../billing/entitlement.ts';
 
 // The website: the owner's dashboard, the public pitch pages, and the WhatsApp webhook,
 // in one process. It listens on 127.0.0.1 (or the container's interface behind Caddy).
@@ -281,6 +281,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       }
       // ---- the paywall (billing/entitlement.ts, PRA-SEC-002): a customer whose workspace has not paid for Toran gets the
       // pay page, and posts nothing. The operator, and the operator viewing as the customer, are never asked about.
+      let pay: PayReminder | null = null;
       if (!scope.operator && !session.viewAs && session.workspace) {
         const wsId = session.workspace.id;
         // "בדקו שוב" on the pay page: accounts is asked afresh now, as when it says the access changed (as Teder's
@@ -295,6 +296,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
           return reply(req, res, { redirect: refererPath(req.headers.referer, `http://${host}`, false) || '/' }, { 'set-cookie': flashCookie(again.allowed ? 'התשלום נרשם. תורן פתוח.' : again.known ? 'בדקנו עכשיו, והתשלום עוד לא רשום אצלנו. כשנרשום אותו, תורן ייפתח.' : 'לא הצלחנו לבדוק עכשיו. אפשר לנסות שוב בעוד דקה.') });
         }
         const ent = await entitlementOf(app).check(wsId);
+        pay = payReminder(ent);
         // Before paying, what does not answer customers stays open (TORAN-READINESS.md P0-8, P1-23): adding the store and
         // proving its site (/start, two model calls for its sample chat, once, for a domain the customer proved), its
         // reading's progress, what Toran knows, and the inbox to read (an unpaid store's messages reach the owner as
@@ -315,7 +317,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const flash = jar.tn_flash || null;
       if (flash) setCookies.push('tn_flash=; Path=/; Max-Age=0; SameSite=Strict');
       const viewAs = session.viewAs ? { name: String(session.workspace?.name || session.workspace?.slug || ''), admin: links.admin } : null;
-      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope)) };
+      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, pay, payHref: links.setup, ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope)) };
       const back = () => refererPath(req.headers.referer, viaAdmin ? adminOrigin : `http://${host}`, viaAdmin) || '/';
       const notFound = () => (method === 'GET' ? send(req, res, 404, notFoundPage({ ...ctx, title: 'לא נמצא' }), 'text/html; charset=utf-8') : ajax ? json(404, { ok: false, message: 'לא נמצא' }) : send(req, res, 404, errorPage(404, 'מה שחיפשתם לא נמצא כאן. אולי הקישור ישן.', back()), 'text/html; charset=utf-8'));
 

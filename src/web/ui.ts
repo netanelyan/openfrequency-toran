@@ -143,7 +143,26 @@ export type PageCtx = {
   logout?: string;
   /** A customer's conversations this month against their plans (plans.ts), in the header where the operator sees tokens. */
   plan?: { used: number; cap: number } | null;
+  /** The pay reminder (billing/entitlement.ts payReminder) and where to pay: accounts' /setup. */
+  pay?: { state: 'soon' | 'due'; until: string } | null;
+  payHref?: string | null;
 };
+
+/**
+ * The pay reminder at the top of every page of a customer's workspace, as Teder's (TORAN-READINESS.md P1-3): the last
+ * week paid for, calm, and the days of grace after it in the warning's colour, with one way to pay (accounts' /setup).
+ */
+const PAY_DAY = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long' });
+const PAY_DATE = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'long' });
+export function payBanner(ctx: Pick<PageCtx, 'pay' | 'payHref'>): string {
+  const r = ctx.pay;
+  if (!r || !ctx.payHref) return '';
+  const due = r.state === 'due';
+  const when = (due ? PAY_DAY : PAY_DATE).format(new Date(r.until));
+  const title = due ? 'החודש ששילמתם עליו נגמר, והתשלום על החודש הבא עוד לא הגיע אלינו.' : `המנוי לתורן שולם עד ${when}.`;
+  const text = due ? `תורן ממשיך לענות ללקוחות עד סוף ${when}, ואז ייעצר עד שהתשלום יגיע.` : 'אפשר כבר לשלם על החודש הבא, כדי שתורן ימשיך לענות בלי הפסקה.';
+  return `<div class="banner ${due ? 'warn' : 'info'} pay" id="pay">${icon(due ? 'alert' : 'clock')}<div><b>${esc(title)}</b><p>${esc(text)}</p></div><a class="btn sm${due ? ' primary' : ''}" href="${esc(ctx.payHref)}">איך משלמים</a></div>`;
+}
 
 export function layout(ctx: PageCtx, body: string): string {
   const section = SECTION_OF[ctx.active || ''] || ctx.active;
@@ -194,6 +213,7 @@ ${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צ�
   </div>
 </div></header>
 <main class="wrap${ctx.wide ? ' wide' : ''}" id="main">
+${payBanner(ctx)}
 ${body}
 <footer class="foot">${ofMark(20, { label: null })}<span class="ltr">OpenFrequency<sup>™</sup></span></footer>
 </main>
