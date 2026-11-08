@@ -320,7 +320,6 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   try {
     if (await stoppedNumber(app, phone)) return no('stopped');
     if (await app.db.one(`SELECT 1 FROM events WHERE ${same}`, [phone, products, p.stage])) return no('already');
-    if (customerQuiet(now())) return no('quiet');
     const cap = dailyCap(app.env);
     const today = (await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE kind = 'outreach_wa' AND data->>'day' = $1 AND (data->>'state' IN ('sent', 'undelivered') OR (data->>'state' = 'sending' AND at > now() - interval '2 minutes'))", [day]))?.n || 0;
     if (today >= cap) {
@@ -333,6 +332,9 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   }
   const phoneId = await outreachPhoneId(app);
   if (!phoneId) return no('no_line');
+  // The quiet hours after the line: with no number connected, "wait until morning" would only send the operator back
+  // to a send that fails then too.
+  if (customerQuiet(now())) return no('quiet');
   let token: string;
   try {
     token = await tokenOf(app, phoneId);
