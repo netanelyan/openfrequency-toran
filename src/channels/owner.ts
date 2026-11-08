@@ -79,7 +79,7 @@ export async function replyState(app: App, conversationId: number): Promise<{ ca
   const blocked = await blockedFor(app, t.adapter, t.to, 'owner');
   const w = t.adapter.limits.window;
   // The owner's own answer: on Messenger and Instagram up to 7 days, tagged HUMAN_AGENT, once Meta approved it.
-  const hours = w && t.adapter.limits.humanAgent && humanAgentOn(app.env) ? t.adapter.limits.humanAgent.hours : w?.hours;
+  const hours = w && t.adapter.limits.humanAgent && humanAgentOn(app.env, t.adapter) ? t.adapter.limits.humanAgent.hours : w?.hours;
   const pausedUntil = t.pausedUntil && t.pausedUntil > now() ? t.pausedUntil : null;
   return { canReply: !blocked, reason: blocked, windowEnds: hours ? t.to.at! + hours * HOUR : null, ...(hours ? { windowHours: hours } : {}), pausedUntil, ...extra };
 }

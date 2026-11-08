@@ -20,7 +20,7 @@ export type Delivery = { ok: true; ids: string[] } | { ok: false; reason: Blocke
 
 /** Why nothing may go to this customer now, or null. The inbox asks (for the owner) before it offers the reply box. */
 export async function blockedFor(app: App, adapter: ChannelAdapter, to: Inbound, who: 'agent' | 'owner' = 'agent'): Promise<Blocked | null> {
-  const plan = sendPlan(adapter.limits, { lastCustomerAt: to.at ?? now(), now: now(), who, humanAgent: humanAgentOn(app.env) });
+  const plan = sendPlan(adapter.limits, { lastCustomerAt: to.at ?? now(), now: now(), who, humanAgent: humanAgentOn(app.env, adapter) });
   if (!plan.ok) return plan.reason;
   if (adapter.channel === 'email' && (await app.db.one('SELECT 1 FROM mail_suppressed WHERE address = $1', [to.from]))) return 'suppressed';
   return null;
@@ -43,7 +43,7 @@ export async function reply(app: App, adapter: ChannelAdapter, to: Inbound, text
     return { ok: false, reason: blocked };
   }
   // Past the 24 hours, only the owner's answer reaches here (blockedFor), and it goes out tagged as a person's.
-  const plan = sendPlan(adapter.limits, { lastCustomerAt: to.at ?? now(), now: now(), who: ctx.who, humanAgent: humanAgentOn(app.env) });
+  const plan = sendPlan(adapter.limits, { lastCustomerAt: to.at ?? now(), now: now(), who: ctx.who, humanAgent: humanAgentOn(app.env, adapter) });
   let sendCtx: SendCtx = plan.ok && plan.mode === 'human_agent' ? { ...ctx, tag: 'HUMAN_AGENT' } : ctx;
   const ids: string[] = [];
   for (const [i, part] of partsOf(adapter, text).entries()) {

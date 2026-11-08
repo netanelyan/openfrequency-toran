@@ -31,8 +31,12 @@ export function sendPlan(limits: ChannelLimits, { lastCustomerAt, now, who = 'ag
   return { ok: false, reason: 'window_closed' };
 }
 
-/** May the owner's answers past the 24 hours go out tagged HUMAN_AGENT? Only once Meta approved it for the app. */
-export const humanAgentOn = (env: Record<string, string | undefined>) => String(env.META_HUMAN_AGENT || '').trim() === '1';
+/**
+ * May the owner's answers past the 24 hours go out tagged HUMAN_AGENT? On our own Meta app only once Meta approved it
+ * (META_HUMAN_AGENT). A Page or account connected through Zernio (zernio.ts) sends on Zernio's app, whose send API
+ * takes HUMAN_AGENT for "replies typed by a person only" up to 7 days (zernio.com/openapi.yaml, sendInboxMessage).
+ */
+export const humanAgentOn = (env: Record<string, string | undefined>, adapter?: { kind: string } | null) => String(env.META_HUMAN_AGENT || '').trim() === '1' || adapter?.kind === 'zernio';
 
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
 

@@ -25,6 +25,7 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   'GET ^\\/lead\\/(\\d+)\\/(messenger|instagram)$': (i) => `/lead/${i.b}/messenger`,
   'POST ^\\/lead\\/(\\d+)\\/(messenger|instagram)\\/connect$': (i) => `/lead/${i.b}/instagram/connect`,
   'POST ^\\/lead\\/(\\d+)\\/messenger\\/pick$': (i) => `/lead/${i.b}/messenger/pick`,
+  'GET ^\\/lead\\/(\\d+)\\/(messenger|instagram)\\/zernio$': (i) => `/lead/${i.b}/instagram/zernio?connected=instagram&accountId=a1b2c3d4e5f6a7b8c9d0e1f2`,
   'POST ^\\/lead\\/(\\d+)\\/(messenger|instagram)\\/disconnect$': (i) => `/lead/${i.b}/messenger/disconnect`,
   'POST ^\\/lead\\/(\\d+)\\/mail-domain$': (i) => `/lead/${i.b}/mail-domain`,
   'POST ^\\/lead\\/(\\d+)\\/mail-domain\\/check$': (i) => `/lead/${i.b}/mail-domain/check`,

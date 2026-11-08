@@ -1,7 +1,8 @@
 import type { App } from '../../app.ts';
 import { displayName } from '../../ingest/brand.ts';
 import { enabledChannels } from '../../channels/config.ts';
-import { socialReady, type Social } from '../../channels/social.ts';
+import { type Social } from '../../channels/social.ts';
+import { disconnectZernio, dmConnectReady, dmProvider, finishZernioConnect, startZernioConnect, ZernioError } from '../../channels/zernio.ts';
 import { adminCookieDomain, beginConnect, CHANNEL_NAME, disconnectSocial, pagesToPick, pickPage } from '../../channels/socialStore.ts';
 import { isCompany } from '../../company.ts';
 import { ConnectError } from '../../channels/waStore.ts';
@@ -19,7 +20,7 @@ import { csrfField, esc, icon, layout, postButton, stamp, storeBadge } from '../
 //
 // The form's answer is a redirect to facebook.com or instagram.com, so this page's form-action lets those in.
 
-const connectCsp = () => DASH_CSP.replace("form-action 'self'", "form-action 'self' https://www.facebook.com https://www.instagram.com");
+const connectCsp = () => DASH_CSP.replace("form-action 'self'", "form-action 'self' https://www.facebook.com https://www.instagram.com https://zernio.com");
 
 export type SocialRow = { id: number; status: string; name: string | null; meta: any; connected_at: string };
 
@@ -45,6 +46,8 @@ const ERRORS: Record<string, string> = {
   no_pages: 'לא מצאנו דף בפייסבוק שהחשבון הזה מנהל. נכנסים עם החשבון שמנהל את הדף של החנות.',
   taken: 'החשבון הזה כבר מחובר לחנות אחרת בתורן. אם זו טעות, כתבו לנו.',
   meta: 'Meta לא השלימה את החיבור. אפשר לנסות שוב בעוד כמה דקות, ואם זה חוזר, כתבו לנו.',
+  zernio: 'החיבור לא הושלם. אפשר לנסות שוב בעוד כמה דקות, ואם זה חוזר, כתבו לנו.',
+  zernio_cancelled: 'החלון נסגר בלי אישור, או שלא סימנתם את הדף. אפשר לנסות שוב.',
 };
 
 const BEFORE: Record<Social, string[]> = {
@@ -69,6 +72,8 @@ const OWN_REPLY: Record<Social, string> = {
   instagram: 'כשאתם עונים ללקוח בעצמכם מהאפליקציה של אינסטגרם, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.',
 };
 
+const VIA_ZERNIO = 'בחלון של Meta יופיע השם Zernio: זה השירות שדרכו תורן מחובר להודעות. מאשרים אותו כרגיל.';
+
 const WINDOW = 'Meta מאפשרת לענות רק עד 24 שעות מההודעה האחרונה של הלקוח. אחרי זה תורן לא עונה, ומה שנשאר פתוח מחכה לכם בשיחות.';
 
 async function page(app: App, r: DashReq, id: number, channel: Social) {
@@ -76,7 +81,8 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
   if (!s) return null;
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   const a = await socialAccountOf(app, id, channel);
-  const ready = socialReady(app.env, channel);
+  const ready = dmConnectReady(app.env, channel);
+  const viaZernio = dmProvider(app.env) === 'zernio';
   const ro = r.ctx.readOnly;
   const live = a && a.status !== 'off';
   const q = r.url.searchParams;
@@ -117,6 +123,7 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
 </section>
 <section class="panel mt16"><header><h2>${channel === 'messenger' ? 'מה קורה בחלון של פייסבוק' : 'מה קורה בחלון של אינסטגרם'}</h2></header>
   <ol class="m0">${STEPS[channel].map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
+  ${viaZernio ? `<p class="small mt12 m0">${esc(VIA_ZERNIO)}</p>` : ''}
   <p class="small mt12 m0">${esc(OWN_REPLY[channel])}</p>
   <p class="small mt8 m0">${esc(WINDOW)}</p>
   ${button}
@@ -134,7 +141,8 @@ ${state}`;
  * Our company store's Page and Instagram are ours: the operator connects them, from /admin, where the cookie can be
  * set for the domain Toran's own name shares (socialStore.ts adminCookieDomain). Every other store connects its own.
  */
-const operatorConnects = (app: App, r: DashReq, s: { platform?: string | null }) => isCompany(s) && viaAdminReq(r.req) && Boolean(adminCookieDomain(app.env));
+// Through Zernio no cookie is needed (Zernio's own API says whose the account is), so /admin is enough.
+const operatorConnects = (app: App, r: DashReq, s: { platform?: string | null }) => isCompany(s) && viaAdminReq(r.req) && (dmProvider(app.env) === 'zernio' || Boolean(adminCookieDomain(app.env)));
 
 const channelOf = (app: App, raw: string): Social => {
   const c = raw as Social;
@@ -158,6 +166,17 @@ export function socialRoutes(app: App): Route<DashReq>[] {
         if (!s || !operatorConnects(app, r, s)) throw new ActionError('את זה מחברת החנות מהדשבורד שלה.', 403);
         domain = adminCookieDomain(app.env);
       }
+      // Through Zernio (channels/zernio.ts): its connect, limited to messaging, and back to /lead/<id>/<channel>/zernio.
+      if (dmProvider(app.env) === 'zernio') {
+        try {
+          return { redirect: await startZernioConnect(app, id, channel, r.user.name, { viaAdmin: viaAdminReq(r.req) }) };
+        } catch (e: any) {
+          if (e instanceof ZernioError) throw new ActionError(e.he);
+          app.log(`[zernio] connect link for store ${id} failed: ${e?.message || e}`);
+          if (e instanceof GraphError) throw new ActionError(ERRORS.zernio);
+          throw e;
+        }
+      }
       try {
         const { url, cookie } = await beginConnect(app, id, channel, r.user, { secure: r.secure, domain });
         return { redirect: url, headers: { 'set-cookie': cookie } };
@@ -179,10 +198,30 @@ export function socialRoutes(app: App): Route<DashReq>[] {
         throw e;
       }
     }],
+    // Zernio brings the browser back here (the store's own session, or the operator's on /admin): the account is taken
+    // only when Zernio's own API lists it under this store's profile (finishZernioConnect).
+    ['GET', /^\/lead\/(\d+)\/(messenger|instagram)\/zernio$/, async (r, m) => {
+      const id = Number(m[1]);
+      const channel = channelOf(app, m[2]);
+      const q = r.url.searchParams;
+      if (r.ctx.readOnly) throw new ActionError('במצב צפייה אי אפשר לחבר.', 403);
+      if (q.get('error') || !q.get('accountId')) {
+        app.log(`[zernio] connect for store ${id} came back with ${String(q.get('error') || 'no account').slice(0, 60)}${q.get('request_id') ? ` (request ${String(q.get('request_id')).slice(0, 40)})` : ''}`);
+        return { redirect: `/lead/${id}/${channel}?error=${q.get('error') === 'oauth_denied' || q.get('error') === 'no_facebook_pages' ? 'zernio_cancelled' : 'zernio'}` };
+      }
+      try {
+        await finishZernioConnect(app, id, channel, q.get('accountId'), r.user.name);
+        return { redirect: `/lead/${id}/${channel}?connected=1` };
+      } catch (e: any) {
+        app.log(`[zernio] connect for store ${id} refused: ${e?.message || e}`);
+        if (e instanceof ZernioError) throw new ActionError(e.he);
+        return { redirect: `/lead/${id}/${channel}?error=zernio` };
+      }
+    }],
     ['POST', /^\/lead\/(\d+)\/(messenger|instagram)\/disconnect$/, async (r, m) => {
       const id = Number(m[1]);
       const channel = channelOf(app, m[2]);
-      await disconnectSocial(app, id, channel, r.user.name);
+      if (!(await disconnectZernio(app, id, channel, r.user.name))) await disconnectSocial(app, id, channel, r.user.name);
       return { redirect: `/lead/${id}/${channel}`, message: `ה${CHANNEL_NAME[channel]} נותק מתורן.` };
     }],
   ];

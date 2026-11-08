@@ -6,7 +6,8 @@ import { publicBase } from './auto/messages.ts';
 import { INGESTIBLE_HE, canIngest } from './ingest/catalogue.ts';
 import { enabledChannels } from './channels/config.ts';
 import { storeConnectReady } from './channels/kapso.ts';
-import { socialReady, type Social } from './channels/social.ts';
+import { type Social } from './channels/social.ts';
+import { dmConnectReady } from './channels/zernio.ts';
 import { orderAccessOf, ordersPlatform } from './orders.ts';
 import { anyOn, settingsOf } from './auto/send.ts';
 import { waAccountOf } from './web/pages/whatsapp.ts';
@@ -28,7 +29,7 @@ import { socialAccountOf } from './web/pages/social.ts';
 //   knowledge            "בודקים את התשובות": the owner opened what Toran knows (stores.knowledge_seen_at) or wrote an answer
 //   whatsapp   required  the store's own number through Meta; "soon" while this server cannot connect one (kapso.ts storeConnectReady: Meta, or Kapso with TORAN_WA_PROVIDER=kapso)
 //   email                only where TORAN_CHANNELS lists it; "soon" without a mail provider here
-//   messenger, instagram only where TORAN_CHANNELS lists them; "soon" until socialReady
+//   messenger, instagram only where TORAN_CHANNELS lists them; "soon" until dmConnectReady (zernio.ts: Zernio or our Meta app)
 //   orders               the read-only order key; "soon" on a platform whose orders Toran does not read yet
 //   auto                 the automatic messages: done once any kind is on
 // Until the store exists, every step after it is todo, with no link, "אחרי שהחנות מוכנה". A workspace Toran has
@@ -124,7 +125,7 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
       const a = await socialAccountOf(app, s.id, ch);
       if (a?.status === 'active') return { status: 'done', detail: '', href };
       if (a?.status === 'error') return { status: 'attention', detail: 'החיבור נעצר. צריך לחבר שוב.', href };
-      if (!socialReady(app.env, ch)) return { status: 'soon', detail: 'החיבור עוד לא פתוח.', href: null };
+      if (!dmConnectReady(app.env, ch)) return { status: 'soon', detail: 'החיבור עוד לא פתוח.', href: null };
       return { status: 'todo', detail: ch === 'messenger' ? 'מחברים את הדף של החנות בפייסבוק.' : 'מחברים את חשבון האינסטגרם של החנות.', href };
     });
   }

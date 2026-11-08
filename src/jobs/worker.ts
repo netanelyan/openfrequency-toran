@@ -22,6 +22,7 @@ import { handToTeder } from '../channels/request.ts';
 import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
 import { checkKapsoAccount, isKapsoAccount } from '../channels/kapso.ts';
 import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialStore.ts';
+import { finishZernioConnect, zernioEcho } from '../channels/zernio.ts';
 import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } from '../auto/jobs.ts';
 import { checkTemplates, templateStatus } from '../auto/templates.ts';
@@ -37,6 +38,9 @@ import { checkTemplates, templateStatus } from '../auto/templates.ts';
 //                connect again (channels/waStore.ts checkToken)
 //   dm_inbound   a message to a store's Facebook Page (Messenger) or Instagram account: the same as wa_inbound
 //   dm_echo      the owner answered from the Page's inbox or the Instagram app (channels/socialStore.ts)
+//   zernio_echo  the same, for a Page or account connected through Zernio, unless it is the Page's own instant reply
+//                (channels/zernio.ts)
+//   zernio_account a Page or Instagram account Zernio says was connected for a store (its account.connected webhook)
 //   ig_refresh   an Instagram token's 60 days, renewed before they end
 //   mail_domain_check  a store's own mail domain read again at Resend, until it is verified (channels/mailDomain.ts)
 //   add_store    "add by URL" from the dashboard, or a demo asked for on the website: detect and score, ingest, build
@@ -94,6 +98,10 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return handleInbound(app, p);
     case 'dm_echo':
       return socialEcho(app, p);
+    case 'zernio_echo':
+      return zernioEcho(app, p);
+    case 'zernio_account':
+      return finishZernioConnect(app, Number(p.storeId), p.channel, p.accountId, 'Zernio');
     case 'ig_refresh':
       return refreshInstagram(app, Number(p.accountId));
     case 'mail_domain_check': {

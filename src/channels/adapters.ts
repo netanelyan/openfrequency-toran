@@ -3,6 +3,7 @@ import { enabledChannels } from './config.ts';
 import { metaLinesAdapter } from './lines.ts';
 import { waAccountAdapter, type WaAccount } from './meta.ts';
 import { dmAdapter, isSocial } from './social.ts';
+import { zernioAdapter } from './zernio.ts';
 import type { Channel, ChannelAdapter } from './types.ts';
 
 /** The adapter a channel's messages go through here; a channel whose code is off has none (config.ts). */
@@ -24,7 +25,10 @@ export function adapterOf(app: App, channel: Channel, account?: (WaAccount & { k
   if (channel === 'whatsapp' && (account?.kind === 'meta' || account?.kind === 'kapso')) return waAccountAdapter(app.env, app.graph, account);
   if (channel === 'whatsapp' && account?.kind === 'meta_line') return metaLinesAdapter(app);
   if (isSocial(channel)) {
-    if (!account || account.kind !== 'meta' || !enabledChannels(app.env).has(channel)) throw new Error(`no adapter for channel ${channel}`);
+    if (!account || !enabledChannels(app.env).has(channel)) throw new Error(`no adapter for channel ${channel}`);
+    // A Page or Instagram account connected through Zernio (zernio.ts) sends through Zernio's inbox API.
+    if (account.kind === 'zernio') return zernioAdapter(app, { id: account.id, channel, external_id: account.external_id });
+    if (account.kind !== 'meta') throw new Error(`no adapter for channel ${channel}`);
     return dmAdapter(app.env, app.graph, { ...account, channel });
   }
   return adapterFor(app, channel);

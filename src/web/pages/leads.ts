@@ -10,7 +10,8 @@ import { contactTarget, firstMessage, followupDue, pitchUrl, reminderMessage } f
 import { PLANS, planOf, type PlanKey } from '../../plans.ts';
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { storeConnectReady } from '../../channels/kapso.ts';
-import { SOCIAL, socialReady } from '../../channels/social.ts';
+import { SOCIAL } from '../../channels/social.ts';
+import { dmConnectReady } from '../../channels/zernio.ts';
 import { socialAccountOf, socialLine } from './social.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { storesOf } from '../workspace.ts';
@@ -100,7 +101,7 @@ async function leadPage(app: App, r: DashReq, id: number) {
   let social = '';
   for (const ch of SOCIAL.filter((c) => enabledChannels(app.env).has(c))) {
     const a = await socialAccountOf(app, id, ch);
-    social += `<dt>${esc(CHANNEL_HE[ch])}</dt><dd>${socialLine(a && a.status !== 'off' ? a : null, ch, s, socialReady(app.env, ch))}</dd>`;
+    social += `<dt>${esc(CHANNEL_HE[ch])}</dt><dd>${socialLine(a && a.status !== 'off' ? a : null, ch, s, dmConnectReady(app.env, ch))}</dd>`;
   }
   const url = s.slug ? pitchUrl(app.env, s.slug) : null;
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;

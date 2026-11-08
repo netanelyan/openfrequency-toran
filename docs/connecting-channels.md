@@ -527,6 +527,80 @@ out tagged, up to those 7 days. The agent never answers past 24 hours.
 
 **Then** set Messenger and Instagram to "דמו" or "פעיל" under "ערוצים" on your Settings page, as for email.
 
+## Step 4b. A store's Page and Instagram through Zernio: built, off until set
+
+The owner, 2026-11-08: "find a kapso for instagram and messanger". Our own App Review for Messenger and Instagram cannot
+go in before WhatsApp's is decided, so stores connect through Zernio's approved Meta apps instead
+(INSTAGRAM-MESSENGER-PROVIDERS.md at the repository root has the comparison). `TORAN_DM_PROVIDER=zernio` turns it on for
+every store; the Meta way above stays for `meta`. Code: `src/channels/zernio.ts`, migration `050_zernio.sql`, the route
+`POST /zernio/webhook` (`src/web/public.ts`), the store's page (`src/web/pages/social.ts`).
+
+**What Zernio's own pages say** (read 2026-11-08; the API reference is zernio.com/openapi.yaml, version 1.527.0):
+- **No app of ours:** `GET /v1/connect/{platform}` "Without it [oauthAppId] the connect runs on Zernio's app"
+  (openapi, getConnectUrl). The answer is `{ authUrl }`. Success comes back to `redirect_url` with
+  `connected={platform}&profileId=X&accountId=Y&username=Z`; a failure with `error` (`oauth_denied`,
+  `no_facebook_pages`, ...) and `request_id` (same).
+- **Messaging only:** `scopes=messaging` asks Facebook for `pages_messaging` and Instagram Login for
+  `instagram_business_manage_messages` (same, the scopes table).
+- **The welcome screen:** `welcome=true` with `brandName` shows "<brandName> wants to connect to your <platform>"; "The
+  platform's authorization screen still names the Zernio app" (same).
+- **One profile per store:** `POST /v1/profiles` with `externalId` ("Your own identifier for this profile"); a
+  duplicate is a 409 with `details.existingProfileId`; `GET /v1/profiles?externalId=` finds it (openapi, createProfile,
+  listProfiles). Ours is `toran-store-<id>`.
+- **Whose account:** `GET /v1/accounts?profileId=&platform=` lists a profile's accounts (`_id`, `profileId`,
+  `username`, `displayName`, `platformUserId`); `DELETE /v1/accounts/{accountId}` disconnects one (openapi,
+  listAccounts, deleteAccount).
+- **Webhooks:** "Every delivery carries `X-Zernio-Event` ... and `X-Zernio-Event-Id`", the dedupe key; "When the endpoint
+  has a `secret`, `X-Zernio-Signature` is the lowercase hex HMAC-SHA256 of the raw body"; "Answer 2xx within 5
+  seconds"; "Up to 7 attempts over about 51 hours" (docs.zernio.com/webhooks). Up to 50 webhooks per user (openapi,
+  /v1/webhooks/settings), so Toran's is its own beside Teder's.
+- **Which store:** "The customer is `profiles[0].externalId`"; "`account.id` tells you which of their accounts received
+  the message" (docs.zernio.com/multi-tenant/inbox). `message.received` carries `message.platformMessageId`,
+  `message.sender.id` (the IGSID or PSID), `message.conversationId` and `conversation.participantName` (openapi,
+  WebhookPayloadMessage, InboxWebhookConversation).
+- **Standby:** `metadata.standby` is "true when this inbound arrived on Meta's standby path because another app owned
+  the conversation" (same): Toran keeps such a message for the owner, unanswered.
+- **The owner's answers:** on `message.sent`, `sentVia` "is `null` whenever the lineage is unknown: any outgoing
+  message not sent through Zernio (one typed in the platform's own app, a Meta automated reply such as an instant reply
+  or away message ...)"; ours are `api` (openapi, WebhookPayloadMessageSent).
+- **Sending:** `POST /v1/inbox/conversations/{conversationId}/messages` with `accountId` and `message`; `messagingType`
+  `MESSAGE_TAG` and `messageTag` `HUMAN_AGENT` "To reply after the 24h window ... up to 7 days ... for replies typed by
+  a person only"; the answer's `data.messageId` (openapi, sendInboxMessage).
+
+**How Toran uses it:**
+- "לחבר" makes the store's profile once and sends the store to Zernio's link (messaging only, our name on the welcome
+  screen). Zernio comes back to `/lead/<id>/<channel>/zernio`; the account is taken only when Zernio's API lists it under
+  that store's profile, as with Kapso (the query is not signed). `account.connected` does the same for a store that
+  closed the tab. One Page or Instagram account per store; connecting another disconnects the old one at Zernio too.
+- `/zernio/webhook`: only profiles named `toran-store-<id>`, and only accounts connected here through Zernio for that
+  store, are taken; everything else (Teder's accounts share the key) is dropped. Customers' messages go to the same
+  queue and router as Meta's (`dm_inbound`). Zernio's conversation id is kept per customer (`zernio_threads`), because
+  sending needs it.
+- An answer with `sentVia: null` is the owner's (Toran steps back, as from the Page's inbox on Meta), **unless** it came
+  within 20 seconds of the customer's own message: Zernio gives Meta's instant replies and away messages `null` too, and
+  those must not silence Toran.
+- The owner's answers past 24 hours go out tagged `HUMAN_AGENT` on Zernio's app without `META_HUMAN_AGENT`; the agent's
+  never.
+- No tokens of ours: nothing to refresh (the Instagram 60-day refresh skips these rows).
+
+**UNVERIFIED (the code fails safe):**
+- **Messenger echoes:** Zernio itself calls `message_echoes` on Facebook "unverified". If they do not come, an answer
+  the owner types in the Page's inbox does not pause Toran there; answering from Toran's inbox still does.
+- **Instagram echoes** are inferred from Zernio's wording ("one typed in the platform's own app"), not measured.
+- **The 20 seconds** that tell an instant reply from a person are our choice, not Zernio's.
+
+**To turn it on:**
+1. In Zernio's dashboard (the account Teder uses), Webhooks, add one: URL `https://toran.openfrequency.co.il/zernio/webhook`,
+   a secret of at least 16 characters, events `message.received`, `message.sent`, `account.connected`,
+   `account.disconnected`, `conversation.control_changed`. Optionally limit it to the messages and accounts resource
+   groups.
+2. In Toran's `.env`: `TORAN_DM_PROVIDER=zernio`, `ZERNIO_API_KEY=<the same key as Teder's>`,
+   `ZERNIO_WEBHOOK_SECRET=<that secret>`, and `messenger,instagram` in `TORAN_CHANNELS`. Back up, run migration 050,
+   restart.
+3. Live test on our own Page and Instagram (store 95 from /admin): connect each, write to it from a personal account
+   (Toran answers), answer once from the Instagram app and once from the Page's inbox (each should pause Toran and show
+   in the inbox), and note whether the Page's instant reply, if it has one, left Toran answering.
+
 ## Step 5. A store's automatic messages: built, each off until the store turns it on
 
 The cart, the payment, the shipping and the review request (docs/customer.md, `src/auto/`). They need the store's

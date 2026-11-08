@@ -11,6 +11,7 @@ import { ownsStore, scopeOf } from './workspace.ts';
 import { enabledChannels, publicChannels } from '../channels/config.ts';
 import { metaSettings, parseWebhook, signatureOk } from '../channels/meta.ts';
 import { kapsoEvent, kapsoNumbers, kapsoSettings, kapsoSignatureOk } from '../channels/kapso.ts';
+import { zernioSettings, zernioSignatureOk, zernioWebhook } from '../channels/zernio.ts';
 import { takeWhatsapp } from '../channels/waHook.ts';
 import { parseSocial, socialSettings, type Social } from '../channels/social.ts';
 import { clearNonce, finishConnect, NONCE_COOKIE } from '../channels/socialStore.ts';
@@ -57,6 +58,9 @@ import { errorPage } from './pages/basic.ts';
 //                              KAPSO_WEBHOOK_SECRET, and only numbers connected through Kapso taken (waHook.ts)
 //   POST /kapso/events         Kapso's project webhook: a number connected, deleted, offboarded, disconnected or
 //                              reconnected; X-Webhook-Signature under KAPSO_EVENTS_SECRET
+//   POST /zernio/webhook       Zernio's webhook for every store's Page and Instagram account connected through Zernio
+//                              (channels/zernio.ts): X-Zernio-Signature under ZERNIO_WEBHOOK_SECRET; only profiles of
+//                              Toran stores, and accounts connected here through Zernio, are taken
 //   GET  /meta/webhook         Meta's check of the webhook (hub.verify_token = META_WEBHOOK_VERIFY_TOKEN)
 //   POST /meta/webhook         Meta's webhook for every store's own WhatsApp number, Facebook Page and Instagram
 //                              account: X-Hub-Signature-256 checked (under the app's secret, or the Instagram app's),
@@ -321,6 +325,27 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
       const name = String(r.req.headers['x-webhook-event'] || body?.event || '');
       const out = await kapsoEvent(app, name, body);
       app.log(`[kapso] ${name}: ${out.action}`);
+      return { text: 'ok' };
+    }],
+    // A store's Page or Instagram account connected through Zernio (channels/zernio.ts): one webhook for every store,
+    // signed with X-Zernio-Signature (the lowercase hex HMAC-SHA256 of the raw body under ZERNIO_WEBHOOK_SECRET).
+    // Acknowledged at once (Zernio wants a 2xx within 5 seconds); the messages go to the queue.
+    ['POST', /^\/zernio\/webhook$/, async (r) => {
+      if (!hookOk(r.ip)) return { status: 429, text: '' };
+      const z = zernioSettings(app.env);
+      if (!z.webhookSecret) return { status: 404, text: '' };
+      if (!zernioSignatureOk(z.webhookSecret, r.raw || '', r.req.headers['x-zernio-signature'])) {
+        app.log(`[zernio] webhook signature failed from ${r.ip}`);
+        return { status: 401, text: 'bad signature' };
+      }
+      let body: any;
+      try {
+        body = JSON.parse(r.raw || '');
+      } catch {
+        return { status: 400, text: '' };
+      }
+      const out = await zernioWebhook(app, body);
+      if (!['queued', 'echo_queued', 'ours', 'not_ours'].includes(out.action)) app.log(`[zernio] ${String(body?.event || '?')} ${String(r.req.headers['x-zernio-event-id'] || '').slice(0, 40)}: ${out.action}`);
       return { text: 'ok' };
     }],
     ['GET', /^\/meta\/oauth\/(messenger|instagram)$/, async (r, m) => {
