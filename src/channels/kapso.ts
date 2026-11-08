@@ -7,6 +7,7 @@ import { lineNumber, lineOf, oneNumber, withOne } from './lines.ts';
 import { GraphError, waConnectReady } from './meta.ts';
 import { OURS_HE } from './waStore.ts';
 import { alertOperator } from '../ops/alert.ts';
+import { zernioWaReady } from './zernio.ts';
 
 // A store's own WhatsApp number through Kapso (docs.kapso.ai), while our own Meta app waits for its review (the owner,
 // 2026-11-08: "i cant wait for the meta app approval ... lets build toran around that, make it live"). Kapso's Meta app
@@ -42,8 +43,14 @@ export const kapsoSettings = (env: Env) => ({
   publicBase: String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, ''),
 });
 
-/** Which way a store's own number is connected here: through Kapso, or Meta's Embedded Signup with our own app. */
-export const waProvider = (env: Env): 'kapso' | 'meta' => (String(env.TORAN_WA_PROVIDER || '').trim().toLowerCase() === 'kapso' ? 'kapso' : 'meta');
+/**
+ * Which way a store's own number is connected here: through Zernio (zernio.ts; the owner, 2026-11-08: "yes, switch to
+ * zernio"), through Kapso, or Meta's Embedded Signup with our own app. Unset: Meta.
+ */
+export const waProvider = (env: Env): 'zernio' | 'kapso' | 'meta' => {
+  const v = String(env.TORAN_WA_PROVIDER || '').trim().toLowerCase();
+  return v === 'zernio' ? 'zernio' : v === 'kapso' ? 'kapso' : 'meta';
+};
 
 /** May a store connect through Kapso now: our key, the webhook's secret, and an https address for Kapso to come back to. */
 export function kapsoReady(env: Env): boolean {
@@ -52,7 +59,11 @@ export function kapsoReady(env: Env): boolean {
 }
 
 /** May a store connect its own WhatsApp on this server, the way TORAN_WA_PROVIDER says. Our company store is always Meta's. */
-export const storeConnectReady = (env: Env, company = false): boolean => (waProvider(env) === 'kapso' && !company ? kapsoReady(env) : waConnectReady(env));
+export const storeConnectReady = (env: Env, company = false): boolean => {
+  if (company) return waConnectReady(env);
+  const p = waProvider(env);
+  return p === 'zernio' ? zernioWaReady(env) : p === 'kapso' ? kapsoReady(env) : waConnectReady(env);
+};
 
 /** A refusal said to the store, in Hebrew, beside the reason for the log. */
 export class KapsoError extends Error {

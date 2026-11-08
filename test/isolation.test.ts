@@ -24,6 +24,8 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   'POST ^\\/lead\\/(\\d+)\\/whatsapp\\/disconnect$': (i) => `/lead/${i.b}/whatsapp/disconnect`,
   'POST ^\\/lead\\/(\\d+)\\/whatsapp\\/kapso\\/start$': (i) => `/lead/${i.b}/whatsapp/kapso/start`,
   'GET ^\\/lead\\/(\\d+)\\/whatsapp\\/kapso$': (i) => `/lead/${i.b}/whatsapp/kapso?phone_number_id=611122233344455`,
+  'POST ^\\/lead\\/(\\d+)\\/whatsapp\\/zernio\\/start$': (i) => `/lead/${i.b}/whatsapp/zernio/start`,
+  'GET ^\\/lead\\/(\\d+)\\/whatsapp\\/zernio$': (i) => `/lead/${i.b}/whatsapp/zernio?connected=whatsapp&accountId=b1b2c3d4e5f6a7b8c9d0e1f2`,
   'GET ^\\/lead\\/(\\d+)\\/(messenger|instagram)$': (i) => `/lead/${i.b}/messenger`,
   'POST ^\\/lead\\/(\\d+)\\/(messenger|instagram)\\/connect$': (i) => `/lead/${i.b}/instagram/connect`,
   'POST ^\\/lead\\/(\\d+)\\/messenger\\/pick$': (i) => `/lead/${i.b}/messenger/pick`,

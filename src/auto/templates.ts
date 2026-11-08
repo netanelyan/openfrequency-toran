@@ -2,7 +2,8 @@ import type { App } from '../app.ts';
 import { audit, event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
 import { lineOf } from '../channels/lines.ts';
-import { createTemplate, credOf, templatesNamed, type Cred } from '../channels/meta.ts';
+import { createTemplate, credOf, templatesNamed } from '../channels/meta.ts';
+import { zernioCreateTemplate, zernioTemplatesNamed } from '../channels/zernio.ts';
 import { categoryOf, KINDS, LEGACY, MESSAGES, publicBase, templateRequest, type Kind, type MessageKey } from './messages.ts';
 
 // Toran's templates on a store's own WhatsApp account (wa_templates, migration 017). A message the store starts on
@@ -31,9 +32,22 @@ type Account = { id: number; store_id: number; external_id: string; secret: stri
  * (channels/kapso.ts), whose proxy takes the same calls on the store's WABA with our project's key.
  */
 export async function storeWa(app: App, storeId: number): Promise<Account | null> {
-  const a = await app.db.one<Account>("SELECT id, store_id, external_id, secret, meta, status, kind FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND ((kind = 'meta' AND secret IS NOT NULL) OR kind = 'kapso') AND status = 'active' ORDER BY id DESC LIMIT 1", [storeId]);
-  if (!a || lineOf(app.env, a.external_id) || !a.meta?.waba_id) return null;
+  const a = await app.db.one<Account>("SELECT id, store_id, external_id, secret, meta, status, kind FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND ((kind = 'meta' AND secret IS NOT NULL) OR kind IN ('kapso', 'zernio')) AND status = 'active' ORDER BY id DESC LIMIT 1", [storeId]);
+  // Through Zernio the account's own id is what every template call takes (zernio.ts); on Meta and Kapso, the WABA.
+  if (!a || lineOf(app.env, a.external_id) || (a.kind !== 'zernio' && !a.meta?.waba_id)) return null;
   return a;
+}
+
+/** Submit one template to the store's account: through Zernio (its account id), or Meta's own call on the WABA. */
+async function createOn(app: App, a: Account, req: ReturnType<typeof templateRequest>): Promise<any> {
+  if (a.kind === 'zernio') return zernioCreateTemplate(app, a.external_id, req as unknown as Record<string, unknown>);
+  return createTemplate(app.env, app.graph, a.meta.waba_id, credOf(app.env, a), req);
+}
+
+/** The templates of this name on the store's account, in Meta's shape ({data}). */
+async function namedOn(app: App, a: Account, name: string): Promise<any> {
+  if (a.kind === 'zernio') return zernioTemplatesNamed(app, a.external_id, name);
+  return templatesNamed(app.env, app.graph, a.meta.waba_id, credOf(app.env, a), name);
 }
 
 const ALL: MessageKey[] = Object.values(KINDS).flatMap((k) => k.messages);
@@ -53,7 +67,6 @@ export async function submitTemplates(app: App, storeId: number, by: string, { o
   if (!a) return { sent: 0, refused: 0 };
   const s = await app.db.one<any>('SELECT name, domain, brand, brand_override FROM stores WHERE id = $1', [storeId]);
   const store = displayName(s?.brand_override?.name, s?.brand?.name, s?.name) || s?.domain;
-  const token = credOf(app.env, a);
   const have = new Map((await templatesOf(app, a.id)).map((t) => [t.name, t]));
   const base = publicBase(app.env);
   let sent = 0;
@@ -69,12 +82,12 @@ export async function submitTemplates(app: App, storeId: number, by: string, { o
       refused++;
     } else {
       try {
-        const out = await createTemplate(app.env, app.graph, a.meta.waba_id, token, req);
+        const out = await createOn(app, a, req);
         row = { meta_id: String(out?.id || '') || null, status: String(out?.status || 'PENDING').toUpperCase(), category: String(out?.category || req.category).toUpperCase(), why: null };
         sent++;
       } catch (e: any) {
         // A template of this name is already on the account (from an earlier try): what Meta says about it stands.
-        const there = /already exists|2388024/i.test(String(e?.message || '')) ? await readTemplate(app, a.meta.waba_id, token, req.name).catch(() => null) : null;
+        const there = /already exists|2388024/i.test(String(e?.message || '')) ? await readTemplate(app, a, req.name).catch(() => null) : null;
         row = there || { meta_id: null, status: 'error', category: null, why: String(e?.message || e).slice(0, 300) };
         if (!there) refused++;
       }
@@ -90,8 +103,8 @@ export async function submitTemplates(app: App, storeId: number, by: string, { o
   return { sent, refused };
 }
 
-async function readTemplate(app: App, waba: string, token: Cred, name: string) {
-  const out = await templatesNamed(app.env, app.graph, waba, token, name);
+async function readTemplate(app: App, a: Account, name: string) {
+  const out = await namedOn(app, a, name);
   const t = (out?.data || []).find((x: any) => x?.name === name && (!x.language || x.language === 'he'));
   if (!t) return null;
   return { meta_id: String(t.id || '') || null, status: String(t.status || '').toUpperCase(), category: t.category ? String(t.category).toUpperCase() : null, why: t.rejected_reason && t.rejected_reason !== 'NONE' ? String(t.rejected_reason) : null };
@@ -99,12 +112,11 @@ async function readTemplate(app: App, waba: string, token: Cred, name: string) {
 
 /** Read again every template of this account that Meta has not decided on yet (the worker, hourly). */
 export async function checkTemplates(app: App, accountId: number) {
-  const a = await app.db.one<Account>("SELECT id, store_id, external_id, secret, meta, status, kind FROM channel_accounts WHERE id = $1 AND kind IN ('meta', 'kapso') AND status = 'active'", [accountId]);
-  if (!a || (a.kind === 'meta' && !a.secret) || !a.meta?.waba_id) return { checked: 0 };
-  const token = credOf(app.env, a);
+  const a = await app.db.one<Account>("SELECT id, store_id, external_id, secret, meta, status, kind FROM channel_accounts WHERE id = $1 AND kind IN ('meta', 'kapso', 'zernio') AND status = 'active'", [accountId]);
+  if (!a || (a.kind === 'meta' && !a.secret) || (a.kind !== 'zernio' && !a.meta?.waba_id)) return { checked: 0 };
   const rows = await app.db.query<{ name: string }>("SELECT name FROM wa_templates WHERE account_id = $1 AND status IN ('PENDING', 'IN_APPEAL')", [a.id]);
   for (const r of rows) {
-    const t = await readTemplate(app, a.meta.waba_id, token, r.name).catch(() => null);
+    const t = await readTemplate(app, a, r.name).catch(() => null);
     if (t) await app.db.query('UPDATE wa_templates SET status = $3, category = COALESCE($4, category), why = $5, checked_at = now() WHERE account_id = $1 AND name = $2', [a.id, r.name, t.status, t.category, t.why]);
     else await app.db.query('UPDATE wa_templates SET checked_at = now() WHERE account_id = $1 AND name = $2', [a.id, r.name]);
   }
