@@ -14,6 +14,7 @@ import { BOOT, beat, claim, done, enqueue, fail, MESSAGE_KINDS, progress, requeu
 import { lostMessage } from './lost.ts';
 import { dailyRetention } from './retention.ts';
 import { watchStores } from '../ops/watch.ts';
+import { monthlyReports } from '../owners/reports.ts';
 import { rereadCompany, scheduleReread } from './reread.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { interruptedSends } from '../auto/send.ts';
@@ -237,6 +238,8 @@ export async function schedule(app: App) {
   await dailyRetention(app);
   // Once a day: a customer store over its plan, or stuck with nothing connected (ops/watch.ts).
   await watchStores(app).catch((e) => app.log(`[watch] ${e?.message || e}`));
+  // On the 1st from 09:00: last month's results to each customer store's owners (owners/reports.ts).
+  await monthlyReports(app).catch((e) => app.log(`[reports] ${e?.message || e}`));
   await scheduleReread(app);
 }
 

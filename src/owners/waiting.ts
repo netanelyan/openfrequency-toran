@@ -7,6 +7,7 @@ import { enqueue } from '../jobs/queue.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { WAITING_SQL } from '../web/inbox.ts';
 import { ownersOf } from './identity.ts';
+import { notifyOwners } from './notify-client.ts';
 
 // When a customer waits for the store's owner, the owner is told (TORAN-READINESS.md P0-2; the site and the pitch page
 // promise "שאלה שהוא לא יודע לענות עליה מגיעה אליכם"). A handoff, or a new message in a conversation the owner took
@@ -59,6 +60,23 @@ export async function waitingDigest(app: App, storeId: number): Promise<{ sent: 
   if (!list.length) return { sent: 0, conversations: 0, why: 'nothing new waits' };
   const name = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
   await firstDaysAlert(app, store, list.length, name);
+  const base = String(app.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+  const told = async (sent: number) => {
+    for (const c of list) await event(db, storeId, 'owner_told', { conversationId: c.id });
+    await event(db, storeId, 'owner_digest', { conversations: list.map((c) => c.id), emails: sent });
+  };
+  // Through accounts first (owners/notify-client.ts): it knows the workspace's people and what each chose, and holds
+  // the day's limit. Its own no (the limit, Toran off for the workspace) stands; only when it could not decide (not
+  // configured, unreachable, a workspace it does not know) does Toran's own mail send it.
+  if (store.workspace_id) {
+    const m = waitingMail(name, list, base);
+    const r = await notifyOwners(app, Number(store.workspace_id), 'conversation_waiting', m.subject, m.text, list.length === 1 ? `${base}/chat/${list[0].id}` : `${base}/chats?state=waiting`);
+    if (r.ok) {
+      await told(r.sent);
+      return { sent: r.sent, conversations: list.length };
+    }
+    if (r.status === 429 || r.status === 409) return { sent: 0, conversations: list.length, why: `accounts: ${r.why}` };
+  }
   if (!app.mail) return { sent: 0, conversations: list.length, why: 'email is off here' };
   const today = await db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE store_id = $1 AND kind = 'owner_digest' AND at > now() - interval '1 day'", [storeId]);
   if ((today?.n || 0) >= DIGESTS_PER_DAY) return { sent: 0, conversations: list.length, why: 'enough emails today' };
@@ -66,7 +84,7 @@ export async function waitingDigest(app: App, storeId: number): Promise<{ sent: 
   if (store.workspace_id) for (const o of (await ownersOf(app, Number(store.workspace_id))) || []) if (o.user.email) to.add(o.user.email.toLowerCase());
   const addresses = [...to].filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
   if (!addresses.length) return { sent: 0, conversations: list.length, why: 'no owner email' };
-  const m = waitingMail(name, list, String(app.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''));
+  const m = waitingMail(name, list, base);
   let sent = 0;
   for (const address of addresses) {
     try {
@@ -76,10 +94,7 @@ export async function waitingDigest(app: App, storeId: number): Promise<{ sent: 
       app.log(`[waiting] the email to the owner of store ${storeId} failed: ${e?.message || e}`);
     }
   }
-  if (sent) {
-    for (const c of list) await event(db, storeId, 'owner_told', { conversationId: c.id });
-    await event(db, storeId, 'owner_digest', { conversations: list.map((c) => c.id), emails: sent });
-  }
+  if (sent) await told(sent);
   return { sent, conversations: list.length };
 }
 
