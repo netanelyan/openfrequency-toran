@@ -19,6 +19,7 @@ import { autoRoutes } from './pages/auto.ts';
 import { webChatRoutes } from './pages/webchat.ts';
 import { startRoutes } from './pages/start.ts';
 import { queueRoutes } from './pages/queue.ts';
+import { resultsRoutes } from './pages/results.ts';
 
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
@@ -55,6 +56,7 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
     // the same number as the header's, from the session's own scope.
     ['GET', /^\/waiting\.json$/, async (r) => ({ json: { chats: r.ctx.waiting?.chats ?? 0 }, headers: { 'cache-control': 'no-store' } })],
     ...customerRoutes(app),
+    ...resultsRoutes(app),
     ...startRoutes(app),
     ...whatsappRoutes(app),
     ...socialRoutes(app),

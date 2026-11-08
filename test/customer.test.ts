@@ -38,7 +38,7 @@ test('a customer\'s menu is the website\'s: Today, the inbox, what Toran knows, 
   const { s } = await shop();
   try {
     const page = await (await s.get('/')).text();
-    for (const href of ['/', '/chats', '/knowledge', '/assistant', '/plan', '/settings']) assert.match(page, new RegExp(`<a href="${href.replace('/', '\\/')}"`), href);
+    for (const href of ['/', '/chats', '/knowledge', '/assistant', '/results', '/settings']) assert.match(page, new RegExp(`<a href="${href.replace('/', '\\/')}"`), href);
     for (const href of ['/leads', '/review', '/followups']) assert.ok(!page.includes(`href="${href}"`), `no ${href}`);
     assert.match(page, /<span class="lbl">שיחות<\/span>/, 'the header counts conversations against the plan, not tokens');
     assert.ok(!/טוקנים/.test(page));

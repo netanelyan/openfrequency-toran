@@ -115,7 +115,8 @@ export const CUSTOMER_NAV: [string, string, string, string][] = [
   ['/chats', 'שיחות', 'chats', 'chat'],
   ['/knowledge', 'מה הוא יודע', 'knowledge', 'book'],
   ['/assistant', 'העוזר', 'assistant', 'spark'],
-  ['/plan', 'החבילה', 'plan', 'card'],
+  // Results in the plan's place (TORAN-READINESS.md P1-12): the plan is the header's meter and its own page, /plan.
+  ['/results', 'תוצאות', 'results', 'today'],
   ['/settings', 'הגדרות', 'settings', 'settings'],
 ];
 const SECTION_OF: Record<string, string> = { lead: 'leads', add: 'leads', chat: 'chats', brand: 'settings', discover: 'leads' };
