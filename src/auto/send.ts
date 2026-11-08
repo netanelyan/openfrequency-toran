@@ -144,7 +144,7 @@ async function placed(app: App, storeId: number, platform: string, p: Placed, ca
     [storeId, keys, p.at, p.contact.phone || '-', p.contact.email || '-'],
   );
   // Kept while carts are on, so a checkout read after its order (a reading's order) is still known to be ordered.
-  if (cartOn) await app.db.query("INSERT INTO auto_events (store_id, key, kind, message, ref, contact, vars, source, happened_at, due_at, status, why) VALUES ($1, $2, 'order', 'placed', $3, $4::jsonb, $5::jsonb, 'platform', $6, $6, 'noted', NULL) ON CONFLICT (store_id, key) DO NOTHING", [storeId, `${platform}:placed:${p.id}`, p.id, J(p.contact), J({ checkout: p.checkout }), p.at]);
+  if (cartOn) await app.db.query("INSERT INTO auto_events (store_id, key, kind, message, ref, contact, vars, source, happened_at, due_at, status, why) VALUES ($1, $2, 'order', 'placed', $3, $4::jsonb, $5::jsonb, 'platform', $6, $6, 'noted', NULL) ON CONFLICT (store_id, key) DO NOTHING", [storeId, `${platform}:placed:${p.id}`, p.id, J(p.contact), J({ checkout: p.checkout, total: p.total ?? null, currency: p.currency ?? null }), p.at]);
 }
 
 async function happen(app: App, storeId: number, settings: Record<Kind, Setting>, h: Happening, source: string): Promise<boolean> {

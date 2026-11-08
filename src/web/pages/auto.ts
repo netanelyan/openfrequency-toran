@@ -1,4 +1,5 @@
 import type { App } from '../../app.ts';
+import { cartLine, cartReport, monthHe, RECOVERY_DAYS } from '../../auto/report.ts';
 import { displayName } from '../../ingest/brand.ts';
 import { orderAccessOf, ordersPlatform } from '../../orders.ts';
 import { emailText, isKind, KIND_KEYS, KINDS, LEGACY, MESSAGES, publicBase, SAMPLE, SETTINGS_BUTTON, waText, type Kind, type MessageKey } from '../../auto/messages.ts';
@@ -154,8 +155,11 @@ export async function autoPanel(app: App, r: DashReq, s: { id: number; name: str
     return `<li><span>${esc(what)}</span><span class="end">${state}${again}</span></li>`;
   }).join('')}</ul>` : '';
 
+  // What the cart reminders brought back (auto/report.ts): the last three months that had one.
+  const carts = await cartReport(app.db, [id]);
+  const cartsHtml = carts.length ? `<h3 class="small mt16" id="carts">מה העגלות החזירו</h3><ul class="keys mt8">${carts.map((m) => `<li><span>${esc(monthHe(m.month))}</span><span class="end small">${esc(cartLine(m))}</span></li>`).join('')}</ul><p class="small muted mt8 m0">עגלה נספרת כחזרה כשהלקוח הזמין עד ${RECOVERY_DAYS} ימים אחרי התזכורת, מאותה עגלה או עם אותו טלפון או מייל. הסכום הוא של ההזמנה.</p>` : '';
   const forms = (await Promise.all(KIND_KEYS.map(kindForm))).join('');
-  return `${head}${source}${whatsapp}${forms}${recentHtml}${may ? '' : '<p class="small muted mt12 m0">את ההודעות מפעיל מי שפתח את החשבון.</p>'}</section>`;
+  return `${head}${source}${whatsapp}${forms}${cartsHtml}${recentHtml}${may ? '' : '<p class="small muted mt12 m0">את ההודעות מפעיל מי שפתח את החשבון.</p>'}</section>`;
 }
 
 export function autoRoutes(app: App): Route<DashReq>[] {

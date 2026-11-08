@@ -36,11 +36,11 @@ export type Happening = {
   ref: string;
   at: string; // when it happened at the store
   contact: Contact;
-  vars: { order?: string; link?: string };
+  vars: { order?: string; link?: string; total?: number | null; currency?: string | null };
   after?: 'shipped' | 'delivered'; // a review: counted from the shipment, or from the delivery
 };
 /** An order exists (id: the platform's own, as order:<id> or checkout:<id>): a cart reminder for its checkout, or for the same person before it, is not sent. */
-export type Placed = { id: string; checkout: string | null; at: string; contact: Contact };
+export type Placed = { id: string; checkout: string | null; at: string; contact: Contact; total?: number | null; currency?: string | null };
 export type Read = { happenings: Happening[]; consent: Consent[]; placed: Placed[] };
 
 const str = (v: unknown) => (v == null ? '' : String(v).trim());
@@ -49,6 +49,12 @@ const iso = (v: unknown) => {
   const t = new Date(str(v)).getTime();
   return Number.isFinite(t) && t > 0 ? new Date(t).toISOString() : null;
 };
+/** A money amount as the platform gives it (a string or a number), or null: what an order or a cart was worth, for the carts' report. */
+const money = (v: unknown): number | null => {
+  const n = Number(str(v));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+};
+const cur = (...xs: unknown[]) => (first(...xs) || '').toUpperCase().slice(0, 3) || null;
 const contactOf = (name: unknown, phone: unknown[], email: unknown[]): Contact => ({
   name: str(name) || null,
   phone: phone.map((p) => toIntl(str(p))).find(Boolean) || null,
@@ -93,11 +99,11 @@ export function shopifyCheckout(c: any): Read {
   const contact = shopifyContact(c);
   r.consent.push(...shopifyConsents(c, contact, iso(c?.updated_at) || at));
   if (c?.completed_at) {
-    r.placed.push({ id: `checkout:${id}`, checkout: id, at: iso(c.completed_at) || at, contact });
+    r.placed.push({ id: `checkout:${id}`, checkout: id, at: iso(c.completed_at) || at, contact, total: money(c?.total_price), currency: cur(c?.currency, c?.presentment_currency) });
     return r;
   }
   const link = str(c?.abandoned_checkout_url);
-  if (link) r.happenings.push({ key: `shopify:checkout:${id}:cart`, message: 'cart', ref: `checkout ${id.slice(0, 12)}`, at, contact, vars: { link } });
+  if (link) r.happenings.push({ key: `shopify:checkout:${id}:cart`, message: 'cart', ref: `checkout ${id.slice(0, 12)}`, at, contact, vars: { link, total: money(c?.total_price), currency: cur(c?.currency, c?.presentment_currency) } });
   return r;
 }
 
@@ -110,7 +116,7 @@ export function shopifyOrderRead(o: any): Read {
   const contact = shopifyContact(o);
   const order = first(o?.name, o?.order_number) || id;
   r.consent.push(...shopifyConsents(o, contact, iso(o?.updated_at) || created));
-  r.placed.push({ id: `order:${id}`, checkout: first(o?.checkout_token, o?.checkout_id), at: created, contact });
+  r.placed.push({ id: `order:${id}`, checkout: first(o?.checkout_token, o?.checkout_id), at: created, contact, total: money(o?.total_price), currency: cur(o?.currency, o?.presentment_currency) });
   if (o?.cancelled_at) return r;
   const fin = str(o?.financial_status);
   if (fin === 'paid') r.happenings.push({ key: `shopify:order:${id}:paid`, message: 'paid', ref: order, at: iso(o?.processed_at) || created, contact, vars: { order } });
@@ -169,10 +175,10 @@ export function wooOrderRead(o: any, origin: string): Read {
     const item = (o?.line_items || [])[0];
     const add = item ? `${origin}/?add-to-cart=${encodeURIComponent(str(item.variation_id && Number(item.variation_id) ? item.variation_id : item.product_id))}&quantity=${Math.max(1, Number(item.quantity) || 1)}` : '';
     const link = (status === 'pending' && payLink) || add;
-    if (link) r.happenings.push({ key: `woocommerce:order:${id}:cart`, message: 'cart', ref: order, at: created, contact, vars: { link } });
+    if (link) r.happenings.push({ key: `woocommerce:order:${id}:cart`, message: 'cart', ref: order, at: created, contact, vars: { link, total: money(o?.total), currency: cur(o?.currency) } });
     return r;
   }
-  r.placed.push({ id: `order:${id}`, checkout: id, at: created, contact });
+  r.placed.push({ id: `order:${id}`, checkout: id, at: created, contact, total: money(o?.total), currency: cur(o?.currency) });
   if (status === 'on-hold') r.happenings.push({ key: `woocommerce:order:${id}:pending`, message: 'pending', ref: order, at: created, contact, vars: { order } });
   if (status === 'failed') r.happenings.push({ key: `woocommerce:order:${id}:failed`, message: 'failed', ref: order, at: gmt('date_modified') || created, contact, vars: { order, link: payLink || `${origin}/` } });
   if ((status === 'processing' || status === 'completed') && (o?.date_paid_gmt || o?.date_paid)) r.happenings.push({ key: `woocommerce:order:${id}:paid`, message: 'paid', ref: order, at: gmt('date_paid') || created, contact, vars: { order } });
@@ -203,7 +209,7 @@ export function wixOrderRead(o: any, fulfillments: any[], origin: string): Read 
   const cd = o?.billingInfo?.contactDetails || {};
   const contact = contactOf(first(cd.firstName, o?.recipientInfo?.contactDetails?.firstName), [cd.phone, o?.shippingInfo?.logistics?.shippingDestination?.contactDetails?.phone, o?.recipientInfo?.contactDetails?.phone], [o?.buyerInfo?.email, cd.email]);
   const order = str(o?.number) || id;
-  r.placed.push({ id: `order:${id}`, checkout: str(o?.checkoutId) || null, at: created, contact });
+  r.placed.push({ id: `order:${id}`, checkout: str(o?.checkoutId) || null, at: created, contact, total: money(o?.priceSummary?.total?.amount), currency: cur(o?.currency) });
   if (str(o?.status) === 'CANCELED') return r;
   const pay = str(o?.paymentStatus);
   if (pay === 'PAID') r.happenings.push({ key: `wix:order:${id}:paid`, message: 'paid', ref: order, at: created, contact, vars: { order } });
@@ -226,11 +232,11 @@ export function wixCheckoutRead(c: any): Read {
   if (!id || !at) return r;
   const contact = contactOf(first(c?.contactDetails?.firstName, c?.buyerInfo?.firstName), [c?.contactDetails?.phone], [c?.buyerInfo?.email, c?.contactDetails?.email]);
   if (str(c?.status) === 'RECOVERED') {
-    r.placed.push({ id: `checkout:${id}`, checkout: id, at, contact });
+    r.placed.push({ id: `checkout:${id}`, checkout: id, at, contact, total: money(c?.priceSummary?.total?.amount ?? c?.totalPrice?.amount), currency: cur(c?.currency, c?.totalPrice?.currency) });
     return r;
   }
   const link = first(c?.checkoutUrl, c?.checkoutRecoveryUrl) || '';
-  if (str(c?.status) === 'ABANDONED' && link) r.happenings.push({ key: `wix:checkout:${id}:cart`, message: 'cart', ref: `checkout ${id.slice(0, 12)}`, at, contact, vars: { link } });
+  if (str(c?.status) === 'ABANDONED' && link) r.happenings.push({ key: `wix:checkout:${id}:cart`, message: 'cart', ref: `checkout ${id.slice(0, 12)}`, at, contact, vars: { link, total: money(c?.priceSummary?.total?.amount ?? c?.totalPrice?.amount), currency: cur(c?.currency, c?.totalPrice?.currency) } });
   return r;
 }
 
