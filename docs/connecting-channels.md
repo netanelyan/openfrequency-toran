@@ -10,6 +10,10 @@ repository, unused.
 
 ## Where things stand
 
+Since this table was checked: email answers in production, our own number has been live on Meta since 2026-10-31,
+stores' own WhatsApp numbers connect through Kapso and their Instagram and Messenger through Zernio (both 2026-11-08,
+steps 2b and 4b). The table is kept as the 2026-10-24 check.
+
 | Channel | Code | Production (checked from outside, 2026-10-24) |
 | --- | --- | --- |
 | Email | Built: Resend, signed webhook, threads, bounces, owner replies, attachments both ways (the owner's only), a store's own address on its domain | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
