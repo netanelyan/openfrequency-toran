@@ -8,6 +8,7 @@ import { alertOperator } from '../ops/alert.ts';
 import { WAITING_SQL } from '../web/inbox.ts';
 import { ownersOf } from './identity.ts';
 import { notifyOwners } from './notify-client.ts';
+import { notify } from './push.ts';
 
 // When a customer waits for the store's owner, the owner is told (TORAN-READINESS.md P0-2; the site and the pitch page
 // promise "שאלה שהוא לא יודע לענות עליה מגיעה אליכם"). A handoff, or a new message in a conversation the owner took
@@ -28,6 +29,19 @@ export async function notifyWaiting(app: App, storeId: number, conversationId?: 
   if (conversationId && !conv?.account_id) return; // the demo number: the owner trying it, or a lead
   const at = nightEnd(now() + DIGEST_DELAY_MS);
   await enqueue(app.db, 'owner_waiting', { storeId }, { dedupeKey: `owner_waiting:${storeId}`, runAt: new Date(at) });
+  // The browsers that asked for notifications are woken now, the email waits for its digest (owners/push.ts, P1-11).
+  // Never a reason for the message itself to fail.
+  await pushWaiting(app, storeId, conversationId ?? null).catch((e) => app.log?.(`[push] store ${storeId}: ${e?.message || e}`));
+}
+
+/** One push for a conversation that starts waiting: what it is, and the way to it. */
+async function pushWaiting(app: App, storeId: number, conversationId: number | null) {
+  const subs = await app.db.one('SELECT 1 FROM push_subs WHERE failed < 5 AND (workspace_id IS NULL OR workspace_id = (SELECT workspace_id FROM stores WHERE id = $1)) LIMIT 1', [storeId]);
+  if (!subs) return;
+  const s = await app.db.one<{ name: string; brand: any; brand_override: any; domain: string }>('SELECT name, brand, brand_override, domain FROM stores WHERE id = $1', [storeId]);
+  const q = conversationId ? await app.db.one<{ text: string }>("SELECT text FROM messages WHERE conversation_id = $1 AND role = 'customer' AND text <> '' ORDER BY id DESC LIMIT 1", [conversationId]) : null;
+  const name = displayName(s?.brand_override?.name, s?.brand?.name, s?.name) || s?.domain || 'החנות';
+  await notify(app, { storeId, kind: 'waiting', title: `לקוח של ${name} מחכה לתשובה שלכם`, body: q?.text ? cleanLine(q.text, 140) : 'תורן העביר אליכם שאלה.', url: conversationId ? `/chat/${conversationId}` : '/chats?state=waiting' });
 }
 
 /** 22:00 to 07:00 Israel time waits for 07:00. */

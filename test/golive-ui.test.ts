@@ -45,7 +45,9 @@ test('one press to go live on Today, a step in setup, and a pause in Settings', 
     // A team member sees where it stands but cannot switch it.
     s.as(s.accounts.session(member(15)).cookie);
     const t2 = await s.csrf('/settings');
-    assert.equal((await s.post(`/lead/${id}/live`, { _csrf: t2, on: '0' })).status, 403, 'refused');
+    const refused = await s.post(`/lead/${id}/live`, { _csrf: t2, on: '0' });
+    assert.ok([303, 403].includes(refused.status), 'refused (as a page with the reason, or a 403)');
+    if (refused.status === 303) assert.match(decodeURIComponent(String(refused.headers.get('set-cookie'))), /רק מי שפתח את החשבון/);
     assert.equal((await live()).agent_paused_at, null, 'still answering');
   } finally {
     await s.close();

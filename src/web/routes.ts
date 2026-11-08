@@ -20,6 +20,7 @@ import { webChatRoutes } from './pages/webchat.ts';
 import { startRoutes } from './pages/start.ts';
 import { queueRoutes } from './pages/queue.ts';
 import { resultsRoutes } from './pages/results.ts';
+import { latestNotification, subscribe, unsubscribe, vapid } from '../owners/push.ts';
 
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
@@ -55,6 +56,19 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
     // The waiting count, for the open page to keep its badge and title live (TORAN-READINESS.md P1-13, static/app.js):
     // the same number as the header's, from the session's own scope.
     ['GET', /^\/waiting\.json$/, async (r) => ({ json: { chats: r.ctx.waiting?.chats ?? 0 }, headers: { 'cache-control': 'no-store' } })],
+    // The owner's browser notifications (owners/push.ts, TORAN-READINESS.md P1-11): the key a browser subscribes with,
+    // its subscription in the session's workspace (never view-as), and the newest notification for the service worker.
+    ['GET', /^\/push\/key$/, async () => ({ json: { key: (await vapid(app.db)).publicKey }, headers: { 'cache-control': 'no-store' } })],
+    ['POST', /^\/push\/subscribe$/, async (r) => {
+      if (r.ctx.readOnly) return { status: 403, json: { ok: false, message: 'במצב צפייה אי אפשר להפעיל התראות.' } };
+      const done = await subscribe(app.db, String(r.form.endpoint || ''), { userId: r.user.id, workspaceId: r.scope.workspaceId });
+      return 'problem' in done ? { status: 400, json: { ok: false, message: 'הדפדפן הזה לא מאפשר התראות.' } } : { json: { ok: true, message: 'ההתראות פועלות בדפדפן הזה.' } };
+    }],
+    ['POST', /^\/push\/unsubscribe$/, async (r) => {
+      await unsubscribe(app.db, String(r.form.endpoint || ''), r.scope.workspaceId);
+      return { json: { ok: true, message: 'ההתראות כבויות בדפדפן הזה.' } };
+    }],
+    ['GET', /^\/notifications\/latest\.json$/, async (r) => ({ json: await latestNotification(app.db, r.scope.workspaceId), headers: { 'cache-control': 'no-store' } })],
     ...customerRoutes(app),
     ...resultsRoutes(app),
     ...startRoutes(app),

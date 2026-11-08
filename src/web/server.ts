@@ -224,6 +224,8 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
         const icon = ICON_FILES[p];
         if (icon) return send(req, res, 200, readFileSync(path.join(BRAND_DIR, icon.file)), icon.type, { 'cache-control': 'public, max-age=86400' });
         if (p === '/static/brand.css') return send(req, res, 200, brandCss(), 'text/css; charset=utf-8', { 'cache-control': 'public, max-age=3600' });
+        // The service worker of the owner's notifications (owners/push.ts): at the root, so its scope is every page.
+        if (p === '/sw.js') return send(req, res, 200, readFileSync(path.join(STATIC, 'sw.js')), 'text/javascript; charset=utf-8', { 'cache-control': 'no-cache' });
         if (p === '/static/manifest.webmanifest') return send(req, res, 200, JSON.stringify(MANIFEST), 'application/manifest+json; charset=utf-8', { 'cache-control': 'public, max-age=86400' });
         if (p === '/favicon.ico') return send(req, res, 200, readFileSync(path.join(BRAND_DIR, 'svg/toran.svg')), 'image/svg+xml', { 'cache-control': 'public, max-age=86400' });
         // Liveness and readiness (health.ts): the deploy and the uptime monitor wait on /readyz, never on /healthz.

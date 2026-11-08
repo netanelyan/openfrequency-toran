@@ -31,6 +31,7 @@ import { activeChannels, setupOf, setupStoreOf, storeState, type Setup, type Ste
 import { waLink } from '../../pitch/page.ts';
 import { webAccountOf } from '../../channels/web.ts';
 import { liveOf, setLive, type LiveState } from '../../golive.ts';
+import { vapid } from '../../owners/push.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -202,6 +203,22 @@ async function sampleReview(app: App, r: DashReq, s: Store): Promise<string> {
   return `<section class="panel" id="sample"><header><h2>ככה תורן עונה</h2></header>
   <p class="small muted m0">שאלות שלקוח של ${esc(s.name)} יכול לשאול, והתשובות של תורן מתוך האתר. אם תשובה לא נכונה, כותבים את הנכונה בתשובות שלכם, ותורן יענה ככה.</p>
   <div class="chat mt12">${bubbles}</div>${foot}
+</section>`;
+}
+
+/**
+ * Notifications on this device, as Teder's (owners/push.ts; TORAN-READINESS.md P1-11): a question that starts waiting wakes
+ * the browser at once, before the email digest. On an iPhone only from the home screen icon, so the line says how.
+ */
+async function pushPanel(app: App, r: DashReq): Promise<string> {
+  const ws = r.scope.workspaceId;
+  const n = (await app.db.one<{ n: number }>(ws == null ? 'SELECT COUNT(*)::int AS n FROM push_subs WHERE workspace_id IS NULL' : 'SELECT COUNT(*)::int AS n FROM push_subs WHERE workspace_id = $1', ws == null ? [] : [ws]))?.n || 0;
+  const key = (await vapid(app.db)).publicKey;
+  return `<section class="panel" id="push"><header><h2>התראות</h2><span class="end">${n ? `<span class="chip ok">${n === 1 ? 'מכשיר אחד' : `${n} מכשירים`}</span>` : '<span class="chip ghost">כבוי</span>'}</span></header>
+  <p class="small m0">כשלקוח מחכה לתשובה שלכם, מגיעה התראה לטלפון או למחשב מיד, בלי לחכות למייל.</p>
+  <p class="small muted mt8 m0">באייפון: פותחים את תורן בספארי, משתפים ואז "הוסף למסך הבית", ופותחים את תורן מהאייקון. רק משם אפשר להפעיל התראות.</p>
+  <form class="mt12" method="post" action="/push/subscribe" data-ajax="reload" data-push="${esc(key)}">${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm primary" type="button" data-push-enable>${icon('spark')}להפעיל התראות במכשיר הזה</button></form>
+  <form class="mt12" method="post" action="/push/unsubscribe" data-ajax="reload" data-push-off hidden>${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm ghost" type="button" data-push-disable>לכבות התראות במכשיר הזה</button></form>
 </section>`;
 }
 
@@ -457,6 +474,7 @@ export async function customerSettings(app: App, r: DashReq) {
   <div class="grid12">${panels.join('') || `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>הערוצים יופיעו כאן כשהחנות תתחבר.${mayStart(r) ? `<p class="mt12 m0"><a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a></p>` : ''}</div>`}</div>
   <div class="grid12">
     <section class="panel"><header><h2>החשבון</h2></header><p class="small m0">מי בחשבון, מספרי הוואטסאפ שמהם כותבים לעוזר, החבילה והחשבוניות נמצאים בחשבון שלכם ב-OpenFrequency.</p><div class="row mt12"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></section>
+${r.ctx.readOnly ? '' : await pushPanel(app, r)}
     <section class="panel" id="mails"><header><h2>מיילים</h2></header><p class="small m0">מייל כשלקוח מחכה לתשובה שלכם, וסיכום של החודש בתחילת כל חודש. כל אחד בחשבון בוחר מה הוא מקבל.</p><div class="row mt12"><a class="btn sm" href="${esc(links.notifications)}">${icon('mail')}לבחור מיילים</a></div></section>
     <a class="btn ghost" href="${esc(r.ctx.logout || '/')}">${icon('logout')}יציאה</a>
   </div>
