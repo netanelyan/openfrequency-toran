@@ -1,13 +1,15 @@
 // Writes docs/whatsapp-templates.md, the submission sheet for Meta, from src/ops/alert.ts (the operator's alert),
-// src/billing/remind.ts (the payment reminder) and src/owners/templates.ts (the owner line's).
+// src/billing/remind.ts (the payment reminder), src/ops/outreach.ts (the pitches to leads) and src/owners/templates.ts
+// (the owner line's).
 import { writeFileSync } from 'node:fs';
 import { alertTemplateDoc } from '../src/ops/alert.ts';
 import { REMIND_HOLD_MINUTES, REMIND_WEEK_DAYS, REMIND_WEEK_MAX, reminderTemplateDoc } from '../src/billing/remind.ts';
 import { templatesDoc } from '../src/owners/templates.ts';
+import { DAILY_DEFAULT, OUTREACH_TEMPLATES, outreachTemplateDoc } from '../src/ops/outreach.ts';
 const head = `# WhatsApp templates
 
 What Toran sends from our own number when WhatsApp allows nothing but a template Meta approved: outside the 24 hours
-after the person last wrote to us. Three sets:
+after the person last wrote to us. Four sets:
 
 - **The operator's alert, \`operator_alert\`**, sent since 2026-11-03: each of Toran's and Teder's alerts, to the
   operator's own number (\`TORAN_ALERT_WA\`), from \`src/ops/alert.ts\`. It goes as this template always, inside the 24
@@ -16,8 +18,12 @@ after the person last wrote to us. Three sets:
 - **The payment reminder, \`payment_reminder\`**: accounts' reminders to pay for the new month, to a workspace owner's
   number accounts verified and to the number a workspace last paid from, from \`src/billing/remind.ts\`. Not created in
   WhatsApp Manager yet: see its section.
+- **The pitches to leads, \`toran_pitch\`, \`toran_pitch_reminder\`, \`teder_pitch\`, \`teder_pitch_reminder\`**, since
+  2026-11-08: the first message to a lead and its one reminder, from \`src/ops/outreach.ts\`. Not created yet: see
+  their section.
 
-This file is written from \`src/ops/alert.ts\`, \`src/billing/remind.ts\` and \`src/owners/templates.ts\`. Change the
+This file is written from \`src/ops/alert.ts\`, \`src/billing/remind.ts\`, \`src/ops/outreach.ts\` and
+\`src/owners/templates.ts\`. Change the
 templates there, then run \`node scripts/templates-doc.ts\`; a test fails while the two differ.
 
 ## The operator's alert
@@ -62,6 +68,35 @@ most ${REMIND_WEEK_MAX} reminders in ${REMIND_WEEK_DAYS} days, and the same one 
 after a reminder gets none until it writes "התחל" (\`pay_remind_stops\`); the emails go on.
 
 ${reminderTemplateDoc()}
+## Pitches to leads
+
+The owner, 2026-11-08: "if i press the send button to a demo suggestion, i want it to go to whatsapp, so toran should
+send it", and on the risk: "i dont think people will report that, especially with something legit and an option to
+be removed from the advertising list. build that". Until then the first message to a lead and its one reminder went
+from the operator's own phone. Now the "send now" button (the operator's dashboard, Toran's lead and follow-up pages,
+Teder's /leads through \`POST /internal/outreach/send\`) sends them from our number as these four **Marketing**
+templates, from \`src/ops/outreach.ts\`. Meta's rules they follow (developers.facebook.com/docs/whatsapp/
+business-management-api/message-templates, and its components page): the body does not start or end with a variable;
+the URL button takes one variable, at the end of its address (the page's slug after \`/s/\`); quick reply buttons and
+the others are two groups, so the URL button is first and the quick reply after it (\`index\` 1 when sending).
+
+**Why the guardrails** (all in \`src/ops/outreach.ts\`). Meta asks for a person's opt-in before a business writes to them
+first (developers.facebook.com/docs/whatsapp/overview/getting-opt-in), and a lead's number comes from its own site.
+Meta approves a template's wording only: after that, a template people block or report falls in quality and is paused
+for 3 hours, then 6, then disabled, and the number's own rating falls with it. Our number is also the demo, support,
+the alerts and the payment reminders, so: the way out is on the message ("${OUTREACH_TEMPLATES.toran_first.stop}", and a
+"לא" or "הסר" reply), and a number that uses it gets no pitch of either product again (\`outreach_stops\`); at most
+\`TORAN_OUTREACH_DAILY\` (${DAILY_DEFAULT}) a day, both products together; never at night, on Shabbat or a holiday; and before each
+send the number's quality and the template's are read from Meta (ten minutes at a time): anything but GREEN, a template
+not APPROVED, or Meta pausing one, stops the pitches until it is green again, with one alert a day. The law's line is
+the one it always was (section 30A, \`src/outreach.ts\`): one approach that says who writes and how to stop, and one
+reminder.
+
+**To do in WhatsApp Manager**, or with the commands below, on our WhatsApp account (2477118039396394, \`META_WABA_ID\`):
+create the four, then set \`META_WABA_ID\` in Toran's \`.env\` so the template's own status and score are read too.
+Nothing else is set when Meta approves them: until then each send is refused (code 132001) and said on the page.
+
+${outreachTemplateDoc()}
 ## The owner line (not sent since 2026-11-02)
 
 **Not sent since 2026-11-02.** The owner decided: "managing teder through whatsapp, only through the dashboard".

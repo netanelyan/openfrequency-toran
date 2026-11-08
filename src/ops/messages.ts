@@ -75,6 +75,7 @@ export const stuckPlatform = (o: { storeName: string; platform: string; supporte
 /** Why a store said no, as the operator picks it. */
 export const LOST_REASONS: Record<string, string> = {
   not_interested: 'לא מעוניינים',
+  opted_out: 'ביקשו שנסיר אותם',
   price: 'יקר להם',
   has_solution: 'יש להם פתרון אחר',
   no_answer: 'לא עונים',

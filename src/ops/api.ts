@@ -5,7 +5,7 @@ import { syncTeder, tederUrl, websiteLeads } from './sources.ts';
 import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests, tederDemos } from './queue.ts';
 import { funnels } from './funnel.ts';
 import { demoLine, oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
-import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendDirect, sendTederDirect, setNext, type Kind } from './actions.ts';
+import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendNow, setNext, type Kind } from './actions.ts';
 import { queueState } from '../jobs/queue.ts';
 import { internalRefusal } from './internal.ts';
 
@@ -95,7 +95,7 @@ export function opsRoutes(app: App): Route<Req>[] {
         if (what === 'sent' && kind === 'toran' && (await markReconnectTold(app, id, by))) said = TOLD;
         else if (what === 'sent') await markSent(app, kind, id, by);
         else if (what === 'reminded') await markReminded(app, kind, id, by);
-        else if (what === 'direct') await (kind === 'toran' ? sendDirect(app, id, by) : sendTederDirect(app, id, by));
+        else if (what === 'direct') said = await sendNow(app, kind, id, by);
         else if (what === 'replied') await markReplied(app, kind, id, by);
         else if (what === 'next') await setNext(app, kind, id, String(b.text || ''), Number(b.days) || 1, by);
         else if (what === 'later') await later(app, kind, id, Number(b.days) || 1, by);

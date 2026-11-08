@@ -313,6 +313,7 @@ test("past the 23 hours a Teder demo is not sent by itself: it waits on the oper
 test("a Teder card can go now from the demo number like Toran's: inside the 23 hours of a code's message and while our number is connected; never past them, nor for a demo asked for with a typed number", async () => {
   const { serve } = await import('./serve.ts');
   const { NOT_LIVE } = await import('../src/ops/actions.ts');
+  const { SAID_HE } = await import('../src/ops/outreach.ts');
   const s = await serve();
   const { app } = s;
   const teder = await fakeTeder();
@@ -351,16 +352,18 @@ test("a Teder card can go now from the demo number like Toran's: inside the 23 h
     assert.ok((await app.db.one<any>('SELECT sent_at FROM teder_leads WHERE id = $1', [now_])).sent_at, 'marked sent: its one reminder comes due');
     assert.equal((await app.db.one<any>("SELECT actor FROM audit WHERE action = 'ops_direct'")).actor, 'op');
     assert.ok(!(await card(now_)), 'off the list');
-    assert.deepEqual(await direct(now_), [400, { ok: false, error: 'כבר סומן שנשלח' }]);
+    // Pressed again: since 2026-11-08 the same button sends the one reminder (ops/outreach.ts), when it is due.
+    assert.deepEqual(await direct(now_), [400, { ok: false, error: 'עוד לא הזמן לתזכורת.' }]);
 
-    // Past the 23 hours: from the operator's own WhatsApp only.
+    // Past the 23 hours: since 2026-11-08 the pitch template from our number on Meta (ops/outreach.ts); our number is not
+    // on Meta here, so no button, and the action says so. Nothing goes.
     assert.equal((await card(late)).direct, false);
     assert.match((await card(late)).message!, /^היי, כאן OpenFrequency\. ביקשתם באתר דמו של תדר/);
-    assert.deepEqual(await direct(late), [400, { ok: false, error: 'עברו 23 שעות מההודעה שלהם, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.' }]);
-    // Asked for with a typed number: no window at all.
+    assert.deepEqual(await direct(late), [400, { ok: false, error: SAID_HE.no_line }]);
+    // Asked for with a typed number: no window at all, so the template too.
     const typed = await card('77');
     assert.deepEqual([typed.direct, typed.target.href?.startsWith('https://wa.me/972500000303?text=')], [false, true]);
-    assert.deepEqual(await direct('77'), [400, { ok: false, error: 'את הדמו הזה ביקשו באתר עם מספר שהקלידו, והם לא כתבו לנו בוואטסאפ, אז מהמספר של הדמו אי אפשר לשלוח. אפשר לשלוח מהוואטסאפ שלך.' }]);
+    assert.deepEqual(await direct('77'), [400, { ok: false, error: SAID_HE.no_line }]);
     assert.equal(app.wa.outbox!.length, before + 1, 'only the one in its window went');
   } finally {
     await teder.close();

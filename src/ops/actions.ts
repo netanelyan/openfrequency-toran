@@ -9,6 +9,7 @@ import { J } from '../db/index.ts';
 import { reconnectSql } from './queue.ts';
 import { LOST_REASONS, requestedLink, tederRequestedLink } from './messages.ts';
 import { syncTeder } from './sources.ts';
+import { sendPitch, type Stage } from './outreach.ts';
 
 // What the operator's buttons record, for a Toran store (stores) or a Teder demo (teder_leads), every one in the audit
 // log with the operator as its actor:
@@ -23,6 +24,8 @@ import { syncTeder } from './sources.ts';
 //              us and so has no window to answer in. Only while our number is connected
 //              (channels/lines.ts demoLine): until then the button is refused, nothing is sent or marked, and the
 //              links that go out by themselves wait
+//              Since 2026-11-08 the same button sends the rest too (sendNow): a first message or the one reminder,
+//              as the approved pitch template from our number, under ops/outreach.ts's limits, then marks it
 //   replied    they answered: they leave the list for "in conversation"
 //   next       the next step in a conversation, and when
 //   later      off the list for a day or a week
@@ -163,6 +166,58 @@ export async function sendTederDirect(app: App, id: string, by: string): Promise
   }
   await markSent(app, 'teder', id, by);
   await log(app, 'teder', id, 'direct', by, { code: req.code });
+}
+
+/**
+ * The number a lead's pitch goes to, and which of the two it is (the first, or the one reminder), or why there is none.
+ * A store's own listed WhatsApp (contact_whatsapp, from its website), or the number that asked for the demo on our
+ * website; never a number found anywhere else.
+ */
+export async function pitchOf(app: App, kind: Kind, id: string): Promise<{ stage: Stage; phone: string | null; name: string; url: string | null } | { error: string }> {
+  const r = await row(app, kind, id);
+  if (kind === 'toran') {
+    if (!r.approved_at || !r.page_built_at) return { error: 'הדף עוד לא מוכן' };
+    if (r.followup_sent_at) return { error: 'כבר נשלחה להם הודעה שנייה. מכאן לא כותבים להם יותר, אלא אם יכתבו.' };
+    const req = await app.db.one<{ phone: string }>("SELECT phone FROM demo_requests WHERE domain = $1 AND product = 'toran' AND claimed_at IS NOT NULL ORDER BY claimed_at DESC LIMIT 1", [r.domain]);
+    return { stage: r.sent_at ? 'reminder' : 'first', phone: req?.phone || r.contact_whatsapp || null, name: displayName(r.brand_override?.name, r.brand?.name, r.name) || r.domain, url: pitchUrl(app.env, r.slug) };
+  }
+  if (!r.page_url || r.removed_at) return { error: 'הדמו של תדר עוד לא באוויר' };
+  if (r.reminded_at) return { error: 'כבר נשלחה תזכורת אחת. מכאן לא כותבים להם יותר.' };
+  const req = await app.db.one<{ phone: string }>("SELECT phone FROM demo_requests WHERE product = 'teder' AND teder_id = $1 AND claimed_at IS NOT NULL ORDER BY claimed_at DESC LIMIT 1", [String(r.id)]);
+  return { stage: r.sent_at ? 'reminder' : 'first', phone: r.whatsapp || req?.phone || null, name: r.name || r.domain, url: r.page_url };
+}
+
+/**
+ * The operator's "send now" on a lead (the owner, 2026-11-08: "if i press the send button to a demo suggestion, i want
+ * it to go to whatsapp, so toran should send it"): inside the window a demo asked for opened, the link as before
+ * (sendDirect, sendTederDirect); otherwise the pitch, as Meta's approved template from our number (ops/outreach.ts,
+ * with its limits), and then the lead is marked as "שלחתי" marks it: sent, with its one reminder due, or reminded.
+ * Nothing is marked when it did not go; the reason is said. Returns what the operator reads.
+ */
+export async function sendNow(app: App, kind: Kind, id: string, by: string): Promise<string> {
+  const r = await row(app, kind, id);
+  if (!r.sent_at) {
+    // A demo asked for, still inside its window: the free-form link, as the button always sent it.
+    const inWindow = kind === 'toran'
+      ? await app.db.one("SELECT 1 FROM demo_requests WHERE domain = $1 AND product = 'toran' AND claimed_at > now() - interval '24 hours'", [r.domain])
+      : await app.db.one("SELECT 1 FROM demo_requests WHERE product = 'teder' AND teder_id = $1 AND claimed_at > now() - interval '23 hours' AND delivered_at IS NULL", [String(r.id)]);
+    if (inWindow) {
+      await (kind === 'toran' ? sendDirect(app, id, by) : sendTederDirect(app, id, by));
+      return 'נשלח מהמספר של הדמו, וסומן שנשלח.';
+    }
+  }
+  const p = await pitchOf(app, kind, id);
+  if ('error' in p) throw new OpsError(p.error);
+  if (!p.phone) throw new OpsError('אין לליד הזה מספר וואטסאפ מהאתר שלו, אז מהמספר שלנו לא שולחים לו. אפשר לשלוח לו מייל.');
+  if (!p.url) throw new OpsError('אין לליד הזה עמוד באוויר, אז אין מה לשלוח.');
+  if (p.stage === 'reminder' && kind === 'toran' && r.followup_due_at && new Date(r.followup_due_at).getTime() > now()) throw new OpsError('עוד לא הזמן לתזכורת.');
+  if (p.stage === 'reminder' && kind === 'teder' && r.reminder_due_at && new Date(r.reminder_due_at).getTime() > now()) throw new OpsError('עוד לא הזמן לתזכורת.');
+  const out = await sendPitch(app, { product: kind, stage: p.stage, phone: p.phone, name: p.name, url: p.url, ref: `${kind}:${id}`, by });
+  if (!out.sent) throw new OpsError(out.said);
+  if (p.stage === 'first') await markSent(app, kind, id, by);
+  else await markReminded(app, kind, id, by);
+  await log(app, kind, id, 'direct', by, { template: p.stage });
+  return p.stage === 'first' ? 'נשלח בוואטסאפ מהמספר שלנו, וסומן שנשלח. התזכורת האחת תחכה ברשימה בעוד ארבעה ימים.' : 'התזכורת נשלחה בוואטסאפ מהמספר שלנו. זו הייתה ההודעה האחרונה אליהם, אלא אם יכתבו.';
 }
 
 export async function markReplied(app: App, kind: Kind, id: string, by: string) {

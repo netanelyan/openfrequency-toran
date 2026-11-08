@@ -8,6 +8,7 @@ import { demoNumber, type RouteResult } from './demo.ts';
 import { ownerLine } from '../owners/line.ts';
 import { payMessage } from './pay.ts';
 import { reminderWord } from '../billing/remind.ts';
+import { outreachWord } from '../ops/outreach.ts';
 import { LEDGER } from './send.ts';
 import { accountFor, resendUndelivered, storeChannel } from './store.ts';
 import { DuplicateTurn } from '../agent/loop.ts';
@@ -89,7 +90,7 @@ async function route(app: App, inbound: Inbound): Promise<RouteResult> {
     if (line === 'owner') {
       // A PAY code or a receipt is read here as on the demo number (pay.ts), before the owner's assistant, and so is
       // "הפסק" or "התחל" about the payment reminders (billing/remind.ts).
-      const paying = (await payMessage(app, adapter, ours)) || (await reminderWord(app, adapter, ours));
+      const paying = (await payMessage(app, adapter, ours)) || (await reminderWord(app, adapter, ours)) || (await outreachWord(app, adapter, ours));
       if (paying) return paying;
       const r = await ownerLine(app, adapter, ours);
       return { action: r.action === 'assistant' || r.action === 'duplicate' || r.action === 'held' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };
@@ -112,7 +113,7 @@ async function route(app: App, inbound: Inbound): Promise<RouteResult> {
     }
   }
   if (adapter.channel === 'whatsapp' && isOwnerLine(app.env, msg.to)) {
-    const paying = (await payMessage(app, adapter, msg)) || (await reminderWord(app, adapter, msg));
+    const paying = (await payMessage(app, adapter, msg)) || (await reminderWord(app, adapter, msg)) || (await outreachWord(app, adapter, msg));
     if (paying) return paying;
     const r = await ownerLine(app, adapter, msg);
     return { action: r.action === 'assistant' || r.action === 'duplicate' || r.action === 'held' ? r.action : 'owner_line', storeId: r.storeId ?? undefined, reply: r.reply };

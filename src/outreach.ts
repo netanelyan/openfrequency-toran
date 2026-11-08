@@ -1,11 +1,15 @@
 import { notOnShabbat, DAY } from './core/clock.ts';
 
-// The two messages the owner sends by hand: the first one with the pitch link, and at
-// most one reminder. The dashboard prepares them and copies them; nothing in Toran
-// sends them. That is deliberate, and it is the law's line too: Israel's anti-spam
-// rule (the Communications Law's section 30A) allows a business one approach to
-// another business asking whether it wants to hear more, so the first message asks,
-// says who is writing, and says how to stop; the reminder is the last one.
+// The two messages to a lead: the first one with the pitch link, and at most one
+// reminder. The dashboard prepares them and copies them for the owner's own phone. Since
+// 2026-11-08 the owner's one press can also send them from our number, as Meta's
+// approved templates (the owner: "if i press the send button to a demo suggestion, i
+// want it to go to whatsapp, so toran should send it"): ops/outreach.ts, with its way
+// out on the message, its daily cap and Meta's quality read before each send. Nothing
+// sends them by itself. The law's line holds either way: Israel's anti-spam rule (the
+// Communications Law's section 30A) allows a business one approach to another business
+// asking whether it wants to hear more, so the first message asks, says who is
+// writing, and says how to stop; the reminder is the last one.
 //
 // Written in the hebrew-voice guide, as OpenFrequency (the company, "we"): the thing
 // first, no slogans.

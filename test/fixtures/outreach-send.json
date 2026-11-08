@@ -1,0 +1,25 @@
+{
+  "name": "outreach-send",
+  "doc": "Teder's /leads hands a pitch to Toran, which sends it from our WhatsApp number as the approved Marketing template (Toran src/ops/outreach.ts, docs/whatsapp-templates.md \"Pitches to leads\"; Teder src/leads/outreach.js). It is between Teder and Toran alone, so it is not one of openfrequency-accounts' contracts: this file is kept byte for byte the same in both repositories' test/fixtures, and each side's test reads it. sent false is never an error: why says what held it, said is the operator's sentence for it, and Teder marks the lead sent only on sent true.",
+  "servedBy": ["toran"],
+  "calledBy": ["teder"],
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/internal/outreach/send",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+      "request": {
+        "body": { "product": "teder", "stage": "first", "phone": "972500000123", "name": "כלי חרס של נורית", "url": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "ref": "lead:42", "by": "Demo" }
+      },
+      "answers": [
+        { "case": "Meta took it", "status": 200, "body": { "ok": true, "sent": true, "why": null, "said": "נשלח בוואטסאפ מהמספר שלנו." }, "nullable": ["why"] },
+        { "case": "held: stopped (the number asked to be removed), already (this stage went to this number), cap (the day's pitches went), quiet (night, Shabbat, a holiday), quality (Meta's rating of the number or the template is not green), no_line (our number is not on Meta), bad_page, bad_phone, or failed (Meta refused it)", "status": 200, "body": { "ok": true, "sent": false, "why": "cap", "said": "הגענו היום למכסת ההודעות ללידים, אז לא נשלח כלום. מחר אפשר שוב." } },
+        { "case": "OF_INTERNAL_TOKEN is not set on Toran", "status": 503, "body": { "error": "not_configured" } },
+        { "case": "not from this machine, or through Caddy", "status": 403, "body": { "error": "forbidden" } },
+        { "case": "no token, or a wrong one", "status": 401, "body": { "error": "bad_token" } },
+        { "case": "a GET", "status": 405, "body": { "error": "method_not_allowed" } },
+        { "case": "a body that is not a pitch: product teder or toran, stage first or reminder, phone 8 to 15 international digits, name 1 to 200 characters, url an http(s) page whose path is /s/<slug>, ref [A-Za-z0-9_.:-]{1,100}", "status": 400, "body": { "error": "bad_pitch" } }
+      ]
+    }
+  ]
+}

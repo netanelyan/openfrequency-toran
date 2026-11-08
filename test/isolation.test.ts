@@ -46,6 +46,7 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   'POST ^\\/lead\\/(\\d+)\\/unapprove$': (i) => `/lead/${i.b}/unapprove`,
   'POST ^\\/lead\\/(\\d+)\\/sent$': (i) => `/lead/${i.b}/sent`,
   'POST ^\\/lead\\/(\\d+)\\/followup-sent$': (i) => `/lead/${i.b}/followup-sent`,
+  'POST ^\\/lead\\/(\\d+)\\/wa-send$': (i) => `/lead/${i.b}/wa-send`,
   'POST ^\\/lead\\/(\\d+)\\/release$': (i) => `/lead/${i.b}/release`,
   'POST ^\\/lead\\/(\\d+)\\/skip$': (i) => `/lead/${i.b}/skip`,
   'POST ^\\/lead\\/(\\d+)\\/status$': (i) => `/lead/${i.b}/status`,

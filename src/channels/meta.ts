@@ -50,8 +50,11 @@ export class GraphError extends Error {
   }
 }
 
+/** Meta's Graph API, which every call here goes to (and the template submissions docs/whatsapp-templates.md writes out). */
+export const GRAPH = 'https://graph.facebook.com';
+
 async function graph(env: Env, f: GraphFetch, method: 'GET' | 'POST' | 'DELETE', path: string, { token, query = {}, body }: { token?: string; query?: Record<string, string>; body?: unknown } = {}): Promise<any> {
-  const url = new URL(`https://graph.facebook.com/${metaSettings(env).version}/${path.replace(/^\//, '')}`);
+  const url = new URL(`${GRAPH}/${metaSettings(env).version}/${path.replace(/^\//, '')}`);
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
   const res = await f(url.toString(), {
     method,
@@ -214,6 +217,20 @@ const fileOf = (m: any) => {
   return { name: media.filename || m.type, type: media.mime_type || m.type, size: 0, ...(MEDIA_KEPT.has(m.type) && media.id ? { ref: String(media.id) } : {}) };
 };
 
+/**
+ * A number's quality as Meta rates it from what people did with its messages (GREEN, YELLOW, RED, or UNKNOWN while there
+ * is too little to rate): the outreach's stop (ops/outreach.ts).
+ */
+export const numberQuality = async (env: Env, f: GraphFetch, phoneId: string, token: string): Promise<string> =>
+  String((await graph(env, f, 'GET', phoneId, { token, query: { fields: 'quality_rating' } }))?.quality_rating || 'UNKNOWN').toUpperCase();
+
+/** One template's status (APPROVED, PAUSED, DISABLED...) and quality score (GREEN, YELLOW, RED, UNKNOWN), or null when the account has none of that name. */
+export async function templateHealth(env: Env, f: GraphFetch, wabaId: string, token: string, name: string): Promise<{ status: string; quality: string } | null> {
+  const out = await graph(env, f, 'GET', `${wabaId}/message_templates`, { token, query: { name, fields: 'name,status,quality_score' } });
+  const t = (out?.data || []).find((x: any) => x?.name === name);
+  return t ? { status: String(t.status || '').toUpperCase(), quality: String(t.quality_score?.score || 'UNKNOWN').toUpperCase() } : null;
+}
+
 /** Meta's word on one of a store's templates (auto/templates.ts): its status, or the category it moved it to. */
 export type TemplateNews = { waba: string; name: string; status: string | null; category: string | null; reason: string | null };
 
@@ -278,7 +295,8 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
 /**
  * The Cloud API's body for one message: text, an image with its caption, or an approved template (Hebrew, its body's
  * variables in order, the end of its URL button's address, `url`, where it has one, and the payload its quick reply
- * button sends back, `payload`, where it has one). A template is named by the name Meta approved, which WaOut carries
+ * button sends back, `payload`, where it has one, at the button's place among the template's buttons, `payloadIndex`, 0
+ * unless it comes after a URL button). A template is named by the name Meta approved, which WaOut carries
  * in `sid` (Twilio's word).
  */
 export function outBody(to: string, msg: WaOut): Record<string, unknown> {
@@ -288,7 +306,7 @@ export function outBody(to: string, msg: WaOut): Record<string, unknown> {
     const components = [
       ...(vars.length ? [{ type: 'body', parameters: vars }] : []),
       ...(msg.template.url ? [{ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: msg.template.url }] }] : []),
-      ...(msg.template.payload ? [{ type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: msg.template.payload }] }] : []),
+      ...(msg.template.payload ? [{ type: 'button', sub_type: 'quick_reply', index: String(msg.template.payloadIndex ?? 0), parameters: [{ type: 'payload', payload: msg.template.payload }] }] : []),
     ];
     return { ...base, type: 'template', template: { name: msg.template.sid, language: { code: 'he' }, ...(components.length ? { components } : {}) } };
   }

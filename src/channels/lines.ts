@@ -114,7 +114,8 @@ export function phoneFor(env: Record<string, string | undefined>, { account, num
   return l.demo || l.owner;
 }
 
-async function tokenOf(app: App, phoneId: string): Promise<string> {
+/** The token for one of our numbers: META_SYSTEM_TOKEN, else the one Embedded Signup gave when it was connected. */
+export async function tokenOf(app: App, phoneId: string): Promise<string> {
   const own = String(app.env.META_SYSTEM_TOKEN || '').trim();
   if (own) return own;
   const row = await app.db.one<{ secret: string }>("SELECT secret FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND external_id = $1 AND secret IS NOT NULL ORDER BY (status = 'active') DESC, id DESC LIMIT 1", [phoneId]);

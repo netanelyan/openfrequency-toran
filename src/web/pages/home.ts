@@ -21,6 +21,7 @@ import { apartCustomer, candidates, otherConversations, sameCustomer } from '../
 import { customerSettings, customerToday } from './customer.ts';
 import { canIngest } from '../../ingest/catalogue.ts';
 import { MESSAGES } from '../../auto/messages.ts';
+import { outreachLive } from '../../ops/outreach.ts';
 
 // Today, the inbox (every channel's conversations, the owner's reply in each with a file where the channel takes one,
 // the files customers sent, and the customer's other conversations), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
@@ -273,15 +274,19 @@ async function customerPanel(app: App, r: DashReq, id: number) {
 async function followups(app: App, r: DashReq) {
   const due = await app.db.query<any>(`SELECT * FROM stores WHERE sent_at IS NOT NULL AND followup_sent_at IS NULL AND status IN ('sent', 'opened') AND ${storesOf(r.scope)} AND ${selling()} ORDER BY followup_due_at`);
   const done = await app.db.query<any>(`SELECT * FROM stores WHERE followup_sent_at IS NOT NULL AND ${storesOf(r.scope)} AND ${selling()} ORDER BY followup_sent_at DESC LIMIT 20`);
+  // The reminder goes from our number at one press, as the approved template (ops/outreach.ts), when the store lists
+  // a WhatsApp; copying it to send from the phone stays beside it.
+  const live = await outreachLive(app);
   const row = (s: any) => {
     const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
     const isDue = s.followup_due_at && new Date(s.followup_due_at).getTime() <= now();
     const t = contactTarget(s);
     const text = reminderMessage({ storeName: name, url: pitchUrl(app.env, s.slug) });
+    const pitch = live && s.contact_whatsapp;
     return `<article class="card rcard" data-item>
   <div class="who">${storeBadge(s)}<div><h3><a href="/lead/${s.id}">${esc(name)}</a></h3><small>נשלח ${esc(ago(s.sent_at))}${s.opened_at ? ` · נפתח ${esc(ago(s.opened_at))}` : ' · עוד לא נפתח'} · ${isDue ? '<b>התזכורת מוכנה</b>' : `התזכורת ב־${esc(stamp(s.followup_due_at))}`}</small></div></div>
   ${isDue ? `<div class="flags"><textarea id="rem-${s.id}" rows="4" dir="rtl" class="wide">${esc(text)}</textarea></div>
-  <div class="actions"><button class="btn primary" type="button" data-copy="#rem-${s.id}" ${t.href ? `data-open="${esc(t.href)}"` : ''} data-done="התזכורת הועתקה">${icon('copy')}${esc(t.label)}</button>${postButton(r.ctx, `/lead/${s.id}/followup-sent`, 'שלחתי', { cls: 'btn', ajax: 'remove' })}${postButton(r.ctx, `/lead/${s.id}/skip`, 'לוותר', { cls: 'btn ghost', ajax: 'remove', fields: { reason: 'בלי תזכורת' } })}</div>` : '<div class="actions"></div>'}
+  <div class="actions">${pitch ? postButton(r.ctx, `/lead/${s.id}/wa-send`, 'לשלוח בוואטסאפ מהמספר שלנו', { cls: 'btn primary', ajax: 'remove', confirm: 'לשלוח את התזכורת עכשיו בוואטסאפ מהמספר שלנו? לחצו שוב כדי לשלוח' }) : ''}<button class="btn${pitch ? '' : ' primary'}" type="button" data-copy="#rem-${s.id}"${t.href ? `data-open="${esc(t.href)}"` : ''} data-done="התזכורת הועתקה">${icon('copy')}${esc(t.label)}</button>${postButton(r.ctx, `/lead/${s.id}/followup-sent`, 'שלחתי', { cls: 'btn', ajax: 'remove' })}${postButton(r.ctx, `/lead/${s.id}/skip`, 'לוותר', { cls: 'btn ghost', ajax: 'remove', fields: { reason: 'בלי תזכורת' } })}</div>` : '<div class="actions"></div>'}
 </article>`;
   };
   const body = `<div class="head"><h1>מעקב</h1><p class="sub">לכל חנות תזכורת אחת, ארבעה ימים אחרי ההודעה הראשונה ולא בשבת. אחרי התזכורת לא כותבים יותר.</p></div>

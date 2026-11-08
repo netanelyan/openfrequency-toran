@@ -7,10 +7,12 @@ This repository is **phase 1, the demo machine**:
 
 1. Find Israeli online stores.
 2. Build each one a pitch page with a working WhatsApp demo of the agent answering as that store.
-3. Let the owner review and approve the page, then send the link by hand.
+3. Let the owner review and approve the page, then send the link: from their own phone, or (since 2026-11-08) at one
+   press from our WhatsApp number as Meta's approved template, under the limits in src/ops/outreach.ts.
 4. Watch what happens next.
 
-Nothing in it contacts a store or a customer by itself, with one exception a paying store turns on: its automatic
+Nothing in it contacts a store or a customer by itself (a pitch goes only when the owner presses for that one store),
+with one exception a paying store turns on: its automatic
 messages to its own customers (a cart, a payment, a shipment, a review), on its own number or email (docs/customer.md).
 
 ```

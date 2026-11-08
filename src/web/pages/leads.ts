@@ -18,6 +18,8 @@ import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../c
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
 import { mailDomainPanel } from './mailDomain.ts';
+import { outreachLive } from '../../ops/outreach.ts';
+import { OpsError, sendNow } from '../../ops/actions.ts';
 
 // Leads: the list (by status, with the score and what was found), adding one by URL,
 // and one lead's page: its score's parts, its contacts, its pitch page and what the
@@ -104,6 +106,10 @@ async function leadPage(app: App, r: DashReq, id: number) {
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   const target = contactTarget(s);
   const ready = s.page_built_at && s.approved_at;
+  // Since 2026-11-08 the message goes from our number at one press, as the approved pitch template (ops/outreach.ts),
+  // when the store lists a WhatsApp on its site; copying it to send from the phone stays beside it.
+  const pitchable = Boolean(s.contact_whatsapp) && (await outreachLive(app));
+  const waSend = (label: string) => postButton(r.ctx, `/lead/${id}/wa-send`, label, { cls: 'btn primary', iconName: 'send', confirm: 'לשלוח עכשיו בוואטסאפ מהמספר שלנו? לחצו שוב כדי לשלוח' });
 
   const parts = (s.score_breakdown || []).map((f: any) => `<li class="${f.points < 0 ? 'neg' : ''}"><span>${esc(FACTOR_HE[f.factor] || f.factor)}</span>${f.max ? vbar(f.points, f.max) : '<span></span>'}<b>${f.points}${f.max ? `/${f.max}` : ''}</b><span class="ev" dir="auto">${esc(f.evidence)}</span></li>`).join('');
 
@@ -114,14 +120,14 @@ async function leadPage(app: App, r: DashReq, id: number) {
     if (!s.sent_at) {
       const text = firstMessage({ storeName: name, url: url! });
       return `<label class="f">ההודעה הראשונה<textarea id="first-msg" rows="6" dir="rtl">${esc(text)}</textarea></label>
-<div class="row mt12"><button class="btn primary" type="button" data-copy="#first-msg" ${target.href ? `data-open="${esc(target.href)}"` : ''} data-done="ההודעה הועתקה">${icon('copy')}${esc(target.label)}</button>${postButton(r.ctx, `/lead/${id}/sent`, 'שלחתי', { cls: 'btn', iconName: 'send' })}</div>
-<p class="small muted mt8 m0">${target.kind ? `נשלח ל${target.kind === 'whatsapp' ? 'וואטסאפ של החנות' : `מייל ${esc(s.contact_email)}`}.` : 'לא נמצאה דרך ליצור קשר באתר.'} את ההודעה שולחים ידנית מהטלפון, ואחר כך לוחצים "שלחתי".</p>`;
+<div class="row mt12">${pitchable ? waSend('לשלוח בוואטסאפ מהמספר שלנו') : ''}<button class="btn${pitchable ? '' : ' primary'}" type="button" data-copy="#first-msg" ${target.href ? `data-open="${esc(target.href)}"` : ''} data-done="ההודעה הועתקה">${icon('copy')}${esc(target.label)}</button>${postButton(r.ctx, `/lead/${id}/sent`, 'שלחתי', { cls: 'btn', iconName: 'send' })}</div>
+<p class="small muted mt8 m0">${pitchable ? 'בלחיצה ההודעה יוצאת מהמספר שלנו כתבנית שמטא אישרה, עם כפתור לדף וכפתור "הסירו אותי", ומסומנת שנשלחה. אפשר גם להעתיק ולשלוח מהטלפון, ואז ללחוץ "שלחתי".' : `${target.kind ? `נשלח ל${target.kind === 'whatsapp' ? 'וואטסאפ של החנות' : `מייל ${esc(s.contact_email)}`}.` : 'לא נמצאה דרך ליצור קשר באתר.'} את ההודעה שולחים ידנית מהטלפון, ואחר כך לוחצים "שלחתי".`}</p>`;
     }
     if (!s.followup_sent_at && ['sent', 'opened'].includes(s.status)) {
       const due = s.followup_due_at ? new Date(s.followup_due_at).getTime() : followupDue(new Date(s.sent_at).getTime());
       const text = reminderMessage({ storeName: name, url: url! });
       return `<p class="m0">נשלח ${esc(ago(s.sent_at))}. ${due <= now() ? '<b>הגיע הזמן לתזכורת האחת.</b>' : `התזכורת האחת תהיה מוכנה ב־${esc(stamp(due))}.`}</p>
-${due <= now() ? `<label class="f mt12">התזכורת<textarea id="rem-msg" rows="4" dir="rtl">${esc(text)}</textarea></label><div class="row mt12"><button class="btn primary" type="button" data-copy="#rem-msg" ${target.href ? `data-open="${esc(target.href)}"` : ''} data-done="התזכורת הועתקה">${icon('copy')}${esc(target.label)}</button>${postButton(r.ctx, `/lead/${id}/followup-sent`, 'שלחתי את התזכורת', { cls: 'btn' })}</div>` : ''}`;
+${due <= now() ? `<label class="f mt12">התזכורת<textarea id="rem-msg" rows="4" dir="rtl">${esc(text)}</textarea></label><div class="row mt12">${pitchable ? waSend('לשלוח את התזכורת בוואטסאפ מהמספר שלנו') : ''}<button class="btn${pitchable ? '' : ' primary'}" type="button" data-copy="#rem-msg"${target.href ? `data-open="${esc(target.href)}"` : ''} data-done="התזכורת הועתקה">${icon('copy')}${esc(target.label)}</button>${postButton(r.ctx, `/lead/${id}/followup-sent`, 'שלחתי את התזכורת', { cls: 'btn' })}</div>` : ''}`;
     }
     return `<p class="muted m0">נשלח ${esc(ago(s.sent_at))}${s.followup_sent_at ? `, והתזכורת ${esc(ago(s.followup_sent_at))}. מכאן לא כותבים להם יותר.` : '.'}</p>`;
   };
@@ -276,6 +282,17 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
       await event(app.db, s.id, 'sent', { by: r.user.name });
       await audit(app.db, { actor: r.user.name, action: 'sent', storeId: s.id });
       return { message: 'סומן כנשלח. התזכורת האחת תחכה במעקב.' };
+    }],
+    // One press: the first message or the one reminder, from our number as the approved pitch template, then marked as
+    // "שלחתי" marks it (ops/actions.ts sendNow); nothing is marked when it did not go, and the reason is said.
+    ['POST', /^\/lead\/(\d+)\/wa-send$/, async (r, m) => {
+      const s = await store(m[1]);
+      try {
+        return { message: await sendNow(app, 'toran', String(s.id), r.user.name) };
+      } catch (e) {
+        if (e instanceof OpsError) throw new ActionError(e.message);
+        throw e;
+      }
     }],
     ['POST', /^\/lead\/(\d+)\/followup-sent$/, async (r, m) => {
       const s = await store(m[1]);

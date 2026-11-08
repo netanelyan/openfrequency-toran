@@ -32,7 +32,7 @@ const AUTO = 'src/auto/send.ts';
 /** The only callers of a WhatsApp provider's push() (channels/whatsapp.ts, THE RULE). */
 const PUSHERS = ['src/channels/send.ts', 'src/owners/notify.ts', 'src/ops/alert.ts', 'src/billing/remind.ts'];
 
-test('nothing sends outreach: messages and mail go out only from send.ts, in answer to an inbound message, or from the store\'s automatic messages; no SMS', () => {
+test('nothing sends outreach but the pitches to leads: messages and mail go out only from send.ts, in answer to an inbound message, from the store\'s automatic messages, or as the approved pitch templates under ops/outreach.ts\'s limits; no SMS', () => {
   for (const f of src) {
     const text = readFileSync(f, 'utf8');
     const r = rel(f);
@@ -65,6 +65,13 @@ test('nothing sends outreach: messages and mail go out only from send.ts, in ans
   const sends = [auto.indexOf('cloudSend('), auto.indexOf('mail!.send(')];
   for (const rule of ['isOn(st)', 'customerQuiet(', "consentOf(app.db, ev.store_id, 'whatsapp'", "consentOf(app.db, ev.store_id, 'email'"]) assert.ok(auto.indexOf(rule) > 0 && auto.indexOf(rule) < Math.max(...sends), `${rule} is checked before the send`);
   assert.ok(auto.indexOf('approvedFor(') < sends[0], 'a WhatsApp template is approved before it is sent');
+  // The pitches to leads (the owner, 2026-11-08: "toran should send it"): one send, always the approved template, after
+  // every limit: the number that asked to stop, once a stage, the quiet hours, the day's cap, and Meta's quality.
+  const pitch = readFileSync(path.join(ROOT, 'src/ops/outreach.ts'), 'utf8');
+  assert.equal((pitch.match(/cloudSend\(/g) || []).length, 1);
+  assert.match(pitch, /cloudSend\(app\.env, app\.graph, phoneId, token, phone, \{ template: \{ name: t\.name, sid: t\.name, vars: \[le\(name\)\], url: slug, payload: 'OUTREACH_STOP', payloadIndex: 1 \} \}\)/);
+  const at = pitch.indexOf('cloudSend(app.env');
+  for (const rule of ['stoppedNumber(app, phone)', "SELECT 1 FROM events WHERE ${same}", 'customerQuiet(now())', 'dailyCap(app.env)', 'qualityOk(app, phoneId, token, t)']) assert.ok(pitch.indexOf(rule) > 0 && pitch.indexOf(rule) < at, `${rule} is checked before the pitch is sent`);
 });
 
 test('no file in the repository names a real store (the pre-commit check, run as a test)', async () => {

@@ -213,7 +213,7 @@ what the action takes.
 |---|---|
 | sent | the first message went out |
 | reminded | the one reminder (or the question after a demo) went out |
-| direct | sends the demo link on the demo number now, then records sent: a Toran page asked for on the website inside its 24 hours, or a Teder demo asked for with a code inside the 23 hours after its number wrote; never a Teder demo asked for with a typed number (that number never wrote to us); only while our number is connected |
+| direct | "send now": inside a demo request's window, the demo link on the demo number (a Toran page asked for on the website inside its 24 hours, or a Teder demo asked for with a code inside the 23 hours after its number wrote); otherwise, since 2026-11-08, the first message or the one reminder as the approved pitch template from our number (src/ops/outreach.ts, docs/whatsapp-templates.md "Pitches to leads"), to the store's own listed WhatsApp or the number that asked, under its limits: the number that asked to stop, once a stage, the day's cap (TORAN_OUTREACH_DAILY), no night, Shabbat or holiday, and Meta's quality read first. Then it records sent (or reminded). Nothing is recorded when it did not go, and the error says why. Only while our number is on Meta |
 | replied | they answered |
 | next | `text` and `days`: the next step |
 | later | `days` 1 or 7 |
