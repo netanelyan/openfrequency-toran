@@ -144,12 +144,16 @@ test('/start: a customer adds their store; it is born in their workspace, read, 
     assert.deepEqual([d.by.auto.status, d.by.auto.href], ['todo', `${BASE}/settings#auto`]);
     assert.equal(d.ready, false);
 
-    // The owner looks at what Toran knows: done. View-as looking would not have counted.
+    // The review (TORAN-READINESS.md P1-8): looking is not it while there is a sample chat to read; "נראה טוב" is.
+    // View-as can do neither.
     s.as(s.accounts.session(viewingAs(7)).cookie);
     assert.equal((await s.get(`/lead/${store.id}/knowledge`)).status, 200);
     assert.equal((await steps(s, 7)).by.knowledge.status, 'todo', 'view-as is not the owner looking');
     s.as(s.accounts.session(customer(7)).cookie);
     assert.equal((await s.get(`/lead/${store.id}/knowledge`)).status, 200);
+    const hasSample = Boolean((await s.app.db.one<any>("SELECT 1 FROM pitches WHERE store_id = $1 AND jsonb_array_length(sample_chat) >= 2", [store.id])));
+    assert.equal((await steps(s, 7)).by.knowledge.status, hasSample ? 'todo' : 'done', 'looking counts only where there is no sample to read');
+    await s.post(`/lead/${store.id}/answers-ok`, { _csrf: await s.csrf(`/lead/${store.id}/knowledge`) });
     assert.equal((await steps(s, 7)).by.knowledge.status, 'done');
 
     // A second store: a workspace has one, so it is sent to the one it has, and nothing is queued.

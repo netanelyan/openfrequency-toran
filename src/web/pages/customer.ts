@@ -184,6 +184,27 @@ async function livePanel(app: App, r: DashReq, s: Store): Promise<string> {
   return `<section class="panel" id="golive"><header><h2>תורן ב${esc(s.name)}</h2>${chip}</header><p class="m0">${text}</p>${button ? `<div class="row mt12">${button}</div>` : ''}</section>`;
 }
 
+/**
+ * "ככה תורן עונה" (TORAN-READINESS.md P1-8): the store's sample chat, the one its page was built with, for the owner to
+ * read before customers meet it, with "נראה טוב" (setup's review step) or "לתקן" (an answer of their own, below). Once
+ * said good, one line says so; a store with no sample has no panel.
+ */
+async function sampleReview(app: App, r: DashReq, s: Store): Promise<string> {
+  const pitch = await app.db.one<{ sample_chat: { role: string; text: string }[] }>('SELECT sample_chat FROM pitches WHERE store_id = $1', [s.id]);
+  const chat = (pitch?.sample_chat || []).filter((m) => m && (m.role === 'customer' || m.role === 'agent') && m.text);
+  if (chat.length < 2) return '';
+  const ok = await app.db.one<{ at: string }>("SELECT at FROM events WHERE store_id = $1 AND kind = 'answers_ok' ORDER BY id DESC LIMIT 1", [s.id]);
+  const may = !r.ctx.readOnly && !r.scope.operator;
+  const bubbles = chat.map((m) => `<div class="b ${m.role === 'agent' ? 'agent' : 'customer'}">${esc(m.text)}</div>`).join('');
+  const foot = ok
+    ? `<p class="small muted mt12 m0">${icon('check')} אישרתם שככה תורן עונה, ${esc(shortDate(ok.at))}. אם משהו השתנה, מתקנים בתשובות שלכם.</p>`
+    : may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/answers-ok`, `${icon('check')}נראה טוב`, { cls: 'btn primary sm' })}<a class="btn sm" href="#answers">${icon('edit')}לתקן</a></div>` : '';
+  return `<section class="panel" id="sample"><header><h2>ככה תורן עונה</h2></header>
+  <p class="small muted m0">שאלות שלקוח של ${esc(s.name)} יכול לשאול, והתשובות של תורן מתוך האתר. אם תשובה לא נכונה, כותבים את הנכונה בתשובות שלכם, ותורן יענה ככה.</p>
+  <div class="chat mt12">${bubbles}</div>${foot}
+</section>`;
+}
+
 /** Talking to their own Toran on our demo number, before customers do: tagged demo, never counted (channels/demo.ts). */
 function tryCard(app: App, s: Store, short = false): string {
   if (!s.demo_code || s.taken_down_at) return '';
@@ -311,6 +332,7 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
       <h3 class="small mt16">משאיר לכם</h3><ul class="m0">${(orders ? LEAVES_YOU.map((x) => (x === LEAVES_YOU[2] ? ORDER_LEAVES : x)) : LEAVES_YOU).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       <p class="small muted mt12 m0">כשאין לו תשובה, הוא אומר ללקוח שהוא לא בטוח ושהעביר את השאלה לנציג, במקום לנחש, והשאלה מגיעה אליכם ל<a href="/chats?state=waiting">שיחות</a>.</p>
     </section>
+    ${await sampleReview(app, r, s)}
     ${r.scope.operator ? '' : tryCard(app, s, true)}
     <section class="panel" id="bot-name"><header><h2>השם של הבוט</h2></header>
       <p class="small muted m0">ככה הוא פותח כל שיחה, כדי שהלקוח ידע שעונה לו בוט: <q>${esc(botLine('first', botName(s), s.name))}</q>. כשאתם עונים בעצמכם, הלקוח מקבל לפני ההודעה שלכם: <q>${esc(personLine(s.name))}</q></p>
@@ -479,6 +501,14 @@ export { today as customerToday };
 
 export function customerRoutes(app: App): Route<DashReq>[] {
   return [
+    // The owner read how Toran answers and said it is good (sampleReview; setup's review step). Not view-as, not the operator.
+    ['POST', /^\/lead\/(\d+)\/answers-ok$/, async (r, m) => {
+      if (r.scope.operator) throw new ActionError('את זה מאשר בעל החנות.', 403);
+      const id = Number(m[1]);
+      await app.db.query("INSERT INTO events (store_id, kind, data) VALUES ($1, 'answers_ok', $2::jsonb)", [id, J({ by: r.user.name })]);
+      await audit(app.db, { actor: r.user.name, action: 'answers_ok', storeId: id });
+      return { redirect: `/lead/${id}/knowledge#sample`, message: 'נשמר. ככה תורן עונה ללקוחות.' };
+    }],
     // Switching Toran on in a store, or pausing it (golive.ts): the workspace's owner only, never view-as (server.ts
     // refuses its posts); the store is the session's (server.ts checks /lead/<id>).
     ['POST', /^\/lead\/(\d+)\/live$/, async (r, m) => {

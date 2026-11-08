@@ -104,3 +104,26 @@ test('Settings links to accounts\' email choices', async () => {
     await s.close();
   }
 });
+
+test('"ככה תורן עונה": the sample chat on what Toran knows, "נראה טוב" closes the review step; opening the page alone does not', async () => {
+  const { INTERNAL_TOKEN } = await import('./helpers.ts');
+  const s = await serve();
+  try {
+    const id = s.seeded.storeId;
+    await s.app.db.query('UPDATE stores SET workspace_id = 18 WHERE id = $1', [id]);
+    await s.app.db.query("DELETE FROM faqs WHERE store_id = $1 AND answer IS NOT NULL", [id]);
+    await s.app.db.query("INSERT INTO pitches (store_id, sample_chat) VALUES ($1, $2::jsonb) ON CONFLICT (store_id) DO UPDATE SET sample_chat = EXCLUDED.sample_chat", [id, JSON.stringify([{ role: 'customer', text: 'יש ספל ירוק?' }, { role: 'agent', text: 'כן, יש במלאי. 89 ₪.' }])]);
+    const step = async () => (await (await fetch(`${s.base}/internal/setup?workspace=18`, { headers: { authorization: `Bearer ${INTERNAL_TOKEN}` } })).json()).steps.find((x: any) => x.key === 'knowledge');
+    s.as(s.accounts.session(customer(18)).cookie);
+    const page = await (await s.get(`/lead/${id}/knowledge`)).text();
+    assert.match(page, /<section class="panel" id="sample"><header><h2>ככה תורן עונה<\/h2>[^]*יש ספל ירוק\?[^]*כן, יש במלאי/);
+    assert.match(page, /action="\/lead\/\d+\/answers-ok"[^]*נראה טוב[^]*href="#answers"[^]*לתקן/);
+    assert.equal((await step()).status, 'todo', 'opening the page is not a review');
+    const r = await s.post(`/lead/${id}/answers-ok`, { _csrf: await s.csrf(`/lead/${id}/knowledge`) });
+    assert.equal(r.headers.get('location'), `/lead/${id}/knowledge#sample`);
+    assert.equal((await step()).status, 'done');
+    assert.match(await (await s.get(`/lead/${id}/knowledge`)).text(), /אישרתם שככה תורן עונה/);
+  } finally {
+    await s.close();
+  }
+});
