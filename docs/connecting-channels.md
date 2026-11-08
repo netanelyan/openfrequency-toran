@@ -605,6 +605,68 @@ every store; the Meta way above stays for `meta`. Code: `src/channels/zernio.ts`
    (Toran answers), answer once from the Instagram app and once from the Page's inbox (each should pause Toran and show
    in the inbox), and note whether the Page's instant reply, if it has one, left Toran answering.
 
+## Step 4c. A store's own WhatsApp through Zernio: built, off until set
+
+The owner, 2026-11-08: "yes, switch to zernio": one provider for a store's WhatsApp, Instagram and Messenger, on the
+key Teder already has. `TORAN_WA_PROVIDER=zernio` sends every store's WhatsApp page through Zernio; `kapso` (step 2b)
+and `meta` (step 2) stay in the code. Our own number (step 3) and the company store stay on Meta directly. Code:
+`src/channels/zernio.ts` (the WhatsApp parts beside the Page's), the store's page `src/web/pages/whatsapp.ts`
+(`POST /lead/<id>/whatsapp/zernio/start`, `GET /lead/<id>/whatsapp/zernio`), templates in `src/auto/templates.ts` and
+`src/auto/send.ts`, and the same webhook, `/zernio/webhook`.
+
+**Verified in Zernio's API reference (zernio.com/openapi.yaml, read 2026-11-08):**
+- **Zernio's own app:** `GET /v1/connect/{platform}` (`getConnectUrl`), platform `whatsapp`: "Without it [oauthAppId]
+  the connect runs on Zernio's app".
+- **Coexistence:** its `onboarding` parameter, "WhatsApp only": "If omitted, the connection defaults to coexistence";
+  `business_app`: "Connect existing WhatsApp Business app (a number shared between Cloud API and the consumer WhatsApp
+  Business app)". Toran sends `onboarding=business_app`.
+- **Hosted signup:** `signup=hosted`: "authUrl points at a Zernio-hosted page on zernio.com instead of Meta's OAuth
+  dialog ... That page opens Meta's Embedded Signup popup itself". Success: "connected=whatsapp, profileId, accountId,
+  username"; failure: `error` and `platform=whatsapp`, among them `one_whatsapp_per_profile`,
+  `whatsapp_number_already_connected`, `whatsapp_coexistence_not_registered`, `connection_cancelled`, `session_expired`
+  (the page says each in Hebrew).
+- **No scopes:** `scopes` is "Rejected with 400 INVALID_FIELD_VALUE ... on ... whatsapp (their dialog cannot be
+  reduced)". Toran sends none.
+- **The account:** `SocialAccount.metadata` for WhatsApp: `displayPhoneNumber`, `wabaId`, `phoneNumberId`,
+  `verifiedName`, `qualityRating`. Toran keeps them on the row, and refuses a number that is one of ours.
+- **Receiving:** `message.received` with `platform: whatsapp`; the sender's `id` "For WhatsApp this is the phone
+  number (without leading +) when available, otherwise the businessScopedUserId". It goes into `wa_inbound`, as a
+  message on Meta's own webhook does. Inbound media points at the authenticated `GET /v1/whatsapp/media/{mediaId}`;
+  Toran keeps no WhatsApp files (policy.ts), and a picture with no words shows as "(קובץ)".
+- **The owner's phone:** `message.sent` is "fired when a message is sent via the API, or from the WhatsApp Business app
+  on Coexistence numbers", and its `source` says where: `whatsapp_business_app` ("sent from the WhatsApp Business phone
+  app on a Coexistence number"), `cloud_api` ("sent through Zernio"), `meta_business_agent` ("Meta Business Agent
+  answered on the number"). Only the first is the owner's (ownerEcho: Toran steps back).
+- **Sending:** `POST /v1/inbox/conversations/{conversationId}/messages` (`sendInboxMessage`) with the account's id and
+  the text; no message tag (HUMAN_AGENT is Messenger's and Instagram's).
+- **Templates (the store's automatic messages):** `POST /v1/whatsapp/templates` (`createWhatsAppTemplate`) with
+  `accountId`, `name`, `category`, `language` and `components` (Meta's own template body), answered `{template: {id,
+  status, category}}`; `GET /v1/whatsapp/templates?accountId=..&name=..` lists them. A template to a phone:
+  `POST /v1/inbox/conversations` (`createInboxConversation`) with `participantId` (the phone, digits), `templateName`,
+  `templateLanguage`, `templateParams` ("variable values for the text header, body and dynamic URL buttons, in that
+  order"): "the way to re-engage a contact after the 24-hour customer-service window has closed", and it opens the
+  thread when there is none. A review comes as `whatsapp.template.status_updated` (`template.name`, `status`, `reason`),
+  matched by `account.accountId`.
+- **Disconnecting:** `DELETE /v1/accounts/{id}`, as for a Page; `account.disconnected` makes the number `reconnect`
+  (the store's page and Today ask for it again) and alerts the operator.
+
+**UNVERIFIED (the code fails safe):**
+- **The app's greeting and away messages:** whether they come back with `source: whatsapp_business_app`. An answer
+  within 20 seconds of the customer's message is taken for one (Toran keeps answering), as on a Page; a person typing
+  later pauses Toran.
+- **Israeli numbers** on Zernio's WhatsApp connect: nothing excludes them in the reference; the first real store
+  proves it.
+- **Zernio's plan** for WhatsApp numbers (an account each, as for a Page) and Meta's fees billed to the store's own
+  WABA: from the pricing page and the reference's billing notes, not measured.
+
+**To turn it on** (Zernio's key and webhook are already set for step 4b):
+1. In Zernio's dashboard, the "Toran DMs" webhook: also tick `whatsapp.template.status_updated` and
+   `whatsapp.template.category_updated` (template reviews; without them the worker reads pending ones every hour).
+2. In Toran's `.env`: `TORAN_WA_PROVIDER=zernio` (instead of `kapso`). Restart. No migration.
+3. Live test with a store's own WhatsApp Business number (at least 7 days on the app): connect it from its WhatsApp
+   page, write to it from another phone (Toran answers), answer once from the phone (the answer shows in the inbox and
+   Toran steps back).
+
 ## Step 5. A store's automatic messages: built, each off until the store turns it on
 
 The cart, the payment, the shipping and the review request (docs/customer.md, `src/auto/`). They need the store's

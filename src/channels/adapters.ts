@@ -25,6 +25,8 @@ export function adapterOf(app: App, channel: Channel, account?: (WaAccount & { k
   // A store's own number: on Meta with its token, or connected through Kapso (kapso.ts), the same Cloud API bodies
   // through Kapso's proxy.
   if (channel === 'whatsapp' && (account?.kind === 'meta' || account?.kind === 'kapso')) return waAccountAdapter(app.env, app.graph, account);
+  // A store's own number connected through Zernio (zernio.ts): Zernio's inbox send, as for its Page and Instagram.
+  if (channel === 'whatsapp' && account?.kind === 'zernio') return zernioAdapter(app, { id: account.id, channel: 'whatsapp', external_id: account.external_id });
   if (channel === 'whatsapp' && account?.kind === 'meta_line') return metaLinesAdapter(app);
   if (isSocial(channel)) {
     if (!account || !enabledChannels(app.env).has(channel)) throw new Error(`no adapter for channel ${channel}`);

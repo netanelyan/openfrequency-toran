@@ -81,7 +81,7 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'META_IG_APP_SECRET', group: 'channels', he: 'Meta: הסוד של אפליקציית האינסטגרם. מחליף את הקוד של החיבור במפתח' },
   { name: 'META_HUMAN_AGENT', group: 'channels', he: 'Meta: 1 כש-Meta אישרה את Human Agent. אז תשובה שלכם במסנג׳ר ובאינסטגרם יוצאת עד 7 ימים מההודעה של הלקוח' },
   { name: 'META_GRAPH_VERSION', group: 'channels', he: 'Meta: גרסת ה-Graph API, למשל v23.0' },
-  { name: 'TORAN_WA_PROVIDER', group: 'channels', he: 'איך חנות מחברת את הוואטסאפ שלה: kapso (דרך Kapso, בלי האישור של האפליקציה שלנו ב-Meta) או meta. ריק: meta. המספר שלנו תמיד ב-Meta' },
+  { name: 'TORAN_WA_PROVIDER', group: 'channels', he: 'איך חנות מחברת את הוואטסאפ שלה: zernio (דרך Zernio, באותו מפתח של אינסטגרם ומסנג׳ר), kapso (דרך Kapso) או meta (האפליקציה שלנו ב-Meta). ריק: meta. המספר שלנו תמיד ב-Meta' },
   { name: 'KAPSO_API_KEY', group: 'channels', he: 'Kapso: מפתח ה-API של הפרויקט, לחיבור המספרים של החנויות ולשליחה מהם' },
   { name: 'KAPSO_WEBHOOK_SECRET', group: 'channels', he: 'Kapso: סוד שאנחנו בוחרים (לפחות 16 תווים), שבו נחתמות ההודעות שמגיעות מהמספרים של החנויות ל-/kapso/webhook' },
   { name: 'KAPSO_EVENTS_SECRET', group: 'channels', he: 'Kapso: הסוד של ה-Platform webhook (/kapso/events) כפי ש-Kapso יצרה אותו: מספר שחובר, נותק או נמחק' },

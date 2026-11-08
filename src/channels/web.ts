@@ -87,8 +87,8 @@ export async function siteOf(app: App, key: string): Promise<Site | null> {
   const s = await app.db.one<any>('SELECT name, domain, brand, brand_override FROM stores WHERE id = $1', [account.store_id]);
   const brand = { ...(s?.brand || {}), ...(s?.brand_override || {}) };
   const color = readableShade(brandColor(brand) || '#4a4a52');
-  // "Continue on WhatsApp": the store's own number, once it answers there.
-  const wa = await app.db.one<{ meta: any }>("SELECT meta FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND status = 'active' AND kind = 'meta' ORDER BY id LIMIT 1", [account.store_id]);
+  // "Continue on WhatsApp": the store's own number, once it answers there, however it is connected (Meta, Kapso, Zernio).
+  const wa = await app.db.one<{ meta: any }>("SELECT meta FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND status = 'active' AND kind IN ('meta', 'kapso', 'zernio') ORDER BY id DESC LIMIT 1", [account.store_id]);
   const number = String(wa?.meta?.display_phone_number || '').replace(/\D/g, '');
   return {
     account,

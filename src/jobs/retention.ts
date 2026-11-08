@@ -8,8 +8,7 @@ import { event } from '../db/log.ts';
 import { closeSilent } from '../channels/conversations.ts';
 import { refreshWorkspaces } from '../billing/entitlement.ts';
 import { disconnectKapso } from '../channels/kapso.ts';
-import { disconnectZernio } from '../channels/zernio.ts';
-import type { Social } from '../channels/social.ts';
+import { disconnectZernio, type ZChannel } from '../channels/zernio.ts';
 import { alertOperator } from '../ops/alert.ts';
 
 // How long Toran keeps what it keeps, and the daily pass that holds it to that (the worker's schedule, once an Israel
@@ -110,12 +109,12 @@ export async function retention(app: App): Promise<Record<string, number>> {
   );
   for (const a of leaving) {
     try {
-      const done = a.kind === 'kapso' ? await disconnectKapso(app, a.store_id, 'retention', { strict: true }) : await disconnectZernio(app, a.store_id, a.channel as Social, 'retention', { strict: true });
+      const done = a.kind === 'kapso' ? await disconnectKapso(app, a.store_id, 'retention', { strict: true }) : await disconnectZernio(app, a.store_id, a.channel as ZChannel, 'retention', { strict: true });
       if (done) add('disconnected', 1);
     } catch (e: any) {
       add('disconnectFailed', 1);
       app.log(`[retention] store ${a.store_id}: ${a.kind} ${a.channel} could not be disconnected, tried again tomorrow: ${e?.message || e}`);
-      await alertOperator(app, `disconnect:${a.store_id}:${a.channel}`, `תורן: לא הצלחנו לנתק ${a.kind === 'kapso' ? 'מספר וואטסאפ ב-Kapso' : `חשבון ${a.channel} ב-Zernio`} של חנות ${a.store_id}`, 'השירות של החנות נעצר, והניתוק נכשל. מנסים שוב מחר. אם זה חוזר, לנתק ביד בלוח של הספק.', { storeId: a.store_id, everyMinutes: 24 * 60 }).catch(() => {});
+      await alertOperator(app, `disconnect:${a.store_id}:${a.channel}`, `תורן: לא הצלחנו לנתק ${a.kind === 'kapso' ? 'מספר וואטסאפ ב-Kapso' : a.channel === 'whatsapp' ? 'מספר וואטסאפ ב-Zernio' : `חשבון ${a.channel} ב-Zernio`} של חנות ${a.store_id}`, 'השירות של החנות נעצר, והניתוק נכשל. מנסים שוב מחר. אם זה חוזר, לנתק ביד בלוח של הספק.', { storeId: a.store_id, everyMinutes: 24 * 60 }).catch(() => {});
     }
   }
 

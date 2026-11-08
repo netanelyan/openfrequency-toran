@@ -42,9 +42,10 @@ Turn the three on the same day, in the website README's order.
 2. **Try it.** Every store has a demo code: the owner writes to our demo number from their phone and sees Toran
    answer as their store. Nothing reaches their customers.
 3. **The channels.**
-   - WhatsApp, their own number, through Kapso (coexistence: the number stays in the WhatsApp Business app on
-     their phone). The store's WhatsApp page sends them to Kapso's setup page; they come back connected. The number
-     must have been on the WhatsApp Business app for at least 7 days.
+   - WhatsApp, their own number, through Zernio (`TORAN_WA_PROVIDER=zernio`; Kapso, `kapso`, stays as an option).
+     Coexistence: the number stays in the WhatsApp Business app on their phone. The store's WhatsApp page sends them
+     to Zernio's connect page; they come back connected. The number must have been on the WhatsApp Business app for at
+     least 7 days.
    - Instagram and Messenger through Zernio (`TORAN_DM_PROVIDER=zernio`): their page's "לחבר", messaging permissions
      only. Meta's window names Zernio; that is expected.
    - Email: their address forwards to Toran's, or their own domain once it is proved (docs/customer.md).
@@ -54,7 +55,8 @@ Turn the three on the same day, in the website README's order.
 
 Check the same day: the store's health row shows paid, `live`, and each channel `active`. Write to the store's
 number from another phone once, and answer once from the WhatsApp Business app: the answer must appear in the inbox
-and Toran must step back (Kapso's echoes are still unverified; docs/connecting-channels.md, step 2b).
+and Toran must step back (docs/connecting-channels.md, step 4c: the app's greeting and away messages are still
+unverified).
 
 ## 3. The first two weeks
 
