@@ -238,12 +238,15 @@ test('nobody approves a page by hand: it approves itself once nothing is missing
   }
 });
 
-test('every pitch page says the team connects Toran to the store\'s systems, with their marks, and builds what does not exist', async () => {
-  const { LOGOS } = await import('../src/pitch/logos.ts');
+test('every pitch page says what Toran connects to (the store platforms it reads), and promises nothing it does not do', async () => {
   const html = pitchPage(fake(), { env: ENV });
-  assert.match(html, /<h2 id="links-h">מותאם לחנות שלכם\. החיבורים עלינו\.<\/h2>/);
-  for (const l of LOGOS) assert.match(html, new RegExp(`aria-label="${l.name}"`));
-  assert.match(html, /וכל חיבור נוסף שתרצו וקיים בעולם/);
-  assert.match(html, /וכשצריך משהו שעוד לא קיים, מפתחים אותו\./);
+  assert.match(html, /<h2 id="links-h">מותאם לחנות שלכם\. החיבור לחנות עלינו\.<\/h2>/);
+  for (const name of ['Shopify', 'WooCommerce', 'Wix']) assert.match(html, new RegExp(`aria-label="${name}"`));
+  assert.match(html, /Cashcow/);
+  for (const name of ['PayPal', 'Stripe', 'Google Calendar', 'Telegram']) assert.doesNotMatch(html, new RegExp(`aria-label="${name}"`), `no ${name}: Toran does not connect to it`);
+  // TORAN-READINESS.md P0-6: no free connections to every system, no free development, no WhatsApp the owner never gets.
+  assert.doesNotMatch(html, /חברת פיתוח|ה־CRM וה־ERP|כל מערכת שיש לה API|וכל חיבור נוסף שתרצו|מפתחים אותו|מגיעה אליכם בוואטסאפ/);
+  assert.match(html, /נבדוק אם אפשר ומה זה דורש, ונגיד לכם לפני שמתחייבים למשהו\./);
+  assert.match(html, /מגיעה אליכם במייל ובתיבה של תורן/);
   assert.doesNotMatch(html, / style="/, 'no inline style: the page\'s CSP allows none');
 });

@@ -259,7 +259,7 @@ ${iconLinks()}
         <h3>מה כלול במחיר</h3>
         <ul class="checks">
           <li>לקוחות יקבלו תשובות כאלה גם כשאתם באמצע יום עמוס, או כבר ישנים.</li>
-          <li>שאלה שהוא לא יודע לענות עליה מגיעה אליכם בוואטסאפ. עונים לו פעם אחת, ובפעם הבאה הוא כבר יודע.</li>
+          <li>שאלה שהוא לא יודע לענות עליה מגיעה אליכם במייל ובתיבה של תורן. עונים לו פעם אחת, ובפעם הבאה הוא כבר יודע.</li>
           <li>מי שהסכים לקבל מכם הודעות יקבל תזכורת כשהוא משאיר מוצרים בעגלה, ואחרי שהוא מזמין, לינק למעקב אחרי המשלוח.</li>
           <li>בשבועיים הראשונים אנחנו קוראים איתכם את השיחות ומתקנים מה שצריך.</li>
         </ul>
@@ -281,20 +281,21 @@ ${a11yWidget()}
 </html>`;
 }
 
-// The systems the team connects Toran to, for every store: their marks, then a tile for anything else, and a note on
-// what is built when nothing exists yet. The same for every page; nothing in it is about the store.
-const TRUCK = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7z"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/></svg>';
+// What Toran connects to, for every store: the store platforms it reads (ingest/catalogue.ts) and whose orders it
+// looks up (orders.ts), their marks, and for anything else an honest "write to us, we check first". It promised once
+// to connect payments, calendars, CRM and ERP and to develop anything that does not exist, for free; neither the
+// contract nor the site says so, so it no longer does (TORAN-READINESS.md P0-6, 2026-11-08).
+const STORE_PLATFORMS = ['Shopify', 'WooCommerce', 'Wix'];
 const linksSec = `<section class="links" aria-labelledby="links-h">
-    <h2 id="links-h">מותאם לחנות שלכם. החיבורים עלינו.</h2>
-    <p class="links-lede">הצוות שלנו מגדיר את תורן לפי הנהלים שלכם ומחבר אותו למערכות שלכם: החנות, הסליקה, המשלוחים, היומן, ה־CRM וה־ERP. כל מערכת שיש לה API. ההתאמה והחיבורים הם חלק מהשירות, בלי תוספת תשלום.</p>
-    <ul class="logos" aria-label="חלק מהמערכות שתורן מתחבר אליהן">
-      ${LOGOS.map((l) => `<li title="${l.name}"><svg viewBox="0 0 24 24" role="img" aria-label="${l.name}"><path fill="${l.color}" d="${l.path}"/></svg></li>`).join('')}
-      <li class="word" title="חברות משלוחים">${TRUCK}<span>משלוחים</span></li>
-      <li class="more"><span class="plus" aria-hidden="true">+</span><span>וכל חיבור נוסף שתרצו וקיים בעולם</span></li>
+    <h2 id="links-h">מותאם לחנות שלכם. החיבור לחנות עלינו.</h2>
+    <p class="links-lede">תורן מתחבר לחנות שלכם ב־Shopify, ב־WooCommerce, ב־Wix או ב־Cashcow, וקורא משם את המוצרים, המחירים, המלאי והמדיניות. כשמחברים גם את ההזמנות, הוא עונה ללקוח על הסטטוס של ההזמנה שלו. החיבור לחנות כלול במחיר.</p>
+    <ul class="logos" aria-label="הפלטפורמות שתורן מתחבר אליהן">
+      ${LOGOS.filter((l) => STORE_PLATFORMS.includes(l.name)).map((l) => `<li title="${l.name}"><svg viewBox="0 0 24 24" role="img" aria-label="${l.name}"><path fill="${l.color}" d="${l.path}"/></svg></li>`).join('')}
+      <li class="word" title="Cashcow"><span>Cashcow</span></li>
     </ul>
     <div class="glass links-note">
-      <h3>וכשצריך משהו שעוד לא קיים, מפתחים אותו.</h3>
-      <p>אנחנו חברת פיתוח: אפליקציות, אוטומציות וסוכני AI. מערכת ניהול, חיבור שאין לו לוגו כאן, או זרימת עבודה שתפורה לחנות שלכם: הצוות שבנה את תורן בונה גם אותם, וגם זה כלול בשירות.</p>
+      <h3>צריך חיבור למערכת אחרת?</h3>
+      <p>כתבו לנו מה צריך. נבדוק אם אפשר ומה זה דורש, ונגיד לכם לפני שמתחייבים למשהו.</p>
     </div>
   </section>`;
 

@@ -80,7 +80,7 @@ async function shop() {
   const s = await serve();
   const teder = await stubTeder();
   const meta = fakeMeta();
-  Object.assign(s.app.env, META_DEMO, { META_WABA_ID: WABA, TEDER_SITE_INTERNAL: teder.base, OF_INTERNAL_TOKEN: INTERNAL_TOKEN });
+  Object.assign(s.app.env, META_DEMO, { META_WABA_ID: WABA, TEDER_SITE_INTERNAL: teder.base, OF_INTERNAL_TOKEN: INTERNAL_TOKEN, TORAN_SIGNUP_OPEN: '1' });
   s.app.graph = meta.f;
   outreach.forgetQuality();
   const id = s.seeded.storeId;

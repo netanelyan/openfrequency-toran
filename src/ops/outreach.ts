@@ -12,6 +12,7 @@ import { reply } from '../channels/send.ts';
 import { le } from '../outreach.ts';
 import { alertOperator } from './alert.ts';
 import { internalRefusal } from './internal.ts';
+import { toranOnSale } from './signupSwitch.ts';
 
 // A pitch on WhatsApp, sent by Toran from our number (the owner, 2026-11-08: "if i press the send button to a demo
 // suggestion, i want it to go to whatsapp, so toran should send it", and on the risk: "i dont think people will report
@@ -187,7 +188,7 @@ const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '');
 /** Any run of 8 digits or more (a phone, a Meta id) as its last four, for a log line. */
 const masked = (s: string) => s.replace(/\d{8,}/g, (d) => `…${d.slice(-4)}`);
 
-export type Why = 'stopped' | 'already' | 'cap' | 'quiet' | 'quality' | 'no_line' | 'bad_page' | 'bad_phone' | 'failed';
+export type Why = 'stopped' | 'already' | 'cap' | 'quiet' | 'quality' | 'no_line' | 'bad_page' | 'bad_phone' | 'failed' | 'not_on_sale';
 export type Outcome = { sent: boolean; why: Why | null; said: string };
 
 /** What the operator reads for each outcome, on the dashboard, on Toran's pages and on Teder's /leads. */
@@ -202,6 +203,7 @@ export const SAID_HE: Record<Why | 'sent', string> = {
   bad_page: 'אין לליד הזה עמוד באוויר, אז אין מה לשלוח.',
   bad_phone: 'אין לליד הזה מספר וואטסאפ מהאתר שלו, אז מהמספר שלנו לא שולחים לו.',
   failed: 'Meta לא קיבלה את ההודעה, ושום דבר לא סומן. אם זה חוזר, כנראה שהתבנית עוד לא אושרה (docs/whatsapp-templates.md).',
+  not_on_sale: 'תורן עוד לא במכירה באתר (שם כתוב "בקרוב"), אז הודעה על תורן לא יוצאת וכלום לא סומן. כשפותחים את המכירה (TORAN_SIGNUP_OPEN), זה נפתח. הודעה על תדר לבד אפשר לשלוח.',
 };
 const no = (why: Why): Outcome => ({ sent: false, why, said: SAID_HE[why] });
 
@@ -281,6 +283,9 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   const t = templateOf(p.product, p.stage);
   const who = `${t.name} to …${phone.slice(-4)} (${p.product} ${p.ref})`;
   if (!PHONE.test(phone)) return no('bad_phone');
+  // A pitch for Toran ("אפשר לנסות אותו עכשיו") goes only once Toran is sold (ops/signupSwitch.ts; TORAN-READINESS.md
+  // P0-6): while the site says "בקרוב", Teder's pitch alone may go, and Toran's or the combined one may not.
+  if (p.product !== 'teder' && !toranOnSale(app.env)) return no('not_on_sale');
   const slug = slugOf(p.url);
   if (!slug) return no('bad_page');
   const slug2 = t.url2 ? slugOf(String(p.url2 || '')) : null;

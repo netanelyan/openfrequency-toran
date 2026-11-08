@@ -49,7 +49,7 @@ test('two customers waiting in a few minutes are one email to the owner, each wi
     await s.write('Yossi <yossi@example.test>', 'יש משלוח לאילת?');
     assert.equal((await s.app.db.query("SELECT 1 FROM jobs WHERE kind = 'owner_waiting' AND status = 'queued'")).length, 1, 'one digest asked for, not two');
     await s.digest();
-    const mails = s.toOwner();
+    const mails: any[] = s.toOwner();
     assert.equal(mails.length, 1, 'one email');
     assert.match(mails[0].subject, /2 לקוחות מחכים לתשובה שלכם ב/);
     const ids = (await s.app.db.query<{ id: number }>('SELECT id FROM conversations ORDER BY id')).map((r) => r.id);
