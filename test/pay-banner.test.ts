@@ -63,3 +63,32 @@ test('/waiting.json: the waiting count of the session\'s own stores, for the liv
     await s.close();
   }
 });
+
+test('the plan accounts sells the workspace is its stores\' plan; a missing or malformed one leaves the store\'s own (P1-2)', async () => {
+  const { entitlementClient, planOfAnswer } = await import('../src/billing/entitlement.ts');
+  const { INTERNAL_TOKEN } = await import('./helpers.ts');
+  assert.deepEqual(planOfAnswer({ plan: { name: 'big', conversations: 1500 } }), { name: 'big', conversations: 1500 });
+  for (const bad of [{}, { plan: null }, { plan: { name: 'small', conversations: 300 } }, { plan: { name: 'big', conversations: -1 } }, { plan: { name: 'big', conversations: '1500' } }]) assert.equal(planOfAnswer(bad), null, JSON.stringify(bad));
+  const s = await serve();
+  try {
+    const id = s.seeded.storeId;
+    await s.app.db.query("UPDATE stores SET workspace_id = 12, config = '{}'::jsonb WHERE id = $1", [id]);
+    let t = Date.parse('2026-11-08T10:00:00Z');
+    let plan: any = { name: 'big', conversations: 1500 };
+    const body = () => ({ workspace: 12, product: 'toran', enabled: true, access: 'paid', allowed: true, paidThrough: '2026-12-08T00:00:00Z', cancelAt: null, ...(plan === undefined ? {} : { plan }) });
+    const c = entitlementClient({ db: s.app.db, env: { OF_INTERNAL_TOKEN: INTERNAL_TOKEN }, clock: () => t, fetchImpl: async () => new Response(JSON.stringify(body()), { status: 200 }) });
+    const cfg = async () => (await s.app.db.one<{ config: any }>('SELECT config FROM stores WHERE id = $1', [id]))!.config;
+    assert.equal((await c.check(12)).allowed, true);
+    assert.equal((await cfg()).plan, 'big', 'the store follows accounts');
+    plan = { name: 'nope', conversations: 1 };
+    t += 10 * 60_000;
+    await c.check(12);
+    assert.equal((await cfg()).plan, 'big', 'a malformed plan changes nothing');
+    plan = { name: 'store', conversations: 300 };
+    t += 10 * 60_000;
+    await c.check(12);
+    assert.equal((await cfg()).plan, 'store');
+  } finally {
+    await s.close();
+  }
+});

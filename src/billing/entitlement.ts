@@ -43,7 +43,30 @@ const MIN_TOKEN = 32;
 
 type Env = Record<string, string | undefined>;
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
-export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; checkedAt: string; changedAt?: string };
+export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; plan?: AccountsPlan | null; checkedAt: string; changedAt?: string };
+/** The plan accounts sells the workspace (its contract's plan: { name: store | big, conversations }). */
+export type AccountsPlan = { name: 'store' | 'big'; conversations: number };
+
+/**
+ * The plan in an answer, or null when there is none or it is not in the contract's shape (the store's own setting
+ * stands then, plans.ts planOf). Never a reason to doubt the rest of the answer (as Teder's planOfAnswer).
+ */
+export function planOfAnswer(b: any): AccountsPlan | null {
+  const p = b?.plan;
+  if (!p || typeof p !== 'object' || (p.name !== 'store' && p.name !== 'big')) return null;
+  if (!Number.isInteger(p.conversations) || p.conversations < 1 || p.conversations > 100_000) return null;
+  return { name: p.name, conversations: p.conversations };
+}
+
+/**
+ * Each of the workspace's stores on the plan accounts sells it (TORAN-READINESS.md P1-2): its config.plan, which the
+ * meter, the plan page and the spend cap read (plans.ts planOf, agent/spend.ts), so an operator's hand setting is the
+ * fallback for a workspace accounts gives no plan for. Returns the stores it changed.
+ */
+export async function planSync(db: Db, workspaceId: number, plan: AccountsPlan): Promise<number> {
+  const rows = await db.query<{ id: number }>("UPDATE stores SET config = COALESCE(config, '{}'::jsonb) || jsonb_build_object('plan', $2::text) WHERE workspace_id = $1 AND COALESCE(config->>'plan', 'store') <> $2 RETURNING id", [workspaceId, plan.name]);
+  return rows.length;
+}
 export type View = { workspace: number; allowed: boolean; known: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; checkedAt: string | null; source: 'fresh' | 'cache' | 'stale' | 'unknown' };
 
 const keyOf = (workspaceId: number) => `entitlement:${workspaceId}`;
@@ -115,7 +138,7 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
       /* not JSON: handled below */
     }
     let next: Kept | null = null;
-    if (r.status === 200 && wellFormed(body, workspaceId)) next = { allowed: body.allowed, access: body.access ?? null, paidThrough: body.paidThrough ?? null, cancelAt: body.cancelAt ?? null, graceUntil: body.graceUntil ?? null, checkedAt: new Date(t).toISOString() };
+    if (r.status === 200 && wellFormed(body, workspaceId)) next = { allowed: body.allowed, access: body.access ?? null, paidThrough: body.paidThrough ?? null, cancelAt: body.cancelAt ?? null, graceUntil: body.graceUntil ?? null, plan: planOfAnswer(body), checkedAt: new Date(t).toISOString() };
     else if (r.status === 404 && body?.error === 'no_workspace') next = { allowed: false, access: 'off', paidThrough: null, cancelAt: null, checkedAt: new Date(t).toISOString() };
     if (!next) {
       log(`[entitlement] workspace ${workspaceId}: accounts answered ${r.status}${body?.error ? ` ${body.error}` : ''}, the last answer stands`);
@@ -129,6 +152,7 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
     else changedSince.delete(workspaceId);
     await keep(db, workspaceId, next);
     await planAccess(db, workspaceId, next.allowed);
+    if (next.plan) await planSync(db, workspaceId, next.plan);
     return view(workspaceId, next, 'fresh', t);
   }
 
