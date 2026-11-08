@@ -130,7 +130,10 @@ Nothing else is set when Meta approves them: until then each send is refused (co
 
 **Submitted 2026-11-08** through the API from the server, the four bodies below exactly, with `META_SYSTEM_TOKEN` and
 `META_WABA_ID` from Toran's `.env` (set that day): toran_pitch 1444525310439161, toran_pitch_reminder
-1472889768241947, teder_pitch 1713644520160356, teder_pitch_reminder 1823784592265147, each answered PENDING, MARKETING.
+1472889768241947, teder_pitch 1713644520160356, teder_pitch_reminder 1823784592265147, each answered PENDING, MARKETING;
+all four were APPROVED the same day. The combined two, the same way later that day: openfrequency_pitch
+29610503958636110 and openfrequency_pitch_reminder 1601974991130160, PENDING, MARKETING (Meta took the two URL buttons
+with the quick reply after them).
 
 ### toran_pitch
 
