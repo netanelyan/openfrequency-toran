@@ -29,6 +29,21 @@ export const dayHe = (t: unknown) => F.day.format(d(t));
 export const shortDate = (t: unknown) => (t ? F.short.format(d(t)) : '');
 export const timeHe = (t: unknown) => (t ? F.time.format(d(t)) : '');
 export const stamp = (t: unknown) => (t ? F.stamp.format(d(t)) : '');
+const W = fmt({ weekday: 'short' });
+const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }); // 2026-11-08
+/** How many calendar days (in Israel) lie between a time and now: 0 today, 1 yesterday. */
+export const daysAgo = (t: unknown, now = Date.now()) => Math.round((Date.parse(dayKey.format(now)) - Date.parse(dayKey.format(d(t)))) / 86_400_000);
+/** A time in a list, as a mail client writes it: 14:32 today, אתמול, the weekday this week, then the date. */
+export function listTime(t: unknown, now = Date.now()): string {
+  if (!t) return '';
+  const n = daysAgo(t, now);
+  return n <= 0 ? timeHe(t) : n === 1 ? 'אתמול' : n < 7 ? W.format(d(t)) : shortDate(t);
+}
+/** A day's line in a conversation: היום, אתמול, or the day itself. */
+export function dayLine(t: unknown, now = Date.now()): string {
+  const n = daysAgo(t, now);
+  return n <= 0 ? 'היום' : n === 1 ? 'אתמול' : dayHe(t);
+}
 
 /** "לפני 3 שעות", for the lists. */
 export function ago(t: unknown, now = Date.now()): string {
@@ -74,6 +89,12 @@ const SPRITE = `<svg class="sr" width="0" height="0" aria-hidden="true"><defs>
 <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
 <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 11.5h5"/></symbol>
 <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M7 15h4"/></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></symbol>
+<symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h3.5l1.8 4.5-2.3 1.4a11 11 0 0 0 6.1 6.1l1.4-2.3L20 15.5V19a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="M12 3a9 8.5 0 0 0-5.2 15.4V21l3-1.7A9.6 9.6 0 0 0 12 19.5 9 8.5 0 0 0 12 3z"/><path d="M7.5 13.5l3-3.2 2.2 2 3.8-3.6-3 3.2-2.2-2z"/></symbol>
+<symbol id="i-camera" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="3.8"/><path d="M16.8 7.2h.01"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.5-7.5"/></symbol>
 <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.5L19.5 10l-5.6 1.6L12 17l-1.9-5.4L4.5 10l5.6-1.5z"/></symbol>
 </defs></svg>`;
 
@@ -116,6 +137,8 @@ export type PageCtx = {
   readOnly?: boolean;
   /** Set when the superadmin views a workspace as its customer: the banner on every page (accounts asks for it). */
   viewAs?: { name: string; admin: string } | null;
+  /** A page that needs the room, as the inbox's list beside its open conversation. */
+  wide?: boolean;
   /** Accounts' sign-out page. */
   logout?: string;
   /** A customer's conversations this month against their plans (plans.ts), in the header where the operator sees tokens. */
@@ -170,7 +193,7 @@ ${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צ�
     ${ctx.logout ? `<a class="logout" href="${esc(ctx.logout)}" title="יציאה">${icon('logout')}<span class="lbl">יציאה</span></a>` : ''}
   </div>
 </div></header>
-<main class="wrap" id="main">
+<main class="wrap${ctx.wide ? ' wide' : ''}" id="main">
 ${body}
 <footer class="foot">${ofMark(20, { label: null })}<span>נבנה על ידי <span class="ltr">OpenFrequency<sup>™</sup></span></span></footer>
 </main>

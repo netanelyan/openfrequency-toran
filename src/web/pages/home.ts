@@ -7,7 +7,7 @@ import { audit } from '../../db/log.ts';
 import { contactTarget, pitchUrl, reminderMessage } from '../../outreach.ts';
 import { getOffer, offerReady, priceSentence, setOffer, type Offer } from '../../offer.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
-import { ago, csrfField, esc, icon, layout, postButton, stamp, storeBadge, tokenNum, usd } from '../ui.ts';
+import { ago, csrfField, dayLine, esc, icon, layout, postButton, stamp, storeBadge, timeHe, tokenNum, usd } from '../ui.ts';
 import { addForm, leadRow } from './leads.ts';
 import { selling, storeIdIn, storesOf } from '../workspace.ts';
 import { ALL_CHANNELS, CHANNEL_HE, channelStates, enabledChannels, MESSAGING, messagingSql, setChannelState, type ChannelState } from '../../channels/config.ts';
@@ -15,7 +15,7 @@ import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../../channels
 import { GraphError, TOKEN_GONE } from '../../channels/meta.ts';
 import { questionOf } from '../../assistant/index.ts';
 import { forgetStorePrompt } from '../../agent/loop.ts';
-import { conversationRow, filesHtml, maskPeer, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, whyHe, type InboxState } from '../inbox.ts';
+import { avatar, CHANNEL_ICON, channelTag, conversationRow, filesHtml, maskPeer, peerLabel, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, whyHe, type InboxState } from '../inbox.ts';
 import { checkUpload, fileOf, MAX_BYTES } from '../../channels/files.ts';
 import { apartCustomer, candidates, otherConversations, sameCustomer } from '../../channels/customers.ts';
 import { customerSettings, customerToday } from './customer.ts';
@@ -61,48 +61,83 @@ ${hand.length ? `<section class="group mt24"><header><h2>העברות אליך</
   return layout({ ...r.ctx, title: 'היום', active: 'today' }, body);
 }
 
-async function chats(app: App, r: DashReq) {
-  const filter = r.url.searchParams.get('filter') || '';
-  const storeId = Number(r.url.searchParams.get('store') || 0);
+/**
+ * The inbox's list, as a mail client has it: a search, where each conversation stands (with how many), the channels,
+ * and the conversations newest first. The same list is the /chats page and, on a wide screen, the column beside an open
+ * conversation (`current`); its filters ride along on every link, so opening one keeps the list as it was.
+ */
+async function inboxPane(app: App, r: DashReq, current = 0) {
+  const sp = r.url.searchParams;
+  const op = r.scope.operator;
+  const filter = op && ['handoff', 'miss'].includes(sp.get('filter') || '') ? sp.get('filter')! : '';
+  const storeId = Number(sp.get('store') || 0);
   const shown = MESSAGING.filter((ch) => enabledChannels(app.env).has(ch));
-  const channel = (shown as string[]).includes(r.url.searchParams.get('channel') || '') ? r.url.searchParams.get('channel')! : '';
+  const channel = (shown as string[]).includes(sp.get('channel') || '') ? sp.get('channel')! : '';
+  const q = String(sp.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const state = (Object.keys(STATE_HE) as InboxState[]).includes(sp.get('state') as InboxState) ? (sp.get('state') as InboxState) : '';
+  // Everything but where it stands, so the tabs can say how many each has.
   const where = [messagingSql('c.channel'), storesOf(r.scope, 's')];
   const params: unknown[] = [];
   if (channel) {
     params.push(channel);
     where.push(`c.channel = $${params.length}`);
   }
-  const op = r.scope.operator;
-  const state = (Object.keys(STATE_HE) as InboxState[]).includes(r.url.searchParams.get('state') as InboxState) ? (r.url.searchParams.get('state') as InboxState) : '';
-  if (state === 'waiting') where.push(WAITING_SQL);
-  else if (state) where.push(`${STATE_SQL} = '${state}'`);
-  if (op && filter === 'handoff') where.push('c.handoffs > 0');
-  if (op && filter === 'miss') where.push('c.misses > 0');
   if (storeId) {
     params.push(storeId);
     where.push(`c.store_id = $${params.length}`);
   }
-  const link = (o: Record<string, string>) => `/chats?${new URLSearchParams(Object.entries({ filter, state, channel, store: storeId ? String(storeId) : '', ...o }).filter(([, v]) => v))}`;
-  const tab = (f: string, label: string) => `<a href="${link({ filter: f, state: '' })}"${filter === f && !state ? ' aria-current="true"' : ''}>${label}</a>`;
-  const chTab = (ch: string, label: string) => `<a href="${link({ channel: ch })}"${channel === ch ? ' aria-current="true"' : ''}>${label}</a>`;
-  const stTab = (st: InboxState) => `<a href="${link({ state: st, filter: '' })}"${state === st ? ' aria-current="true"' : ''}>${STATE_HE[st][0]}</a>`;
-  if (!op) {
-    // A customer's inbox: the website's one list, each conversation with its channel and where it stands.
-    const list = await app.db.query<any>(`SELECT ${ROW_SQL}, c.store_id, s.name, s.domain, s.brand, s.brand_override FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
-    const stores = (await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM stores WHERE ${storesOf(r.scope)}`))?.n || 0;
-    const body = `<div class="head"><h1>שיחות</h1><p class="sub">מה שלקוחות כותבים ${shown.length > 1 ? `ב${shown.map((ch) => CHANNEL_HE[ch]).join(', ב')}` : 'בוואטסאפ'} מגיע לכאן. ליד כל שיחה רואים מאיפה היא הגיעה ומה קרה איתה: תורן ענה לבד, היא מחכה לכם, או שעניתם בה בעצמכם.</p></div>
-<nav class="tabs">${tab('', 'הכול')}${stTab('waiting')}${stTab('alone')}${stTab('fixed')}</nav>
-${shown.length > 1 ? `<nav class="tabs mt8">${chTab('', 'כל הערוצים')}${shown.map((ch) => chTab(ch, CHANNEL_HE[ch])).join('')}</nav>` : ''}
-${list.length ? `<div class="list">${list.map((c) => conversationRow({ ...c, store: stores > 1 ? displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain : null })).join('')}</div>` : `<div class="empty">${icon('chat')}<b>${state === 'waiting' ? 'אין שאלות שמחכות לכם' : 'אין כאן שיחות'}</b>${state === 'waiting' ? 'כשתורן לא מוצא תשובה באתר, השאלה מגיעה לכאן.' : 'שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.'}</div>`}`;
-    return layout({ ...r.ctx, title: 'שיחות', active: 'chats' }, body);
+  if (q) {
+    // The customer's name, number or address, an email's subject, or a word anyone wrote in it.
+    params.push(`%${q.replace(/[\\%_]/g, (x) => `\\${x}`)}%`);
+    const n = `$${params.length}`;
+    where.push(`(c.peer ILIKE ${n} OR c.meta->>'name' ILIKE ${n} OR c.meta->>'subject' ILIKE ${n} OR EXISTS (SELECT 1 FROM messages w WHERE w.conversation_id = c.id AND w.text ILIKE ${n}))`);
   }
-  const rows = await app.db.query<any>(`SELECT c.*, ${STATE_SQL} AS state, s.name, s.domain, s.brand, s.id AS sid, (SELECT COUNT(*)::int FROM messages WHERE conversation_id = c.id) AS n, (SELECT text FROM messages WHERE conversation_id = c.id AND role = 'customer' ORDER BY id DESC LIMIT 1) AS last_q FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
+  const counts = (await app.db.one<Record<'all' | InboxState, number>>(`SELECT COUNT(*)::int AS all, COUNT(*) FILTER (WHERE st = 'waiting')::int AS waiting, COUNT(*) FILTER (WHERE st = 'alone')::int AS alone, COUNT(*) FILTER (WHERE st = 'fixed')::int AS fixed
+    FROM (SELECT ${STATE_SQL} AS st FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')}) x`, params))!;
+  if (state === 'waiting') where.push(WAITING_SQL);
+  else if (state) where.push(`${STATE_SQL} = '${state}'`);
+  if (filter === 'handoff') where.push('c.handoffs > 0');
+  if (filter === 'miss') where.push('c.misses > 0');
+  const list = await app.db.query<any>(`SELECT ${ROW_SQL}, c.store_id, c.handoffs, c.misses, c.agent_paused_until, s.name, s.domain, s.brand, s.brand_override FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
+  const stores = op ? 2 : (await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM stores WHERE ${storesOf(r.scope)}`))?.n || 0;
+
+  const keep = { filter, state, channel, store: storeId ? String(storeId) : '', q };
+  const qsOf = (o: Record<string, string>) => {
+    const s = new URLSearchParams(Object.entries({ ...keep, ...o }).filter(([, v]) => v)).toString();
+    return s ? `?${s}` : '';
+  };
+  const link = (o: Record<string, string>) => `/chats${qsOf(o)}`;
+  const cur = (on: boolean) => (on ? ' aria-current="true"' : '');
+  const n = (x: number) => `<span class="n num">${x}</span>`;
+  const tab = (f: string, label: string) => `<a href="${link({ filter: f, state: '' })}"${cur(filter === f && !state)}>${label}${f ? '' : n(counts.all)}</a>`;
+  const stTab = (st: InboxState) => `<a href="${link({ state: st, filter: '' })}"${cur(state === st)}${st === 'waiting' && counts.waiting ? ' class="hot"' : ''}>${STATE_HE[st][0]}${n(counts[st])}</a>`;
+  const chTab = (ch: string, label: string) => `<a href="${link({ channel: ch })}"${cur(channel === ch)}>${ch ? icon(CHANNEL_ICON[ch] || 'chat') : ''}${label}</a>`;
+  const hidden = Object.entries({ ...keep, q: '' }).filter(([, v]) => v).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join('');
   const paused = (c: any) => c.agent_paused_until && new Date(c.agent_paused_until).getTime() > now();
-  const body = `<div class="head"><h1>שיחות</h1><p class="sub">כל השיחות, מכל הערוצים. באדום שיחות שתורן העביר אליך. בכתום שיחות שבהן נמחק משפט לפני השליחה, כי היה בו מחיר או הבטחה שלא הגיעו מהאתר.</p></div>
-<nav class="tabs">${tab('', 'הכול')}${tab('handoff', 'עם העברה')}${tab('miss', 'עם פספוס')}${stTab('waiting')}${stTab('fixed')}</nav>
-${shown.length > 1 ? `<nav class="tabs mt8">${chTab('', 'כל הערוצים')}${shown.map((ch) => chTab(ch, CHANNEL_HE[ch])).join('')}</nav>` : ''}
-${rows.length ? `<div class="list">${rows.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : 'ok'}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc(c.brand?.name || c.name || c.domain)} · ${esc((c.last_q || c.meta?.subject || '').replace(/\n/g, ' ').slice(0, 70))}</b><small><span class="chip">${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)}</span> · ${c.n} הודעות · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}${paused(c) ? ' · <span class="chip sig">אצלך</span>' : ''} · ${stateChip(c.state)} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer, c.meta?.name))}</bdi></small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר, או כותב למייל של חנות שמחוברת.</div>`}`;
-  return layout({ ...r.ctx, title: 'שיחות', active: 'chats' }, body);
+  const noteOf = (c: any) => (op ? [c.handoffs ? `${c.handoffs} העברות` : '', c.misses ? `${c.misses} פספוסים` : '', paused(c) ? 'אצלך' : ''].filter(Boolean).join(' · ') : '') || null;
+  const rows = list.map((c) => conversationRow({ ...c, store: stores > 1 ? displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain : null, note: noteOf(c) }, { current: c.id === current, qs: qsOf({}) }));
+  const empty = q ? `<div class="ib-none">${icon('search')}<b>לא נמצאו שיחות</b>אין שיחה עם "${esc(q)}". אפשר לחפש שם, מספר, מייל או מילה מתוך ההודעות.</div>`
+    : state === 'waiting' ? `<div class="ib-none">${icon('check')}<b>אין שאלות שמחכות לכם</b>כשתורן לא מוצא תשובה באתר, השאלה מגיעה לכאן.</div>`
+    : `<div class="ib-none">${icon('chat')}<b>${op ? 'עוד אין שיחות' : 'אין כאן שיחות'}</b>${op ? 'שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר, או כותב למייל של חנות שמחוברת.' : 'שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.'}</div>`;
+  const html = `<aside class="ib-pane" aria-label="השיחות">
+  <div class="ib-tools">
+    <form class="ib-search" method="get" action="/chats" role="search">${icon('search')}<input type="search" name="q" value="${esc(q)}" placeholder="חיפוש לפי שם, מספר או מילה" aria-label="חיפוש בשיחות" maxlength="80">${hidden}</form>
+    <nav class="seg" aria-label="איפה השיחה עומדת">${tab('', 'הכול')}${stTab('waiting')}${stTab('alone')}${stTab('fixed')}</nav>
+    ${op ? `<nav class="ib-ch" aria-label="סינון">${tab('handoff', 'עם העברה')}${tab('miss', 'עם פספוס')}</nav>` : ''}
+    ${shown.length > 1 ? `<nav class="ib-ch" aria-label="ערוץ">${chTab('', 'כל הערוצים')}${shown.map((ch) => chTab(ch, CHANNEL_HE[ch])).join('')}</nav>` : ''}
+  </div>
+  <div class="ib-list">${rows.join('') || empty}</div>
+</aside>`;
+  return { html, back: link({}), shown };
+}
+
+async function chats(app: App, r: DashReq) {
+  const pane = await inboxPane(app, r);
+  const where = pane.shown.length > 1 ? `ב${pane.shown.map((ch) => CHANNEL_HE[ch]).join(', ב')}` : 'בוואטסאפ';
+  const sub = r.scope.operator ? 'כל השיחות, מכל הערוצים, עם ההעברות והפספוסים של כל אחת.' : `מה שלקוחות כותבים ${where} מגיע לכאן. ליד כל שיחה רואים מה קרה איתה: תורן ענה לבד, היא מחכה לכם, או שעניתם בה בעצמכם.`;
+  const body = `<div class="head ib-head"><h1>שיחות</h1><p class="sub">${sub}</p></div>
+<div class="inbox">${pane.html}<section class="ib-read ib-blank" aria-hidden="true">${icon('chat')}<b>בוחרים שיחה מהרשימה</b><span>היא נפתחת כאן, עם התשובה ללקוח מתחתיה.</span></section></div>`;
+  return layout({ ...r.ctx, title: 'שיחות', active: 'chats', wide: true }, body);
 }
 
 /** WhatsApp's own markup, as the phone shows it: _italic_ and *bold* (applied to already escaped text). */
@@ -142,7 +177,21 @@ async function chat(app: App, r: DashReq, id: number) {
   const msgs = await app.db.query<any>('SELECT * FROM messages WHERE conversation_id = $1 ORDER BY id', [id]);
   const cost = await app.db.one<any>('SELECT COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE conversation_id = $1', [id]);
   const markup = (t: string) => (c.channel === 'whatsapp' ? waMarkup(esc(t)) : esc(t));
+  const customerName = peerLabel(c.channel, c.peer, c.meta?.name);
+  // As a messaging app shows a thread: a line for each day, and the writer's name over each run of their messages.
+  let day = '';
+  let lastRole = '';
   const out = msgs.map((m) => {
+    const d = dayLine(m.at);
+    const sep = d !== day ? `<div class="day"><span>${esc(d)}</span></div>` : '';
+    if (sep) lastRole = '';
+    day = d;
+    const writer = m.role === 'customer' ? customerName : m.role === 'agent' ? 'תורן' : m.role === 'owner' ? m.author || (op ? 'מכאן' : 'אתם') : '';
+    const label = writer && m.role !== lastRole ? `<div class="who-l ${m.role === 'customer' ? 'start' : 'end'}"><bdi>${esc(writer)}</bdi></div>` : '';
+    lastRole = m.role;
+    return sep + label + bubble(m);
+  });
+  function bubble(m: any) {
     const cls = m.role === 'agent' ? `agent${m.handoff ? ' hand' : m.guard?.length ? ' flag' : ''}` : m.role === 'owner' ? 'owner' : m.role === 'system' ? `system${m.handoff ? ' hand' : ''}` : 'customer';
     const notes = m.role === 'agent' ? [
       // A message Toran sent by itself (auto/send.ts), or its answer to "הסר".
@@ -150,12 +199,12 @@ async function chat(app: App, r: DashReq, id: number) {
       ...(op ? m.tools || [] : []).map((t: any) => `<span>${icon('search')} ${esc(t.name)} ${esc(JSON.stringify(t.input)).slice(0, 120)}</span>`),
       ...(m.guard || []).filter((g: any) => g.rule !== 'continuation').map((g: any) => `<span class="warn">${icon('alert')} נמחק לפני השליחה (${esc(RULE_HE[g.rule] || g.rule)}): "${esc(g.sentence)}"</span>`),
       ...(m.handoff ? [op ? `<span class="bad">${icon('hand')} הועבר אליך (${esc(m.handoff.reason)}): ${esc(m.handoff.summary)}</span>` : `<span class="bad">${icon('hand')} תורן העביר את זה אליכם${/[\u0590-\u05FF]/.test(m.handoff.summary || '') ? `: ${esc(m.handoff.summary)}` : ''}</span>`] : []),
-    ] : m.role === 'owner' ? [`<span>${icon('send')} נשלח מכאן${m.author ? ` (${esc(m.author)})` : ''}</span>`]
+    ] : m.role === 'owner' ? [`<span>${icon('send')} נשלח מכאן</span>`]
     : m.role === 'customer' ? [
       ...(m.automated ? [`<span class="warn">${icon('alert')} הודעה אוטומטית (${esc(m.automated)}), ותורן לא ענה עליה</span>`] : []),
     ] : [];
-    return `<div class="b ${cls}">${markup(m.text)}${filesHtml(id, m.attachments)}<span class="at">${esc(stamp(m.at))}</span></div>${notes.length ? `<div class="note${m.role === 'customer' ? ' start' : ''}">${notes.join('')}</div>` : ''}`;
-  });
+    return `<div class="b ${cls}">${markup(m.text)}${filesHtml(id, m.attachments)}<time class="at" datetime="${esc(new Date(m.at).toISOString())}" title="${esc(stamp(m.at))}">${esc(timeHe(m.at))}</time></div>${notes.length ? `<div class="note${m.role === 'customer' ? ' start' : ''}">${notes.join('')}</div>` : ''}`;
+  }
   const st = await replyState(app, id);
   const ch = CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel;
   const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">${op ? 'ענית' : 'עניתם'} בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה ${op ? 'לך' : 'לכם'} כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm' })}</div>` : '';
@@ -167,20 +216,39 @@ async function chat(app: App, r: DashReq, id: number) {
   const learn = waiting && asked ? `<label class="row small mt8"><input type="checkbox" name="learn" value="1" checked> לשמור את התשובה, ותורן יענה ככה בפעם הבאה ששואלים את זה</label>
 <label class="f mt8">השאלה, כמו שתורן ישמור אותה<input type="text" name="question" value="${esc(asked.slice(0, 300))}" maxlength="300" dir="auto"></label>` : '';
   const settle = waiting && !r.ctx.readOnly ? `<div class="row mt12">${postButton(r.ctx, `/chat/${id}/settle`, 'טיפלתי בזה בלי לענות מכאן', { cls: 'btn sm ghost', iconName: 'check' })}</div>` : '';
-  const replyBox = (MESSAGING as string[]).includes(c.channel) ? `<section class="panel mt16" id="reply"><header><h2>לענות ללקוח</h2><span class="end chip">${esc(ch)}</span></header>
-  ${pausedNote}
-  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" data-ajax="reply"${st.files ? ' enctype="multipart/form-data"' : ''} class="${st.pausedUntil ? 'mt12' : ''}">${csrfField(r.ctx)}<textarea name="text" rows="4" dir="auto"${st.files ? '' : ' required'} maxlength="4000" class="wide" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>${learn}${st.files ? `<label class="f mt8">לצרף קובץ<small>תמונה או PDF, עד ${MAX_BYTES / 1024 / 1024}MB. תורן עצמו לא שולח קבצים.</small><input type="file" name="file" accept="image/jpeg,image/png,image/gif,image/webp,application/pdf" data-max="${MAX_BYTES}" data-too-big="הקובץ גדול מ־${MAX_BYTES / 1024 / 1024}MB. אפשר לצרף קובץ קטן יותר."></label>` : ''}<p class="small bad mt8 m0" data-error role="alert" hidden></p><div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></form>
-  <p class="small muted mt8 m0">${windowNote}${st.from ? `התשובה יוצאת מהכתובת <bdi class="ltr">${esc(st.from)}</bdi>. ` : ''}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="muted m0">${esc((st.reason === 'window_closed' && DM_CLOSED[c.channel]) || BLOCKED_HE[st.reason || ''] || '')}</p>`}
+  // The answer, as a mail client's composer: the box under the thread, the file and the send on its bar, what it costs
+  // (Toran steps back) and until when it can go in small words under it.
+  const mb = MAX_BYTES / 1024 / 1024;
+  const fileField = st.files ? `<label class="cmp-file" title="תמונה או PDF, עד ${mb}MB. תורן עצמו לא שולח קבצים.">${icon('clip')}<span data-file-name>לצרף קובץ</span><input class="sr" type="file" name="file" accept="image/jpeg,image/png,image/gif,image/webp,application/pdf" data-max="${mb * 1024 * 1024}" data-too-big="הקובץ גדול מ־${mb}MB. אפשר לצרף קובץ קטן יותר."></label>` : '';
+  const replyBox = (MESSAGING as string[]).includes(c.channel) ? `<div class="th-compose" id="reply"><h2 class="sr">לענות ללקוח</h2>
+  ${pausedNote ? `<div class="th-paused">${pausedNote}</div>` : ''}
+  ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" data-ajax="reply"${st.files ? ' enctype="multipart/form-data"' : ''} class="composer"><div class="cmp-box">${csrfField(r.ctx)}<textarea name="text" rows="3" dir="auto"${st.files ? '' : ' required'} maxlength="4000" placeholder="התשובה ${op ? 'שלך' : 'שלכם'}, ב${esc(ch)}" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>
+<div class="cmp-bar">${fileField}<button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></div>${learn ? `<div class="cmp-learn">${learn}</div>` : ''}<p class="small bad mt8 m0" data-error role="alert" hidden></p></form>
+  <p class="small muted mt8 m0">${windowNote}${st.from ? `התשובה יוצאת מהכתובת <bdi class="ltr">${esc(st.from)}</bdi>. ` : ''}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="th-closed">${icon('alert')}<span>${esc((st.reason === 'window_closed' && DM_CLOSED[c.channel]) || BLOCKED_HE[st.reason || ''] || '')}</span></p>`}
   ${settle}
   ${learned.length ? `<p class="small mt12 m0">${icon('book')} תורן שמר מהשיחה הזו את התשובה ל"${esc(learned.map((x) => x.question).join('", "'))}". <a href="/lead/${c.sid}/knowledge#answers">${op ? 'לתשובות של החנות' : 'לתשובות שלכם'}</a></p>` : ''}
-</section>` : '';
-  const subject = c.channel === 'email' && c.meta?.subject ? ` · "${esc(c.meta.subject)}"` : '';
-  const body = `<a class="back" href="/chats">${icon('chev')}שיחות</a>
-<div class="head"><div class="row">${storeBadge({ id: c.sid, name: c.brand?.name || c.name, domain: c.domain })}<h1 class="title">${esc(c.brand?.name || c.name || c.domain)}</h1></div><p class="sub">${stateChip(c.state)} · ${esc(ch)}${c.channel === 'whatsapp' && !c.account_id ? ' (דמו)' : ''} · <bdi class="ltr">${esc(maskPeer(c.channel, c.peer, c.meta?.name) || c.channel)}</bdi>${subject} · התחילה ${esc(stamp(c.started_at))}${op ? ` · ${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}` : ''}</p><div class="end">${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}מה הוא יודע</a>`}</div></div>
-<section class="panel"><div class="chat">${out.join('')}</div></section>
+</div>` : '';
+  const many = op || ((await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM stores WHERE ${storesOf(r.scope)}`))?.n || 0) > 1;
+  const pane = await inboxPane(app, r, id);
+  const subject = c.channel === 'email' && c.meta?.subject ? `<p class="th-subj">${icon('mail')}<bdi>${esc(c.meta.subject)}</bdi></p>` : '';
+  const facts = [
+    channelTag(c.channel) + (c.channel === 'whatsapp' && !c.account_id ? '<span class="chip ghost">דמו</span>' : ''),
+    stateChip(c.state),
+    ...(many ? [`<span class="chip">${esc(c.brand?.name || c.name || c.domain)}</span>`] : []),
+    `<span class="chip">התחילה ${esc(stamp(c.started_at))}</span>`,
+    ...(op ? [`<span class="chip">${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}</span>`] : []),
+  ];
+  const thread = `<section class="ib-read thread" aria-labelledby="th-name">
+<header class="th-head"><a class="th-back" href="${esc(pane.back)}" aria-label="חזרה לשיחות">${icon('chev')}</a>${avatar(`${c.channel}:${c.peer || c.id}`, c.meta?.name, c.channel, 'av lg')}
+<div class="th-who"><h1 class="title" id="th-name"><bdi>${esc(customerName)}</bdi></h1><p class="th-facts">${facts.join('')}</p></div>
+<div class="end">${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}<span>מה הוא יודע</span></a>`}</div></header>
+${subject}
+<div class="th-body"><div class="chat">${out.join('')}</div></div>
 ${replyBox}
+</section>`;
+  const body = `<div class="inbox open">${pane.html}${thread}</div>
 ${await customerPanel(app, r, id)}`;
-  return layout({ ...r.ctx, title: 'שיחה', active: 'chat' }, body);
+  return layout({ ...r.ctx, title: customerName, active: 'chat', wide: true }, body);
 }
 
 /**

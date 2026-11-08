@@ -36,6 +36,7 @@ const shots: { name: string; path: string; full?: boolean }[] = [
   { name: 'lead', path: '/lead/1' },
   { name: 'review', path: '/review' },
   { name: 'edit', path: '/lead/1/review' },
+  { name: 'chats', path: '/chats' },
   { name: 'followups', path: '/followups' },
   { name: 'settings', path: '/settings' },
 ];
@@ -53,7 +54,7 @@ for (const [device, viewport] of [['phone', { width: 390, height: 844 }], ['desk
     const pitch = href ? new URL(href, base).pathname : null;
     // The first WhatsApp demo conversation, from the chats list.
     await page.goto(`${base}/chats`);
-    const chatHref = await page.getAttribute('.list a[href^="/chat/"]', 'href').catch(() => null);
+    const chatHref = await page.getAttribute('.ib-list a[href^="/chat/"]', 'href').catch(() => null);
     const list: { name: string; path: string; full?: boolean }[] = [...shots, ...(chatHref ? [{ name: 'chat', path: chatHref }] : []), ...(pitch ? [{ name: 'pitch', path: pitch, full: true }] : [])];
     for (const s of list) {
       if (only && !only.includes(s.name)) continue;

@@ -1,6 +1,6 @@
 import { CHANNEL_HE } from '../channels/config.ts';
 import type { Why } from '../channels/customers.ts';
-import { ago, esc, icon } from './ui.ts';
+import { esc, icon, listTime, stamp } from './ui.ts';
 
 // Where each conversation stands, in the website's three words (openfrequency.co.il/toran, "כל השיחות בתיבה אחת"):
 //
@@ -46,21 +46,54 @@ export const maskPeer = (channel: string, p: string | null, name?: string | null
 
 const HEBREW = /[\u0590-\u05FF]/;
 
+/** The customer's name as the inbox shows it: Meta's name for them, else their phone or address partly hidden. */
+export const peerLabel = (channel: string, peer: string | null | undefined, name?: string | null) => maskPeer(channel, peer ?? null, name) || 'לקוח';
+
+/** Each channel's small mark, on the avatar's corner and beside the channel's name. */
+export const CHANNEL_ICON: Record<string, string> = { whatsapp: 'phone', email: 'mail', messenger: 'bolt', instagram: 'camera' };
+export const channelTag = (channel: string) => `<span class="chn chn-${esc(channel)}">${icon(CHANNEL_ICON[channel] || 'chat')}<span class="chip">${esc(CHANNEL_HE[channel as keyof typeof CHANNEL_HE] || channel)}</span></span>`;
+
 /**
- * One conversation in a customer's lists: what was asked (or, while it waits, what Toran handed over, when that line
- * is in Hebrew; the model writes it for the owner, not always in their language), its channel, a demo tag for a chat
- * on our shared demo number, where it stands, and when.
+ * A customer's avatar: the first letter of the name Meta gave, or a person when all there is is a number or an
+ * address, in one of six calm colours picked from the customer (the CSP forbids an inline colour), with the channel's
+ * mark on its corner.
  */
-export function conversationRow(c: { id: number; channel: string; account_id: number | null; state: InboxState; last_at: string; last_q?: string | null; summary?: string | null; subject?: string | null; store?: string | null; note?: string | null }) {
-  const text = (c.state === 'waiting' && c.summary && HEBREW.test(c.summary) ? c.summary : c.last_q || c.subject || '').replace(/\n/g, ' ').slice(0, 90);
-  const ico = c.state === 'waiting' ? ['bad', 'hand'] : c.state === 'fixed' ? ['sig', 'edit'] : ['ok', 'chat'];
-  const demo = c.channel === 'whatsapp' && !c.account_id ? ' · <span class="chip ghost">דמו</span>' : '';
-  return `<a href="/chat/${Number(c.id)}"><span class="ico ${ico[0]}">${icon(ico[1])}</span><span class="t"><b>${c.store ? `${esc(c.store)} · ` : ''}${esc(text || 'שיחה')}</b><small><span class="chip">${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)}</span>${demo} · ${stateChip(c.state)} · ${esc(ago(c.last_at))}${c.note ? ` · ${esc(c.note)}` : ''}</small></span><span class="go">${icon('chev')}</span></a>`;
+export function avatar(seed: string, name: string | null | undefined, channel: string, cls = 'av') {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const letter = name ? String(name).trim().match(/\p{L}/u)?.[0] : null;
+  return `<span class="${cls} av-${h % 6}" aria-hidden="true">${letter ? esc(letter.toUpperCase()) : icon('user')}<span class="av-ch chn-${esc(channel)}">${icon(CHANNEL_ICON[channel] || 'chat')}</span></span>`;
+}
+
+const WHO_HE: Record<string, string> = { agent: 'תורן', owner: 'אתם' };
+
+type RowOf = { id: number; channel: string; account_id: number | null; state: InboxState; last_at: string; last_q?: string | null; last_text?: string | null; last_role?: string | null; summary?: string | null; subject?: string | null; store?: string | null; note?: string | null; peer?: string | null; peer_name?: string | null };
+
+/**
+ * One conversation in the inbox, as a mail client lists it: the customer's avatar, name and when; an email's subject;
+ * the last message and who wrote it (while it waits, what Toran handed over, when that line is in Hebrew: the model
+ * writes it for the owner, not always in their language); the channel, a demo tag for a chat on our shared demo number,
+ * and where it stands. `current` marks the conversation open beside the list; `qs` keeps the list's filters on the link.
+ */
+export function conversationRow(c: RowOf, { current = false, qs = '' }: { current?: boolean; qs?: string } = {}) {
+  const handed = c.state === 'waiting' && !!c.summary && HEBREW.test(c.summary);
+  // One line of plain words: WhatsApp's own _italic_, *bold* and ~strike~ marks come off.
+  const text = String((handed ? c.summary : c.last_text || c.last_q) || '').replace(/(^|\s)([_*~])([^_*~\n]+)\2(?=\s|$)/g, '$1$3').replace(/\s+/g, ' ').trim().slice(0, 160);
+  const who = handed ? 'תורן העביר' : WHO_HE[c.last_role || ''];
+  const demo = c.channel === 'whatsapp' && !c.account_id ? '<span class="chip ghost">דמו</span>' : '';
+  const subject = c.channel === 'email' && c.subject ? `<span class="ib-subj">${esc(c.subject.slice(0, 90))}</span>` : '';
+  return `<a class="ib-row${c.state === 'waiting' ? ' is-waiting' : ''}" href="/chat/${Number(c.id)}${qs}"${current ? ' aria-current="page"' : ''}>${avatar(`${c.channel}:${c.peer || c.id}`, c.peer_name, c.channel)}<span class="ib-main">`
+    + `<span class="ib-top"><b class="ib-name"><bdi>${esc(peerLabel(c.channel, c.peer, c.peer_name))}</bdi></b><time class="ib-at" datetime="${esc(new Date(c.last_at).toISOString())}" title="${esc(stamp(c.last_at))}">${esc(listTime(c.last_at))}</time></span>`
+    + `${subject}<span class="ib-snip">${who ? `<span class="ib-who">${esc(who)}:</span> ` : ''}${esc(text || 'שיחה')}</span>`
+    + `<span class="ib-meta">${channelTag(c.channel)}${demo}${stateChip(c.state)}${c.store ? `<span class="chip ghost">${esc(c.store)}</span>` : ''}${c.note ? `<span class="chip ghost">${esc(c.note)}</span>` : ''}</span>`
+    + '</span></a>';
 }
 
 /** The columns conversationRow reads, for a query over conversations c. */
-export const ROW_SQL = `c.id, c.channel, c.account_id, c.last_at, ${STATE_SQL} AS state,
+export const ROW_SQL = `c.id, c.channel, c.account_id, c.last_at, c.peer, c.meta->>'name' AS peer_name, ${STATE_SQL} AS state,
   (SELECT text FROM messages WHERE conversation_id = c.id AND role = 'customer' AND text <> '' ORDER BY id DESC LIMIT 1) AS last_q,
+  (SELECT text FROM messages WHERE conversation_id = c.id AND role <> 'system' AND text <> '' ORDER BY id DESC LIMIT 1) AS last_text,
+  (SELECT role FROM messages WHERE conversation_id = c.id AND role <> 'system' AND text <> '' ORDER BY id DESC LIMIT 1) AS last_role,
   (SELECT handoff->>'summary' FROM messages WHERE conversation_id = c.id AND handoff IS NOT NULL ORDER BY id DESC LIMIT 1) AS summary,
   c.meta->>'subject' AS subject`;
 

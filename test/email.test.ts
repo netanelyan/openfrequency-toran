@@ -262,7 +262,7 @@ test('the inbox over HTTP: connect the store\'s email, mail arrives through the 
     const list = await (await s.get('/chats')).text();
     assert.match(list, /<span class="chip">מייל<\/span>/);
     assert.match(list, /<span class="chip">וואטסאפ<\/span>/);
-    assert.match(await (await s.get('/chats?channel=email')).text(), new RegExp(`/chat/${conv}"`));
+    assert.match(await (await s.get('/chats?channel=email')).text(), new RegExp(`/chat/${conv}[?"]`));
     const page = await (await s.get(`/chat/${conv}`)).text();
     assert.match(page, /לענות ללקוח/);
     assert.match(page, /לשלוח במייל/);

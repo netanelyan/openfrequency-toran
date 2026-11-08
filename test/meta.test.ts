@@ -208,7 +208,7 @@ test('a customer writes to the store\'s own number: Toran answers through Meta, 
     assert.equal((await counted(s.app.db, [a])).get(a)!.get(monthOf()), 1);
     const list = await (await s.get('/chats')).text();
     assert.match(list, new RegExp(`/chat/${conv.id}"`));
-    const row = new RegExp(`<a href="/chat/${conv.id}">(.*?)</a>`, 's').exec(list)![1];
+    const row = new RegExp(`<a class="ib-row[^"]*" href="/chat/${conv.id}"[^>]*>(.*?)</a>`, 's').exec(list)![1];
     assert.ok(!/דמו/.test(row), 'not tagged as the demo');
 
     // The owner answers from the dashboard: it goes out from the store's number too.

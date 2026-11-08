@@ -60,9 +60,9 @@ test('the inbox in the website\'s three words: waiting for you, answered alone, 
     assert.match(today, /<b class="badge num" aria-label="1 מחכים">1<\/b>/, 'the inbox carries the waiting count');
     assert.match(today, new RegExp(`/chat/${alone}"`), 'a conversation nobody paused is among the recent ones (a NULL pause is not "waiting")');
     const waiting = await (await s.get('/chats?state=waiting')).text();
-    assert.match(waiting, new RegExp(`/chat/${asked}"`));
-    assert.ok(!waiting.includes(`/chat/${alone}"`));
-    assert.match(await (await s.get('/chats?state=alone')).text(), new RegExp(`/chat/${alone}".*ענה לבד`, 's'));
+    assert.match(waiting, new RegExp(`/chat/${asked}[?"]`));
+    assert.ok(!new RegExp(`/chat/${alone}[?"]`).test(waiting));
+    assert.match(await (await s.get('/chats?state=alone')).text(), new RegExp(`/chat/${alone}[?"].*ענה לבד`, 's'));
 
     // The customer's view of a conversation: no tool calls, no cost; the answer can be kept.
     const page = await (await s.get(`/chat/${asked}`)).text();
@@ -77,14 +77,14 @@ test('the inbox in the website\'s three words: waiting for you, answered alone, 
     assert.equal(s.app.mail!.outbox!.at(-1)!.text, `מכאן עונה לך בן אדם מהצוות של כלי חרס של נורית.\n\nכן, בימי ראשון עד חמישי, 9:00 עד 16:00.`);
     const faq = await s.app.db.one<any>('SELECT question, answer, conversation_id FROM faqs WHERE store_id = $1 AND conversation_id IS NOT NULL', [a]);
     assert.deepEqual(faq, { question: 'אפשר לאסוף מהמחסן?', answer: 'כן, בימי ראשון עד חמישי, 9:00 עד 16:00.', conversation_id: asked });
-    assert.match(await (await s.get(`/chats?state=fixed`)).text(), new RegExp(`/chat/${asked}"`));
+    assert.match(await (await s.get(`/chats?state=fixed`)).text(), new RegExp(`/chat/${asked}[?"]`));
     assert.match(await (await s.get(`/lead/${a}/knowledge`)).text(), /כן, בימי ראשון עד חמישי/, 'the answer is on what Toran knows');
 
     // "טיפלתי בזה": handled without an answer from here.
     const other = await thread(s, a, account, 'יש הנחה לכמות?', { handoff: true });
-    assert.match(await (await s.get('/chats?state=waiting')).text(), new RegExp(`/chat/${other}"`));
+    assert.match(await (await s.get('/chats?state=waiting')).text(), new RegExp(`/chat/${other}[?"]`));
     assert.equal((await s.post(`/chat/${other}/settle`, { _csrf: await s.csrf(`/chat/${other}`) })).status, 303);
-    assert.ok(!(await (await s.get('/chats?state=waiting')).text()).includes(`/chat/${other}"`));
+    assert.ok(!new RegExp(`/chat/${other}[?"]`).test(await (await s.get('/chats?state=waiting')).text()));
   } finally {
     await s.close();
   }

@@ -141,7 +141,18 @@
     const big = [...(input.files || [])].some((f) => f.size > Number(input.dataset.max));
     input.setCustomValidity(big ? input.dataset.tooBig || '' : '');
     if (big) input.reportValidity();
+    // The answer box's paperclip (pages/home.ts) says which file is attached, where it said "לצרף קובץ".
+    const name = input.closest('.cmp-file')?.querySelector('[data-file-name]');
+    if (name) {
+      name.dataset.empty ??= name.textContent;
+      const f = input.files?.[0];
+      name.textContent = f ? f.name : name.dataset.empty;
+      input.closest('.cmp-file').classList.toggle('has', !!f);
+    }
   });
+
+  // The inbox's list beside an open conversation: the open one in view, wherever it sits in the list.
+  document.querySelector('.ib-list a[aria-current="page"]')?.scrollIntoView({ block: 'nearest' });
 
   document.addEventListener('click', (e) => {
     const a = e.target.closest('a[href^="#"]');

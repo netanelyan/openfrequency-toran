@@ -103,9 +103,11 @@ test('the customer\'s other conversations in the inbox over HTTP, with "זה א�
     assert.match(page, new RegExp(`<option value="${e}">`));
     assert.equal((await s.post(`/chat/${w}/same`, { _csrf: await s.csrf(`/chat/${w}`), other: String(e) })).status, 303);
     const joined = await (await s.get(`/chat/${w}`)).text();
-    assert.match(joined, new RegExp(`href="/chat/${e}"[^]*חוברו ידנית`));
+    // Inside the panel: the inbox's list beside the conversation links to every conversation anyway.
+    const panel = (t: string) => t.split('הלקוח הזה בשיחות אחרות')[1] || '';
+    assert.match(panel(joined), new RegExp(`href="/chat/${e}"[^]*חוברו ידנית`));
     assert.match(joined, /זה לא אותו לקוח/);
-    assert.match(await (await s.get(`/chat/${e}`)).text(), new RegExp(`href="/chat/${w}"`));
+    assert.match(panel(await (await s.get(`/chat/${e}`)).text()), new RegExp(`href="/chat/${w}"`));
     assert.equal((await s.post(`/chat/${w}/apart`, { _csrf: await s.csrf(`/chat/${w}`), other: String(e) })).status, 303);
     assert.ok(!new RegExp(`href="/chat/${e}"`).test(await (await s.get(`/chat/${w}`)).text().then((t) => t.split('הלקוח הזה בשיחות אחרות')[1] || '')));
 

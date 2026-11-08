@@ -166,7 +166,7 @@ export async function otherConversations(app: App, conversationId: number, rowSq
   const mine = await rowOf(app.db, me.store_id, { channel: me.channel, value: me.peer });
   const ids = mine ? await app.db.query<Row>('SELECT channel, value, how FROM customer_ids WHERE customer_id = $1', [mine.customer_id]) : [{ channel: me.channel, value: me.peer, how: 'wrote' as const }];
   const rows = await app.db.query<any>(
-    `SELECT ${rowSql}, c.peer, c.meta->>'name' AS name FROM conversations c
+    `SELECT ${rowSql}, c.meta->>'name' AS name FROM conversations c
      JOIN (SELECT * FROM unnest($3::text[], $4::text[]) AS t(channel, value)) ids ON ids.channel = c.channel AND ids.value = c.peer
      WHERE c.store_id = $1 AND c.account_id IS NOT NULL AND c.id <> $2 ORDER BY c.last_at DESC LIMIT 20`,
     [me.store_id, me.id, ids.map((i) => i.channel), ids.map((i) => i.value)],
@@ -180,7 +180,7 @@ export async function candidates(app: App, conversationId: number, exclude: numb
   const me = await convOf(app, conversationId);
   if (!me?.peer || !me.account_id) return [];
   return app.db.query<any>(
-    `SELECT ${rowSql}, c.peer, c.meta->>'name' AS name FROM conversations c WHERE c.store_id = $1 AND c.account_id IS NOT NULL AND c.peer IS NOT NULL AND c.id <> $2 AND NOT (c.channel = $3 AND c.peer = $4) AND NOT (c.id = ANY($5::int[])) ORDER BY c.last_at DESC LIMIT 30`,
+    `SELECT ${rowSql}, c.meta->>'name' AS name FROM conversations c WHERE c.store_id = $1 AND c.account_id IS NOT NULL AND c.peer IS NOT NULL AND c.id <> $2 AND NOT (c.channel = $3 AND c.peer = $4) AND NOT (c.id = ANY($5::int[])) ORDER BY c.last_at DESC LIMIT 30`,
     [me.store_id, me.id, me.channel, me.peer, exclude],
   );
 }

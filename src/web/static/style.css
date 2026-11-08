@@ -760,3 +760,164 @@ html.sk-on #main > :not(.sk-page) { display: none; }
    solid, light and dark. */
 html.a-contrast { --ink-2: #1d1d1f; --ink-3: #424245; --ink-p: #1d1d1f; --line: #8e8e93; --line-2: #424245; --bar: #ffffff; --bar-float: #ffffff; --bar-edge: #424245; --surface: #ffffff; --surface-hi: #ffffff; --edge: #424245; }
 html[data-theme="dark"].a-contrast { --ink-2: #f5f5f7; --ink-3: #e5e5ea; --ink-p: #f5f5f7; --line: #8e8e93; --line-2: #d2d2d7; --bar: #000000; --bar-float: #000000; --bar-edge: #d2d2d7; --surface: #000000; --surface-hi: #000000; --edge: #d2d2d7; --solid: #000000; }
+
+/* ------------------------------------------------------------ the inbox (pages/home.ts, inbox.ts)
+   As a mail client has it: on a desk the list and the open conversation side by side, each scrolling on its own, the
+   answer box at the foot of the conversation; on a phone the list, then the conversation on its own page. A row is the
+   customer (avatar with the channel's mark, name, when), the last message and who wrote it, then the channel and where
+   it stands. A conversation waiting for the owner is the unread one: a red dot and its time in red. Colour stays for
+   meaning: the avatars are six quiet greys with a tint, the channels are marks, not brand colours. */
+
+main.wrap.wide { max-width: 1440px; }
+.inbox { display: grid; gap: 16px; }
+.ib-head { margin-bottom: 20px; }
+.ib-pane, .thread, .ib-blank {
+  background: linear-gradient(180deg, var(--surface-hi), var(--surface));
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-tile), inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--rim);
+  overflow: hidden; min-width: 0;
+}
+.ib-pane { display: flex; flex-direction: column; }
+.ib-tools { display: grid; gap: 10px; padding: 14px 14px 12px; border-bottom: 1px solid var(--line); }
+
+.ib-search { position: relative; margin: 0; }
+.ib-search svg.i { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--ink-3); pointer-events: none; }
+.ib-search input[type='search'] { min-height: 40px; padding: 8px 14px; padding-inline-start: 38px; border: 0; border-radius: 12px; background: var(--fill); font-size: 15px; }
+.ib-search input[type='search']:focus { background: var(--field); }
+
+.seg { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--fill); overflow-x: auto; scrollbar-width: none; }
+.seg::-webkit-scrollbar { display: none; }
+.seg a { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 0 8px; border-radius: 9px; font-size: 13px; font-weight: 500; color: var(--ink-2); white-space: nowrap; transition: background-color 0.15s ease, color 0.15s ease; }
+.seg a:hover { text-decoration: none; color: var(--ink); }
+.seg a[aria-current='true'] { background: var(--seg-on); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.04); }
+.seg .n { font-size: 11px; font-weight: 500; color: var(--ink-3); }
+.seg a.hot .n { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--badge); color: var(--badge-ink); line-height: 18px; text-align: center; font-weight: 600; }
+
+.ib-ch { display: flex; flex-wrap: wrap; gap: 6px; }
+.ib-ch a { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 12px; border-radius: var(--r-pill); font-size: 12px; color: var(--ink-2); white-space: nowrap; box-shadow: inset 0 0 0 1px var(--line-2); }
+.ib-ch a:hover { text-decoration: none; background: var(--fill); }
+.ib-ch a svg.i { width: 14px; height: 14px; }
+.ib-ch a[aria-current='true'] { background: var(--ink); color: var(--bg); box-shadow: none; }
+
+.ib-list { display: grid; align-content: start; }
+a.ib-row { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); color: inherit; transition: background-color 0.12s ease; }
+.ib-list > a.ib-row:last-child { border-bottom: 0; }
+a.ib-row:hover { text-decoration: none; background: var(--inset); }
+a.ib-row[aria-current='page'] { background: color-mix(in srgb, var(--accent-fill) 12%, transparent); }
+a.ib-row.is-waiting::before { content: ''; position: absolute; inset-inline-start: 5px; top: 27px; width: 7px; height: 7px; border-radius: 50%; background: var(--badge); }
+.ib-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ib-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ib-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ib-at { flex: none; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.is-waiting .ib-at { color: var(--bad); font-weight: 600; }
+.ib-subj { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ib-snip { font-size: 13px; line-height: 1.4; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.ib-who { color: var(--ink-3); }
+.is-waiting .ib-who { color: var(--bad); font-weight: 500; }
+.ib-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 5px; }
+.ib-meta .chip, .th-facts .chip { font-size: 11.5px; }
+/* Where it stands, as a soft pill. */
+.ib-meta .chip:is(.bad, .ok, .sig), .th-facts .chip:is(.bad, .ok, .sig) { padding: 1px 8px; border-radius: var(--r-pill); font-weight: 600; }
+.ib-meta .chip.bad, .th-facts .chip.bad { background: var(--bad-bg); }
+.ib-meta .chip.ok, .th-facts .chip.ok { background: var(--ok-bg); }
+.ib-meta .chip.sig, .th-facts .chip.sig { background: color-mix(in srgb, var(--accent-fill) 12%, transparent); }
+.ib-none { display: grid; justify-items: center; gap: 4px; padding: 48px 24px; text-align: center; color: var(--ink-3); font-size: 13px; }
+.ib-none > svg.i { width: 30px; height: 30px; margin-bottom: 6px; stroke-width: 1.5; }
+.ib-none b { color: var(--ink); font-size: 15px; font-weight: 600; }
+
+/* A channel: its mark and its name. */
+.chn { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-3); }
+.chn > svg.i { width: 14px; height: 14px; }
+
+/* The customer's avatar. */
+.av { position: relative; flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; font: 600 17px/1 var(--display); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.av > svg.i { width: 22px; height: 22px; stroke-width: 1.8; }
+.av.lg { width: 46px; height: 46px; font-size: 19px; }
+.av-0 { background: linear-gradient(180deg, #a3abb9, #7d8697); }
+.av-1 { background: linear-gradient(180deg, #8fa7c4, #66809f); }
+.av-2 { background: linear-gradient(180deg, #9cb3a5, #728b7c); }
+.av-3 { background: linear-gradient(180deg, #c2ab94, #9a826b); }
+.av-4 { background: linear-gradient(180deg, #b39fbd, #8a7695); }
+.av-5 { background: linear-gradient(180deg, #92b0b8, #688891); }
+.av-ch { position: absolute; bottom: -3px; inset-inline-end: -3px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--solid); color: var(--ink-2); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(0, 0, 0, 0.12); }
+.av-ch svg.i { width: 12px; height: 12px; stroke-width: 2; }
+
+/* The open conversation. */
+.thread { display: flex; flex-direction: column; }
+.th-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.th-back { flex: none; display: grid; place-items: center; width: 40px; height: 40px; margin-inline-start: -8px; border-radius: 50%; color: var(--accent-p); }
+.th-back:hover { background: var(--fill); }
+.th-back svg.i { transform: rotate(-90deg); width: 22px; height: 22px; }
+.th-who { flex: 1; min-width: 0; }
+.th-who h1.title { margin: 0; font: 700 18px/1.25 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.th-facts { margin: 5px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.th-head > .end { flex: none; display: flex; gap: 8px; }
+.th-subj { display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 18px; border-bottom: 1px solid var(--line); font-size: 14px; font-weight: 600; }
+.th-subj svg.i { width: 16px; height: 16px; color: var(--ink-3); }
+.th-body { padding: 14px 18px 18px; }
+.th-body .chat { padding: 0; }
+.chat .day { justify-self: center; margin: 12px 0 4px; }
+.chat .day:first-child { margin-top: 0; }
+.chat .day span { display: inline-block; padding: 3px 12px; border-radius: var(--r-pill); background: var(--fill); color: var(--ink-3); font-size: 11.5px; font-weight: 600; }
+.chat .who-l { margin: 8px 8px -2px; font-size: 11.5px; font-weight: 600; color: var(--ink-3); }
+.chat .who-l.start { justify-self: start; }
+.chat .who-l.end { justify-self: end; }
+.chat .b time.at { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-3); text-align: end; }
+
+/* The answer box. */
+.th-compose { padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+.th-paused { margin-bottom: 10px; padding: 10px 12px; border-radius: var(--r-m); background: color-mix(in srgb, var(--accent-fill) 10%, transparent); }
+.th-paused .row p { flex: 1 1 220px; }
+.composer { margin: 0; }
+.cmp-box { border-radius: 16px; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-2); padding: 2px 2px 8px; transition: box-shadow 0.15s ease; }
+.cmp-box:focus-within { box-shadow: inset 0 0 0 1px var(--accent-fill), 0 0 0 4px color-mix(in srgb, var(--accent-fill) 22%, transparent); }
+.cmp-box textarea, .cmp-box textarea:focus { display: block; width: 100%; min-height: 72px; max-height: 40vh; resize: vertical; border: 0; background: none; box-shadow: none; padding: 10px 12px; font-size: 15px; }
+.cmp-bar { display: flex; align-items: center; gap: 8px; padding: 0 8px; }
+.cmp-bar .btn { margin-inline-start: auto; }
+.cmp-file { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; max-width: 60%; padding: 0 12px; border-radius: var(--r-pill); color: var(--ink-2); font-size: 13px; cursor: pointer; }
+.cmp-file:hover { background: var(--fill); color: var(--ink); }
+.cmp-file:focus-within { outline: 3px solid color-mix(in srgb, var(--accent-fill) 60%, transparent); outline-offset: 1px; }
+.cmp-file svg.i { width: 18px; height: 18px; }
+.cmp-file span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp-file.has span { color: var(--ink); font-weight: 500; }
+.cmp-learn { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-m); background: var(--fill); }
+.cmp-learn label.row { margin-top: 0; }
+.th-closed { display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 13px; color: var(--ink-2); }
+.th-closed svg.i { width: 18px; height: 18px; color: var(--warn); margin-top: 1px; }
+
+.ib-blank { display: none; }
+
+/* A phone: the list is the page; an open conversation is its own page, with the way back in its head. */
+@media (max-width: 999px) {
+  .inbox.open > .ib-pane { display: none; }
+  .th-head { padding: 12px 14px; }
+  .th-body { padding: 12px 12px 16px; }
+  .th-compose { padding: 12px; }
+}
+@media (max-width: 699px) {
+  .th-head > .end .btn { padding: 0; width: 40px; }
+  .th-head > .end .btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  a.ib-row { padding: 12px 14px; }
+}
+
+/* A desk: the list beside the conversation, each scrolling inside its own pane, the answer box held at the foot. */
+@media (min-width: 1000px) {
+  main.wrap.wide { padding-top: 24px; }
+  .inbox { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: stretch; height: calc(100dvh - 48px); min-height: 560px; }
+  .ib-head + .inbox { height: calc(100dvh - 190px); }
+  .ib-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .ib-ch a { min-height: 30px; }
+  .th-back { display: none; }
+  .th-head { padding: 14px 20px; }
+  /* Newest at the foot, where a thread opens: column-reverse starts the scroll at the end without a line of script. */
+  .th-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column-reverse; padding: 16px 22px 20px; }
+  .th-compose { flex: none; max-height: 55%; overflow-y: auto; padding: 12px 20px 16px; }
+  .ib-blank { display: grid; place-content: center; justify-items: center; gap: 6px; text-align: center; color: var(--ink-3); font-size: 13px; }
+  .ib-blank > svg.i { width: 44px; height: 44px; stroke-width: 1.3; margin-bottom: 6px; }
+  .ib-blank b { color: var(--ink-2); font-size: 16px; font-weight: 600; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ib-pane, .thread, .ib-blank { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
