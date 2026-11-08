@@ -51,6 +51,9 @@ export async function storesCss(app: App, sc: Scope): Promise<string> {
 
 export function dashboardRoutes(app: App): Route<DashReq>[] {
   return [
+    // The waiting count, for the open page to keep its badge and title live (TORAN-READINESS.md P1-13, static/app.js):
+    // the same number as the header's, from the session's own scope.
+    ['GET', /^\/waiting\.json$/, async (r) => ({ json: { chats: r.ctx.waiting?.chats ?? 0 }, headers: { 'cache-control': 'no-store' } })],
     ...customerRoutes(app),
     ...startRoutes(app),
     ...whatsappRoutes(app),

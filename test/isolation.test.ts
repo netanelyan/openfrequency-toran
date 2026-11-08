@@ -82,6 +82,7 @@ const OPERATOR_ID = new Set(['POST ^\\/queue\\/(\\d+)\\/again$']);
 const NO_ID: Record<string, string> = {
   'GET ^\\/knowledge$': "the session's own store",
   'GET ^\\/plan$': "the session's own store",
+  'GET ^\\/waiting\\.json$': "the session's own count, the header's (pay-banner.test.ts)",
   'GET ^\\/export\\/conversations\\.csv$': "the session's own conversations (customer.test.ts)",
   'GET ^\\/start$': "the session's own workspace",
   'POST ^\\/start$': "the session's own workspace (setup.test.ts)",

@@ -355,4 +355,47 @@
     if (img.complete) mark(img);
     else for (const ev of ['load', 'error']) img.addEventListener(ev, () => mark(img), { once: true });
   }
+
+  // The waiting count, live (TORAN-READINESS.md P1-13): while the page is visible, /waiting.json every 45 seconds keeps
+  // the Chats badge (side bar and tab bar) and the tab's title true. A conversation that started waiting since the page
+  // loaded is said once, with the way to it; an open conversation's own page is left as it is.
+  const chatsLinks = [...document.querySelectorAll('a[href="/chats"]')].filter((a) => a.closest('.nav, .tabbar'));
+  if (chatsLinks.length && !document.body.classList.contains('ro')) {
+    const title = document.title.replace(/^\(\d+\) /, '');
+    const shown = () => Number(chatsLinks[0].querySelector('.badge')?.textContent || 0);
+    let last = shown();
+    const paint = (n) => {
+      for (const a of chatsLinks) {
+        let b = a.querySelector('.badge');
+        if (!n) {
+          b?.remove();
+          continue;
+        }
+        if (!b) {
+          b = document.createElement('b');
+          b.className = 'badge num';
+          a.append(b);
+        }
+        b.textContent = String(n);
+        b.setAttribute('aria-label', `${n} מחכים`);
+      }
+      document.title = n ? `(${n}) ${title}` : title;
+    };
+    paint(last);
+    const ask = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const r = await fetch(`${base}/waiting.json`, { credentials: 'same-origin', redirect: 'manual' });
+        if (!r.ok) return;
+        const n = Number((await r.json()).chats) || 0;
+        if (n > last && !/^\/chat\/\d+/.test(location.pathname)) say(n - last === 1 ? 'שאלה חדשה מחכה לכם בשיחות' : `${n - last} שאלות חדשות מחכות לכם בשיחות`);
+        if (n !== last) paint(n);
+        last = n;
+      } catch {
+        /* offline for a moment: the next tick asks again */
+      }
+    };
+    setInterval(ask, 45_000);
+    document.addEventListener('visibilitychange', ask);
+  }
 })();

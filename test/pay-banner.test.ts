@@ -44,3 +44,22 @@ test('the banner on the dashboard: due with the day and the way to pay; none for
     await s.close();
   }
 });
+
+test('/waiting.json: the waiting count of the session\'s own stores, for the live badge (P1-13)', async () => {
+  const s = await serve();
+  try {
+    const id = s.seeded.storeId;
+    await s.app.db.query('UPDATE stores SET workspace_id = 6 WHERE id = $1', [id]);
+    s.as(s.accounts.session(customer(6)).cookie);
+    const before = await (await s.get('/waiting.json')).json();
+    assert.equal(typeof before.chats, 'number');
+    const conv = (await s.app.db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer, account_id) VALUES ($1, 'email', 'dana@example.test', NULL) RETURNING id", [id]))!.id;
+    await s.app.db.query("INSERT INTO messages (conversation_id, role, text, handoff) VALUES ($1, 'customer', 'שאלה', NULL), ($1, 'agent', 'בודק', '{\"reason\":\"unknown\",\"summary\":\"שאלה\"}'::jsonb)", [conv]);
+    const after = await (await s.get('/waiting.json')).json();
+    assert.ok(after.chats >= before.chats, 'it counts what the header counts');
+    s.as(s.accounts.session(customer(7)).cookie);
+    assert.equal((await (await s.get('/waiting.json')).json()).chats, 0, 'another workspace sees none of it');
+  } finally {
+    await s.close();
+  }
+});
