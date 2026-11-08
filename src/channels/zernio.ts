@@ -11,6 +11,7 @@ import { socialEcho } from './socialStore.ts';
 import { socialReady, type Social } from './social.ts';
 import { LEDGER } from './send.ts';
 import type { ChannelAdapter, Inbound, Sent, SendCtx } from './types.ts';
+import { alertOperator } from '../ops/alert.ts';
 
 // A store's Facebook Page (Messenger) and Instagram account through Zernio (docs.zernio.com), while our own Meta app has
 // no review for them (the owner, 2026-11-08: "find a kapso for instagram and messanger"; INSTAGRAM-MESSENGER-PROVIDERS.md).
@@ -271,6 +272,7 @@ export async function zernioWebhook(app: App, body: any): Promise<{ action: stri
   if (name === 'account.disconnected') {
     await app.db.query("UPDATE channel_accounts SET status = 'error', meta = meta || $2::jsonb WHERE id = $1", [a.id, J({ why: 'disconnected' })]);
     await event(app.db, storeId, `${LEDGER[channel].tag}_error`, { accountId: a.id, why: 'disconnected', via: 'zernio' });
+    await alertOperator(app, `zernio_gone:${storeId}:${channel}`, `תורן: ה${channel === 'instagram' ? 'אינסטגרם' : 'מסנג׳ר'} של חנות ${storeId} התנתק`, 'Zernio אומר שהחשבון התנתק. תורן לא עונה בו עד שהחנות מחברת אותו שוב בדף הערוץ שלה.', { storeId, everyMinutes: 24 * 60 }).catch(() => {});
     return { action: 'error' };
   }
   if (name === 'conversation.control_changed') {

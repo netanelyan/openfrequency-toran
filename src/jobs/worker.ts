@@ -13,6 +13,7 @@ import { workerBeat } from '../health.ts';
 import { BOOT, beat, claim, done, enqueue, fail, MESSAGE_KINDS, progress, requeueOrphans, type Job } from './queue.ts';
 import { lostMessage } from './lost.ts';
 import { dailyRetention } from './retention.ts';
+import { watchStores } from '../ops/watch.ts';
 import { rereadCompany, scheduleReread } from './reread.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { interruptedSends } from '../auto/send.ts';
@@ -234,6 +235,8 @@ export async function schedule(app: App) {
   if (old?.n) await alertOperator(app, 'queue_old', 'הודעות של לקוחות מחכות בתור', `${old.n} הודעות מחכות יותר מ-${QUEUE_ALERT_MINUTES} דקות, הוותיקה מ-${old.at}. כדאי לבדוק שה-worker של תורן רץ, ולהסתכל בדף התור.`, { everyMinutes: 30 });
   // Once a day, the retention pass; and our support's re-read of the website, once a day and soon after a start.
   await dailyRetention(app);
+  // Once a day: a customer store over its plan, or stuck with nothing connected (ops/watch.ts).
+  await watchStores(app).catch((e) => app.log(`[watch] ${e?.message || e}`));
   await scheduleReread(app);
 }
 
@@ -259,6 +262,8 @@ export async function runOne(app: App, job: Job, { boot = BOOT }: { boot?: strin
     await done(app.db, job.id, result ?? null);
   } catch (e: any) {
     app.log(`[job ${job.id} ${job.kind}] ${cleanLine(e?.stack || e?.message || e, 800)}`);
+    // Kapso out of credit refuses every send of every store on it: said to the operator at once (TORAN-READINESS.md P1-25).
+    if (/Kapso refused [^(]*\(402|insufficient_credits/.test(String(e?.message || e))) await alertOperator(app, 'kapso_credits', 'תורן: נגמר הקרדיט ב-Kapso', 'Kapso מסרב לשלוח (insufficient_credits), אז הודעות של חנויות בוואטסאפ לא יוצאות. להוסיף קרדיט בלוח של Kapso.', { everyMinutes: 60 }).catch(() => {});
     const last = await fail(app.db, job, String(e?.message || e));
     // A customer's message that failed every attempt: kept in its conversation for the owner, and said to the operator.
     if (last && MESSAGE_KINDS.includes(job.kind)) await lostMessage(app, job, String(e?.message || e)).catch((x) => app.log(`[job ${job.id}] the lost message could not be kept: ${x?.message || x}`));

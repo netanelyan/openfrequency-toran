@@ -8,6 +8,7 @@ import { demoLine, oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
 import { later, markLost, markReconnectTold, markReminded, markReplied, markSent, markWon, OpsError, reopen, sendNow, setNext, type Kind } from './actions.ts';
 import { queueState } from '../jobs/queue.ts';
 import { internalRefusal } from './internal.ts';
+import { customerHealth } from './health.ts';
 
 // The operator's dashboard, as data for accounts' /admin, where it is shown (docs/operator.md section 4). Toran's
 // own site shows Toran only; this is the work behind the dashboard: who to write to today, the conversations, the
@@ -69,6 +70,9 @@ export async function opsData(app: App) {
     // themselves wait.
     demoLine: { live: line.live, via: line.via, number: line.number },
     // The job queue (web/pages/queue.ts): what waits, how long the oldest customer message has waited, what failed.
+    // One row a customer's store (ops/health.ts): paid, switched on, channels, the month against its plan, waiting over a
+    // day, spend against its cap, the last alert.
+    customers: await customerHealth(app),
     jobs: await queueState(app.db).then((s) => ({ queued: s.queued, running: s.running, messages: s.messages, oldestAt: s.oldestAt, failed: s.failed.length, url: `${accountsLinks(app.env).home}${ADMIN}/queue` })),
   };
 }

@@ -364,7 +364,9 @@ const DISAGREES: Record<string, string[]> = {
   // docs/operator.md section 6), which /admin does not show. Since 2026-10-30 the contract has our number and the demo
   // line, and lets a conversation's next_step (a lead just marked "they answered") and a stuck request's storeId (a
   // site never read) be null, as accounts' reader (its src/web/toran.js readOps) always took them.
-  [`${OPS} :: the dashboard`]: ['$: jobs here, not in the contract'],
+  // Since 2026-11-08 it also carries one health row a customer's store (src/ops/health.ts, TORAN-READINESS.md P1-26),
+  // for /admin to show once accounts' contract and reader take it.
+  [`${OPS} :: the dashboard`]: ['$: customers, jobs here, not in the contract'],
 };
 
 /**
