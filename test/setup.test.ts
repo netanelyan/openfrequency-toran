@@ -72,11 +72,12 @@ test('GET /internal/setup: from this machine with the token only; a brand-new wo
     assert.equal(d.product, 'toran');
     assert.equal(d.ready, false);
     // Channels whose code is off here (TORAN_CHANNELS lists none) are not steps at all.
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'whatsapp', 'orders', 'auto']);
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'whatsapp', 'web', 'orders', 'auto']);
     assert.deepEqual(d.by.store, { key: 'store', title: 'מוסיפים את החנות', status: 'todo', detail: d.by.store.detail, href: `${BASE}/start`, required: true });
     assert.match(d.by.store.detail, /כותבים את הכתובת/);
     for (const x of d.steps.slice(1)) assert.deepEqual([x.status, x.detail, x.href], ['todo', 'אחרי שהחנות מוכנה', null], x.key);
-    assert.deepEqual(d.steps.filter((x: any) => x.required).map((x: any) => x.key), ['store', 'whatsapp']);
+    // Any one channel is required, not WhatsApp itself (the owner, 2026-11-08: ready for customers like Teder).
+    assert.deepEqual(d.steps.filter((x: any) => x.required).map((x: any) => x.key), ['store', 'channels']);
     for (const x of d.steps) {
       assert.deepEqual(Object.keys(x).sort(), ['detail', 'href', 'key', 'required', 'status', 'title']);
       assert.ok(['todo', 'working', 'done', 'attention', 'soon'].includes(x.status));
@@ -245,6 +246,10 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     let d = await steps(s, 21);
     assert.equal(d.by.store.status, 'done');
     assert.equal(d.by.whatsapp.status, 'soon');
+    assert.deepEqual([d.by.channels.status, d.by.channels.required, d.by.channels.href], ['todo', true, `${BASE}/settings#channels`]);
+    assert.equal(d.by.test.status, 'done', 'the seeded store\'s demo chat counts');
+    await s.app.db.query("DELETE FROM events WHERE store_id = $1 AND kind = 'demo_bound'", [id]);
+    assert.equal((await steps(s, 21)).by.test.status, 'todo', 'nobody tried the demo yet');
 
     // Every Meta setting and the sealing key: the store connects its number from its WhatsApp page.
     Object.assign(s.app.env, { META_APP_ID: '1', META_APP_SECRET: 'x', META_WA_CONFIG_ID: '2', META_WEBHOOK_VERIFY_TOKEN: 'v', TORAN_SECRETS_KEY: 'k'.repeat(40) });
@@ -252,11 +257,13 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     assert.deepEqual([d.by.whatsapp.status, d.by.whatsapp.href], ['todo', `${BASE}/lead/${id}/whatsapp`]);
     const wa = (await s.app.db.one<{ id: number }>("INSERT INTO channel_accounts (store_id, channel, kind, external_id, status) VALUES ($1, 'whatsapp', 'meta', 'pn-1', 'pending') RETURNING id", [id]))!.id;
     assert.equal((await steps(s, 21)).by.whatsapp.status, 'working');
+    assert.equal((await steps(s, 21)).by.channels.status, 'working', 'a number waiting on Meta');
     for (const [status, want] of [['error', 'attention'], ['reconnect', 'attention'], ['active', 'done']]) {
       await s.app.db.query('UPDATE channel_accounts SET status = $2 WHERE id = $1', [wa, status]);
       assert.equal((await steps(s, 21)).by.whatsapp.status, want, status);
     }
     d = await steps(s, 21);
+    assert.equal(d.by.channels.status, 'done');
     assert.equal(d.ready, true, 'the store read and WhatsApp on: every required step is done');
 
     // The order key and the automatic messages.
@@ -270,7 +277,7 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     // Email, Messenger and Instagram are steps only where TORAN_CHANNELS lists them, and soon until they can connect.
     s.app.env.TORAN_CHANNELS = 'whatsapp,email,messenger';
     d = await steps(s, 21);
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'whatsapp', 'email', 'messenger', 'orders', 'auto']);
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'whatsapp', 'web', 'email', 'messenger', 'orders', 'auto']);
     assert.deepEqual([d.by.email.status, d.by.email.href], ['soon', null], 'no mail provider here');
     assert.deepEqual([d.by.messenger.status, d.by.messenger.href], ['todo', `${BASE}/lead/${id}/messenger`], 'the Meta app is set up and PUBLIC_BASE_URL is https');
     assert.equal(d.by.email.required || d.by.messenger.required, false);
@@ -279,6 +286,19 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     d = await steps(s, 21);
     assert.deepEqual([d.by.messenger.status, d.by.messenger.href], ['soon', null], 'not socialReady');
     assert.equal(d.by.whatsapp.status, 'done', 'a number already connected stays done');
+
+    // The web chat alone is a channel too, once it opened on the store's own site; switched on is not yet installed.
+    await s.app.db.query("UPDATE channel_accounts SET status = 'off' WHERE id = $1", [wa]);
+    assert.equal((await steps(s, 21)).by.channels.status, 'todo');
+    const web = (await s.app.db.one<{ id: number }>("INSERT INTO channel_accounts (store_id, channel, kind, external_id, status, meta) VALUES ($1, 'web', 'web', 'k1setupweb', 'active', '{}'::jsonb) RETURNING id", [id]))!.id;
+    d = await steps(s, 21);
+    assert.deepEqual([d.by.channels.status, d.by.web.status, d.ready], ['working', 'working', false]);
+    await s.app.db.query("UPDATE channel_accounts SET meta = jsonb_build_object('first_seen_at', '2026-11-08T10:00:00Z') WHERE id = $1", [web]);
+    d = await steps(s, 21);
+    assert.deepEqual([d.by.channels.status, d.by.web.status, d.ready], ['done', 'done', true]);
+    // The demo tried from the owner's phone closes the test step.
+    await s.app.db.query("INSERT INTO events (store_id, kind, data) VALUES ($1, 'demo_bound', '{}'::jsonb)", [id]);
+    assert.equal((await steps(s, 21)).by.test.status, 'done');
   } finally {
     await s.close();
   }

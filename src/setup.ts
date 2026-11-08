@@ -12,6 +12,7 @@ import { orderAccessOf, ordersPlatform } from './orders.ts';
 import { anyOn, settingsOf } from './auto/send.ts';
 import { waAccountOf } from './web/pages/whatsapp.ts';
 import { socialAccountOf } from './web/pages/social.ts';
+import { webAccountOf } from './channels/web.ts';
 
 // A new customer's setup, step by step. openfrequency-accounts has one checklist page for a new workspace (/setup):
 // it asks each product for the workspace's steps and shows them, and each step's button opens the product's own page
@@ -27,7 +28,12 @@ import { socialAccountOf } from './web/pages/social.ts';
 // The steps are about the workspace's store, its first one (a workspace has one for now), in this order:
 //   store      required  the site read (pages/start.ts adds it): none yet, being read, read, or a site Toran cannot read
 //   knowledge            "בודקים את התשובות": the owner opened what Toran knows (stores.knowledge_seen_at) or wrote an answer
-//   whatsapp   required  the store's own number through Meta; "soon" while this server cannot connect one (kapso.ts storeConnectReady: Meta, or Kapso with TORAN_WA_PROVIDER=kapso)
+//   test                 "מנסים את תורן": the owner chatted with their own Toran on our demo number (a demo_bound event)
+//   channels   required  any one channel answers customers: WhatsApp, the web chat (once it opened on the store's site),
+//                        email, Instagram or Messenger (the owner, 2026-11-08: Toran ready for customers like Teder,
+//                        whose "connect" step takes any one platform). Each channel is then a step of its own:
+//   whatsapp             the store's own number; "soon" while this server cannot connect one (kapso.ts storeConnectReady: Meta, or Kapso with TORAN_WA_PROVIDER=kapso)
+//   web                  the chat on the store's site: done the first time it opens on one of the store's pages (widget.ts)
 //   email                only where TORAN_CHANNELS lists it; "soon" without a mail provider here
 //   messenger, instagram only where TORAN_CHANNELS lists them; "soon" until dmConnectReady (zernio.ts: Zernio or our Meta app)
 //   orders               the read-only order key; "soon" on a platform whose orders Toran does not read yet
@@ -74,6 +80,15 @@ export function storeState({ store, add, read, claim = null }: Awaited<ReturnTyp
 
 const SOCIAL_TITLE: Record<Social, string> = { messenger: 'מחברים את מסנג׳ר', instagram: 'מחברים את האינסטגרם' };
 
+/**
+ * The channels a store answers customers on now: WhatsApp, email, Instagram or Messenger connected and active, and the
+ * web chat once it opened on the store's own site (widget.ts firstSeen). Today and the checklist both read it.
+ */
+export async function activeChannels(app: App, storeId: number): Promise<string[]> {
+  const rows = await app.db.query<{ channel: string; meta: any }>("SELECT channel, meta FROM channel_accounts WHERE store_id = $1 AND status = 'active'", [storeId]);
+  return [...new Set(rows.filter((x) => x.channel !== 'web' || x.meta?.first_seen_at).map((x) => x.channel))];
+}
+
 export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
   const base = publicBase(app.env);
   const at = (p: string) => `${base}${p}`;
@@ -97,7 +112,27 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     return { status: 'todo', detail: 'עוברים על מה שתורן יודע על החנות, ומוסיפים תשובות משלכם.', href };
   });
 
-  await step('whatsapp', 'מחברים את הוואטסאפ', true, async (s) => {
+  await step('test', 'מנסים את תורן', false, async (s) => {
+    const href = at('/#try');
+    if (!s.ingested_at) return { status: 'todo', detail: 'אחרי שהאתר נקרא', href };
+    const tried = await app.db.one("SELECT 1 FROM events WHERE store_id = $1 AND kind = 'demo_bound' LIMIT 1", [s.id]);
+    if (tried) return { status: 'done', detail: '', href };
+    return { status: 'todo', detail: 'שואלים את תורן שאלה של לקוח בוואטסאפ, לפני שהלקוחות שלכם פוגשים אותו. השיחה הזו לא נספרת.', href };
+  });
+
+  // Any one channel is enough to answer customers; each one is a step of its own below.
+  await step('channels', 'מחברים ערוץ אחד לפחות', true, async (s) => {
+    const href = at('/settings#channels');
+    const live = await activeChannels(app, s.id);
+    if (live.length) return { status: 'done', detail: '', href };
+    const wa = await waAccountOf(app, s.id);
+    if (wa?.status === 'pending') return { status: 'working', detail: 'המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.', href };
+    const web = await webAccountOf(app, s.id);
+    if (web?.status === 'active') return { status: 'working', detail: 'הצ׳אט פועל, ומחכה שהשורה שלו תתווסף לאתר.', href };
+    return { status: 'todo', detail: 'וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר: מתחילים מאחד, ומוסיפים אחר כך.', href };
+  });
+
+  await step('whatsapp', 'מחברים את הוואטסאפ', false, async (s) => {
     const href = at(`/lead/${s.id}/whatsapp`);
     const a = await waAccountOf(app, s.id);
     if (a?.status === 'active') return { status: 'done', detail: '', href };
@@ -106,6 +141,14 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     if (a?.status === 'error') return { status: 'attention', detail: 'Meta עצרה את המספר. כתבו לנו ונבדוק יחד.', href };
     if (!storeConnectReady(app.env)) return { status: 'soon', detail: 'החיבור של מספר החנות עוד לא פתוח.', href: null };
     return { status: 'todo', detail: 'מחברים את המספר של החנות, והוואטסאפ בטלפון ממשיך לעבוד.', href };
+  });
+
+  await step('web', 'מוסיפים צ׳אט לאתר', false, async (s) => {
+    const href = at('/settings#webchat');
+    const a = await webAccountOf(app, s.id);
+    if (a?.status === 'active' && a.meta?.first_seen_at) return { status: 'done', detail: '', href };
+    if (a?.status === 'active') return { status: 'working', detail: 'מעתיקים את השורה מההגדרות ומוסיפים אותה לאתר. הצעד נסגר בפעם הראשונה שהצ׳אט נפתח באתר.', href };
+    return { status: 'todo', detail: 'כפתור צ׳אט בפינה של האתר, ותורן עונה בו כמו בוואטסאפ.', href };
   });
 
   if (on.has('email')) {

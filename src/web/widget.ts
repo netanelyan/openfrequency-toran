@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { App } from '../app.ts';
+import { J } from '../db/index.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { isVisitor, siteOf, visitorLines, type Site } from '../channels/web.ts';
 import { approvedReviews } from '../reviews.ts';
@@ -158,6 +159,23 @@ ${reviews.length ? `<header class="r-head"><b>מה הלקוחות אומרים</
 </html>`;
 }
 
+/**
+ * The first time the chat opens on one of the store's own pages, kept on its account (meta.first_seen_at): the setup
+ * checklist's "the chat is on the site" (src/setup.ts). Switching the chat on in Settings is not yet having it on the
+ * site; this is. A page elsewhere (a test, a copy) does not count.
+ */
+async function firstSeen(app: App, site: Site, referer: string) {
+  if (site.account.meta?.first_seen_at) return;
+  let origin = '';
+  try {
+    origin = new URL(referer).origin;
+  } catch {
+    return;
+  }
+  if (!site.domains.includes(origin)) return;
+  await app.db.query("UPDATE channel_accounts SET meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb WHERE id = $1 AND NOT (COALESCE(meta, '{}'::jsonb) ? 'first_seen_at')", [site.account.id, J({ first_seen_at: new Date().toISOString() })]);
+}
+
 export function widgetRoutes(app: App): Route<Req>[] {
   const visitorOk = limiter(12, 60_000);
   const addressOk = limiter(60, 60_000);
@@ -174,6 +192,7 @@ export function widgetRoutes(app: App): Route<Req>[] {
       const site = await siteOf(app, m[1]);
       if (!site) return { ...none, status: 404 };
       const side = r.url.searchParams.get('side') === 'right' ? 'right' : 'left';
+      await firstSeen(app, site, String(r.req.headers.referer || ''));
       return { html: framePage(site, site.account.external_id, side), headers: frameHeaders(site.domains) };
     }],
     ['GET', /^\/w\/([a-z0-9]{1,40})\/theme\.css$/, async (_r, m) => {

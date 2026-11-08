@@ -39,7 +39,7 @@ export function webAdapter(): ChannelAdapter {
   };
 }
 
-export type WebAccount = { id: number; store_id: number; external_id: string; status: string; meta: { domains?: string[] } | null };
+export type WebAccount = { id: number; store_id: number; external_id: string; status: string; meta: { domains?: string[]; first_seen_at?: string } | null };
 
 /** The store's chat account, on or off, or null when it was never turned on. */
 export const webAccountOf = (app: App, storeId: number) =>
