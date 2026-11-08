@@ -352,6 +352,7 @@ function offerPanel(r: DashReq, o: Offer) {
   return `<section class="panel" id="offer"><header><h2>המחיר בדפי הדמו</h2><span class="end chip ${offerReady(o) ? 'ok' : 'bad'}">${offerReady(o) ? 'מוגדר' : 'חסר, הדפים מחכים'}</span></header>
   <form method="post" action="/settings/offer">${csrfField(r.ctx)}
     <label class="f">מחיר לחודש, בשקלים<input type="number" name="monthly" min="1" max="100000" step="1" inputmode="numeric" value="${o.monthly ?? ''}"></label>
+    <label class="f mt8">מחיר לחודש של חבילת חנות גדולה, בשקלים<small>1,500 שיחות בחודש. ריק: הדף מציג רק את החבילה של 300 שיחות.</small><input type="number" name="bigMonthly" min="1" max="100000" step="1" inputmode="numeric" value="${o.bigMonthly ?? ''}"></label>
     <label class="f mt8">מע״מ<select name="vat">${vat('', 'עוד לא נקבע')}${vat('included', 'כולל מע״מ')}${vat('excluded', 'לא כולל מע״מ')}</select></label>
     <label class="f mt8">דמי הקמה, בשקלים<small>0 אם אין. ריק אם עוד לא נקבע.</small><input type="number" name="setup" min="0" max="100000" step="1" inputmode="numeric" value="${o.setup ?? ''}"></label>
     <label class="f mt8">העיר בתחתית הדף<input type="text" name="city" maxlength="40" value="${esc(o.city)}" dir="rtl"></label>
@@ -446,7 +447,8 @@ export function homeRoutes(app: App): Route<DashReq>[] {
       };
       const vat = r.form.vat === 'included' || r.form.vat === 'excluded' ? r.form.vat : null;
       const city = String(r.form.city || '').replace(/\s+/g, ' ').trim().slice(0, 40) || 'אשדוד';
-      const offer: Offer = { monthly: num(r.form.monthly, 1), vat, setup: num(r.form.setup, 0), city };
+      // The big plan (offer.ts bigMonthly): shown beside the store plan on a pitch page once Toran is on sale; empty keeps it off.
+      const offer: Offer = { monthly: num(r.form.monthly, 1), vat, setup: num(r.form.setup, 0), city, ...('bigMonthly' in r.form ? { bigMonthly: num(r.form.bigMonthly, 1) } : {}) };
       await setOffer(app.db, offer);
       await audit(app.db, { actor: r.user.name, action: 'offer', detail: offer });
       return { redirect: '/settings#offer', message: offerReady(offer) ? 'המחיר נשמר. דפים שאין להם חוסר אחר יכולים להיפתח.' : 'נשמר. עד שהמחיר, המע״מ ודמי ההקמה קבועים, הדפים מחכים.' };

@@ -73,3 +73,34 @@ test('/internal/setup: "מפעילים את תורן" is required, done once Tor
     await s.close();
   }
 });
+
+test('the operator sets the big plan\'s price beside the store plan\'s; empty keeps it off; an older form leaves it as it was', async () => {
+  const { getOffer } = await import('../src/offer.ts');
+  const s = await serve();
+  try {
+    s.login();
+    const page = await (await s.get('/settings')).text();
+    assert.match(page, /name="bigMonthly"/);
+    const token = await s.csrf('/settings');
+    const base = { _csrf: token, monthly: '590', vat: 'excluded', setup: '990', city: 'אשדוד' };
+    assert.equal((await s.post('/settings/offer', { ...base, bigMonthly: '1190' })).status, 303);
+    assert.equal((await getOffer(s.app.db)).bigMonthly, 1190);
+    await s.post('/settings/offer', base);
+    assert.equal((await getOffer(s.app.db)).bigMonthly, 1190, 'a form without the field leaves it');
+    await s.post('/settings/offer', { ...base, bigMonthly: '' });
+    assert.equal((await getOffer(s.app.db)).bigMonthly, null, 'emptied: off');
+  } finally {
+    await s.close();
+  }
+});
+
+test('Settings links to accounts\' email choices', async () => {
+  const s = await serve();
+  try {
+    await s.app.db.query('UPDATE stores SET workspace_id = 17 WHERE id = $1', [s.seeded.storeId]);
+    s.as(s.accounts.session(customer(17)).cookie);
+    assert.match(await (await s.get('/settings')).text(), /<section class="panel" id="mails">[^]*href="https:\/\/accounts\.test\/notifications"/);
+  } finally {
+    await s.close();
+  }
+});
