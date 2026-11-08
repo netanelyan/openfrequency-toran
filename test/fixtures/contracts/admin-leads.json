@@ -1,0 +1,118 @@
+{
+  "name": "admin-leads",
+  "doc": "The shared lead dashboard on accounts' /admin/leads (the owner, 2026-11-08: \"make the shared lead dashboard be in the admin dashboard, not in one of the products\"). Toran keeps the outreach and talks to Teder about the same store (its src/ops/leadsAdmin.ts, tederLeads.ts); accounts shows one list for both products and one page a lead, and every button is handed to Toran. The other buttons of a lead (they answered, the next step, later, not interested, a customer) are toran-ops' POST /internal/ops/<toran|teder>/<id>/<action>, as on the dashboard. A demo's state is none, building, review (built, waiting for the operator's look), ready (up, its pageUrl set), failed or removed; where is new, ready, sent, talking or closed. ok false is a refusal in Toran's own words (error, in Hebrew), which accounts shows as it is.",
+  "servedBy": ["toran"],
+  "calledBy": ["accounts"],
+  "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/leads",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+      "request": { "query": { "where": "new | ready | sent | talking | closed, or nothing for all", "q": "a part of the name or the domain" } },
+      "answers": [
+        {
+          "case": "the list: Toran's stores that are leads, each with its Teder lead, and Teder's leads Toran has no store for; teder.ok false when Teder did not answer (then every teder state is none and tederOnly is empty)",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "teder": { "ok": true },
+            "counts": { "all": 2, "new": 0, "ready": 1, "sent": 1, "talking": 0, "closed": 0 },
+            "leads": [
+              {
+                "id": 12,
+                "name": "כלי חרס של נורית",
+                "domain": "nurit-ceramics.co.il",
+                "url": "https://nurit-ceramics.co.il/",
+                "platform": "shopify",
+                "score": 72,
+                "qualified": true,
+                "where": "ready",
+                "contact": { "whatsapp": "972500000123", "email": null, "phone": null },
+                "toran": { "state": "ready", "pageUrl": "https://toran.openfrequency.co.il/s/nurit-c1", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "url": "https://accounts.openfrequency.co.il/admin/toran/lead/12", "error": null },
+                "teder": { "state": "ready", "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "url": "https://teder.openfrequency.co.il/demos/14", "error": null },
+                "updatedAt": "2026-11-08T10:00:00.000Z"
+              }
+            ],
+            "tederOnly": [
+              {
+                "tederId": 9,
+                "name": "חנות הכלים",
+                "domain": "kelim.example",
+                "where": "sent",
+                "teder": { "state": "ready", "pageUrl": "https://teder.openfrequency.co.il/s/kelim-b2c3d4", "sentAt": "2026-11-07T09:00:00.000Z", "reminderSentAt": null, "reminderDue": false, "url": "https://teder.openfrequency.co.il/demos/21", "error": null },
+                "leadUrl": "https://teder.openfrequency.co.il/leads?tab=sent#lead-9"
+              }
+            ]
+          },
+          "nullable": ["platform", "whatsapp", "email", "phone", "pageUrl", "sentAt", "reminderSentAt", "url", "error"]
+        },
+        { "case": "no token, or the wrong one", "status": 401, "body": { "error": "bad_token" } },
+        { "case": "OF_INTERNAL_TOKEN unset or short here", "status": 503, "body": { "error": "not_configured" } }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/internal/leads/<id>",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+      "answers": [
+        {
+          "case": "one lead: the row as the list has it, its status and notes, what can be built, the message due and how it can go (send.options: both, toran, teder, the first of them the main one; empty when none can go from our number), the texts, and the links to Toran's page and Teder's lead",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "lead": {
+              "id": 12,
+              "name": "כלי חרס של נורית",
+              "domain": "nurit-ceramics.co.il",
+              "url": "https://nurit-ceramics.co.il/",
+              "platform": "shopify",
+              "score": 72,
+              "qualified": true,
+              "where": "ready",
+              "contact": { "whatsapp": "972500000123", "email": null, "phone": null },
+              "toran": { "state": "ready", "pageUrl": "https://toran.openfrequency.co.il/s/nurit-c1", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "url": "https://accounts.openfrequency.co.il/admin/toran/lead/12", "error": null },
+              "teder": { "state": "none", "pageUrl": null, "sentAt": null, "reminderSentAt": null, "reminderDue": false, "url": null, "error": null },
+              "updatedAt": "2026-11-08T10:00:00.000Z",
+              "status": "page_ready",
+              "notes": "",
+              "demoCode": "DEMO-ABC123",
+              "opens": 0,
+              "demoStartedAt": null,
+              "tederOk": true,
+              "build": { "toran": true, "teder": true, "both": false, "toranWhyNot": null },
+              "send": {
+                "stage": "first",
+                "pitchable": true,
+                "options": ["toran"],
+                "main": "toran",
+                "waitingUntil": null,
+                "bothText": "היי, כאן OpenFrequency. הכנו לכלי חרס של נורית שני דברים לנסות.",
+                "toranText": "היי, כאן OpenFrequency. בנינו לכלי חרס של נורית תורן.",
+                "copy": { "href": "https://wa.me/972500000123?text=...", "label": "להעתיק ולפתוח וואטסאפ" }
+              },
+              "links": { "toranPage": "https://accounts.openfrequency.co.il/admin/toran/lead/12", "toranReview": "https://accounts.openfrequency.co.il/admin/toran/lead/12/review", "tederLead": null }
+            }
+          },
+          "nullable": ["platform", "whatsapp", "email", "phone", "pageUrl", "sentAt", "reminderSentAt", "url", "error", "demoCode", "demoStartedAt", "toranWhyNot", "stage", "main", "waitingUntil", "bothText", "toranText", "copy", "toranReview", "tederLead"]
+        },
+        { "case": "no such lead (or a customer's store, which is not a lead)", "status": 404, "body": { "ok": false, "error": "אין ליד כזה" } },
+        { "case": "no token, or the wrong one", "status": 401, "body": { "error": "bad_token" } },
+        { "case": "OF_INTERNAL_TOKEN unset or short here", "status": 503, "body": { "error": "not_configured" } }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/leads/<id>/<action>",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+      "request": { "body": { "by": "the superadmin's name, else the email", "notes": "notes only: the lead's notes as they are now", "reason": "skip only, may be empty" } },
+      "answers": [
+        { "case": "done: Toran's line for it (actions: build-toran, build-teder, build-both, send-both, send-toran, send-teder, mark-sent, mark-reminded, notes, skip)", "status": 200, "body": { "ok": true, "message": "ההערות נשמרו." } },
+        { "case": "refused by Toran's rules: its own line, and nothing was done", "status": 400, "body": { "ok": false, "error": "עוד לא הזמן לתזכורת." } },
+        { "case": "no such lead, or no such action", "status": 404, "body": { "ok": false, "error": "אין פעולה כזו" } },
+        { "case": "no token, or the wrong one", "status": 401, "body": { "error": "bad_token" } },
+        { "case": "OF_INTERNAL_TOKEN unset or short here", "status": 503, "body": { "error": "not_configured" } }
+      ]
+    }
+  ]
+}

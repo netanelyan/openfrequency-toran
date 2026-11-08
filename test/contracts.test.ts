@@ -209,6 +209,9 @@ const CHANGED = 'entitlement-changed /internal/entitlement/changed';
 const changed = (s: S, body: unknown, headers: Record<string, string> = {}) =>
   fetch(`${s.base}/internal/entitlement/changed`, { method: 'POST', headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }).then(got);
 const REMIND = 'pay-remind /internal/pay/remind';
+const LL = 'admin-leads /internal/leads';
+const LO = 'admin-leads /internal/leads/<id>';
+const LA = 'admin-leads /internal/leads/<id>/<action>';
 /** accounts' payment reminder (its src/web/daily.js), the contract's example unless a case changes it. */
 const remindAsk = (s: S, over: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
   fetch(`${s.base}/internal/pay/remind`, { method: 'POST', headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json', ...headers }, body: JSON.stringify({ ...contracts['pay-remind'].routes[0].request!.body, ...over }) }).then(got);
@@ -341,6 +344,54 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
   [`${ACT} :: OF_INTERNAL_TOKEN unset or short here`]: async (s) => {
     const id = await readyStore(s, 'unset.example');
     return unsetHere(s, () => act(s, `toran/${id}/sent`, { by: 'Admin' }));
+  },
+
+  // The shared lead dashboard on accounts' /admin/leads (ops/leadsAdmin.ts). Teder is the stand-in here, which has no
+  // leads: every teder state is none, tederOnly empty, teder.ok false.
+  [`${LL} :: the list: Toran's stores that are leads, each with its Teder lead, and Teder's leads Toran has no store for; teder.ok false when Teder did not answer (then every teder state is none and tederOnly is empty)`]: async (s) => {
+    await readyStore(s, 'list-ready.example');
+    await store(s, 'list-new.example');
+    await store(s, 'list-sent.example', { status: 'sent', approved_at: ago(200), page_built_at: ago(200), sent_at: ago(100), followup_due_at: ago(4) });
+    return { 'all': await ask(s, 'GET', '/internal/leads'), 'ready only, searched': await ask(s, 'GET', '/internal/leads?where=ready&q=list') };
+  },
+  [`${LL} :: no token, or the wrong one`]: (s) => badToken((token) => ask(s, 'GET', '/internal/leads', token)),
+  [`${LL} :: OF_INTERNAL_TOKEN unset or short here`]: (s) => unsetHere(s, () => ask(s, 'GET', '/internal/leads')),
+  [`${LO} :: one lead: the row as the list has it, its status and notes, what can be built, the message due and how it can go (send.options: both, toran, teder, the first of them the main one; empty when none can go from our number), the texts, and the links to Toran's page and Teder's lead`]: async (s) => {
+    const ready = await readyStore(s, 'one-ready.example');
+    const sent = await store(s, 'one-sent.example', { status: 'sent', approved_at: ago(200), page_built_at: ago(200), sent_at: ago(10), followup_due_at: new Date(Date.now() + 86_400_000).toISOString(), contact_whatsapp: '972500000317' });
+    return { 'ready to send': await ask(s, 'GET', `/internal/leads/${ready}`), 'sent, its reminder not due yet': await ask(s, 'GET', `/internal/leads/${sent}`) };
+  },
+  [`${LO} :: no such lead (or a customer's store, which is not a lead)`]: async (s) => {
+    const customer = await customerStore(s, 77, 'one-customer.example');
+    return { 'no such id': await ask(s, 'GET', '/internal/leads/999999'), "a customer's store": await ask(s, 'GET', `/internal/leads/${customer}`) };
+  },
+  [`${LO} :: no token, or the wrong one`]: async (s) => {
+    const id = await readyStore(s, 'one-token.example');
+    return badToken((token) => ask(s, 'GET', `/internal/leads/${id}`, token));
+  },
+  [`${LO} :: OF_INTERNAL_TOKEN unset or short here`]: async (s) => {
+    const id = await readyStore(s, 'one-unset.example');
+    return unsetHere(s, () => ask(s, 'GET', `/internal/leads/${id}`));
+  },
+  [`${LA} :: done: Toran's line for it (actions: build-toran, build-teder, build-both, send-both, send-toran, send-teder, mark-sent, mark-reminded, notes, skip)`]: async (s) => {
+    const id = await readyStore(s, 'act-done.example');
+    return { 'notes': await ask(s, 'POST', `/internal/leads/${id}/notes`, INTERNAL_TOKEN, { by: 'Admin', notes: 'לחזור אליהם בחמישי' }), 'marked sent by hand': await ask(s, 'POST', `/internal/leads/${id}/mark-sent`, INTERNAL_TOKEN, { by: 'Admin' }) };
+  },
+  [`${LA} :: refused by Toran's rules: its own line, and nothing was done`]: async (s) => {
+    const id = await readyStore(s, 'act-refused.example');
+    return { 'a reminder before the first message': await ask(s, 'POST', `/internal/leads/${id}/mark-reminded`, INTERNAL_TOKEN, { by: 'Admin' }) };
+  },
+  [`${LA} :: no such lead, or no such action`]: async (s) => {
+    const id = await readyStore(s, 'act-none.example');
+    return { 'no such lead': await ask(s, 'POST', '/internal/leads/999999/notes', INTERNAL_TOKEN, { by: 'Admin' }), 'no such action': await ask(s, 'POST', `/internal/leads/${id}/fly`, INTERNAL_TOKEN, { by: 'Admin' }) };
+  },
+  [`${LA} :: no token, or the wrong one`]: async (s) => {
+    const id = await readyStore(s, 'act-token.example');
+    return badToken((token) => ask(s, 'POST', `/internal/leads/${id}/notes`, token, { by: 'Admin' }));
+  },
+  [`${LA} :: OF_INTERNAL_TOKEN unset or short here`]: async (s) => {
+    const id = await readyStore(s, 'act-unset.example');
+    return unsetHere(s, () => ask(s, 'POST', `/internal/leads/${id}/notes`, INTERNAL_TOKEN, { by: 'Admin' }));
   },
 };
 

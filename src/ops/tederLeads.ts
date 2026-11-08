@@ -8,6 +8,7 @@ import { tederSite } from './sources.ts';
 // OF_INTERNAL_TOKEN), as test/fixtures/teder-leads.json says (the same file in Teder, its src/web/leads-internal.js):
 //
 //   GET  /internal/leads/state   what Teder has of the store: its stage and its demo
+//   GET  /internal/leads/list    every Teder lead, for the shared lead list on accounts' /admin (ops/leadsAdmin.ts)
 //   POST /internal/leads/demo    Toran's store as Teder's lead, and its Teder demo built
 //   POST /internal/leads/mark    the Teder lead marked sent, when one message from our number carried both demos
 //
@@ -47,6 +48,15 @@ export async function tederState(app: App, s: { id: number; domain: string }): P
   const b = await ask(app, 'GET', `/internal/leads/state?${new URLSearchParams({ toran: String(s.id), domain: s.domain })}`);
   if (!b || b.ok !== true) return { error: TEDER_DOWN };
   return { lead: b.lead || null };
+}
+
+export type TederListed = TederLead & { toranId: string | null; domain: string; name: string | null };
+
+/** Every Teder lead at once (GET /internal/leads/list), for the shared lead list: { leads } or { error }. */
+export async function tederList(app: App): Promise<{ leads: TederListed[] } | { error: string }> {
+  const b = await ask(app, 'GET', '/internal/leads/list');
+  if (!b || b.ok !== true || !Array.isArray(b.leads)) return { error: TEDER_DOWN };
+  return { leads: b.leads };
 }
 
 /** The store's Teder demo built (or linked): { message, lead } or { error } in the operator's words. */

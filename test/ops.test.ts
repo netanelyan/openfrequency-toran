@@ -288,7 +288,8 @@ test("the dashboard is accounts' /admin's: Toran gives it as data on /internal/o
     const d = await r.json();
     const item = d.items.find((i: any) => i.key === `toran:${id}`);
     assert.equal(item.reason, 'first_send');
-    assert.match(item.leadUrl, new RegExp(`/lead/${id}$`));
+    // The lead opens on the shared lead page on accounts' own /admin, both products on one page (ops/leadsAdmin.ts).
+    assert.match(item.leadUrl, new RegExp(`/admin/leads/${id}$`));
     assert.equal(d.funnels.toran.at(-1).key, 'customers');
     assert.equal(d.funnels.toran.at(-1).all, null, "customers are accounts' to fill");
     assert.deepEqual([d.ourNumber, d.demoLine], [null, { live: true, via: 'sim', number: '972500000999' }], 'no number of ours connected; the simulator is the phone here');

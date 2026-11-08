@@ -27,6 +27,7 @@ import { changedRoutes } from '../billing/changed.ts';
 import { alertRoutes } from '../ops/alertRoute.ts';
 import { remindRoutes } from '../billing/remind.ts';
 import { outreachRoutes } from '../ops/outreach.ts';
+import { leadsAdminRoutes } from '../ops/leadsAdmin.ts';
 import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
 import { unsubscribeRoutes } from './unsubscribe.ts';
 import { widgetRoutes } from './widget.ts';
@@ -93,6 +94,9 @@ import { errorPage } from './pages/basic.ts';
 //                              about it is asked again on the next page or message (billing/changed.ts). From this
 //                              machine, with OF_INTERNAL_TOKEN: 401 bad_token, 403 forbidden, 405 for a GET, 503
 //                              not_configured (accounts' docs/contracts/entitlement-changed.json)
+//   GET  /internal/leads[/<id>], POST /internal/leads/<id>/<action>
+//                              the shared lead dashboard's data, for accounts' /admin/leads (ops/leadsAdmin.ts,
+//                              accounts' docs/contracts/admin-leads.json): the same checks as /internal/ops
 //   POST /internal/ops/alert   one of Teder's operator alerts, sent on to the owner's WhatsApp like Toran's own
 //                              (ops/alertRoute.ts, ops/alert.ts). From this machine, with OF_INTERNAL_TOKEN: 401
 //                              bad_token, 403 forbidden, 405 for a GET, 400 bad_alert, 503 not_configured
@@ -392,6 +396,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
     ...alertRoutes(app),
     ...remindRoutes(app),
     ...outreachRoutes(app),
+    ...leadsAdminRoutes(app),
     ['POST', /^\/internal\/lead$/, async (r) => {
       if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };
       let body: any = {};
