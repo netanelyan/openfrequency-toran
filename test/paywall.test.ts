@@ -216,7 +216,7 @@ test('before paying: a new workspace gets the new-customer page with the checkli
     const token = /name="_csrf" value="([^"]+)"/.exec(html)![1];
     assert.equal((await s.post('/paywall/check', { _csrf: 'nope' })).status, 403);
     assert.equal((await s.post('/paywall/check', { _csrf: token }, { origin: 'https://evil.example' })).status, 403);
-    s.accounts.paid(9, 'paid');
+    s.accounts.paid(9, null);
     const again = await s.post('/paywall/check', { _csrf: token });
     assert.equal(again.status, 303);
     assert.match(decodeURIComponent(String(again.headers.get('set-cookie'))), /התשלום נרשם/);

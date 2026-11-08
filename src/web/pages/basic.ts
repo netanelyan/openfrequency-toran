@@ -1,6 +1,13 @@
 import { a11yHead, a11yWidget, accessibilityLink, iconLinks, toranMark } from '../../brand.ts';
 import { esc, icon, layout, type PageCtx } from '../ui.ts';
 import { themeButton, themeHead, themeMeta } from '../theme.ts';
+import { ofWhatsapp } from '../../offer.ts';
+
+/** "כתבו לנו" as a link to our WhatsApp, where a page says to write to us (TORAN-READINESS.md P1-22, as Teder's withSupport). */
+export function writeToUs(env: Record<string, string | undefined> = process.env): string {
+  const n = ofWhatsapp(env);
+  return n ? `<a class="btn" href="https://wa.me/${n}" target="_blank" rel="noopener">${icon('send')}לכתוב לנו</a>` : '';
+}
 
 /** Why accounts let nobody in, in OpenFrequency's voice. No redirect from any of them, so no loop with accounts. */
 const REFUSALS = {
@@ -43,7 +50,7 @@ ${iconLinks()}
   <div class="hero">${toranMark(72, { label: null })}<b>תורן</b></div>
   <h1>${esc(r.h)}</h1>
   <p>${esc(r.text)}</p>
-  <a class="btn primary" href="${esc(href)}">${esc(r.link)}</a>${more}${again}
+  <a class="btn primary" href="${esc(href)}">${esc(r.link)}</a>${more}${again}${/כתבו לנו/.test(r.text) ? `<p class="mt8 m0">${writeToUs()}</p>` : ''}
   <p class="small muted mt12 m0">${accessibilityLink()}</p>
 </main>
 ${themeButton('corner')}
@@ -83,7 +90,7 @@ ${iconLinks()}
   <div class="hero">${toranMark(72, { label: null })}<b>תורן</b></div>
   <h1>${esc(title)}</h1>
   <p>${esc(text)}</p>
-  <div class="row">${back !== '/' ? `<a class="btn primary" href="${esc(back)}">חזרה לדף הקודם</a>` : ''}<a class="btn${back === '/' ? ' primary' : ''}" href="/">להיום</a></div>
+  <div class="row">${back !== '/' ? `<a class="btn primary" href="${esc(back)}">חזרה לדף הקודם</a>` : ''}<a class="btn${back === '/' ? ' primary' : ''}" href="/">להיום</a>${status >= 500 ? writeToUs() : ''}</div>
   <p class="small muted mt12 m0">${accessibilityLink()}</p>
 </main>
 ${themeButton('corner')}

@@ -117,7 +117,8 @@ export const ICON_FILES: Record<string, { file: string; type: string }> = {
 export const MANIFEST = {
   name: 'תורן',
   short_name: 'תורן',
-  description: 'לידים, דפי דמו ושיחות דמו של תורן.',
+  // A customer's phone shows this, not the operator's (TORAN-READINESS.md P1-20): what the owner does here, as Teder's says.
+  description: 'השיחות של החנות שלכם, והשאלות שמחכות לתשובה שלכם.',
   lang: 'he',
   dir: 'rtl',
   start_url: '/',
@@ -127,7 +128,7 @@ export const MANIFEST = {
   theme_color: '#eeeff2',
   icons: [
     { src: '/static/brand/toran-180.png', sizes: '180x180', type: 'image/png' },
-    { src: '/static/brand/toran-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    { src: '/static/brand/toran-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
     { src: '/static/brand/toran.svg', sizes: 'any', type: 'image/svg+xml' },
   ],
 };

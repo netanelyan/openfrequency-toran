@@ -195,7 +195,7 @@ ${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צ�
 </div></header>
 <main class="wrap${ctx.wide ? ' wide' : ''}" id="main">
 ${body}
-<footer class="foot">${ofMark(20, { label: null })}<span>נבנה על ידי <span class="ltr">OpenFrequency<sup>™</sup></span></span></footer>
+<footer class="foot">${ofMark(20, { label: null })}<span class="ltr">OpenFrequency<sup>™</sup></span></footer>
 </main>
 <nav class="tabbar" aria-label="ניווט">${tabs}</nav>
 <div id="toast" role="status" aria-live="polite"${flash}></div>
