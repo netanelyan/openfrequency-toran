@@ -131,6 +131,9 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
         const mine = await app.db.one('UPDATE stores SET workspace_id = $2, updated_at = now() WHERE id = $1 AND workspace_id IS NULL RETURNING id', [store.id, workspaceId]);
         if (!mine) throw new Error('the store is already another workspace\'s');
       }
+      // A customer's store starts switched off (golive.ts): its owner switches Toran on once its channels and answers
+      // are ready. One that already answers on a channel of its own is left as it is.
+      if (workspaceId) await app.db.query('UPDATE stores SET agent_live_at = NULL, agent_paused_at = NULL WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM channel_accounts a WHERE a.store_id = stores.id)', [store.id]);
       // Asked for on the website: the number that asked is the one to send the page to.
       if (/^9725\d{8}$/.test(String(p.whatsapp || ''))) await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [store.id, p.whatsapp]);
       if (!canIngest(store.platform)) return { storeId: store.id, stats: r.stats, ingested: false, why: `the platform is ${store.platform}: Toran reads ${INGESTIBLE_EN} stores` };
