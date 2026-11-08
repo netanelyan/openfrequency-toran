@@ -40,6 +40,7 @@ export function whyHe(why: string | null): string {
     [/^late$/, 'עבר יותר מדי זמן'],
     [/^duplicate$/, 'כבר נשלחה ללקוח הזה'],
     [/^recent$/, 'הלקוח כבר קיבל הודעה כזו היום'],
+    [/order updates opted out/, 'הלקוח ביקש לא לקבל עדכונים על הזמנות'],
     [/^opted_out$|opted out/, 'הלקוח ביקש להסיר'],
     [/^paid$/, 'התשלום עבר בינתיים'],
     [/^delivered$/, 'ההזמנה כבר נמסרה'],

@@ -143,6 +143,8 @@ export const SETTINGS_BUTTON = 'הגדרות הודעות';
 export const publicBase = (env: Record<string, string | undefined>) => String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '') || `http://localhost:${env.PORT || 4710}`;
 export const stopUrl = (env: Record<string, string | undefined>, token: string) => `${publicBase(env)}/u/${token}`;
 const STOP_EMAIL = 'לא רוצים לקבל מאיתנו תזכורות כאלה? אפשר להפסיק כאן:';
+/** The order updates' quiet line (payment and shipping): the same page, where the customer may stop them apart (the owner, 2026-11-06). */
+const ORDERS_EMAIL = 'לא רוצים לקבל מאיתנו עדכונים על הזמנות? אפשר להפסיק כאן:';
 
 /**
  * The marketing templates as first submitted, with a footer "כתבו הסר" and a quick reply "הסר" (until 2026-10-26). A
@@ -178,7 +180,7 @@ export function waText(m: MessageKey, store: string, v: Vars, { legacy = false }
 /** What one message says by email: its subject and text, signed with the store's name; a marketing one ends with the link to stop. */
 export function emailText(m: MessageKey, store: string, v: Vars, stop = ''): { subject: string; text: string } {
   const d = MESSAGES[m];
-  const tail = KINDS[kindOf(m)].marketing && stop ? `\n\n${STOP_EMAIL}\n${stop}` : '';
+  const tail = stop ? `\n\n${KINDS[kindOf(m)].marketing ? STOP_EMAIL : ORDERS_EMAIL}\n${stop}` : '';
   return { subject: d.subject(store, v), text: `${d.email(store, v)}\n\n${store}${tail}` };
 }
 

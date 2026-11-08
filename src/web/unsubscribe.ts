@@ -1,7 +1,7 @@
 import type { App } from '../app.ts';
 import { a11yHead, a11yWidget, accessibilityLink, iconLinks } from '../brand.ts';
 import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
-import { linkOf, stopFromLink, undoFromLink, type StopLink } from '../auto/consent.ts';
+import { linkOf, stopFromLink, stopOrdersFromLink, undoFromLink, undoOrdersFromLink, type StopLink } from '../auto/consent.ts';
 import { esc } from './ui.ts';
 import type { Out, Req, Route } from './server.ts';
 
@@ -67,27 +67,46 @@ ${a11yWidget()}
 }
 
 export type StopView = 'ask' | 'done' | 'kept';
+/** The order updates on the page: whether they are stopped, what was just done, and whether the customer came from one. */
+export type OrdersView = { stopped?: boolean; note?: 'kept' | null; first?: boolean };
 
-/** The page for one link: the question, or the confirmation with its undo. */
-export function stopPage(token: string, s: Store, view: StopView): string {
+/**
+ * The page for one link: the reminders (the cart and the review), their question or the confirmation with its undo;
+ * and the order updates (payment and shipping), a choice of their own (the owner, 2026-11-06: "the customer can turn
+ * them off"). From a reminder the reminders lead and the updates are the quieter second card; from an order update
+ * (`first`) the updates lead, as the one main button.
+ */
+export function stopPage(token: string, s: Store, view: StopView, o: OrdersView = {}): string {
   const mark = s.logo ? `<img class="stop-logo" src="${esc(s.logo)}" alt="" referrerpolicy="no-referrer" decoding="async">` : `<span class="initial" aria-hidden="true">${esc(initialOf(s.name))}</span>`;
   const head = `<header class="stop-store">${mark}<b><bdi>${esc(s.name)}</bdi></b></header>`;
-  const form = (what: 'stop' | 'undo', label: string, cls: string) => `<form method="post" action="/u/${esc(token)}"><input type="hidden" name="do" value="${what}"><button class="${cls}" type="submit">${label}</button></form>`;
-  const orders = 'עדכונים על הזמנות שעשיתם (תשלום ומשלוח) ימשיכו להגיע.';
-  const body = view === 'done'
-    ? `${head}
-<section class="glass stop-card" aria-live="polite">
+  const form = (what: 'stop' | 'undo' | 'orders-off' | 'orders-on', label: string, cls: string) => `<form method="post" action="/u/${esc(token)}${o.first ? '?about=orders' : ''}"><input type="hidden" name="do" value="${what}"><button class="${cls}" type="submit">${label}</button></form>`;
+  const orders = o.stopped ? 'גם העדכונים על הזמנות שעשיתם (תשלום ומשלוח) לא יגיעו.' : 'עדכונים על הזמנות שעשיתם (תשלום ומשלוח) ימשיכו להגיע.';
+  const reminders = view === 'done'
+    ? `<section class="glass stop-card" aria-live="polite">
   <h1>סגור, לא נשלח לכם יותר תזכורות ${from(s.name)}.</h1>
   <p class="lede">${orders}</p>
   ${form('undo', 'בעצם כן, להמשיך לקבל', 'grey')}
 </section>`
-    : `${head}
-<section class="glass stop-card">
+    : `<section class="glass stop-card">
   ${view === 'kept' ? `<p class="stop-note" role="status">בסדר, התזכורות ${from(s.name)} ימשיכו להגיע.</p>` : ''}
-  <h1>לא לקבל יותר תזכורות ${from(s.name)}?</h1>
+  <${o.first ? 'h2' : 'h1'}>לא לקבל יותר תזכורות ${from(s.name)}?</${o.first ? 'h2' : 'h1'}>
   <p class="lede">אלה ההודעות על מוצרים שנשארו בעגלה והבקשות לכתוב ביקורת. ${orders}</p>
-  ${form('stop', 'כן, להפסיק', 'stop-btn')}
+  ${form('stop', 'כן, להפסיק', o.first ? 'grey' : 'stop-btn')}
 </section>`;
+  const lead = o.first ? 'h1' : 'h2';
+  const updates = o.stopped
+    ? `<section class="glass stop-card stop-orders" aria-live="polite">
+  <${lead}>סגור, לא נשלח לכם עדכונים על הזמנות ${from(s.name)}.</${lead}>
+  <p class="lede">אם תרצו לדעת מה קורה עם הזמנה, אפשר לכתוב לחנות.</p>
+  ${form('orders-on', 'בעצם כן, להחזיר אותם', 'grey')}
+</section>`
+    : `<section class="glass stop-card stop-orders">
+  ${o.note === 'kept' ? `<p class="stop-note" role="status">בסדר, העדכונים על הזמנות ימשיכו להגיע.</p>` : ''}
+  <${lead}>${o.first ? `לא לקבל יותר עדכונים על הזמנות ${from(s.name)}?` : 'עדכונים על הזמנות'}</${lead}>
+  <p class="lede">הודעות על התשלום ועל המשלוח של הזמנות שעשיתם${o.first ? '' : ` ${from(s.name)}`}. אפשר להפסיק גם אותן.</p>
+  ${form('orders-off', o.first ? 'כן, להפסיק' : 'להפסיק גם אותן', o.first ? 'stop-btn' : 'grey')}
+</section>`;
+  const body = `${head}\n${o.first ? `${updates}\n${reminders}` : `${reminders}\n${updates}`}`;
   return page(`הגדרות הודעות, ${s.name}`, body, `/u/${token}/theme.css`);
 }
 
@@ -114,7 +133,8 @@ export function unsubscribeRoutes(app: App, allowed: (ip: string) => boolean): R
       const l = await linkOf(app.db, m[1]);
       if (!l) return gone;
       const view: StopView = l.stopped_at ? 'done' : r.url.searchParams.get('kept') === '1' ? 'kept' : 'ask';
-      return { html: stopPage(l.token, await storeOf(app, l), view), headers };
+      const o: OrdersView = { stopped: Boolean(l.orders_stopped_at), note: r.url.searchParams.get('orders') === 'kept' ? 'kept' : null, first: r.url.searchParams.get('about') === 'orders' };
+      return { html: stopPage(l.token, await storeOf(app, l), view, o), headers };
     }],
     ['POST', /^\/u\/([\w-]{1,64})\/?$/, async (r, m) => {
       if (!allowed(r.ip)) return busy;
@@ -122,6 +142,16 @@ export function unsubscribeRoutes(app: App, allowed: (ip: string) => boolean): R
       if (!l) return gone;
       // RFC 8058: the mail client posts "List-Unsubscribe=One-Click" (as a form, or multipart), with no cookie and no page.
       const oneClick = r.form['List-Unsubscribe'] === 'One-Click' || /List-Unsubscribe=One-Click|name="List-Unsubscribe"\s+One-Click/.test(r.raw || '');
+      // The order updates, a choice of their own: stopped, or given back. A one-click never touches them.
+      const about = r.url.searchParams.get('about') === 'orders' ? 'about=orders' : '';
+      if (r.form.do === 'orders-off' && !oneClick) {
+        if (!l.orders_stopped_at) await stopOrdersFromLink(app, l);
+        return { redirect: `/u/${l.token}${about ? `?${about}` : ''}`, headers };
+      }
+      if (r.form.do === 'orders-on' && !oneClick) {
+        if (l.orders_stopped_at) await undoOrdersFromLink(app, l);
+        return { redirect: `/u/${l.token}?${[about, 'orders=kept'].filter(Boolean).join('&')}`, headers };
+      }
       if (r.form.do === 'undo' && !oneClick) {
         if (l.stopped_at) await undoFromLink(app, l);
         return { redirect: `/u/${l.token}?kept=1`, headers };

@@ -68,6 +68,14 @@ state shows. Else email, from the store's email channel. The phone or the email 
   then "סגור, לא נשלח לכם יותר תזכורות מ<store>. עדכונים על הזמנות שעשיתם (תשלום ומשלוח) ימשיכו להגיע." with
   "בעצם כן, להמשיך לקבל" to undo it. It stops the cart and the review from that store on every channel (source
   `link`); payment and shipping go on. Nothing says "write הסר" any more
+- the order updates (payment and shipping) are a choice of their own on the same page (the owner, 2026-11-06: "the
+  customer can turn them off"): a second card, "עדכונים על הזמנות", with "להפסיק גם אותן", and its undo "בעצם כן,
+  להחזיר אותם". It is recorded as consent of scope `orders` (source `link`) for the customer's addresses, and payment
+  and shipping skip them with "order updates opted out". Every order email ends with its own quiet line, "לא רוצים
+  לקבל מאיתנו עדכונים על הזמנות? אפשר להפסיק כאן:", to `/u/<token>?about=orders`, where the order updates lead as the
+  page's one main button (no `List-Unsubscribe`: it is not marketing). On WhatsApp the order templates keep no button
+  (adding one means each store submits them again), so a customer reaches the page from a reminder's button or an
+  order email, or writes "הסר", which still stops everything
 - "הסר" or "STOP" from the customer still stops all of them, answered with one line; a message from the customer
   drops a cart reminder or a review request still waiting
 - one cart reminder a checkout, none once an order is placed, nothing twice for the same event, no cart or review to
