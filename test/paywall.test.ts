@@ -190,3 +190,48 @@ test('under /admin, accounts vouches for the operator with X-OF-Operator instead
     await s.close();
   }
 });
+
+// A brand-new customer before the payment is recorded (TORAN-READINESS.md P0-8, P1-23; the owner, 2026-11-08: Toran
+// ready for customers like Teder): told what opens when it is paid, sent to accounts' checklist, adding the store stays
+// open meanwhile, "בדקו שוב" asks accounts afresh; an unpaid store's conversations stay readable.
+test('before paying: a new workspace gets the new-customer page with the checklist, /start open and "בדקו שוב"; an unpaid store keeps its inbox readable', async () => {
+  const s = await serve();
+  try {
+    s.as(s.accounts.session(customer(9)).cookie);
+    s.accounts.paid(9, 'unpaid');
+    await s.app.db.query("DELETE FROM settings WHERE key = 'entitlement:9'");
+    const page = await s.get('/');
+    assert.equal(page.status, 402);
+    const html = await page.text();
+    assert.match(html, /data-refusal="new"/);
+    assert.match(html, /תורן נפתח כשהתשלום מגיע/);
+    assert.doesNotMatch(html, /להמשיך להשתמש/, 'not written for someone who stopped');
+    assert.match(html, /href="https:\/\/accounts\.test\/setup"/, 'to the checklist, where the way to pay is');
+    assert.match(html, /href="\/start"/);
+    assert.match(html, /<form method="post" action="\/paywall\/check"/);
+    assert.equal((await s.get('/start')).status, 200, 'adding the store is open before paying');
+    assert.equal((await s.get('/settings')).status, 402, 'the rest waits for the payment');
+
+    // "בדקו שוב": only with this session's token, and not from another site.
+    const token = /name="_csrf" value="([^"]+)"/.exec(html)![1];
+    assert.equal((await s.post('/paywall/check', { _csrf: 'nope' })).status, 403);
+    assert.equal((await s.post('/paywall/check', { _csrf: token }, { origin: 'https://evil.example' })).status, 403);
+    s.accounts.paid(9, 'paid');
+    const again = await s.post('/paywall/check', { _csrf: token });
+    assert.equal(again.status, 303);
+    assert.match(decodeURIComponent(String(again.headers.get('set-cookie'))), /התשלום נרשם/);
+    assert.equal((await s.get('/settings')).status, 200, 'paid: open at once, not after five minutes');
+
+    // A store of an unpaid workspace: its conversations stay readable, as the pay page says.
+    const a = s.seeded.storeId;
+    await s.app.db.query('UPDATE stores SET workspace_id = 9 WHERE id = $1', [a]);
+    s.accounts.paid(9, 'unpaid');
+    await s.app.db.query("DELETE FROM settings WHERE key = 'entitlement:9'");
+    const unpaid = await s.get('/');
+    assert.equal(unpaid.status, 402);
+    assert.match(await unpaid.text(), /data-refusal="unpaid"[^]*href="\/chats"/);
+    assert.equal((await s.get('/chats')).status, 200);
+  } finally {
+    await s.close();
+  }
+});

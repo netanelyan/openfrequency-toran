@@ -282,12 +282,31 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       // ---- the paywall (billing/entitlement.ts, PRA-SEC-002): a customer whose workspace has not paid for Toran gets the
       // pay page, and posts nothing. The operator, and the operator viewing as the customer, are never asked about.
       if (!scope.operator && !session.viewAs && session.workspace) {
-        const ent = await entitlementOf(app).check(session.workspace.id);
-        if (!ent.allowed) {
-          const kind = ent.known ? 'unpaid' : 'unchecked';
-          const status = kind === 'unpaid' ? 402 : 503;
-          if (method !== 'GET' && ajax) return json(status, { ok: false, message: kind === 'unpaid' ? 'התשלום על תורן לא פעיל, אז שום דבר לא נשמר.' : 'אי אפשר לבדוק את התשלום כרגע, אז שום דבר לא נשמר.' });
-          return send(req, res, status, refusalPage(kind, kind === 'unpaid' ? links.home : `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`), 'text/html; charset=utf-8');
+        const wsId = session.workspace.id;
+        // "בדקו שוב" on the pay page: accounts is asked afresh now, as when it says the access changed (as Teder's
+        // POST /paywall/check), then the page it came from.
+        if (method === 'POST' && p === '/paywall/check') {
+          // Before the paywall, so its own checks: another site's form is refused, and so is a form without this session's token.
+          if (req.headers.origin && !origins.has(req.headers.origin)) return json(403, { ok: false, message: 'בקשה מאתר אחר נחסמה.' });
+          const sent = Object.fromEntries(new URLSearchParams(await readBody(req)));
+          if (!csrfOk(sent._csrf, basis, secret)) return send(req, res, 403, errorPage(403, 'הדף ישן. רעננו אותו ונסו שוב.', '/'), 'text/html; charset=utf-8');
+          await entitlementOf(app).changed(wsId);
+          const again = await entitlementOf(app).check(wsId);
+          return reply(req, res, { redirect: refererPath(req.headers.referer, `http://${host}`, false) || '/' }, { 'set-cookie': flashCookie(again.allowed ? 'התשלום נרשם. תורן פתוח.' : again.known ? 'בדקנו עכשיו, והתשלום עוד לא רשום אצלנו. כשנרשום אותו, תורן ייפתח.' : 'לא הצלחנו לבדוק עכשיו. אפשר לנסות שוב בעוד דקה.') });
+        }
+        const ent = await entitlementOf(app).check(wsId);
+        // Before paying, what does not answer customers stays open (TORAN-READINESS.md P0-8, P1-23): adding the store and
+        // proving its site (/start, two model calls for its sample chat, once, for a domain the customer proved), its
+        // reading's progress, what Toran knows, and the inbox to read (an unpaid store's messages reach the owner as
+        // handoffs, agent/loop.ts). Connecting a channel, answering and every other change wait for the payment.
+        const openUnpaid = ent.known && (method === 'GET' ? /^\/(start|knowledge|lead\/\d+\/knowledge|chats|chat\/\d+(\/file\/\d+)?)$/.test(p) || JOB_POLL.test(p) : /^\/start(\/verify)?$/.test(p));
+        if (!ent.allowed && !openUnpaid) {
+          const fresh = !(await app.db.one('SELECT 1 FROM stores WHERE workspace_id = $1 LIMIT 1', [wsId]));
+          const kind = !ent.known ? 'unchecked' : fresh ? 'new' : 'unpaid';
+          const status = kind === 'unchecked' ? 503 : 402;
+          if (method !== 'GET' && ajax) return json(status, { ok: false, message: kind === 'unchecked' ? 'אי אפשר לבדוק את התשלום כרגע, אז שום דבר לא נשמר.' : 'התשלום על תורן עוד לא רשום, אז שום דבר לא נשמר.' });
+          const href = kind === 'new' ? links.setup : kind === 'unpaid' ? links.home : `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`;
+          return send(req, res, status, refusalPage(kind, href, kind === 'unchecked' ? null : csrfFor(basis, secret)), 'text/html; charset=utf-8');
         }
       }
       const user = { id: session.user.id, name: String(session.user.name || session.user.email), role: session.role, email: session.user.email };
