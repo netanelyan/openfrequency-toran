@@ -70,40 +70,50 @@ export function parseSince(raw: string): string | null {
 const OPTED_OUT = "(takedown_asked_at IS NOT NULL OR taken_down_at IS NOT NULL OR status = 'skipped' OR lost_at IS NOT NULL OR workspace_id IS NOT NULL)";
 const https = (v: unknown) => (typeof v === 'string' && v.startsWith('https://') ? v : null);
 
+const COLUMNS = `id, domain, url, name, brand->>'name' AS brand_name, brand_override->>'name' AS override_name, platform, score, status,
+            contact_email, contact_whatsapp, contact_phone,
+            signals->>'description' AS description, signals->>'title' AS title,
+            signals->'social'->>'instagram' AS instagram, signals->'social'->>'tiktok' AS tiktok, signals->'social'->>'facebook' AS facebook,
+            ${OPTED_OUT} AS opted_out, to_char(changed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS changed`;
+
+function toFound(r: any): FoundStore {
+  const name = displayName(r.override_name, r.brand_name, r.name);
+  return {
+    id: Number(r.id),
+    domain: r.domain,
+    url: r.url,
+    name,
+    platform: r.platform && r.platform !== 'unknown' ? r.platform : null,
+    about: storeAbout({ description: r.description, title: r.title, names: [name, r.override_name, r.brand_name, r.name], domain: r.domain }),
+    score: r.score == null ? null : Number(r.score),
+    toranStatus: r.status,
+    contact: { email: r.contact_email || null, whatsapp: r.contact_whatsapp || null, phone: r.contact_phone || null },
+    social: { instagram: https(r.instagram), tiktok: https(r.tiktok), facebook: https(r.facebook) },
+    optedOut: Boolean(r.opted_out),
+    updatedAt: r.changed,
+  };
+}
+
+/** One store as GET /internal/stores gives it (for Teder, from Toran's lead page: ops/tederLeads.ts); null when there is none. */
+export async function foundStore(app: App, id: number): Promise<FoundStore | null> {
+  const r = await app.db.one<any>(`SELECT ${COLUMNS} FROM stores WHERE id = $1`, [id]);
+  return r ? toFound(r) : null;
+}
+
 export async function foundStores(app: App, { since = null, limit = STORES_LIMIT }: { since?: string | null; limit?: number } = {}): Promise<{ stores: FoundStore[]; next: string | null }> {
   const n = Math.max(1, Math.min(STORES_MAX, Math.floor(limit) || STORES_LIMIT));
   // $1 goes in as text and Postgres reads it as a moment: typed timestamptz, the postgres driver made it a Date first,
   // which threw on '-infinity' (every call without since answered 500 on the server, 2026-11-05) and would have cut
   // a since's microseconds to milliseconds, so a full page could come back again and again. PGlite passes text either way.
   const rows = await app.db.query<any>(
-    `SELECT id, domain, url, name, brand->>'name' AS brand_name, brand_override->>'name' AS override_name, platform, score, status,
-            contact_email, contact_whatsapp, contact_phone,
-            signals->>'description' AS description, signals->>'title' AS title,
-            signals->'social'->>'instagram' AS instagram, signals->'social'->>'tiktok' AS tiktok, signals->'social'->>'facebook' AS facebook,
-            ${OPTED_OUT} AS opted_out, to_char(changed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS changed
+    `SELECT ${COLUMNS}
        FROM stores
       WHERE qualified AND changed_at > $1::text::timestamptz
         AND changed_at <= COALESCE((SELECT changed_at FROM stores WHERE qualified AND changed_at > $1::text::timestamptz ORDER BY changed_at OFFSET $2::int - 1 LIMIT 1), 'infinity'::timestamptz)
       ORDER BY changed_at, id`,
     [since || '-infinity', n],
   );
-  const stores = rows.map((r): FoundStore => {
-    const name = displayName(r.override_name, r.brand_name, r.name);
-    return {
-      id: Number(r.id),
-      domain: r.domain,
-      url: r.url,
-      name,
-      platform: r.platform && r.platform !== 'unknown' ? r.platform : null,
-      about: storeAbout({ description: r.description, title: r.title, names: [name, r.override_name, r.brand_name, r.name], domain: r.domain }),
-      score: r.score == null ? null : Number(r.score),
-      toranStatus: r.status,
-      contact: { email: r.contact_email || null, whatsapp: r.contact_whatsapp || null, phone: r.contact_phone || null },
-      social: { instagram: https(r.instagram), tiktok: https(r.tiktok), facebook: https(r.facebook) },
-      optedOut: Boolean(r.opted_out),
-      updatedAt: r.changed,
-    };
-  });
+  const stores = rows.map(toFound);
   return { stores, next: stores.length >= n ? stores[stores.length - 1].updatedAt : null };
 }
 

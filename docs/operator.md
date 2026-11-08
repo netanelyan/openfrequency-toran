@@ -225,6 +225,28 @@ what the action takes.
 It answers `200 { "ok": true, "message": "<Hebrew line for the operator>" }`, or `400 { "ok": false, "error":
 "<Hebrew line>" }` for an action the rules refuse (a second reminder, a link past its 24 hours).
 
+### One store, both products: Toran's lead page and Teder
+
+The owner, 2026-11-08: "i want the admin lead page to be connected. i want to be able to build only toran or only
+teder for a page, or both. i want to be able to send them 2 demos or 1". A lead's page (`/lead/<id>`, on accounts'
+`/admin/toran/lead/<id>`) asks Teder about the same store (`src/ops/tederLeads.ts`, Teder's `src/web/leads-internal.js`,
+`test/fixtures/teder-leads.json`, the same file in both repositories) and shows "תדר לאותה חנות":
+
+- **Build:** "לבנות דף" builds Toran's page alone (as before), "רק תדר" (`POST /lead/<id>/teder-build`) Teder's demo
+  alone, and "לבנות את שניהם" (`/both-build`) both at one press while neither exists. Teder adds the store as its lead
+  the way its hourly sync does (never a customer's site, never one that asked not to be written to) and builds its demo
+  as its /leads does.
+- **Send:** with both demos up and neither sent, the main action is one message with both
+  (`/both-send`, the template `openfrequency_pitch`: two URL buttons, "לנסות את תורן" and "לראות את המצגת", then "הסירו
+  אותי"), beside "רק את תורן" (`/wa-send`) and "רק את תדר" (`/teder-send`, `teder_pitch`). The reminder is the same:
+  one for both (`openfrequency_pitch_reminder`) when both are due, or each alone. A message with both counts once in the
+  day's cap and as both products' message at its stage, so neither goes alone at that stage after it. Both leads are
+  marked sent: Toran's here, Teder's through `POST /internal/leads/mark`; when Teder does not answer, the message says
+  so and Teder's /leads is marked by hand.
+- Teder down: the panel says "תדר לא ענה כרגע", and the rest of the page works.
+
+All four routes are the operator's alone (`server.ts` OPERATOR_ONLY).
+
 ### `GET /internal/stores?since=<ISO moment>&limit=<1-500>`
 
 Teder's operator page of leads reads the stores Toran found from here (`src/ops/stores.ts`), and keeps its own outreach

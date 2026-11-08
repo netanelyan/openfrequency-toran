@@ -6,7 +6,7 @@ import { homeUrl, canonicalDomain } from '../../core/urls.ts';
 import { now } from '../../core/clock.ts';
 import { pageStats } from '../../pitch/track.ts';
 import { pitchGaps } from '../../pitch/ready.ts';
-import { contactTarget, firstMessage, followupDue, pitchUrl, reminderMessage } from '../../outreach.ts';
+import { contactTarget, firstMessage, followupDue, le, pitchUrl, reminderMessage } from '../../outreach.ts';
 import { PLANS, planOf, type PlanKey } from '../../plans.ts';
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { storeConnectReady } from '../../channels/kapso.ts';
@@ -19,8 +19,13 @@ import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../c
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
 import { mailDomainPanel } from './mailDomain.ts';
-import { outreachLive } from '../../ops/outreach.ts';
+import { outreachFilled, outreachLive, templateOf } from '../../ops/outreach.ts';
 import { OpsError, sendNow } from '../../ops/actions.ts';
+import { sendBoth, sendTeder } from '../../ops/both.ts';
+import { tederBuild, tederState } from '../../ops/tederLeads.ts';
+
+/** Teder's stages for a lead, as its /leads names them (openfrequency-teder src/web/leads.js STAGE_HE). */
+const TEDER_STAGE_HE: Record<string, string> = { new: 'חדש', demo_ready: 'דמו מוכן', sent: 'נשלח', opened: 'פתחו', replied: 'ענו', joined: 'הצטרפו', irrelevant: 'לא רלוונטי' };
 
 // Leads: the list (by status, with the score and what was found), adding one by URL,
 // and one lead's page: its score's parts, its contacts, its pitch page and what the
@@ -110,7 +115,16 @@ async function leadPage(app: App, r: DashReq, id: number) {
   // Since 2026-11-08 the message goes from our number at one press, as the approved pitch template (ops/outreach.ts),
   // when the store lists a WhatsApp on its site; copying it to send from the phone stays beside it.
   const pitchable = Boolean(s.contact_whatsapp) && (await outreachLive(app));
-  const waSend = (label: string) => postButton(r.ctx, `/lead/${id}/wa-send`, label, { cls: 'btn primary', iconName: 'send', confirm: 'לשלוח עכשיו בוואטסאפ מהמספר שלנו? לחצו שוב כדי לשלוח' });
+  // The same store on Teder (ops/tederLeads.ts): its demo, built from here too, and the one message with both demos
+  // (the owner, 2026-11-08: "build only toran or only teder for a page, or both ... send them 2 demos or 1").
+  const tederSt = await tederState(app, s);
+  const teder = 'error' in tederSt ? null : tederSt.lead;
+  const tederUp = Boolean(teder?.demo?.pageUrl);
+  const tederFirst = tederUp && teder!.stage === 'demo_ready';
+  const tederReminder = tederUp && teder!.reminderDue;
+  const both = (label: string) => postButton(r.ctx, `/lead/${id}/both-send`, label, { cls: 'btn primary', iconName: 'send', confirm: 'לשלוח עכשיו הודעה אחת עם שני הדמואים, מהמספר שלנו? לחצו שוב כדי לשלוח' });
+  const waSend = (label: string, quiet = false) => postButton(r.ctx, `/lead/${id}/wa-send`, label, { cls: quiet ? 'btn' : 'btn primary', iconName: 'send', confirm: 'לשלוח עכשיו בוואטסאפ מהמספר שלנו? לחצו שוב כדי לשלוח' });
+  const tederSend = (label: string) => postButton(r.ctx, `/lead/${id}/teder-send`, label, { cls: 'btn', iconName: 'send', confirm: 'לשלוח עכשיו את הדמו של תדר לבד, מהמספר שלנו? לחצו שוב כדי לשלוח' });
 
   const parts = (s.score_breakdown || []).map((f: any) => `<li class="${f.points < 0 ? 'neg' : ''}"><span>${esc(FACTOR_HE[f.factor] || f.factor)}</span>${f.max ? vbar(f.points, f.max) : '<span></span>'}<b>${f.points}${f.max ? `/${f.max}` : ''}</b><span class="ev" dir="auto">${esc(f.evidence)}</span></li>`).join('');
 
@@ -118,6 +132,14 @@ async function leadPage(app: App, r: DashReq, id: number) {
     if (s.taken_down_at) return '<p class="muted m0">העמוד הוסר, ולא כותבים להם יותר.</p>';
     if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${canIngest(s.platform) ? 'אפשר לבנות אותו מכאן.' : `עם ${esc(PLATFORM_HE[s.platform] || s.platform)} זה עוד לא עובד, רק עם ${INGESTIBLE_HE}.`}</p>`;
     if (!s.approved_at) return `<p class="muted m0">הדף מחכה לבדיקה שלך לפני שאפשר לשלוח אותו. <a href="/lead/${id}/review">לבדיקה</a></p>`;
+    if (!s.sent_at && pitchable && tederFirst) {
+      // Both demos are up and neither went: one message with both is the main action; each alone stays beside it.
+      const text = outreachFilled(templateOf('both', 'first'), [le(name)]);
+      return `<p class="m0"><b>שני הדמואים מוכנים: תורן ותדר.</b></p>
+<blockquote class="q mt8">${esc(text)}</blockquote>
+<p class="small muted mt8 m0">בהודעה שני כפתורים, "לנסות את תורן" ו"לראות את המצגת", וכפתור "הסירו אותי".</p>
+<div class="row mt12">${both('לשלוח את שניהם בהודעה אחת')}${waSend('רק את תורן', true)}${tederSend('רק את תדר')}</div>`;
+    }
     if (!s.sent_at) {
       const text = firstMessage({ storeName: name, url: url! });
       return `<label class="f">ההודעה הראשונה<textarea id="first-msg" rows="6" dir="rtl">${esc(text)}</textarea></label>
@@ -128,9 +150,31 @@ async function leadPage(app: App, r: DashReq, id: number) {
       const due = s.followup_due_at ? new Date(s.followup_due_at).getTime() : followupDue(new Date(s.sent_at).getTime());
       const text = reminderMessage({ storeName: name, url: url! });
       return `<p class="m0">נשלח ${esc(ago(s.sent_at))}. ${due <= now() ? '<b>הגיע הזמן לתזכורת האחת.</b>' : `התזכורת האחת תהיה מוכנה ב־${esc(stamp(due))}.`}</p>
-${due <= now() ? `<label class="f mt12">התזכורת<textarea id="rem-msg" rows="4" dir="rtl">${esc(text)}</textarea></label><div class="row mt12">${pitchable ? waSend('לשלוח את התזכורת בוואטסאפ מהמספר שלנו') : ''}<button class="btn${pitchable ? '' : ' primary'}" type="button" data-copy="#rem-msg"${target.href ? `data-open="${esc(target.href)}"` : ''} data-done="התזכורת הועתקה">${icon('copy')}${esc(target.label)}</button>${postButton(r.ctx, `/lead/${id}/followup-sent`, 'שלחתי את התזכורת', { cls: 'btn' })}</div>` : ''}`;
+${due <= now() && pitchable && tederReminder ? `<div class="row mt12">${both('לשלוח תזכורת אחת לשניהם')}${waSend('רק לתורן', true)}${tederSend('רק לתדר')}</div>` : ''}
+${due <= now() && !(pitchable && tederReminder) ? `<label class="f mt12">התזכורת<textarea id="rem-msg" rows="4" dir="rtl">${esc(text)}</textarea></label><div class="row mt12">${pitchable ? waSend('לשלוח את התזכורת בוואטסאפ מהמספר שלנו') : ''}<button class="btn${pitchable ? '' : ' primary'}" type="button" data-copy="#rem-msg"${target.href ? `data-open="${esc(target.href)}"` : ''} data-done="התזכורת הועתקה">${icon('copy')}${esc(target.label)}</button>${postButton(r.ctx, `/lead/${id}/followup-sent`, 'שלחתי את התזכורת', { cls: 'btn' })}</div>` : ''}`;
     }
     return `<p class="muted m0">נשלח ${esc(ago(s.sent_at))}${s.followup_sent_at ? `, והתזכורת ${esc(ago(s.followup_sent_at))}. מכאן לא כותבים להם יותר.` : '.'}</p>`;
+  };
+
+  // Teder for the same store: what it has, the way to build its demo (alone, or with Toran's page when neither exists),
+  // and its message alone once Toran's already went.
+  const tederPanel = () => {
+    const head = `<section class="panel" id="teder"><header><h2>תדר לאותה חנות</h2>${teder ? `<span class="end chip">${esc(TEDER_STAGE_HE[teder.stage] || teder.stage)}</span>` : ''}</header>`;
+    if ('error' in tederSt) return `${head}<p class="muted m0">${esc(tederSt.error)}</p></section>`;
+    if (s.taken_down_at) return `${head}<p class="muted m0">העמוד של תורן הוסר, ולא כותבים להם יותר.</p></section>`;
+    const buildBoth = !s.page_built_at && canIngest(s.platform) && !teder?.demo ? postButton(r.ctx, `/lead/${id}/both-build`, 'לבנות את שניהם', { cls: 'btn primary sm', iconName: 'spark' }) : '';
+    const buildTeder = (label: string) => postButton(r.ctx, `/lead/${id}/teder-build`, label, { cls: buildBoth ? 'btn sm' : 'btn primary sm', iconName: 'refresh' });
+    const d = teder?.demo;
+    if (!d || d.status === 'removed') {
+      return `${head}<p class="m0">לתדר עוד אין דמו לחנות הזו: מצגת אחת לדוגמה, מתוך האתר שלה.</p>
+<div class="row mt12">${buildBoth}${buildTeder(buildBoth ? 'רק תדר' : 'לבנות דמו של תדר')}</div>
+${buildBoth ? '<p class="small muted mt8 m0">"לבנות את שניהם" קורא את האתר לתורן ובונה את המצגת של תדר באותה לחיצה. "לבנות דף" למטה בונה רק את תורן.</p>' : ''}</section>`;
+    }
+    if (d.building || d.status === 'new' || d.status === 'building') return `${head}<p class="m0"><span class="chip warn">${icon('clock')}בונים את הדמו של תדר</span></p><p class="small muted mt8 m0">זה לוקח כמה דקות. רעננו את העמוד אחר כך.</p></section>`;
+    if (d.status === 'failed') return `${head}<p class="m0 bad">הדמו של תדר לא נבנה${d.error ? `: ${esc(d.error)}` : '.'}</p><div class="row mt12">${buildTeder('לנסות שוב')}<a class="btn sm" href="${esc(d.reviewUrl)}" target="_blank" rel="noopener">בתדר</a></div></section>`;
+    const lone = pitchable && teder && (s.sent_at || !s.approved_at) && (tederFirst || tederReminder) ? tederSend(tederFirst ? 'לשלוח את תדר בוואטסאפ מהמספר שלנו' : 'לשלוח את התזכורת של תדר') : '';
+    return `${head}<dl class="kv"><dt>המצגת</dt><dd>${d.pageUrl ? `<a href="${esc(d.pageUrl)}" target="_blank" rel="noopener"><bdi class="ltr">${esc(d.pageUrl)}</bdi></a>` : esc(d.status === 'ready' ? 'מחכה לבדיקה בתדר' : d.status)}</dd>${teder!.sentAt ? `<dt>נשלח</dt><dd>${esc(ago(teder!.sentAt))}${teder!.reminderSentAt ? `, והתזכורת ${esc(ago(teder!.reminderSentAt))}` : ''}</dd>` : ''}</dl>
+<div class="row mt12">${lone}<a class="btn sm" href="${esc(teder!.leadUrl)}" target="_blank" rel="noopener">${icon('ext')}הליד בתדר</a></div></section>`;
   };
 
   const statusForm = `<form class="row" method="post" action="/lead/${id}/status">${csrfField(r.ctx)}<select name="status" aria-label="סטטוס">${STATUS_ORDER.map((x) => `<option value="${x}"${x === s.status ? ' selected' : ''}>${STATUS_HE[x][0]}</option>`).join('')}</select><button class="btn sm" type="submit">לעדכן</button></form>`;
@@ -147,6 +191,7 @@ ${waBanner(await waAccountOf(app, id), id)}
 <div class="cols">
   <div class="grid12">
     <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>
+    ${tederPanel()}
     <section class="panel"><header><h2>הציון</h2><span class="end">${scoreNum(s.score, s.qualified)}</span></header><ul class="parts">${parts}</ul></section>
     ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env)), social, mailAccount?.status === 'active' ? await mailDomainPanel(app, r, id, mailAccount.external_id) : '') : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env))}</dd>${social}</dl></section>`}
     <section class="panel"><header><h2>שיחות</h2><a class="end small" href="/chats?store=${id}">כולן</a></header>
@@ -290,6 +335,42 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
       const s = await store(m[1]);
       try {
         return { message: await sendNow(app, 'toran', String(s.id), r.user.name) };
+      } catch (e) {
+        if (e instanceof OpsError) throw new ActionError(e.message);
+        throw e;
+      }
+    }],
+    // The same store on Teder (ops/tederLeads.ts, ops/both.ts): its demo built alone or with Toran's page, its message
+    // alone, or one message with both demos. Nothing is marked when a message did not go, and the reason is said.
+    ['POST', /^\/lead\/(\d+)\/teder-build$/, async (r, m) => {
+      const s = await store(m[1]);
+      const out = await tederBuild(app, s.id, r.user.name);
+      if ('error' in out) throw new ActionError(out.error);
+      await audit(app.db, { actor: r.user.name, action: 'teder_build', storeId: s.id });
+      return { redirect: `/lead/${s.id}#teder`, message: `תדר: ${out.message}` };
+    }],
+    ['POST', /^\/lead\/(\d+)\/both-build$/, async (r, m) => {
+      const s = await store(m[1]);
+      if (!canIngest(s.platform)) throw new ActionError(`תורן עובד כרגע רק עם חנויות ${INGESTIBLE_HE}. אפשר לבנות רק את תדר.`);
+      const out = await tederBuild(app, s.id, r.user.name);
+      if ('error' in out) throw new ActionError(out.error);
+      await enqueue(app.db, 'ingest', { storeId: s.id }, { dedupeKey: `ingest:${s.id}` });
+      await audit(app.db, { actor: r.user.name, action: 'ingest', storeId: s.id, detail: { both: true } });
+      return { redirect: `/lead/${s.id}`, message: 'בונים את שניהם: תורן קורא את האתר ובונה את הדף, ותדר בונה את המצגת. העמוד יתעדכן.' };
+    }],
+    ['POST', /^\/lead\/(\d+)\/teder-send$/, async (r, m) => {
+      const s = await store(m[1]);
+      try {
+        return { redirect: `/lead/${s.id}#teder`, message: await sendTeder(app, s.id, r.user.name) };
+      } catch (e) {
+        if (e instanceof OpsError) throw new ActionError(e.message);
+        throw e;
+      }
+    }],
+    ['POST', /^\/lead\/(\d+)\/both-send$/, async (r, m) => {
+      const s = await store(m[1]);
+      try {
+        return { redirect: `/lead/${s.id}`, message: await sendBoth(app, s.id, r.user.name) };
       } catch (e) {
         if (e instanceof OpsError) throw new ActionError(e.message);
         throw e;

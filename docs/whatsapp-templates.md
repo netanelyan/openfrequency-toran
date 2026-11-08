@@ -250,6 +250,64 @@ curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templat
   --data '{"name":"teder_pitch_reminder","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ במצגת שהכנו {{1}}? היא מחכה לכם בכפתור כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
+### openfrequency_pitch
+
+| | |
+|---|---|
+| Name | openfrequency_pitch |
+| Category | Marketing |
+| Language | Hebrew (he) |
+| Header, footer | none |
+| Buttons | two URL buttons: "לנסות את תורן", to https://toran.openfrequency.co.il/s/{{1}} (sample nurit-ceramics), and "לראות את המצגת", to https://teder.openfrequency.co.il/s/{{1}} (sample nurit-ceramics-a1b2c3); then a quick reply, "הסירו אותי" |
+| Variables (sample) | {{1}} = לכלי חרס של נורית |
+
+The body, exactly:
+
+```
+היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם. שניהם בכפתורים כאן למטה.
+
+אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב.
+```
+
+As the store reads it: היי, כאן OpenFrequency. הכנו לכלי חרס של נורית שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם. שניהם בכפתורים כאן למטה. / אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב. [לנסות את תורן] [לראות את המצגת] [הסירו אותי]
+
+Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
+
+```sh
+curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
+  -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
+  --data '{"name":"openfrequency_pitch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם. שניהם בכפתורים כאן למטה.\n\nאם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+```
+
+### openfrequency_pitch_reminder
+
+| | |
+|---|---|
+| Name | openfrequency_pitch_reminder |
+| Category | Marketing |
+| Language | Hebrew (he) |
+| Header, footer | none |
+| Buttons | two URL buttons: "לנסות את תורן", to https://toran.openfrequency.co.il/s/{{1}} (sample nurit-ceramics), and "לראות את המצגת", to https://teder.openfrequency.co.il/s/{{1}} (sample nurit-ceramics-a1b2c3); then a quick reply, "הסירו אותי" |
+| Variables (sample) | {{1}} = לכלי חרס של נורית |
+
+The body, exactly:
+
+```
+היי, יצא לכם להציץ במה שהכנו {{1}}? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה.
+
+זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי".
+```
+
+As the store reads it: היי, יצא לכם להציץ במה שהכנו לכלי חרס של נורית? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה. / זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי". [לנסות את תורן] [לראות את המצגת] [הסירו אותי]
+
+Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
+
+```sh
+curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
+  -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
+  --data '{"name":"openfrequency_pitch_reminder","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ במה שהכנו {{1}}? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+```
+
 ## The owner line (not sent since 2026-11-02)
 
 **Not sent since 2026-11-02.** The owner decided: "managing teder through whatsapp, only through the dashboard".

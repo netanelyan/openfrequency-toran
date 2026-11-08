@@ -28,7 +28,7 @@ export type { Inbound, Sent };
  * One message push() sends: text, an image (with its caption), or an approved template with its variables, the end of
  * its URL button's address (`url`) or the payload its quick reply button sends back (`payload`, Meta's Cloud API only).
  */
-export type WaOut = { text?: string; mediaUrl?: string; template?: { name: string; sid: string; vars: string[]; url?: string; payload?: string; payloadIndex?: number }; from?: string | null };
+export type WaOut = { text?: string; mediaUrl?: string; template?: { name: string; sid: string; vars: string[]; url?: string; urls?: string[]; payload?: string; payloadIndex?: number }; from?: string | null };
 
 export interface WaProvider extends ChannelAdapter {
   channel: 'whatsapp';
