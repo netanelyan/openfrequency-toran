@@ -53,18 +53,31 @@ export class GraphError extends Error {
 /** Meta's Graph API, which every call here goes to (and the template submissions docs/whatsapp-templates.md writes out). */
 export const GRAPH = 'https://graph.facebook.com';
 
-async function graph(env: Env, f: GraphFetch, method: 'GET' | 'POST' | 'DELETE', path: string, { token, query = {}, body }: { token?: string; query?: Record<string, string>; body?: unknown } = {}): Promise<any> {
-  const url = new URL(`${GRAPH}/${metaSettings(env).version}/${path.replace(/^\//, '')}`);
+/**
+ * Kapso's Meta proxy (kapso.ts): Meta's own paths and bodies, under Kapso's address, with our project's key in
+ * X-API-Key. A store's number connected through Kapso is called this way; every other call carries a Meta token.
+ */
+export type Proxy = { base: string; key: string };
+/** What a call is made with: a Meta token, or Kapso's proxy. */
+export type Cred = string | Proxy;
+
+async function graph(env: Env, f: GraphFetch, method: 'GET' | 'POST' | 'DELETE', path: string, { token, query = {}, body }: { token?: Cred; query?: Record<string, string>; body?: unknown } = {}): Promise<any> {
+  const proxy = typeof token === 'object' ? token : null;
+  const url = new URL(`${proxy ? proxy.base.replace(/\/+$/, '') : `${GRAPH}/${metaSettings(env).version}`}/${path.replace(/^\//, '')}`);
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+  const auth: Record<string, string> = proxy ? { 'x-api-key': proxy.key } : token ? { authorization: `Bearer ${token}` } : {};
   const res = await f(url.toString(), {
     method,
-    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body ? { 'content-type': 'application/json' } : {}), accept: 'application/json' },
+    headers: { ...auth, ...(body ? { 'content-type': 'application/json' } : {}), accept: 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(15_000),
   });
   const out: any = await res.json().catch(() => ({}));
+  // Kapso says some refusals as a bare sentence ({ error: "...", code: "insufficient_credits" }), Meta as an object.
+  const err = typeof out?.error === 'string' ? { message: `${out.error}${out.code ? ` (${out.code})` : ''}` } : out?.error;
+  const who = proxy ? 'Kapso' : 'Meta';
   // The subcode and Meta's own sentence for a person say what a bare code does not (a template's name already taken).
-  if (!res.ok || out?.error) throw new GraphError(`Meta refused ${method} ${url.pathname} (${res.status}${out?.error?.code ? `, code ${out.error.code}${out.error.error_subcode ? `/${out.error.error_subcode}` : ''}` : ''}): ${String(out?.error?.error_user_msg || out?.error?.message || '').slice(0, 200)}`, res.status, out?.error?.code ?? null);
+  if (!res.ok || err) throw new GraphError(`${who} refused ${method} ${url.pathname} (${res.status}${err?.code ? `, code ${err.code}${err.error_subcode ? `/${err.error_subcode}` : ''}` : ''}): ${String(err?.error_user_msg || err?.message || '').slice(0, 200)}`, res.status, typeof err?.code === 'number' ? err.code : null);
   return out;
 }
 
@@ -146,15 +159,15 @@ export const subscribeApp = (env: Env, f: GraphFetch, wabaId: string, token: str
 export const unsubscribeApp = (env: Env, f: GraphFetch, wabaId: string, token: string) => graph(env, f, 'DELETE', `${wabaId}/subscribed_apps`, { token });
 
 /** A message template submitted for review on a store's WhatsApp account (auto/templates.ts): Meta's id, status and category. */
-export const createTemplate = (env: Env, f: GraphFetch, wabaId: string, token: string, body: unknown): Promise<{ id?: string; status?: string; category?: string }> => graph(env, f, 'POST', `${wabaId}/message_templates`, { token, body });
+export const createTemplate = (env: Env, f: GraphFetch, wabaId: string, token: Cred, body: unknown): Promise<{ id?: string; status?: string; category?: string }> => graph(env, f, 'POST', `${wabaId}/message_templates`, { token, body });
 
 /** The account's templates of this name, with their status, category and why one was rejected. */
-export const templatesNamed = (env: Env, f: GraphFetch, wabaId: string, token: string, name: string): Promise<{ data?: any[] }> =>
+export const templatesNamed = (env: Env, f: GraphFetch, wabaId: string, token: Cred, name: string): Promise<{ data?: any[] }> =>
   graph(env, f, 'GET', `${wabaId}/message_templates`, { token, query: { name, fields: 'id,name,status,category,language,rejected_reason' } });
 
 export type PhoneInfo = { display_phone_number?: string; verified_name?: string; status?: string; platform_type?: string; name_status?: string; quality_rating?: string; code_verification_status?: string; is_on_biz_app?: boolean };
 
-export const phoneInfo = (env: Env, f: GraphFetch, phoneId: string, token: string): Promise<PhoneInfo> =>
+export const phoneInfo = (env: Env, f: GraphFetch, phoneId: string, token: Cred): Promise<PhoneInfo> =>
   graph(env, f, 'GET', phoneId, { token, query: { fields: 'display_phone_number,verified_name,status,platform_type,name_status,quality_rating,code_verification_status,is_on_biz_app' } });
 
 /** Where a connected number stands, from Meta's own word for it. */
@@ -318,7 +331,7 @@ export function outBody(to: string, msg: WaOut): Record<string, unknown> {
  * One message out of a number on the Cloud API. A reply inside the 24 hours costs nothing; a template is billed by
  * Meta to the number's own WhatsApp account, at Meta's rate, which the ledger does not know, so it records $0.
  */
-export async function cloudSend(env: Env, f: GraphFetch, phoneId: string, token: string, to: string, msg: WaOut): Promise<Sent> {
+export async function cloudSend(env: Env, f: GraphFetch, phoneId: string, token: Cred, to: string, msg: WaOut): Promise<Sent> {
   const out = await graph(env, f, 'POST', `${phoneId}/messages`, { token, body: outBody(to, msg) });
   return { id: String(out?.messages?.[0]?.id || ''), usd: 0 };
 }
@@ -352,16 +365,28 @@ export async function mediaBytes(env: Env, f: GraphFetch, mediaId: string, token
 
 // ---- one connected number, as a channel adapter
 
-export type WaAccount = { id: number; external_id: string; secret: string | null; meta: any };
+export type WaAccount = { id: number; external_id: string; secret: string | null; meta: any; kind?: string | null };
+
+/** Kapso's Meta proxy for our project (kapso.ts has the rest; the address and key are read here to keep imports one way). */
+export function kapsoProxy(env: Env): Proxy {
+  const key = String(env.KAPSO_API_KEY || '').trim();
+  if (!key) throw new Error('KAPSO_API_KEY is not set, so a number connected through Kapso cannot send');
+  const base = String(env.KAPSO_BASE_URL || '').trim().replace(/\/+$/, '') || 'https://api.kapso.ai';
+  return { base: `${base}/meta/whatsapp/v24.0`, key };
+}
+
+/** What a store's number is called with: its own sealed Meta token, or, connected through Kapso, our project's key. */
+export function credOf(env: Env, account: WaAccount): Cred {
+  if (account.kind === 'kapso') return kapsoProxy(env);
+  if (!account.secret) throw new Error(`the WhatsApp account ${account.id} has no token: it was disconnected`);
+  return open(env, account.secret);
+}
 
 export function waAccountAdapter(env: Env, f: GraphFetch, account: WaAccount): ChannelAdapter {
-  const token = () => {
-    if (!account.secret) throw new Error(`the WhatsApp account ${account.id} has no token: it was disconnected`);
-    return open(env, account.secret);
-  };
+  const token = () => credOf(env, account);
   return {
     channel: 'whatsapp',
-    kind: 'meta',
+    kind: account.kind === 'kapso' ? 'kapso' : 'meta',
     limits: LIMITS.whatsapp,
     inboundUsd: 0,
     parse: () => null, // the one webhook is /meta/webhook (parseWebhook), not an adapter's

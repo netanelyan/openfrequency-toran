@@ -1,7 +1,8 @@
 import type { App } from '../../app.ts';
 import { displayName } from '../../ingest/brand.ts';
-import { metaSettings, waConnectReady } from '../../channels/meta.ts';
+import { metaSettings } from '../../channels/meta.ts';
 import { ConnectError, connectWhatsapp, disconnectWhatsapp } from '../../channels/waStore.ts';
+import { disconnectKapso, finishKapsoConnect, KapsoError, startKapsoConnect, storeConnectReady, waProvider } from '../../channels/kapso.ts';
 import { GraphError } from '../../channels/meta.ts';
 import { SecretError } from '../../core/secrets.ts';
 import { ActionError, DASH_CSP, type DashReq, type Route } from '../server.ts';
@@ -20,19 +21,29 @@ import { BINDING_DAYS } from '../../channels/demo.ts';
 // "לחבר מחדש את הוואטסאפ" (waBanner, also on Today and the lead page).
 //
 // This page alone loads Meta's SDK, so its CSP lets connect.facebook.net in; every other page keeps DASH_CSP.
+//
+// With TORAN_WA_PROVIDER=kapso (channels/kapso.ts) a store connects through Kapso instead, while our own Meta app waits
+// for its review: the button is a plain form that makes a setup link and sends the store to Kapso's hosted page (so
+// form-action lets app.kapso.ai in, the one place it may go), and Kapso sends the store back to
+// /lead/<id>/whatsapp/kapso, which takes the number and shows this page with how it went. Our company store always
+// connects on Meta.
 
 // A function, not a constant: server.ts imports this module before DASH_CSP exists.
 const connectCsp = () => DASH_CSP
   .replace("script-src 'self'", "script-src 'self' https://connect.facebook.net")
   .replace("style-src 'self'", "style-src 'self' 'unsafe-inline'")
   .replace("connect-src 'self'", "connect-src 'self' https://*.facebook.com https://*.facebook.net")
-  .replace("frame-src 'self'", "frame-src 'self' https://*.facebook.com");
+  .replace("frame-src 'self'", "frame-src 'self' https://*.facebook.com")
+  .replace("form-action 'self'", "form-action 'self' https://app.kapso.ai");
 
-export type WaRow = { id: number; status: string; meta: any; name: string | null; connected_at: string; token_expires_at: string | null; token_checked_at: string | null };
+export type WaRow = { id: number; status: string; meta: any; name: string | null; connected_at: string; token_expires_at: string | null; token_checked_at: string | null; kind?: string };
 
 export async function waAccountOf(app: App, storeId: number): Promise<WaRow | null> {
-  return app.db.one<WaRow>("SELECT id, status, meta, name, connected_at, token_expires_at, token_checked_at FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND kind = 'meta' ORDER BY (status <> 'off') DESC, id DESC LIMIT 1", [storeId]);
+  return app.db.one<WaRow>("SELECT id, status, meta, name, connected_at, token_expires_at, token_checked_at, kind FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND kind IN ('meta', 'kapso') ORDER BY (status <> 'off') DESC, id DESC LIMIT 1", [storeId]);
 }
+
+/** A line at the top of the page: how the connection through Kapso went. */
+const noticeHe = (kind: 'info' | 'warn', title: string, text: string) => `<div class="banner ${kind}">${icon(kind === 'info' ? 'check' : 'alert')}<div><b>${esc(title)}</b><p>${esc(text)}</p></div></div>`;
 
 const phone = (a: WaRow) => (a.meta?.display_phone_number ? `<bdi class="ltr">+${esc(a.meta.display_phone_number)}</bdi>` : '');
 const AGAIN = 'לחבר מחדש את הוואטסאפ';
@@ -85,22 +96,27 @@ async function oursPanel(app: App, storeId: number): Promise<string> {
 </section>`;
 }
 
-async function page(app: App, r: DashReq, id: number) {
+async function page(app: App, r: DashReq, id: number, notice = '') {
   const s = await app.db.one<any>('SELECT id, name, domain, brand, brand_override, demo_code, taken_down_at, platform FROM stores WHERE id = $1', [id]);
   if (!s) return null;
   const ours = isCompany(s) ? await oursPanel(app, id) : '';
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   const a = await waAccountOf(app, id);
-  const ready = waConnectReady(app.env);
+  // Through Kapso for every store but ours, when TORAN_WA_PROVIDER says so (channels/kapso.ts).
+  const viaKapso = waProvider(app.env) === 'kapso' && !isCompany(s);
+  const ready = storeConnectReady(app.env, isCompany(s));
   const m = metaSettings(app.env);
   const ro = r.ctx.readOnly;
   const live = a && a.status !== 'off';
   const tok = a ? tokenState(a) : null;
-  // The token ends soon or has ended: the same window of Meta's connects the same number again (waStore.ts).
+  // The token ends soon or has ended: the same window of Meta's connects the same number again (waStore.ts). A Kapso
+  // number has no token of ours; Meta taking its access away makes it 'reconnect' too (kapso.ts kapsoEvent).
   const again = Boolean(live && tok && (tok.ended || tok.soon));
-  const connectButton = (label: string) => ro ? '<p class="muted mt12 m0">במצב צפייה אי אפשר לחבר.</p>' : ready
-    ? `<div class="mt16" data-wa-connect data-app-id="${esc(m.appId)}" data-config-id="${esc(m.configId)}" data-version="${esc(m.version)}" data-action="/lead/${id}/whatsapp/connect" data-csrf="${esc(r.ctx.csrf)}"><button class="btn primary" type="button" disabled>${icon('chat')}${label}</button><p class="small mt8 m0" data-msg role="status" aria-live="polite"></p></div>`
-    : '<p class="muted mt12 m0">החיבור עוד לא פתוח בשרת. כתבו לנו, ונחבר יחד.</p>';
+  const connectButton = (label: string) => ro ? '<p class="muted mt12 m0">במצב צפייה אי אפשר לחבר.</p>' : !ready
+    ? '<p class="muted mt12 m0">החיבור עוד לא פתוח בשרת. כתבו לנו, ונחבר יחד.</p>'
+    : viaKapso
+      ? `<div class="mt16">${postButton(r.ctx, `/lead/${id}/whatsapp/kapso/start`, label, { cls: 'btn primary', iconName: 'chat' })}</div>`
+      : `<div class="mt16" data-wa-connect data-app-id="${esc(m.appId)}" data-config-id="${esc(m.configId)}" data-version="${esc(m.version)}" data-action="/lead/${id}/whatsapp/connect" data-csrf="${esc(r.ctx.csrf)}"><button class="btn primary" type="button" disabled>${icon('chat')}${label}</button><p class="small mt8 m0" data-msg role="status" aria-live="polite"></p></div>`;
   const chip = a?.status === 'active' ? (tok?.soon ? ['sig', 'צריך לחבר מחדש'] : ['ok', 'מחובר']) : a?.status === 'pending' ? ['sig', 'ממתין לאישור של Meta'] : a?.status === 'reconnect' ? ['bad', 'צריך לחבר מחדש'] : ['bad', 'נעצר'];
   const until = a?.token_expires_at ? esc(stamp(a.token_expires_at)) : a?.token_checked_at ? 'בלי הגבלת זמן' : '';
 
@@ -122,28 +138,66 @@ async function page(app: App, r: DashReq, id: number) {
     <li>הטלפון עם הוואטסאפ של החנות לידכם, כדי לאשר בו.</li>
   </ul>
 </section>
-<section class="panel mt16"><header><h2>מה קורה בחלון של Meta</h2></header>
+${viaKapso ? `<section class="panel mt16"><header><h2>מה קורה אחרי הלחיצה</h2></header>
+  <ol class="m0">
+    <li>נפתח עמוד החיבור של Kapso, השותף שמחבר את הוואטסאפ שלכם ל-Meta. העמוד באנגלית.</li>
+    <li>בוחרים <b>WhatsApp Business App</b>, נכנסים לפייסבוק, ובוחרים את העסק או יוצרים אותו.</li>
+    <li>מקלידים את המספר של החנות, וב-WhatsApp Business בטלפון סורקים את הקוד שמופיע בעמוד.</li>
+    <li>בסוף חוזרים לכאן לבד, והעמוד אומר שהמספר מחובר.</li>
+  </ol>
+  <p class="small mt8 m0">החיוב של Meta על הודעות שהחנות שולחת יוזמה (תבניות) יוצא מהחשבון של החנות ב-Meta. תשובות ללקוחות שכתבו בעשרים וארבע השעות האחרונות לא עולות כלום.</p>` : `<section class="panel mt16"><header><h2>מה קורה בחלון של Meta</h2></header>
   <ol class="m0">
     <li>נכנסים לפייסבוק, ובוחרים את העסק, או יוצרים אותו.</li>
     <li>בוחרים לחבר את מספר ה-WhatsApp Business הקיים, ומקלידים אותו.</li>
     <li>ב-WhatsApp Business בטלפון מופיעה בקשה. מאשרים אותה עם הקוד שבחלון.</li>
-  </ol>
+  </ol>`}
   <p class="small mt12 m0">הוואטסאפ בטלפון ממשיך לעבוד כרגיל, ותורן עונה לצידו. כשאתם עונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו.</p>
   ${connectButton('לחבר את הוואטסאפ של החנות')}
 </section>`;
   const body = `<a class="back" href="/settings#channels">${icon('chev')}הגדרות</a>
 <div class="head"><div class="row">${storeBadge({ id: s.id, name, domain: s.domain })}<h1 class="title">הוואטסאפ של ${esc(name)}</h1></div><p class="sub">מחברים את המספר שכבר יש לחנות ב-WhatsApp Business, ותורן עונה בו ללקוחות.</p></div>
+${notice}
 ${live ? waBanner(a, id, { here: true }) : ''}
 ${state}
 ${ours}
-${ready && (!live || again) && !ro ? '<script src="/static/wa-connect.js?v=2" defer></script>' : ''}`;
+${ready && !viaKapso && (!live || again) && !ro ? '<script src="/static/wa-connect.js?v=2" defer></script>' : ''}`;
   return layout({ ...r.ctx, title: `הוואטסאפ של ${name}`, active: 'settings' }, body);
 }
 
 export function whatsappRoutes(app: App): Route<DashReq>[] {
   return [
     ['GET', /^\/lead\/(\d+)\/whatsapp$/, async (r, m) => {
-      const html = await page(app, r, Number(m[1]));
+      // Kapso's hosted page sends the store back here when the connection did not go through.
+      const failed = r.url.searchParams.get('kapso') === 'failed' ? noticeHe('warn', 'החיבור לא הושלם', 'אפשר לנסות שוב. אם זה חוזר, כתבו לנו ונחבר יחד.') : '';
+      const html = await page(app, r, Number(m[1]), failed);
+      if (!html) throw new ActionError('אין חנות כזו', 404);
+      return { html, headers: { 'content-security-policy': connectCsp() } };
+    }],
+    // Through Kapso (channels/kapso.ts): a setup link, and the store goes to Kapso's hosted page.
+    ['POST', /^\/lead\/(\d+)\/whatsapp\/kapso\/start$/, async (r, m) => {
+      const id = Number(m[1]);
+      try {
+        return { redirect: await startKapsoConnect(app, id, r.user.name) };
+      } catch (e: any) {
+        if (e instanceof KapsoError) throw new ActionError(e.he);
+        app.log(`[kapso] setup link for store ${id} failed: ${e?.message || e}`);
+        if (e instanceof GraphError) throw new ActionError('לא הצלחנו לפתוח את עמוד החיבור. אפשר לנסות שוב בעוד כמה דקות, ואם זה חוזר, כתבו לנו.');
+        throw e;
+      }
+    }],
+    // Kapso's hosted page, done: the number is taken when Kapso's own API says it is this store's, and the page says how
+    // it went (a page, not a redirect: the way back from Kapso's site may not carry a flash cookie).
+    ['GET', /^\/lead\/(\d+)\/whatsapp\/kapso$/, async (r, m) => {
+      const id = Number(m[1]);
+      let notice: string;
+      try {
+        const out = await finishKapsoConnect(app, id, r.url.searchParams.get('phone_number_id'), r.user.name);
+        notice = out.status === 'active' ? noticeHe('info', 'הוואטסאפ מחובר', 'תורן עונה בו מעכשיו, והוואטסאפ בטלפון ממשיך לעבוד.') : noticeHe('info', 'החיבור נשלח', 'המספר ממתין לאישור של Meta, ותורן יתחיל לענות בו לבד כשהוא מאושר.');
+      } catch (e: any) {
+        if (!(e instanceof KapsoError)) app.log(`[kapso] connect for store ${id} failed: ${e?.message || e}`);
+        notice = noticeHe('warn', 'החיבור לא הושלם', e instanceof KapsoError ? e.he : 'Kapso לא אישרה את המספר. אפשר לנסות שוב בעוד כמה דקות, ואם זה חוזר, כתבו לנו.');
+      }
+      const html = await page(app, r, id, notice);
       if (!html) throw new ActionError('אין חנות כזו', 404);
       return { html, headers: { 'content-security-policy': connectCsp() } };
     }],
@@ -165,7 +219,9 @@ export function whatsappRoutes(app: App): Route<DashReq>[] {
     }],
     ['POST', /^\/lead\/(\d+)\/whatsapp\/disconnect$/, async (r, m) => {
       const id = Number(m[1]);
-      await disconnectWhatsapp(app, id, r.user.name);
+      const a = await waAccountOf(app, id);
+      if (a?.kind === 'kapso') await disconnectKapso(app, id, r.user.name);
+      else await disconnectWhatsapp(app, id, r.user.name);
       return { redirect: `/lead/${id}/whatsapp`, message: 'הוואטסאפ נותק מתורן. בטלפון הוא ממשיך לעבוד כרגיל.' };
     }],
   ];

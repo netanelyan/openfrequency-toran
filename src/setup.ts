@@ -5,7 +5,7 @@ import { internalRefusal } from './ops/api.ts';
 import { publicBase } from './auto/messages.ts';
 import { INGESTIBLE_HE, canIngest } from './ingest/catalogue.ts';
 import { enabledChannels } from './channels/config.ts';
-import { waConnectReady } from './channels/meta.ts';
+import { storeConnectReady } from './channels/kapso.ts';
 import { socialReady, type Social } from './channels/social.ts';
 import { orderAccessOf, ordersPlatform } from './orders.ts';
 import { anyOn, settingsOf } from './auto/send.ts';
@@ -26,7 +26,7 @@ import { socialAccountOf } from './web/pages/social.ts';
 // The steps are about the workspace's store, its first one (a workspace has one for now), in this order:
 //   store      required  the site read (pages/start.ts adds it): none yet, being read, read, or a site Toran cannot read
 //   knowledge            "בודקים את התשובות": the owner opened what Toran knows (stores.knowledge_seen_at) or wrote an answer
-//   whatsapp   required  the store's own number through Meta; "soon" while this server cannot connect one (waConnectReady)
+//   whatsapp   required  the store's own number through Meta; "soon" while this server cannot connect one (kapso.ts storeConnectReady: Meta, or Kapso with TORAN_WA_PROVIDER=kapso)
 //   email                only where TORAN_CHANNELS lists it; "soon" without a mail provider here
 //   messenger, instagram only where TORAN_CHANNELS lists them; "soon" until socialReady
 //   orders               the read-only order key; "soon" on a platform whose orders Toran does not read yet
@@ -103,8 +103,8 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     if (a?.status === 'pending') return { status: 'working', detail: 'המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.', href };
     if (a?.status === 'reconnect') return { status: 'attention', detail: 'החיבור הסתיים. צריך לחבר את המספר מחדש.', href };
     if (a?.status === 'error') return { status: 'attention', detail: 'Meta עצרה את המספר. כתבו לנו ונבדוק יחד.', href };
-    if (!waConnectReady(app.env)) return { status: 'soon', detail: 'החיבור של מספר החנות עוד לא פתוח.', href: null };
-    return { status: 'todo', detail: 'מחברים את המספר של החנות דרך Meta, והוואטסאפ בטלפון ממשיך לעבוד.', href };
+    if (!storeConnectReady(app.env)) return { status: 'soon', detail: 'החיבור של מספר החנות עוד לא פתוח.', href: null };
+    return { status: 'todo', detail: 'מחברים את המספר של החנות, והוואטסאפ בטלפון ממשיך לעבוד.', href };
   });
 
   if (on.has('email')) {

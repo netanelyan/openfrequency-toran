@@ -10,6 +10,8 @@ import { sessionIdFrom, type AccountsClient, type Session } from './accounts.ts'
 import { ownsStore, scopeOf } from './workspace.ts';
 import { enabledChannels, publicChannels } from '../channels/config.ts';
 import { metaSettings, parseWebhook, signatureOk } from '../channels/meta.ts';
+import { kapsoEvent, kapsoNumbers, kapsoSettings, kapsoSignatureOk } from '../channels/kapso.ts';
+import { takeWhatsapp } from '../channels/waHook.ts';
 import { parseSocial, socialSettings, type Social } from '../channels/social.ts';
 import { clearNonce, finishConnect, NONCE_COOKIE } from '../channels/socialStore.ts';
 import type { Out, Req, Route } from './server.ts';
@@ -50,6 +52,11 @@ import { errorPage } from './pages/basic.ts';
 //   POST /hooks/<platform>/<id> a store's own Shopify or WooCommerce, for the automatic messages: signed with the
 //                              store's webhook secret (Shopify's X-Shopify-Hmac-Sha256, WooCommerce's
 //                              X-WC-Webhook-Signature), acknowledged at once, read by the worker (auto/platforms.ts)
+//   POST /kapso/webhook        Kapso's forward, in Meta's own shape, of the webhooks of a store's number connected
+//                              through Kapso (channels/kapso.ts): X-Webhook-Signature checked under
+//                              KAPSO_WEBHOOK_SECRET, and only numbers connected through Kapso taken (waHook.ts)
+//   POST /kapso/events         Kapso's project webhook: a number connected, deleted, offboarded, disconnected or
+//                              reconnected; X-Webhook-Signature under KAPSO_EVENTS_SECRET
 //   GET  /meta/webhook         Meta's check of the webhook (hub.verify_token = META_WEBHOOK_VERIFY_TOKEN)
 //   POST /meta/webhook         Meta's webhook for every store's own WhatsApp number, Facebook Page and Instagram
 //                              account: X-Hub-Signature-256 checked (under the app's secret, or the Instagram app's),
@@ -264,17 +271,56 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
         for (const e of dm.echoes) await enqueue(app.db, 'dm_echo', e, { dedupeKey: `dm_echo:${e.id}`, runAt: new Date(Date.now() + 5_000) });
         return { text: 'ok' };
       }
-      const w = parseWebhook(body);
-      // Stamped on arrival, as on Twilio's: the reply window is measured from here.
-      for (const msg of w.messages) await enqueue(app.db, 'wa_inbound', { ...msg, at: Date.now() }, { dedupeKey: `wa:${msg.id}` });
-      for (const e of w.echoes) await enqueue(app.db, 'wa_echo', e, { dedupeKey: `wa_echo:${e.id}` });
-      for (const s of w.statuses.filter((x) => x.status === 'failed')) await enqueue(app.db, 'wa_status', s, { dedupeKey: `wa_status:${s.id}`, maxAttempts: 1 });
-      // A store's template approved, rejected or moved to another category (auto/templates.ts).
-      for (const t of w.templates) await enqueue(app.db, 'wa_template_status', t, { maxAttempts: 2 });
-      for (const waba of w.accounts) {
-        const rows = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status <> 'off' AND meta->>'waba_id' = $1", [waba]);
-        for (const a of rows) await enqueue(app.db, 'wa_check', { accountId: a.id }, { dedupeKey: `wa_check:${a.id}`, maxAttempts: 1 });
+      // The queue's way for every WhatsApp webhook in Meta's shape, Kapso's forward of it too (channels/waHook.ts).
+      // A number connected through Kapso is spoken for by Kapso's webhook alone: Meta's own app knows nothing of it.
+      await takeWhatsapp(app, parseWebhook(body));
+      return { text: 'ok' };
+    }],
+    // A store's number connected through Kapso (channels/kapso.ts): Kapso forwards the number's webhooks in Meta's own
+    // shape, signed with X-Webhook-Signature (the HMAC-SHA256 hex of the raw body under KAPSO_WEBHOOK_SECRET, which
+    // Toran set when it registered the webhook). Only the numbers connected here through Kapso are taken from it.
+    ['POST', /^\/kapso\/webhook$/, async (r) => {
+      if (!hookOk(r.ip)) return { status: 429, text: '' };
+      const k = kapsoSettings(app.env);
+      if (!k.webhookSecret) return { status: 404, text: '' };
+      if (!kapsoSignatureOk(k.webhookSecret, r.raw || '', r.req.headers['x-webhook-signature'])) {
+        app.log(`[kapso] webhook signature failed from ${r.ip}`);
+        return { status: 401, text: 'bad signature' };
       }
+      let body: any;
+      try {
+        body = JSON.parse(r.raw || '');
+      } catch {
+        return { status: 400, text: '' };
+      }
+      const w = parseWebhook(body);
+      const ids = [...w.messages.map((m) => m.account || ''), ...w.echoes.map((e) => e.account), ...w.statuses.map((s) => s.account)];
+      const keep = await kapsoNumbers(app, ids);
+      // Template news and account changes only for the WhatsApp accounts of numbers connected through Kapso.
+      const wabas = new Set((await app.db.query<{ waba: string }>("SELECT meta->>'waba_id' AS waba FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'kapso' AND status <> 'off'")).map((x) => x.waba).filter(Boolean));
+      const out = await takeWhatsapp(app, { ...w, templates: w.templates.filter((t) => wabas.has(t.waba)), accounts: w.accounts.filter((a) => wabas.has(a)) }, keep);
+      if (out.dropped) app.log(`[kapso] webhook ${String(r.req.headers['x-idempotency-key'] || '').slice(0, 40)}: ${out.dropped} item(s) for a number not connected through Kapso, dropped`);
+      return { text: 'ok' };
+    }],
+    // Kapso's project webhook (Integrations, Webhooks, Platform webhooks): a number connected through a setup link,
+    // deleted, offboarded or disconnected by Meta, reconnected. Its secret is the one Kapso's dashboard made for it.
+    ['POST', /^\/kapso\/events$/, async (r) => {
+      if (!hookOk(r.ip)) return { status: 429, text: '' };
+      const k = kapsoSettings(app.env);
+      if (!k.eventsSecret) return { status: 404, text: '' };
+      if (!kapsoSignatureOk(k.eventsSecret, r.raw || '', r.req.headers['x-webhook-signature'])) {
+        app.log(`[kapso] project webhook signature failed from ${r.ip}`);
+        return { status: 401, text: 'bad signature' };
+      }
+      let body: any;
+      try {
+        body = JSON.parse(r.raw || '');
+      } catch {
+        return { status: 400, text: '' };
+      }
+      const name = String(r.req.headers['x-webhook-event'] || body?.event || '');
+      const out = await kapsoEvent(app, name, body);
+      app.log(`[kapso] ${name}: ${out.action}`);
       return { text: 'ok' };
     }],
     ['GET', /^\/meta\/oauth\/(messenger|instagram)$/, async (r, m) => {

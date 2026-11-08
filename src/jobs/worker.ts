@@ -20,6 +20,7 @@ import { handleTederEvent, handleTederReady } from '../owners/events.ts';
 import { deliverRequested, deliverTeder } from '../ops/actions.ts';
 import { handToTeder } from '../channels/request.ts';
 import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
+import { checkKapsoAccount, isKapsoAccount } from '../channels/kapso.ts';
 import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialStore.ts';
 import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } from '../auto/jobs.ts';
@@ -85,7 +86,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
     case 'wa_status':
       return deliveryStatus(app, p);
     case 'wa_check':
-      return checkAccount(app, Number(p.accountId));
+      // A number connected through Kapso is read from Kapso, one connected on Meta from Meta (channels/kapso.ts).
+      return (await isKapsoAccount(app, Number(p.accountId))) ? checkKapsoAccount(app, Number(p.accountId)) : checkAccount(app, Number(p.accountId));
     case 'wa_token':
       return checkToken(app, Number(p.accountId));
     case 'dm_inbound':
@@ -197,7 +199,7 @@ export async function schedule(app: App) {
   await deliverRequested(app);
   await deliverTeder(app);
   // A store's own WhatsApp number waiting at Meta: read again every ten minutes, so it turns on by itself.
-  const pending = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status = 'pending' AND COALESCE((meta->>'checked_at')::timestamptz, 'epoch') < now() - interval '10 minutes'");
+  const pending = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind IN ('meta', 'kapso') AND status = 'pending' AND COALESCE((meta->>'checked_at')::timestamptz, 'epoch') < now() - interval '10 minutes'");
   for (const a of pending) await enqueue(app.db, 'wa_check', { accountId: a.id }, { dedupeKey: `wa_check:${a.id}`, maxAttempts: 1 });
   // A store's WhatsApp token: read once a day, and at once when the end we know of has come.
   const tokens = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'meta' AND status IN ('active', 'pending') AND secret IS NOT NULL AND (token_checked_at IS NULL OR token_checked_at < now() - interval '1 day' OR token_expires_at <= now())");

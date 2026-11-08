@@ -1,9 +1,8 @@
 import type { App } from '../app.ts';
-import { open } from '../core/secrets.ts';
 import { audit, event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
 import { lineOf } from '../channels/lines.ts';
-import { createTemplate, templatesNamed } from '../channels/meta.ts';
+import { createTemplate, credOf, templatesNamed, type Cred } from '../channels/meta.ts';
 import { categoryOf, KINDS, LEGACY, MESSAGES, publicBase, templateRequest, type Kind, type MessageKey } from './messages.ts';
 
 // Toran's templates on a store's own WhatsApp account (wa_templates, migration 017). A message the store starts on
@@ -25,11 +24,14 @@ import { categoryOf, KINDS, LEGACY, MESSAGES, publicBase, templateRequest, type 
 // store adds a payment method in its WhatsApp Manager (the page says so). Never our shared demo number: a number
 // that is one of ours (lines.ts) has no store templates.
 
-type Account = { id: number; store_id: number; external_id: string; secret: string | null; meta: any; status: string };
+type Account = { id: number; store_id: number; external_id: string; secret: string | null; meta: any; status: string; kind: string };
 
-/** The store's own WhatsApp number on Meta, when it is connected and not one of ours. */
+/**
+ * The store's own WhatsApp number, when it is connected and not one of ours: on Meta with its token, or through Kapso
+ * (channels/kapso.ts), whose proxy takes the same calls on the store's WABA with our project's key.
+ */
 export async function storeWa(app: App, storeId: number): Promise<Account | null> {
-  const a = await app.db.one<Account>("SELECT id, store_id, external_id, secret, meta, status FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND kind = 'meta' AND status = 'active' AND secret IS NOT NULL ORDER BY id DESC LIMIT 1", [storeId]);
+  const a = await app.db.one<Account>("SELECT id, store_id, external_id, secret, meta, status, kind FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND ((kind = 'meta' AND secret IS NOT NULL) OR kind = 'kapso') AND status = 'active' ORDER BY id DESC LIMIT 1", [storeId]);
   if (!a || lineOf(app.env, a.external_id) || !a.meta?.waba_id) return null;
   return a;
 }
@@ -51,7 +53,7 @@ export async function submitTemplates(app: App, storeId: number, by: string, { o
   if (!a) return { sent: 0, refused: 0 };
   const s = await app.db.one<any>('SELECT name, domain, brand, brand_override FROM stores WHERE id = $1', [storeId]);
   const store = displayName(s?.brand_override?.name, s?.brand?.name, s?.name) || s?.domain;
-  const token = open(app.env, a.secret!);
+  const token = credOf(app.env, a);
   const have = new Map((await templatesOf(app, a.id)).map((t) => [t.name, t]));
   const base = publicBase(app.env);
   let sent = 0;
@@ -88,7 +90,7 @@ export async function submitTemplates(app: App, storeId: number, by: string, { o
   return { sent, refused };
 }
 
-async function readTemplate(app: App, waba: string, token: string, name: string) {
+async function readTemplate(app: App, waba: string, token: Cred, name: string) {
   const out = await templatesNamed(app.env, app.graph, waba, token, name);
   const t = (out?.data || []).find((x: any) => x?.name === name && (!x.language || x.language === 'he'));
   if (!t) return null;
@@ -97,9 +99,9 @@ async function readTemplate(app: App, waba: string, token: string, name: string)
 
 /** Read again every template of this account that Meta has not decided on yet (the worker, hourly). */
 export async function checkTemplates(app: App, accountId: number) {
-  const a = await app.db.one<Account>("SELECT id, store_id, external_id, secret, meta, status FROM channel_accounts WHERE id = $1 AND kind = 'meta' AND status = 'active'", [accountId]);
-  if (!a?.secret || !a.meta?.waba_id) return { checked: 0 };
-  const token = open(app.env, a.secret);
+  const a = await app.db.one<Account>("SELECT id, store_id, external_id, secret, meta, status, kind FROM channel_accounts WHERE id = $1 AND kind IN ('meta', 'kapso') AND status = 'active'", [accountId]);
+  if (!a || (a.kind === 'meta' && !a.secret) || !a.meta?.waba_id) return { checked: 0 };
+  const token = credOf(app.env, a);
   const rows = await app.db.query<{ name: string }>("SELECT name FROM wa_templates WHERE account_id = $1 AND status IN ('PENDING', 'IN_APPEAL')", [a.id]);
   for (const r of rows) {
     const t = await readTemplate(app, a.meta.waba_id, token, r.name).catch(() => null);

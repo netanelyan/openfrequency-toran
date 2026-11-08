@@ -19,7 +19,9 @@ export function adapterFor(app: App, channel: Channel = 'whatsapp'): ChannelAdap
  * number's (lines.ts demoWa, which asks the database whether our one number is connected), so owner.ts picks it.
  */
 export function adapterOf(app: App, channel: Channel, account?: (WaAccount & { kind?: string | null }) | null): ChannelAdapter {
-  if (channel === 'whatsapp' && account?.kind === 'meta') return waAccountAdapter(app.env, app.graph, account);
+  // A store's own number: on Meta with its token, or connected through Kapso (kapso.ts), the same Cloud API bodies
+  // through Kapso's proxy.
+  if (channel === 'whatsapp' && (account?.kind === 'meta' || account?.kind === 'kapso')) return waAccountAdapter(app.env, app.graph, account);
   if (channel === 'whatsapp' && account?.kind === 'meta_line') return metaLinesAdapter(app);
   if (isSocial(channel)) {
     if (!account || account.kind !== 'meta' || !enabledChannels(app.env).has(channel)) throw new Error(`no adapter for channel ${channel}`);

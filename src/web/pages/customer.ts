@@ -15,7 +15,7 @@ import { csrfField, dayHe, esc, icon, layout, postButton, shortDate, stamp, stor
 import { storesOf, type Scope } from '../workspace.ts';
 import { conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
-import { waConnectReady } from '../../channels/meta.ts';
+import { storeConnectReady } from '../../channels/kapso.ts';
 import { socialReady } from '../../channels/social.ts';
 import { socialAccountOf, socialLine } from './social.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
@@ -64,7 +64,7 @@ async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel; on: boo
   const wa = await waAccountOf(app, s.id);
   const mail = has('email');
   return [
-    { ch: 'whatsapp', on: wa?.status === 'active', text: waLine(wa && wa.status !== 'off' ? wa : null, s, waConnectReady(app.env)) },
+    { ch: 'whatsapp', on: wa?.status === 'active', text: waLine(wa && wa.status !== 'off' ? wa : null, s, storeConnectReady(app.env)) },
     { ch: 'email', on: Boolean(mail), text: mail ? `מחובר, <bdi class="ltr">${esc(mail.external_id)}</bdi>` : code.has('email') && app.mail ? 'לא מחובר. מחברים בהגדרות.' : 'בקרוב' },
     ...(await Promise.all((['instagram', 'messenger'] as const).map(async (ch) => {
       const a = await socialAccountOf(app, s.id, ch);

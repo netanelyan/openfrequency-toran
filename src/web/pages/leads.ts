@@ -9,7 +9,7 @@ import { pitchGaps } from '../../pitch/ready.ts';
 import { contactTarget, firstMessage, followupDue, pitchUrl, reminderMessage } from '../../outreach.ts';
 import { PLANS, planOf, type PlanKey } from '../../plans.ts';
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
-import { waConnectReady } from '../../channels/meta.ts';
+import { storeConnectReady } from '../../channels/kapso.ts';
 import { SOCIAL, socialReady } from '../../channels/social.ts';
 import { socialAccountOf, socialLine } from './social.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
@@ -147,7 +147,7 @@ ${waBanner(await waAccountOf(app, id), id)}
   <div class="grid12">
     <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>
     <section class="panel"><header><h2>הציון</h2><span class="end">${scoreNum(s.score, s.qualified)}</span></header><ul class="parts">${parts}</ul></section>
-    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env)), social, mailAccount?.status === 'active' ? await mailDomainPanel(app, r, id, mailAccount.external_id) : '') : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, waConnectReady(app.env))}</dd>${social}</dl></section>`}
+    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env)), social, mailAccount?.status === 'active' ? await mailDomainPanel(app, r, id, mailAccount.external_id) : '') : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env))}</dd>${social}</dl></section>`}
     <section class="panel"><header><h2>שיחות</h2><a class="end small" href="/chats?store=${id}">כולן</a></header>
       ${convs.length ? `<div class="list">${convs.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : ''}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc((c.last_text || '').replace(/\n/g, ' ').slice(0, 80))}</b><small>${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)} · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}</small></span></a>`).join('')}</div>` : '<p class="muted m0">עוד אין שיחות.</p>'}
     </section>

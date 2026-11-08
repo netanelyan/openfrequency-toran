@@ -1,11 +1,10 @@
 import type { App } from '../app.ts';
 import { afterQuiet, customerQuiet, DAY, now } from '../core/clock.ts';
-import { open } from '../core/secrets.ts';
 import { J } from '../db/index.ts';
 import { audit, event, usage } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
 import { enqueue } from '../jobs/queue.ts';
-import { cloudSend, GraphError, TOKEN_GONE } from '../channels/meta.ts';
+import { cloudSend, credOf, GraphError, TOKEN_GONE } from '../channels/meta.ts';
 import { needsReconnect } from '../channels/waStore.ts';
 import { ownAddress } from '../channels/mailDomain.ts';
 import { enabledChannels } from '../channels/config.ts';
@@ -279,9 +278,10 @@ async function deliver(app: App, ev: any): Promise<Outcome> {
       const token = marketing && !legacy ? await stopToken(app.db, ev.store_id, 'whatsapp', phone) : null;
       let id: string;
       try {
-        id = (await cloudSend(app.env, app.graph, wa.external_id, open(app.env, wa.secret!), phone, { template: { name, sid: name, vars: params, ...(token ? { url: token } : {}) } })).id;
+        // On Meta with the store's token, or through Kapso's proxy with our key (channels/kapso.ts).
+        id = (await cloudSend(app.env, app.graph, wa.external_id, credOf(app.env, wa), phone, { template: { name, sid: name, vars: params, ...(token ? { url: token } : {}) } })).id;
       } catch (e: any) {
-        if (e instanceof GraphError && e.code === TOKEN_GONE) await needsReconnect(app, wa.id, 'token');
+        if (e instanceof GraphError && e.code === TOKEN_GONE && wa.kind === 'meta') await needsReconnect(app, wa.id, 'token');
         return { status: 'failed', why: `whatsapp: ${String(e?.message || e).slice(0, 240)}` };
       }
       const conversationId = await keep(app, ev, 'whatsapp', wa.id, phone, text, id, null);

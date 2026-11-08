@@ -13,7 +13,7 @@ repository, unused.
 | Channel | Code | Production (checked from outside, 2026-10-24) |
 | --- | --- | --- |
 | Email | Built: Resend, signed webhook, threads, bounces, owner replies, attachments both ways (the owner's only), a store's own address on its domain | Off. `/mail/resend` answers 404, no DNS for `in.openfrequency.co.il` |
-| WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox, the token's end watched and renewed or asked for again | The Meta app is set; App Review for advanced access is submitted (step 2) |
+| WhatsApp, a store's own number | Built: Meta Embedded Signup with coexistence, `/meta/webhook`, replies through the Cloud API, the owner's own replies from the phone in the inbox, the token's end watched and renewed or asked for again. Also through Kapso (step 2b, `TORAN_WA_PROVIDER=kapso`), with no App Review of ours | The Meta app is set; App Review for advanced access is submitted (step 2). Kapso: not set up yet (step 2b) |
 | WhatsApp, our own number (owner line, demo number, support) | Built: our one number, on as soon as the company store's WhatsApp page connects it (step 3); also Twilio's code, and Meta by `META_DEMO_PHONE_ID` and `META_OWNER_PHONE_ID` for separate numbers | On the simulator: the number is not connected yet (step 3, after App Review) |
 | A store's automatic messages (cart, payment, shipping, review) | Built: the store's platform by webhook or a reading every 15 minutes, its own WhatsApp templates submitted and tracked, email, consent and the link to stop the reminders, quiet time (step 5) | Off for every store until its owner turns a kind on |
 | Instagram, Messenger | Built, behind the flag: login at Meta, `/meta/oauth/<channel>`, the same `/meta/webhook`, replies through the Send API inside the 24 hours, the owner's own answers in the inbox | Off: `TORAN_CHANNELS` does not list them (step 4) |
@@ -230,6 +230,114 @@ the template. In Facebook Login for Business, Configurations, "Create configurat
 Stores connected with the old configuration keep their 60-day token until they connect again once. The banner asks
 them to. If Meta does not offer "Never" for this login variation on your app, keep the template. The renewal and the
 banner above handle it.
+
+## Step 2b. A store's own number through Kapso: built, off until set
+
+The owner, 2026-11-08: "i cant wait for the meta app approval. isnt there a provider that fixes that problem?" and
+"lets build toran around that, make it live". Kapso connects a store's number through **Kapso's own Meta app**, so our
+App Review is not needed (WHATSAPP-PROVIDERS.md at the repo root chose it on 2026-10-30). `TORAN_WA_PROVIDER=kapso`
+turns it on for every store; our own number (step 3: the demo, support, the owner line, the alerts, the pitches) stays
+on Meta directly, and our company store's page keeps Meta's window. `src/channels/kapso.ts` has the code.
+
+**How it works**
+
+1. The store's WhatsApp page shows "לחבר את הוואטסאפ של החנות" as a plain form. Toran makes the store a Kapso customer
+   once (`kapso_customers`, migration 049), makes a setup link, and sends the store to Kapso's hosted page (on
+   `app.kapso.ai` only: the page's CSP lets its form go there and nowhere else).
+2. On Kapso's page the store picks WhatsApp Business App, logs in to Facebook, types the number and scans the QR code in
+   the app. Kapso sends it back to `/lead/<id>/whatsapp/kapso?phone_number_id=...`. That query is not signed, so the
+   number is taken only when Kapso's own API lists it under this store's customer, it is none of ours, and no other
+   store has it. The project webhook's `whatsapp.phone_number.created` does the same for a store that closed the tab.
+3. Toran puts a **Meta-format** webhook on the number (Kapso forwards Meta's own payload), pointing at
+   `/kapso/webhook` and signed with `KAPSO_WEBHOOK_SECRET`. The same parser and queue as `/meta/webhook` take it
+   (`src/channels/waHook.ts`): customers' messages, the owner's answers from the phone, failed deliveries, template news.
+   Only numbers connected through Kapso are taken from this webhook.
+4. Replies and the store's templates go through Kapso's Meta proxy with the same Cloud API bodies and our project key
+   (`meta.ts` `credOf`): the row is `channel_accounts` kind `kapso`, with no token of ours.
+5. "לנתק" deletes the number from our Kapso project. The app on the phone is untouched.
+
+**Facts, read in Kapso's docs on 2026-11-08** (each page below; the .md form of each is what was read):
+
+- Kapso's Meta app needs no Meta app or Tech Provider verification of ours, "Fastest path"; the hosted setup link is how
+  customers connect (docs.kapso.ai/docs/platform/tech-providers/overview.md).
+- A setup link: `POST https://api.kapso.ai/platform/v1/customers/{customer_id}/setup_links` with `setup_link` {
+  `success_redirect_url`, `failure_redirect_url`, `allowed_connection_types` (`coexistence`, `dedicated`),
+  `meta_billing_mode` (`customer_managed`, the default, or `partner_managed`; it cannot be changed after the link is
+  made), `language` (en, es, pt, hi, id, ar: no Hebrew) }, answering `data.url` on `https://app.kapso.ai/whatsapp/setup/...`
+  (docs.kapso.ai/api/platform/v1/setup-links/create-setup-link.md, docs.kapso.ai/docs/platform/setup-links/create-and-configure.md).
+- A customer: `POST /platform/v1/customers` with `customer` { `name`, `external_customer_id` }, answering `data.id`, a
+  uuid (docs.kapso.ai/api/platform/v1/customers/create-customer.md).
+- Back from the hosted page: `success_redirect_url?setup_link_id=...&status=completed&phone_number_id=...&business_account_id=...&display_phone_number=...`;
+  and the project webhook event `whatsapp.phone_number.created` with `phone_number_id` and `customer.id`
+  (docs.kapso.ai/docs/platform/setup-links/detect-connection.md).
+- A project's numbers: `GET /platform/v1/whatsapp/phone_numbers?phone_number_id=...`, each with `customer_id`,
+  `business_account_id`, `display_phone_number_normalized`, `is_coexistence`, `status` (CONNECTED), `quality_rating`
+  (docs.kapso.ai/api/platform/v1/phone-numbers/list-phone-numbers.md). Deleting one: `DELETE
+  /platform/v1/whatsapp/phone_numbers/{phone_number_id}`, 204 (.../phone-numbers/delete-phone-number.md).
+- A number's webhook: `POST /platform/v1/whatsapp/phone_numbers/{id}/webhooks` with `whatsapp_webhook` { `kind:
+  "meta"`, `url`, `secret_key` (required, not generated), `active` }; kind meta is "the exact payload Meta sends", with
+  `X-Idempotency-Key` and `X-Webhook-Signature`; "Only one Meta webhook is allowed per phone number, including inactive
+  receivers", so Toran lists them (`GET ...?kind=meta`) and updates the one there (`PATCH .../webhooks/{webhook_id}`)
+  (docs.kapso.ai/docs/platform/webhooks/overview.md, .../api/platform/v1/webhooks/create-webhook.md, update-webhook.md, list-webhooks.md).
+- The signature: HMAC-SHA256 of the raw body under the webhook's secret, hex, in `X-Webhook-Signature`, compared in
+  constant time (docs.kapso.ai/docs/platform/webhooks/security.md).
+- Delivery: answer 200 within 10 seconds; on failure, retried at 10 and 40 seconds (3 attempts, about 50 seconds), then
+  a persistently failing webhook is paused until re-enabled (docs.kapso.ai/docs/platform/webhooks/overview.md,
+  .../webhooks/advanced.md). Toran answers at once and queues.
+- Project webhooks (Integrations, Webhooks, Platform webhooks; their secret is generated there): `whatsapp.phone_number.created`,
+  `.deleted`, `.offboarded`, `.disconnected` (with `disconnection.reason`), `.reconnected`, the event's name in
+  `X-Webhook-Event`; offboarded, disconnected and reconnected need payload version v2
+  (docs.kapso.ai/docs/platform/webhooks/project-webhooks.md).
+- Sending: `https://api.kapso.ai/meta/whatsapp/v24.0/{phone_number_id}/messages`, `X-API-Key`, every Cloud API message
+  type including templates, answering `messages[0].id`; refusals in Meta's error shape, and 402 with `error` and `code`
+  (`insufficient_credits`) (docs.kapso.ai/api/meta/whatsapp/messages/send-a-message.md). Templates:
+  `POST /meta/whatsapp/v24.0/{business_account_id}/message_templates` (.../templates/create-or-update-message-template.md).
+- Media: `GET /meta/whatsapp/v24.0/{media_id}?phone_number_id=...` gives `download_url`, a link with its own token, no
+  key needed, 4 minutes (.../media/get-media-url.md, download-media-file.md). Toran keeps no WhatsApp file of a store's
+  number (policy.ts), as on Meta, so it is not called.
+- The owner's answers from the app: Kapso's own events mark them `origin: business_app`
+  (docs.kapso.ai/docs/platform/webhooks/message-events.md).
+- Coexistence needs the WhatsApp Business App (not personal WhatsApp), updated, with enough activity for Meta; Meta's
+  error 3441045 means not eligible now, and the number can connect as dedicated instead
+  (docs.kapso.ai/docs/how-to/whatsapp/coexistence-troubleshooting.md).
+- Price (kapso.ai/pricing): Free, 2,000 messages a month; Pro $25, 100,000; Platform $299, 1,000,000.
+
+**UNVERIFIED** (the code fails safe on each):
+
+- That the Meta-format forward carries `smb_message_echoes` (the owner's answers from the phone) and
+  `message_template_status_update`: Kapso says it forwards "all Meta webhook events" and "the exact payload Meta sends",
+  but does not list the fields its app subscribes to. Without echoes, Toran would not step back when the owner answers
+  from the phone (it still does when they answer from the inbox). Check with the first store: answer from the phone and
+  see it in the inbox.
+- That deleting a number from the project releases it at Meta at once for a later connect (a coexistence number's own
+  app is untouched either way).
+- That `customer_managed` billing works on Kapso's own Meta app for a store with no payment method yet: templates then
+  fail at Meta until the store adds one, as on our own app (the store's page says so for the automatic messages).
+- That an Israeli number is eligible: nothing lists Israel as excluded; the first store will tell.
+
+**To set it up** (the owner, in Kapso's dashboard, then on the server):
+
+1. Sign up at kapso.ai, make a project, and pick a plan (Pro for more than the free plan's messages).
+2. API keys: make one for the project. It is `KAPSO_API_KEY`.
+3. Integrations, Webhooks, Platform webhooks, Add webhook: `https://toran.openfrequency.co.il/kapso/events`, payload
+   version v2, events `whatsapp.phone_number.created`, `.deleted`, `.offboarded`, `.disconnected`, `.reconnected`.
+   Copy its secret: `KAPSO_EVENTS_SECRET`.
+4. Choose a long random secret for the numbers' webhooks (Toran registers them itself): `KAPSO_WEBHOOK_SECRET`, at
+   least 16 characters, e.g. `openssl rand -hex 32`.
+5. In Toran's `private/.env`, then restart:
+   ```
+   TORAN_WA_PROVIDER=kapso
+   KAPSO_API_KEY=<the key>
+   KAPSO_WEBHOOK_SECRET=<the secret you chose>
+   KAPSO_EVENTS_SECRET=<the Platform webhook's secret>
+   ```
+   (`KAPSO_META_BILLING=partner_managed` only if we pay Meta for the stores' templates from Kapso credits; it cannot be
+   changed later for a connected store.) Migration 049 runs with the deploy.
+6. Connect a test store from its WhatsApp page, write to it from another phone, answer once from the WhatsApp Business
+   app, and check both show in the inbox.
+
+Undo: `TORAN_WA_PROVIDER=meta` and restart. Numbers already connected through Kapso keep answering until they are
+disconnected; new connects use Meta's window.
 
 ## Step 3. Our demo number and owner line: Twilio or Meta, built
 
