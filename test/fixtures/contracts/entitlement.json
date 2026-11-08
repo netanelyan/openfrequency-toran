@@ -20,7 +20,7 @@
           "product": "teder | toran"
         }
       },
-      "notes": "Decide on `allowed` alone; `access` says why. `access` is one of paid, comp, due, unpaid, cancelled, off: a reader must accept every one of them (due is new on 2026-10-29). `plan` is in Teder's answers only. The instants are the ends of Israel days, in UTC.",
+      "notes": "Decide on `allowed` alone; `access` says why. `access` is one of paid, comp, due, unpaid, cancelled, off: a reader must accept every one of them (due is new on 2026-10-29). `plan` is in every 200 answer: Teder's is { name: full | small, slideshows, redos }, Toran's { name: store | big, conversations } (Toran's since 2026-11-08; a reader must accept a plan it does not know). The instants are the ends of Israel days, in UTC.",
       "answers": [
         {
           "case": "paid (Teder, the small plan)",
@@ -143,7 +143,30 @@
           ]
         },
         {
-          "case": "off (Toran: no plan)",
+          "case": "paid (Toran, the big plan)",
+          "status": 200,
+          "body": {
+            "workspace": 7,
+            "product": "toran",
+            "enabled": true,
+            "access": "paid",
+            "allowed": true,
+            "paidThrough": "2026-11-21T21:59:59.999Z",
+            "cancelAt": null,
+            "graceUntil": null,
+            "plan": {
+              "name": "big",
+              "conversations": 1500
+            }
+          },
+          "nullable": [
+            "paidThrough",
+            "cancelAt",
+            "graceUntil"
+          ]
+        },
+        {
+          "case": "off (Toran, its plan as a new subscription would start)",
           "status": 200,
           "body": {
             "workspace": 7,
@@ -153,7 +176,11 @@
             "allowed": false,
             "paidThrough": null,
             "cancelAt": null,
-            "graceUntil": null
+            "graceUntil": null,
+            "plan": {
+              "name": "store",
+              "conversations": 300
+            }
           },
           "nullable": [
             "paidThrough",
