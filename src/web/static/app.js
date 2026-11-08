@@ -356,6 +356,31 @@
     else for (const ev of ['load', 'error']) img.addEventListener(ev, () => mark(img), { once: true });
   }
 
+  // The parts that fold away on a phone (ui.ts fold, as Teder's): folded as a phone opens the page, except the one a link
+  // points into and one that was open before the page came back (each page keeps which, for this tab only); from 700px
+  // every one is open, and a phone turned wide opens them.
+  const folds = [...document.querySelectorAll('details[data-mfold]')];
+  if (folds.length) {
+    const phone = window.matchMedia('(max-width: 699px)');
+    const KEPT = `tn-mfold:${location.pathname}`;
+    let kept = [];
+    try { kept = JSON.parse(sessionStorage.getItem(KEPT)) || []; } catch { kept = []; }
+    const target = () => (location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null);
+    const unfold = (el) => { for (let d = el?.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true; };
+    if (phone.matches) {
+      for (const d of folds) d.open = Array.isArray(kept) && kept.includes(d.dataset.mfold);
+      const t = target();
+      if (t?.closest('details[data-mfold]')) {
+        unfold(t);
+        requestAnimationFrame(() => t.scrollIntoView({ block: 'start' }));
+      }
+    }
+    const keep = () => { try { sessionStorage.setItem(KEPT, JSON.stringify(folds.filter((d) => d.open).map((d) => d.dataset.mfold))); } catch { /* a browser that keeps nothing */ } };
+    for (const d of folds) d.addEventListener('toggle', () => { if (phone.matches) keep(); });
+    phone.addEventListener?.('change', () => { if (!phone.matches) for (const d of folds) d.open = true; });
+    window.addEventListener('hashchange', () => unfold(target()));
+  }
+
   // The waiting count, live (TORAN-READINESS.md P1-13): while the page is visible, /waiting.json every 45 seconds keeps
   // the Chats badge (side bar and tab bar) and the tab's title true. A conversation that started waiting since the page
   // loaded is said once, with the way to it; an open conversation's own page is left as it is.

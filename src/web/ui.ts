@@ -155,6 +155,14 @@ export type PageCtx = {
  */
 const PAY_DAY = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'long', day: 'numeric', month: 'long' });
 const PAY_DATE = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'long' });
+/**
+ * A part of a page that folds away on a phone, as Teder's fold (TORAN-READINESS.md P1-19; the owner, 2026-11-05, on an
+ * iPhone: "too many things jump to the eyes at the same time"): there one row with its name, opened with a tap; from
+ * 700px open, and the row is not drawn. static/app.js folds it as a phone opens the page, except the one a link points
+ * into and one that was open before the page came back; without the script it stays open. Nothing, for nothing inside.
+ */
+export const fold = (key: string, label: string, inner: string) => (inner ? `<details class="mfold one" data-mfold="${esc(key)}" open><summary>${esc(label)}</summary>${inner}</details>` : '');
+
 export function payBanner(ctx: Pick<PageCtx, 'pay' | 'payHref'>): string {
   const r = ctx.pay;
   if (!r || !ctx.payHref) return '';

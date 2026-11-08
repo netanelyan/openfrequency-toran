@@ -931,3 +931,18 @@ li.review .stars { color: var(--warn); letter-spacing: 1px; font-weight: 600; }
 /* Today's "מה נשאר" (pages/customer.ts setupBlock): a step that is done is a row, not a link, laid out like the links. */
 .list .li { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
 .setupbox details > summary { cursor: pointer; }
+
+/* A fold (ui.ts fold, as Teder's): from 700px open, with no row of its own; on a phone a glass row with its name and the
+   chevron, and open, its panel is the tile's body (TORAN-READINESS.md P1-19). */
+@media (min-width: 700px) { details.mfold > summary { display: none; } }
+.grid12 > details.mfold + details.mfold { margin-top: 0; }
+details.mfold > summary { list-style: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+details.mfold > summary::-webkit-details-marker { display: none; }
+@media (max-width: 699px) {
+  details.mfold { border-radius: var(--r); background: linear-gradient(180deg, var(--surface-hi), var(--surface)); backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px); box-shadow: var(--shadow-tile), inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--rim); scroll-margin-top: calc(var(--top) + 16px); }
+  details.mfold > summary { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 20px; font: 600 16px/1.25 var(--display); color: var(--ink); }
+  details.mfold > summary::after { content: ''; flex: none; margin-inline-start: auto; width: 9px; height: 9px; border-inline-end: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3); transform: rotate(45deg); transition: transform 0.2s ease; }
+  details.mfold[open] > summary::after { transform: rotate(-135deg); }
+  details.mfold > .panel { margin: 0; padding: 4px 20px 20px; border-radius: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  details.mfold.one > .panel > header:first-child > :is(h2, h3) { display: none; }
+}
