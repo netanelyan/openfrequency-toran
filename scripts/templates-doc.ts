@@ -96,6 +96,10 @@ reminder.
 create the four, then set \`META_WABA_ID\` in Toran's \`.env\` so the template's own status and score are read too.
 Nothing else is set when Meta approves them: until then each send is refused (code 132001) and said on the page.
 
+**Submitted 2026-11-08** through the API from the server, the four bodies below exactly, with \`META_SYSTEM_TOKEN\` and
+\`META_WABA_ID\` from Toran's \`.env\` (set that day): toran_pitch 1444525310439161, toran_pitch_reminder
+1472889768241947, teder_pitch 1713644520160356, teder_pitch_reminder 1823784592265147, each answered PENDING, MARKETING.
+
 ${outreachTemplateDoc()}
 ## The owner line (not sent since 2026-11-02)
 
