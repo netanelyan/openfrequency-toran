@@ -208,22 +208,26 @@ export async function finishZernioConnect(app: App, storeId: number, channel: So
 }
 
 /** An account off here; one connected through Zernio is disconnected there too (its Page or account itself stays). */
-async function offAccount(app: App, a: { id: number; kind: string; external_id: string }) {
+async function offAccount(app: App, a: { id: number; kind: string; external_id: string }, strict = false) {
   if (a.kind === 'zernio') {
     try {
       await api(app, 'DELETE', `accounts/${a.external_id}`);
     } catch (e: any) {
-      if (!(e instanceof GraphError && e.status === 404)) app.log(`[zernio] disconnect of account ${a.external_id} failed (it is off here anyway): ${e?.message || e}`);
+      if (!(e instanceof GraphError && e.status === 404)) {
+        if (strict) throw e;
+        app.log(`[zernio] disconnect of account ${a.external_id} failed (it is off here anyway): ${e?.message || e}`);
+      }
     }
   }
   await app.db.query("UPDATE channel_accounts SET status = 'off', secret = NULL WHERE id = $1", [a.id]);
 }
 
 /** "לנתק": the account leaves Zernio, and Toran stops answering in it. */
-export async function disconnectZernio(app: App, storeId: number, channel: Social, by: string) {
+/** `strict` (retention.ts, a stopped store): a removal Zernio refuses throws, and the account stays on here to be tried again. */
+export async function disconnectZernio(app: App, storeId: number, channel: Social, by: string, { strict = false }: { strict?: boolean } = {}) {
   const a = await app.db.one<{ id: number; kind: string; external_id: string }>("SELECT id, kind, external_id FROM channel_accounts WHERE store_id = $1 AND channel = $2 AND kind = 'zernio' AND status <> 'off' ORDER BY id DESC LIMIT 1", [storeId, channel]);
   if (!a) return false;
-  await offAccount(app, a);
+  await offAccount(app, a, strict);
   await audit(app.db, { actor: by, action: `${channel}_disconnect`, storeId, detail: { accountId: a.id, via: 'zernio' } });
   await event(app.db, storeId, `${LEDGER[channel].tag}_disconnected`, { accountId: a.id, via: 'zernio' });
   return true;

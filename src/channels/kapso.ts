@@ -231,14 +231,18 @@ export async function checkKapsoAccount(app: App, accountId: number) {
 }
 
 /** "לנתק": the number leaves our Kapso project, and Toran stops answering in it. The app on the phone stays as it is. */
-export async function disconnectKapso(app: App, storeId: number, by: string) {
+/** `strict` (retention.ts, a stopped store): a delete Kapso refuses throws, and the number stays on here to be tried again. */
+export async function disconnectKapso(app: App, storeId: number, by: string, { strict = false }: { strict?: boolean } = {}) {
   const a = await app.db.one<{ id: number; external_id: string }>("SELECT id, external_id FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND kind = 'kapso' AND status <> 'off' ORDER BY id DESC LIMIT 1", [storeId]);
   if (!a) return false;
   try {
     await platform(app, 'DELETE', `whatsapp/phone_numbers/${a.external_id}`);
   } catch (e: any) {
     // Already gone at Kapso is what we wanted; anything else is logged, and the number is off here anyway.
-    if (!(e instanceof GraphError && e.status === 404)) app.log(`[kapso] delete of number ${a.external_id} failed (it is off here anyway): ${e?.message || e}`);
+    if (!(e instanceof GraphError && e.status === 404)) {
+      if (strict) throw e;
+      app.log(`[kapso] delete of number ${a.external_id} failed (it is off here anyway): ${e?.message || e}`);
+    }
   }
   await app.db.query("UPDATE channel_accounts SET status = 'off' WHERE id = $1", [a.id]);
   await audit(app.db, { actor: by, action: 'whatsapp_disconnect', storeId, detail: { accountId: a.id, via: 'kapso' } });
