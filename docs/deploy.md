@@ -238,7 +238,7 @@ operator's own WhatsApp as one template message each, from our number on Meta (s
 section 6).
 
 1. **The template.** `operator_alert`, in WhatsApp Manager on the account that holds our number, exactly as
-   docs/whatsapp-templates.md has it (submitted 2026-11-03, in review). Nothing is set in Toran when it is approved.
+   docs/whatsapp-templates.md has it (submitted 2026-11-03, approved by Meta, filed as Marketing). Nothing is set in Toran when it is approved.
 2. **The number.** In `/opt/toran/private/.env`: `TORAN_ALERT_WA=<your number>`, in any spelling. Our number must be
    on Meta already (`META_DEMO_PHONE_ID` or our one number, and `META_SYSTEM_TOKEN`), as it is since 2026-10-31.
    Restart Toran.

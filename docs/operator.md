@@ -407,8 +407,8 @@ What keeps a customer's message from being lost or delayed without anyone knowin
   - the automatic messages' log 90 days after it was written, events after 13 months, the owner line's duplicate
     guard after 30 days; conversations silent for 14 days are closed, and the tracking numbers and links an order
     lookup gave are taken out of them
-  - The 90 days and 13 months are Toran's own; the privacy page (openfrequency-web) states only the leads' 6 months
-    and the conversations' 30 days, so it should state these too.
+  - The 90 days and 13 months are Toran's own, and the privacy page (openfrequency-web, legal.mjs) states them beside
+    the leads' 6 months and the conversations' 30 days.
 - **Our support's re-read of the site** (src/jobs/reread.ts), with `TORAN_SUPPORT_EXPORT_URL` set: once an Israel day
   and soon after each start, one `company_reread` event and one `[reread]` log line (`journalctl -u toran | grep
   '\[reread\]'`). The store is synced only when the site's /support.json changed, and a failed read changes nothing
@@ -536,3 +536,22 @@ docs/setup.md, the daily job), and Toran sends it (`src/billing/remind.ts`). The
 - **What is kept.** Each try is an event of kind `pay_reminder_wa` (`{ key, workspace, kind, phone, state, id | code,
   error }`, `state` sending, sent, failed or undelivered), and a sent one a usage row (`wa_pay_reminder`). They go with
   the workspace when accounts deletes it, and with every event after 13 months.
+
+## 9. A customer's store, watched (2026-11-08)
+
+What the operator is told about customers' stores, and where (TORAN-READINESS.md P0-2, P1-25, P1-26; the routine is
+[first-customer.md](first-customer.md)):
+
+- **The health table:** `GET /internal/ops` has `customers`, one row a customer's store (src/ops/health.ts): paid,
+  `live` / `paused` / `never` (src/golive.ts), channels and their state, the month's conversations against the plan,
+  customers waiting over a day, the month's model spend against its cap, and the last alert. accounts' /admin shows it
+  once its contract and reader take it (test/contracts.test.ts records it as Toran's own until then).
+- **Alerts** (src/ops/alert.ts, each key at most once in its window): `waiting:<store>` in a store's first 14 days
+  (src/owners/waiting.ts); `kapso_reconnect:<store>` and `kapso_gone:<store>` (Kapso's events);
+  `zernio_gone:<store>:<channel>`; `kapso_credits` (Kapso refusing sends for lack of credit, from the worker);
+  `over_plan:<store>:<month>` and `stuck:<store>` once a day (src/ops/watch.ts); `disconnect:<store>:<channel>` when a
+  stopped store's channel could not be removed (src/jobs/retention.ts); `signup-switch` when Toran, accounts and the
+  website disagree about selling Toran (src/ops/signupSwitch.ts).
+- **The owner's emails** go through accounts' `/internal/notify` as product toran (src/owners/notify-client.ts):
+  `conversation_waiting` (a digest of customers waiting, src/owners/waiting.ts) and `monthly` (the 1st, from 09:00,
+  src/owners/reports.ts). Toran's own mail sends the waiting digest only when accounts cannot be asked.

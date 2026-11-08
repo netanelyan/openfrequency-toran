@@ -18,6 +18,9 @@ export type Offer = {
   vat: 'included' | 'excluded' | null;
   setup: number | null; // ₪ once; 0 means no setup fee, null means not decided
   city: string; // the footer: "OpenFrequency, <city>"
+  // The big plan's ₪ a month (plans.ts "חנות גדולה", 1,500 conversations), shown beside the store plan on a pitch page
+  // once Toran is on sale (pitch/page.ts). Null: the page shows the store plan alone.
+  bigMonthly?: number | null;
 };
 
 export const OFFER_DEFAULT: Offer = { monthly: null, vat: null, setup: null, city: 'אשדוד' };
@@ -28,8 +31,10 @@ export async function getOffer(db: Db): Promise<Offer> {
   return { ...OFFER_DEFAULT, ...(row?.value || {}) };
 }
 
-export async function setOffer(db: Db, o: Offer): Promise<void> {
-  await db.query('INSERT INTO settings (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [KEY, J(o)]);
+/** Saved over what is there: a field the form does not carry (bigMonthly on an older form) stays as it was. */
+export async function setOffer(db: Db, o: Partial<Offer>): Promise<void> {
+  const now = await getOffer(db);
+  await db.query('INSERT INTO settings (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [KEY, J({ ...now, ...o })]);
 }
 
 export const offerReady = (o: Offer) => o.monthly != null && o.monthly > 0 && o.vat != null && o.setup != null;

@@ -13,6 +13,8 @@ import { workerBeat } from '../health.ts';
 import { BOOT, beat, claim, done, enqueue, fail, MESSAGE_KINDS, progress, requeueOrphans, type Job } from './queue.ts';
 import { lostMessage } from './lost.ts';
 import { dailyRetention } from './retention.ts';
+import { watchStores } from '../ops/watch.ts';
+import { monthlyReports } from '../owners/reports.ts';
 import { rereadCompany, scheduleReread } from './reread.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { interruptedSends } from '../auto/send.ts';
@@ -26,6 +28,7 @@ import { finishZernioConnect, zernioEcho } from '../channels/zernio.ts';
 import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } from '../auto/jobs.ts';
 import { checkTemplates, templateStatus } from '../auto/templates.ts';
+import { waitingDigest } from '../owners/waiting.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -131,6 +134,9 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
         const mine = await app.db.one('UPDATE stores SET workspace_id = $2, updated_at = now() WHERE id = $1 AND workspace_id IS NULL RETURNING id', [store.id, workspaceId]);
         if (!mine) throw new Error('the store is already another workspace\'s');
       }
+      // A customer's store starts switched off (golive.ts): its owner switches Toran on once its channels and answers
+      // are ready. One that already answers on a channel of its own is left as it is.
+      if (workspaceId) await app.db.query('UPDATE stores SET agent_live_at = NULL, agent_paused_at = NULL WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM channel_accounts a WHERE a.store_id = stores.id)', [store.id]);
       // Asked for on the website: the number that asked is the one to send the page to.
       if (/^9725\d{8}$/.test(String(p.whatsapp || ''))) await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [store.id, p.whatsapp]);
       if (!canIngest(store.platform)) return { storeId: store.id, stats: r.stats, ingested: false, why: `the platform is ${store.platform}: Toran reads ${INGESTIBLE_EN} stores` };
@@ -169,6 +175,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return handleTederReady(app, Number(p.workspace));
     case 'company_reread':
       return rereadCompany(app);
+    case 'owner_waiting':
+      return waitingDigest(app, Number(p.storeId));
     case 'ingest':
     case 'rescrape':
       return { storeId: p.storeId, ...(await ingestAndBuild(app, Number(p.storeId), say, job.kind === 'rescrape')) };
@@ -228,6 +236,10 @@ export async function schedule(app: App) {
   if (old?.n) await alertOperator(app, 'queue_old', 'הודעות של לקוחות מחכות בתור', `${old.n} הודעות מחכות יותר מ-${QUEUE_ALERT_MINUTES} דקות, הוותיקה מ-${old.at}. כדאי לבדוק שה-worker של תורן רץ, ולהסתכל בדף התור.`, { everyMinutes: 30 });
   // Once a day, the retention pass; and our support's re-read of the website, once a day and soon after a start.
   await dailyRetention(app);
+  // Once a day: a customer store over its plan, or stuck with nothing connected (ops/watch.ts).
+  await watchStores(app).catch((e) => app.log(`[watch] ${e?.message || e}`));
+  // On the 1st from 09:00: last month's results to each customer store's owners (owners/reports.ts).
+  await monthlyReports(app).catch((e) => app.log(`[reports] ${e?.message || e}`));
   await scheduleReread(app);
 }
 
@@ -253,6 +265,8 @@ export async function runOne(app: App, job: Job, { boot = BOOT }: { boot?: strin
     await done(app.db, job.id, result ?? null);
   } catch (e: any) {
     app.log(`[job ${job.id} ${job.kind}] ${cleanLine(e?.stack || e?.message || e, 800)}`);
+    // Kapso out of credit refuses every send of every store on it: said to the operator at once (TORAN-READINESS.md P1-25).
+    if (/Kapso refused [^(]*\(402|insufficient_credits/.test(String(e?.message || e))) await alertOperator(app, 'kapso_credits', 'תורן: נגמר הקרדיט ב-Kapso', 'Kapso מסרב לשלוח (insufficient_credits), אז הודעות של חנויות בוואטסאפ לא יוצאות. להוסיף קרדיט בלוח של Kapso.', { everyMinutes: 60 }).catch(() => {});
     const last = await fail(app.db, job, String(e?.message || e));
     // A customer's message that failed every attempt: kept in its conversation for the owner, and said to the operator.
     if (last && MESSAGE_KINDS.includes(job.kind)) await lostMessage(app, job, String(e?.message || e)).catch((x) => app.log(`[job ${job.id}] the lost message could not be kept: ${x?.message || x}`));

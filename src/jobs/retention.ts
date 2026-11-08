@@ -7,6 +7,10 @@ import { type Db, J } from '../db/index.ts';
 import { event } from '../db/log.ts';
 import { closeSilent } from '../channels/conversations.ts';
 import { refreshWorkspaces } from '../billing/entitlement.ts';
+import { disconnectKapso } from '../channels/kapso.ts';
+import { disconnectZernio } from '../channels/zernio.ts';
+import type { Social } from '../channels/social.ts';
+import { alertOperator } from '../ops/alert.ts';
 
 // How long Toran keeps what it keeps, and the daily pass that holds it to that (the worker's schedule, once an Israel
 // day). The periods the website publishes (openfrequency-web: legal.leadMonths, price.keepDays) are the first two:
@@ -31,6 +35,8 @@ import { refreshWorkspaces } from '../billing/entitlement.ts';
 // Each run writes one event (retention) with what it deleted, and a log line, so the operator can show the policy holds.
 
 export const SERVICE_KEEP_DAYS = 30;
+/** A stopped store's channels at Kapso and Zernio are disconnected this long after the stop, as Teder's are. */
+export const DISCONNECT_DAYS = 3;
 export const LEAD_MONTHS = 6;
 export const AUTO_EVENTS_DAYS = 90;
 export const EVENTS_MONTHS = 13;
@@ -95,6 +101,24 @@ export async function retention(app: App): Promise<Record<string, number>> {
   add('stopped', await n(db, "UPDATE stores SET service_stopped_at = COALESCE(taken_down_at, now()), service_stopped_why = 'taken_down' WHERE service_stopped_at IS NULL AND taken_down_at IS NOT NULL RETURNING id"));
   add('resumed', await n(db, `UPDATE stores s SET service_stopped_at = NULL, service_stopped_why = NULL WHERE s.service_stopped_why = 'channels'
       AND EXISTS (SELECT 1 FROM channel_accounts a WHERE a.store_id = s.id AND a.status IN ('active', 'pending', 'reconnect', 'line')) RETURNING id`));
+  // A stopped store's own channels at Kapso and Zernio go DISCONNECT_DAYS after the stop, as Teder's Zernio accounts
+  // do (the terms: "אנחנו מנתקים אותו מהצד שלנו"; a Kapso number costs us every month). One the provider refuses stays
+  // on here and is tried again the next day, and the operator hears of it (TORAN-READINESS.md P1-24).
+  const leaving = await db.query<{ store_id: number; channel: string; kind: string }>(
+    `SELECT DISTINCT a.store_id, a.channel, a.kind FROM channel_accounts a JOIN stores s ON s.id = a.store_id
+     WHERE a.kind IN ('kapso', 'zernio') AND a.status <> 'off' AND s.service_stopped_at < now() - interval '${DISCONNECT_DAYS} days'`,
+  );
+  for (const a of leaving) {
+    try {
+      const done = a.kind === 'kapso' ? await disconnectKapso(app, a.store_id, 'retention', { strict: true }) : await disconnectZernio(app, a.store_id, a.channel as Social, 'retention', { strict: true });
+      if (done) add('disconnected', 1);
+    } catch (e: any) {
+      add('disconnectFailed', 1);
+      app.log(`[retention] store ${a.store_id}: ${a.kind} ${a.channel} could not be disconnected, tried again tomorrow: ${e?.message || e}`);
+      await alertOperator(app, `disconnect:${a.store_id}:${a.channel}`, `תורן: לא הצלחנו לנתק ${a.kind === 'kapso' ? 'מספר וואטסאפ ב-Kapso' : `חשבון ${a.channel} ב-Zernio`} של חנות ${a.store_id}`, 'השירות של החנות נעצר, והניתוק נכשל. מנסים שוב מחר. אם זה חוזר, לנתק ביד בלוח של הספק.', { storeId: a.store_id, everyMinutes: 24 * 60 }).catch(() => {});
+    }
+  }
+
   const due = await db.query<{ id: number }>(`SELECT id FROM stores WHERE service_stopped_at < now() - interval '${SERVICE_KEEP_DAYS} days'`);
   for (const s of due) {
     const r = await db.tx((t) => forgetStore(t, s.id));

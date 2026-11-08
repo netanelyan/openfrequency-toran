@@ -1,5 +1,9 @@
 # Phase 1, milestone by milestone
 
+> A record of what each milestone delivered when it was done, not of today. What is "not done" below (a real number
+> on Twilio, the gate on the first pages) was overtaken: our number has been on Meta since 2026-10-31, stores' own
+> numbers connect through Kapso since 2026-11-08 (docs/connecting-channels.md), and the pages are reviewed in the dashboard.
+
 For each milestone: what changed, the files, how it was tested, what is still weak. The numbers from real stores
 come from runs on the development machine. The stores themselves are named only in `private/` (this file is
 public).

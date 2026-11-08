@@ -199,7 +199,7 @@ over 1,600 characters now goes in parts, where Twilio would have refused it whol
   message.
 - Each channel is `off`, `demo` or `live` in the global list, so the website never calls a demo "live".
 - Channel connections belong to a store (its knowledge pack answers them); a workspace's list is its stores'.
-- Email is sent from our own subdomain first, and from the store's own domain later.
+- Email is sent from our own subdomain first, and from the store's own domain once it is proved (built: docs/customer.md).
 - OpenFrequency is the business for Meta's verification, and its own Page and Instagram account carry the demo.
 
 ## 2026-10-23: email, the first channel past WhatsApp

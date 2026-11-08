@@ -53,7 +53,7 @@ async function pitchApp(env: Record<string, string> = {}) {
   const logs: string[] = [];
   app.graph = meta.f;
   app.log = (m: string) => logs.push(m);
-  Object.assign(app.env, META_DEMO, { META_WABA_ID: WABA, DEMO_WA_NUMBER: '972500000900' }, env);
+  Object.assign(app.env, META_DEMO, { META_WABA_ID: WABA, DEMO_WA_NUMBER: '972500000900', TORAN_SIGNUP_OPEN: '1' }, env);
   outreach.forgetQuality();
   setNow(NOON);
   return { app, meta, logs };
@@ -81,6 +81,53 @@ test('the six templates keep Meta\'s rules, read as the store reads them, and do
   assert.match(outreach.outreachFilled(outreach.OUTREACH_TEMPLATES.toran_first), /^היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן,/);
   const doc = readFileSync(path.join(ROOT, 'docs', 'whatsapp-templates.md'), 'utf8');
   assert.ok(doc.includes(outreach.outreachTemplateDoc()), 'docs/whatsapp-templates.md has the pitches as the code writes them (node scripts/templates-doc.ts)');
+});
+
+test('while Toran is not on sale (TORAN_SIGNUP_OPEN), no pitch about it goes out: Toran\'s and the combined one are refused, Teder\'s alone goes', async () => {
+  const { app, meta } = await pitchApp({ TORAN_SIGNUP_OPEN: '' });
+  try {
+    const out = await outreach.sendPitch(app, pitch());
+    assert.deepEqual(out, { sent: false, why: 'not_on_sale', said: outreach.SAID_HE.not_on_sale });
+    assert.equal(meta.sends().length, 0, 'nothing sent');
+    assert.equal((await app.db.query("SELECT 1 FROM events WHERE kind = 'outreach_wa'")).length, 0, 'nothing marked');
+    const teder = await outreach.sendPitch(app, pitch({ product: 'teder', url: 'https://teder.openfrequency.co.il/s/nurit-a1b2c3' }));
+    assert.equal(teder.sent, true, "Teder's pitch is Teder's to send");
+  } finally {
+    await app.db.close();
+  }
+});
+
+test("Toran's opening to its waitlist: once a number, as toran_launch with the website's Toran page on its button, and only once Toran is on sale", async () => {
+  const { app, meta } = await pitchApp();
+  try {
+    const launch = { product: 'toran' as const, stage: 'launch' as const, phone: PHONE, name: 'כלי חרס של נורית', url: '', ref: 'waitlist:1', by: 'Demo' };
+    const out = await outreach.sendPitch(app, launch);
+    assert.equal(out.sent, true);
+    const [send] = meta.sends();
+    assert.equal(send.body.template.name, 'toran_launch');
+    assert.deepEqual(send.body.template.components.find((c: any) => c.sub_type === 'url').parameters, [{ type: 'text', text: 'toran' }], "the website's /toran");
+    assert.equal((await outreach.sendPitch(app, launch)).why, 'already', 'once a number');
+    assert.equal((await outreach.sendPitch(app, { ...launch, product: 'teder' as const })).why, 'bad_page', "the opening is Toran's alone");
+    assert.deepEqual(outreach.readPitch(JSON.stringify({ ...launch, url: undefined })), { ...launch, url: '' });
+    assert.equal(outreach.readPitch(JSON.stringify({ ...launch, url: 'https://toran.openfrequency.co.il/s/x' })), null, 'no page on the opening');
+    assert.match(outreach.outreachTemplateDoc(), /### toran_launch/);
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('the sign-up switch is said once a start: quiet when Toran, accounts and the site agree, loud and alerted when they do not', async () => {
+  const { checkSignupSwitch } = await import('../src/ops/signupSwitch.ts');
+  const { app } = await pitchApp({ TORAN_SIGNUP_OPEN: '', OF_INTERNAL_TOKEN: '' });
+  try {
+    const logs: string[] = [];
+    app.log = (l: string) => void logs.push(l);
+    const r = await checkSignupSwitch(app, { site: async () => ({ open: false }) });
+    assert.equal(r.agree, false, "accounts could not be asked: that is not agreement");
+    assert.match(r.line, /!!! Toran's sign-up switch disagrees: Toran \(TORAN_SIGNUP_OPEN\) closed, accounts \(OF_SIGNUP_PRODUCTS\) couldn't check \(not_configured\), the website \(site\.config\.json signup\) closed/);
+  } finally {
+    await app.db.close();
+  }
 });
 
 test('a pitch goes once as the template: the store with its "ל", the page\'s slug on the URL button, the way out as the second button', async () => {
@@ -266,7 +313,7 @@ test('POST /internal/outreach/send, as the contract says (test/fixtures/outreach
   const s = await serve();
   const meta = fakeMeta();
   s.app.graph = meta.f;
-  Object.assign(s.app.env, META_DEMO, { META_WABA_ID: WABA, OF_INTERNAL_TOKEN: INTERNAL_TOKEN });
+  Object.assign(s.app.env, META_DEMO, { META_WABA_ID: WABA, OF_INTERNAL_TOKEN: INTERNAL_TOKEN, TORAN_SIGNUP_OPEN: '1' });
   outreach.forgetQuality();
   setNow(NOON);
   const post = (body: unknown, token: string | null = INTERNAL_TOKEN, method = 'POST') =>

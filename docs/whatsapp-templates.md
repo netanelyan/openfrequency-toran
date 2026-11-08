@@ -8,11 +8,12 @@ after the person last wrote to us. Four sets:
   hours too, so it is never refused for the window.
 - **The owner line's five**, not sent since 2026-11-02, kept below as the record of what was approved.
 - **The payment reminder, `payment_reminder`**: accounts' reminders to pay for the new month, to a workspace owner's
-  number accounts verified and to the number a workspace last paid from, from `src/billing/remind.ts`. Not created in
-  WhatsApp Manager yet: see its section.
+  number accounts verified and to the number a workspace last paid from, from `src/billing/remind.ts`. Submitted, in
+  review at Meta since 2026-11-04 (STATUS.md): see its section.
 - **The pitches to leads, `toran_pitch`, `toran_pitch_reminder`, `teder_pitch`, `teder_pitch_reminder`**, since
-  2026-11-08: the first message to a lead and its one reminder, from `src/ops/outreach.ts`. Not created yet: see
-  their section.
+  2026-11-08: the first message to a lead and its one reminder, from `src/ops/outreach.ts`. Approved
+  on 2026-11-08, with the combined openfrequency_pitch two; toran_launch, Toran's opening to its waitlist, is not
+  submitted yet: see their section.
 
 This file is written from `src/ops/alert.ts`, `src/billing/remind.ts`, `src/ops/outreach.ts` and
 `src/owners/templates.ts`. Change the
@@ -23,8 +24,8 @@ templates there, then run `node scripts/templates-doc.ts`; a test fails while th
 Submitted by hand on 2026-11-03 in WhatsApp Manager (Message templates), on the WhatsApp account that holds our number
 (the one `META_DEMO_PHONE_ID` names), exactly as below: category **Utility** (it tells the business's own operator
 about their own system, and sells nothing), no header, no footer, no buttons, the body's four lines and the two sample
-values. It was **in review** that day. Meta's precheck called it Marketing, so it may be approved as Marketing (it is
-still sent by its name, at Meta's Marketing rate) or rejected.
+values. Meta approved it, filing it as Marketing (STATUS.md, 2026-11-04): it is sent by its name, at Meta's Marketing
+rate.
 
 Nothing is set in Toran when Meta approves it: there is no list of approved names for it. Until then each try is
 refused (Meta's code 132001, "template name does not exist"), and so is every try after a rejection: each refusal is a
@@ -309,6 +310,35 @@ Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp acco
 curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
   --data '{"name":"openfrequency_pitch_reminder","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ במה שהכנו {{1}}? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+```
+
+### toran_launch
+
+| | |
+|---|---|
+| Name | toran_launch |
+| Category | Marketing |
+| Language | Hebrew (he) |
+| Header, footer | none |
+| Buttons | a URL button, "להצטרף לתורן", to https://openfrequency.co.il/{{1}} (sample toran); then a quick reply, "הסירו אותי" |
+| Variables (sample) | {{1}} = לכלי חרס של נורית |
+
+The body, exactly:
+
+```
+היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.
+
+המחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב.
+```
+
+As the store reads it: היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו לכלי חרס של נורית: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע. / המחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב. [להצטרף לתורן] [הסירו אותי]
+
+Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
+
+```sh
+curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
+  -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
+  --data '{"name":"toran_launch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"להצטרף לתורן","url":"https://openfrequency.co.il/{{1}}","example":["https://openfrequency.co.il/toran"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
 ## The owner line (not sent since 2026-11-02)

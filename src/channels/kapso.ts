@@ -6,6 +6,7 @@ import { isCompany } from '../company.ts';
 import { lineNumber, lineOf, oneNumber, withOne } from './lines.ts';
 import { GraphError, waConnectReady } from './meta.ts';
 import { OURS_HE } from './waStore.ts';
+import { alertOperator } from '../ops/alert.ts';
 
 // A store's own WhatsApp number through Kapso (docs.kapso.ai), while our own Meta app waits for its review (the owner,
 // 2026-11-08: "i cant wait for the meta app approval ... lets build toran around that, make it live"). Kapso's Meta app
@@ -231,14 +232,18 @@ export async function checkKapsoAccount(app: App, accountId: number) {
 }
 
 /** "לנתק": the number leaves our Kapso project, and Toran stops answering in it. The app on the phone stays as it is. */
-export async function disconnectKapso(app: App, storeId: number, by: string) {
+/** `strict` (retention.ts, a stopped store): a delete Kapso refuses throws, and the number stays on here to be tried again. */
+export async function disconnectKapso(app: App, storeId: number, by: string, { strict = false }: { strict?: boolean } = {}) {
   const a = await app.db.one<{ id: number; external_id: string }>("SELECT id, external_id FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND kind = 'kapso' AND status <> 'off' ORDER BY id DESC LIMIT 1", [storeId]);
   if (!a) return false;
   try {
     await platform(app, 'DELETE', `whatsapp/phone_numbers/${a.external_id}`);
   } catch (e: any) {
     // Already gone at Kapso is what we wanted; anything else is logged, and the number is off here anyway.
-    if (!(e instanceof GraphError && e.status === 404)) app.log(`[kapso] delete of number ${a.external_id} failed (it is off here anyway): ${e?.message || e}`);
+    if (!(e instanceof GraphError && e.status === 404)) {
+      if (strict) throw e;
+      app.log(`[kapso] delete of number ${a.external_id} failed (it is off here anyway): ${e?.message || e}`);
+    }
   }
   await app.db.query("UPDATE channel_accounts SET status = 'off' WHERE id = $1", [a.id]);
   await audit(app.db, { actor: by, action: 'whatsapp_disconnect', storeId, detail: { accountId: a.id, via: 'kapso' } });
@@ -282,11 +287,13 @@ export async function kapsoEvent(app: App, name: string, body: any) {
   if (name === 'whatsapp.phone_number.deleted') {
     await app.db.query("UPDATE channel_accounts SET status = 'off' WHERE id = $1", [a.id]);
     await event(app.db, a.store_id, 'wa_disconnected', { accountId: a.id, via: 'kapso', by: 'kapso' });
+    await alertOperator(app, `kapso_gone:${a.store_id}`, `תורן: הוואטסאפ של חנות ${a.store_id} נמחק ב-Kapso`, 'המספר הוסר מהפרויקט ב-Kapso, ותורן כבר לא עונה בו. אם זה לא היה מכוון, החנות מחברת אותו שוב בדף הוואטסאפ שלה.', { storeId: a.store_id, everyMinutes: 24 * 60 }).catch(() => {});
     return { action: 'off' };
   }
   if (name === 'whatsapp.phone_number.offboarded' || name === 'whatsapp.phone_number.disconnected') {
     await app.db.query("UPDATE channel_accounts SET status = 'reconnect', meta = meta || $2::jsonb WHERE id = $1", [a.id, J({ why: String(body?.disconnection?.reason || body?.source?.event || name).slice(0, 80) })]);
     await event(app.db, a.store_id, 'wa_reconnect', { accountId: a.id, via: 'kapso', why: name });
+    await alertOperator(app, `kapso_reconnect:${a.store_id}`, `תורן: הוואטסאפ של חנות ${a.store_id} התנתק`, `Kapso אומר ${name.replace('whatsapp.phone_number.', '')}. תורן לא עונה בו עד שהחנות מחברת שוב בדף הוואטסאפ שלה (היא רואה את זה ב"היום").`, { storeId: a.store_id, everyMinutes: 24 * 60 }).catch(() => {});
     return { action: 'reconnect' };
   }
   if (name === 'whatsapp.phone_number.reconnected') return { action: 'checked', ...(await checkKapsoAccount(app, a.id)) };

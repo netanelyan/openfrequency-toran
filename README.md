@@ -23,7 +23,8 @@ lead discovery -> dedupe + platform detection -> score -> ingest -> knowledge pa
 
 The audit that chose this stack is [docs/audit.md](docs/audit.md), the decisions are in
 [docs/decisions.md](docs/decisions.md), and what each milestone delivered and how it was tested is in
-[docs/milestones.md](docs/milestones.md).
+[docs/milestones.md](docs/milestones.md). The routine for a customer from sign-up to its second month is
+[docs/first-customer.md](docs/first-customer.md), and what a store costs us is [docs/costs.md](docs/costs.md).
 
 ## Try it
 

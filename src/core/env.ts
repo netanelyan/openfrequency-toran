@@ -96,6 +96,8 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'META_OUTREACH_PHONE_ID', group: 'whatsapp', he: 'Meta: המזהה של מספר שממנו יוצאות ההודעות ללידים (ops/outreach.ts), כשהן במספר משלהן. ריק: מספר הדמו' },
   { name: 'META_WABA_ID', group: 'whatsapp', he: 'Meta: המזהה של חשבון הוואטסאפ (WABA) שבו התבניות, כדי לבדוק לפני כל פנייה ללידים שהתבנית מאושרת ושהאיכות שלה טובה. ריק: נבדק רק המספר' },
   { name: 'TORAN_OUTREACH_DAILY', group: 'whatsapp', he: 'כמה הודעות ללידים יוצאות ביום מהמספר שלנו, לתורן ולתדר יחד. ריק: 10' },
+  { name: 'TORAN_SIGNUP_OPEN', group: 'website', he: 'תורן במכירה: 1 כשגם accounts מוכר אותו וגם האתר אומר שההרשמה פתוחה. עד אז לא יוצאת הודעה ללידים על תורן, ובדפי הדמו נשאר "לכתוב לתורן"' },
+  { name: 'TORAN_SITE_EXPORT_URL', group: 'website', he: 'איפה האתר מפרסם אם ההרשמה פתוחה. ריק: https://openfrequency.co.il/support.json' },
   { name: 'META_SYSTEM_TOKEN', group: 'whatsapp', he: 'Meta: מפתח של system user בעסק שלנו, למספרים שלנו ב-Meta. ריק: המפתח שהתקבל כשחיברו את המספר בדף הוואטסאפ של חנות השירות' },
   { name: 'META_TEMPLATES', group: 'whatsapp', he: 'Meta: שמות התבניות של הקו של בעלי העסק, מופרדים בפסיק. לא בשימוש מאז 2.11.2026, כי את תדר מנהלים רק מלוח הבקרה. אפשר להשאיר ריק' },
   { name: 'TORAN_ALERT_WA', group: 'whatsapp', he: 'המספר שלך בוואטסאפ. ההתראות של תורן ושל תדר מגיעות אליו מהמספר של OpenFrequency, בתבנית operator_alert, עד 10 בשעה. אפשר לכתוב אותו בכל צורה. ריק: ההתראות לא נשלחות לוואטסאפ' },

@@ -311,3 +311,32 @@ test('our own numbers stay on Meta: our company store connects with Meta\'s wind
     await s.close();
   }
 });
+
+test("a stopped store's Kapso number is disconnected three days after the stop; one Kapso refuses stays on and is tried again", async () => {
+  const { retention, DISCONNECT_DAYS } = await import('../src/jobs/retention.ts');
+  const { s, a, k } = await shop();
+  try {
+    s.app.env.TORAN_ALERT_COMMAND = '';
+    await s.app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, name, status) VALUES ($1, 'whatsapp', 'kapso', $2, 'כלי חרס', 'active')", [a, PHONE_ID]);
+    // Stopped two days ago: not yet.
+    await s.app.db.query("UPDATE stores SET service_stopped_at = now() - interval '2 days', service_stopped_why = 'plan' WHERE id = $1", [a]);
+    await retention(s.app);
+    assert.deepEqual(k.state.deleted, [], `kept for ${DISCONNECT_DAYS} days`);
+
+    // Four days: Kapso refuses the delete once. The number stays on here, and the next pass removes it.
+    await s.app.db.query("UPDATE stores SET service_stopped_at = now() - interval '4 days' WHERE id = $1", [a]);
+    const real = s.app.graph!;
+    s.app.graph = (async (input: any, init: any = {}) => (String(init.method) === 'DELETE' ? new Response(JSON.stringify({ error: { message: 'busy' } }), { status: 500, headers: { 'content-type': 'application/json' } }) : real(input, init))) as typeof fetch;
+    const first = await retention(s.app);
+    assert.equal(first.disconnectFailed, 1);
+    assert.equal((await s.app.db.one<any>("SELECT status FROM channel_accounts WHERE kind = 'kapso'"))!.status, 'active', 'still on, to be tried again');
+    s.app.graph = real;
+    const second = await retention(s.app);
+    assert.equal(second.disconnected, 1);
+    assert.deepEqual(k.state.deleted, [PHONE_ID]);
+    assert.equal((await s.app.db.one<any>("SELECT status FROM channel_accounts WHERE kind = 'kapso'"))!.status, 'off');
+    assert.ok(await s.app.db.one("SELECT 1 FROM audit WHERE action = 'whatsapp_disconnect' AND actor = 'retention'"));
+  } finally {
+    await s.close();
+  }
+});

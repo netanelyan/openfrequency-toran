@@ -16,11 +16,12 @@ after the person last wrote to us. Four sets:
   hours too, so it is never refused for the window.
 - **The owner line's five**, not sent since 2026-11-02, kept below as the record of what was approved.
 - **The payment reminder, \`payment_reminder\`**: accounts' reminders to pay for the new month, to a workspace owner's
-  number accounts verified and to the number a workspace last paid from, from \`src/billing/remind.ts\`. Not created in
-  WhatsApp Manager yet: see its section.
+  number accounts verified and to the number a workspace last paid from, from \`src/billing/remind.ts\`. Submitted, in
+  review at Meta since 2026-11-04 (STATUS.md): see its section.
 - **The pitches to leads, \`toran_pitch\`, \`toran_pitch_reminder\`, \`teder_pitch\`, \`teder_pitch_reminder\`**, since
-  2026-11-08: the first message to a lead and its one reminder, from \`src/ops/outreach.ts\`. Not created yet: see
-  their section.
+  2026-11-08: the first message to a lead and its one reminder, from \`src/ops/outreach.ts\`. Approved
+  on 2026-11-08, with the combined openfrequency_pitch two; toran_launch, Toran's opening to its waitlist, is not
+  submitted yet: see their section.
 
 This file is written from \`src/ops/alert.ts\`, \`src/billing/remind.ts\`, \`src/ops/outreach.ts\` and
 \`src/owners/templates.ts\`. Change the
@@ -31,8 +32,8 @@ templates there, then run \`node scripts/templates-doc.ts\`; a test fails while 
 Submitted by hand on 2026-11-03 in WhatsApp Manager (Message templates), on the WhatsApp account that holds our number
 (the one \`META_DEMO_PHONE_ID\` names), exactly as below: category **Utility** (it tells the business's own operator
 about their own system, and sells nothing), no header, no footer, no buttons, the body's four lines and the two sample
-values. It was **in review** that day. Meta's precheck called it Marketing, so it may be approved as Marketing (it is
-still sent by its name, at Meta's Marketing rate) or rejected.
+values. Meta approved it, filing it as Marketing (STATUS.md, 2026-11-04): it is sent by its name, at Meta's Marketing
+rate.
 
 Nothing is set in Toran when Meta approves it: there is no list of approved names for it. Until then each try is
 refused (Meta's code 132001, "template name does not exist"), and so is every try after a rejection: each refusal is a

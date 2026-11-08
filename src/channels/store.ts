@@ -16,6 +16,8 @@ import { openConversation } from './conversations.ts';
 import { lastAuto } from '../auto/send.ts';
 import { reviewTurn } from '../reviews.ts';
 import { alertOperator } from '../ops/alert.ts';
+import { isLive, liveState } from '../golive.ts';
+import { notifyWaiting } from '../owners/waiting.ts';
 
 // A message to a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the
 // store is the account's, so there is no code and no binding. The agent answers as the store, with no demo footer, unless the mail
@@ -98,12 +100,13 @@ export async function handOver(app: App, storeId: number, conversationId: number
   await app.db.query('INSERT INTO messages (conversation_id, role, text, handoff) VALUES ($1, $2, $3, $4::jsonb)', [conversationId, 'system', text, J({ reason, summary })]);
   await app.db.query('UPDATE conversations SET handoffs = handoffs + 1, last_at = now() WHERE id = $1', [conversationId]);
   await event(app.db, storeId, 'handoff', { conversationId, reason, summary });
+  await notifyWaiting(app, storeId, conversationId).catch((e) => app.log(`[waiting] store ${storeId}: ${e?.message || e}`));
 }
 
 export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account): Promise<RouteResult> {
   const { db } = app;
   const { tag } = LEDGER[adapter.channel];
-  const store = await db.one<any>('SELECT id, name, domain, brand, brand_override FROM stores WHERE id = $1', [account.store_id]);
+  const store = await db.one<any>('SELECT id, name, domain, brand, brand_override, agent_live_at, agent_paused_at FROM stores WHERE id = $1', [account.store_id]);
   if (!store) return { action: 'unknown_account' };
   const conv = await threadFor(app, adapter, account, inbound);
   await remember(app, conv, inbound);
@@ -137,7 +140,16 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   if (await isPaused(app, conv)) {
     await hold(app, conv, inbound);
     await event(db, store.id, 'held', { conversationId: conv });
+    await notifyWaiting(app, store.id, conv).catch((e) => app.log(`[waiting] store ${store.id}: ${e?.message || e}`));
     return { action: 'held', storeId: store.id };
+  }
+  // Not switched on yet, or paused by the owner (golive.ts): the message waits for the owner, and Toran says nothing.
+  // One note a conversation a day, so the inbox shows it as waiting and the owner is told once (owners/waiting.ts).
+  if (!isLive(store)) {
+    await hold(app, conv, inbound);
+    const noted = await db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'system' AND handoff->>'reason' = 'not_live' AND at > now() - interval '1 day'", [conv]);
+    if (!noted) await handOver(app, store.id, conv, 'not_live', 'Toran is not switched on in this store', liveState(store) === 'paused' ? 'תורן מושהה בחנות, אז ההודעה מחכה לך כאן.' : 'תורן עוד לא הופעל בחנות, אז ההודעה מחכה לך כאן.');
+    return { action: 'not_live', storeId: store.id };
   }
   // An answer to the store's review request: a rating kept, or the customer's word on showing it (reviews.ts). Said
   // back in one line, and nothing for the agent to answer.
