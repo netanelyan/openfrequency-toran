@@ -1,0 +1,65 @@
+{
+  "name": "teder-leads",
+  "doc": "Toran's lead page asks Teder about the same store, builds its Teder demo, and marks the Teder lead sent when one message from our number carried both demos (the owner, 2026-11-08: \"i want the admin lead page to be connected. i want to be able to build only toran or only teder for a page, or both. i want to be able to send them 2 demos or 1\"). Teder src/web/leads-internal.js serves it, Toran src/ops/tederLeads.ts calls it. It is between Teder and Toran alone, so this file is kept byte for byte the same in both repositories' test/fixtures, and each side's test reads it. A lead is found by Toran's store id, else by its domain (www. left out). ok false is a refusal the operator reads (error, in Hebrew), never a failure of the route.",
+  "servedBy": ["teder"],
+  "calledBy": ["toran"],
+  "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+  "common": [
+    { "case": "OF_INTERNAL_TOKEN is not set on Teder", "status": 503, "body": { "error": "not_configured" } },
+    { "case": "not from this machine, or through Caddy", "status": 403, "body": { "error": "forbidden" } },
+    { "case": "no token, or a wrong one", "status": 401, "body": { "error": "bad_token" } },
+    { "case": "another method than the route's", "status": 405, "body": { "error": "method_not_allowed" } },
+    { "case": "a request that is not one: a toran id that is not [A-Za-z0-9_.:-]{1,64}, no toran id and no domain, a store with no domain, a stage that is not first or reminder, a body that is not a JSON object", "status": 400, "body": { "error": "bad_request" } }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/internal/leads/state",
+      "request": { "query": { "toran": "12", "domain": "nurit-ceramics.co.il" } },
+      "answers": [
+        {
+          "case": "Teder has the store: its stage (new, demo_ready, sent, opened, replied, joined, irrelevant), whether its one reminder is due, and its demo (status new, building, ready, failed, approved or removed; pageUrl once approved; error when failed; reviewUrl, the demo's page in Teder)",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "lead": {
+              "id": 7,
+              "stage": "demo_ready",
+              "sentAt": null,
+              "reminderSentAt": null,
+              "reminderDue": false,
+              "whatsapp": "972500000123",
+              "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "reviewUrl": "https://teder.openfrequency.co.il/demos/14" },
+              "leadUrl": "https://teder.openfrequency.co.il/leads?tab=ready#lead-7"
+            }
+          },
+          "nullable": ["sentAt", "reminderSentAt", "whatsapp", "demo", "pageUrl", "error"]
+        },
+        { "case": "Teder has no such store", "status": 200, "body": { "ok": true, "lead": null } }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/leads/demo",
+      "request": {
+        "body": {
+          "store": { "id": 12, "domain": "nurit-ceramics.co.il", "url": "https://nurit-ceramics.co.il/", "name": "כלי חרס של נורית", "platform": "shopify", "about": null, "score": 72, "toranStatus": "page_ready", "contact": { "email": null, "whatsapp": "972500000123", "phone": null }, "social": { "instagram": null, "tiktok": null, "facebook": null }, "optedOut": false, "updatedAt": "2026-11-08T10:00:00.000001Z" },
+          "by": "Demo"
+        }
+      },
+      "answers": [
+        { "case": "the store is a lead now and its demo is being built (or an earlier demo of its domain was linked)", "status": 200, "body": { "ok": true, "message": "בונים את הדמו. זה לוקח כמה דקות.", "lead": { "id": 7, "stage": "new", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "whatsapp": "972500000123", "demo": { "id": 14, "status": "new", "building": true, "pageUrl": null, "error": null, "reviewUrl": "https://teder.openfrequency.co.il/demos/14" }, "leadUrl": "https://teder.openfrequency.co.il/leads?tab=new#lead-7" } } },
+        { "case": "refused: one of our customers' sites, a store that asked not to be written to, one that already has a demo, or one being built now", "status": 200, "body": { "ok": false, "error": "לחנות הזו כבר יש דמו" } }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/leads/mark",
+      "request": { "body": { "toran": "12", "domain": "nurit-ceramics.co.il", "stage": "first", "by": "Demo" } },
+      "answers": [
+        { "case": "marked as \"שלחתי\" marks it, via whatsapp", "status": 200, "body": { "ok": true, "message": "סומן שנשלח", "lead": { "id": 7, "stage": "sent", "sentAt": "2026-11-08T10:05:00.000Z", "reminderSentAt": null, "reminderDue": false, "whatsapp": "972500000123", "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "reviewUrl": "https://teder.openfrequency.co.il/demos/14" }, "leadUrl": "https://teder.openfrequency.co.il/leads?tab=sent#lead-7" } } },
+        { "case": "refused: no such lead, its demo is not up (first), no reminder to send or not its time yet (reminder)", "status": 200, "body": { "ok": false, "error": "אפשר לסמן \"שלחתי\" רק כשהדמו מוכן" } }
+      ]
+    }
+  ]
+}

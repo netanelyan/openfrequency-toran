@@ -318,7 +318,8 @@ export function outBody(to: string, msg: WaOut): Record<string, unknown> {
     const vars = msg.template.vars.map((text) => ({ type: 'text', text }));
     const components = [
       ...(vars.length ? [{ type: 'body', parameters: vars }] : []),
-      ...(msg.template.url ? [{ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: msg.template.url }] }] : []),
+      // One URL button (url), or several in order (urls: the pitch with both demos, ops/outreach.ts), each at its place.
+      ...(msg.template.urls || (msg.template.url ? [msg.template.url] : [])).map((u, i) => ({ type: 'button', sub_type: 'url', index: String(i), parameters: [{ type: 'text', text: u }] })),
       ...(msg.template.payload ? [{ type: 'button', sub_type: 'quick_reply', index: String(msg.template.payloadIndex ?? 0), parameters: [{ type: 'payload', payload: msg.template.payload }] }] : []),
     ];
     return { ...base, type: 'template', template: { name: msg.template.sid, language: { code: 'he' }, ...(components.length ? { components } : {}) } };

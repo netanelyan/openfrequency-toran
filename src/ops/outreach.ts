@@ -48,9 +48,11 @@ import { internalRefusal } from './internal.ts';
 //
 // Nothing here throws to its caller. A number in a log line is its last four digits.
 
-export type Product = 'toran' | 'teder';
+/** toran, teder, or both: one message with both demos (the owner, 2026-11-08: "i want to be able to send them 2 demos or 1"). */
+export type Product = 'toran' | 'teder' | 'both';
 export type Stage = 'first' | 'reminder';
 
+type UrlButton = { text: string; base: string; example: string };
 export type OutreachTemplate = {
   name: string;
   product: Product;
@@ -60,7 +62,9 @@ export type OutreachTemplate = {
   body: string;
   example: [string];
   /** The URL button: its text, the page's address up to the page's slug (the variable Meta appends), a sample slug. */
-  url: { text: string; base: string; example: string };
+  url: UrlButton;
+  /** A second URL button, after the first: the message with both demos (Teder's). Meta allows two URL buttons. */
+  url2?: UrlButton;
   /** The quick reply that stops them. */
   stop: string;
 };
@@ -124,6 +128,33 @@ export const OUTREACH_TEMPLATES: Record<`${Product}_${Stage}`, OutreachTemplate>
     body: 'היי, יצא לכם להציץ במצגת שהכנו {{1}}? היא מחכה לכם בכפתור כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי".',
     example: ['לכלי חרס של נורית'],
     url: { text: 'לראות את המצגת', base: TEDER_PAGES, example: 'nurit-ceramics-a1b2c3' },
+    stop: STOP_BUTTON,
+  },
+  // One message, both demos: Toran's page and Teder's slideshow, each its own button (Meta: up to two URL buttons in a
+  // template, with quick replies beside them as a group of their own; developers.facebook.com/docs/whatsapp/
+  // business-management-api/message-templates/components, "Buttons"). The quick reply is third (index 2 when sending).
+  both_first: {
+    name: 'openfrequency_pitch',
+    product: 'both',
+    stage: 'first',
+    category: 'MARKETING',
+    language: 'he',
+    body: 'היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם. שניהם בכפתורים כאן למטה.\n\nאם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב.',
+    example: ['לכלי חרס של נורית'],
+    url: { text: 'לנסות את תורן', base: TORAN_PAGES, example: 'nurit-ceramics' },
+    url2: { text: 'לראות את המצגת', base: TEDER_PAGES, example: 'nurit-ceramics-a1b2c3' },
+    stop: STOP_BUTTON,
+  },
+  both_reminder: {
+    name: 'openfrequency_pitch_reminder',
+    product: 'both',
+    stage: 'reminder',
+    category: 'MARKETING',
+    language: 'he',
+    body: 'היי, יצא לכם להציץ במה שהכנו {{1}}? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי".',
+    example: ['לכלי חרס של נורית'],
+    url: { text: 'לנסות את תורן', base: TORAN_PAGES, example: 'nurit-ceramics' },
+    url2: { text: 'לראות את המצגת', base: TEDER_PAGES, example: 'nurit-ceramics-a1b2c3' },
     stop: STOP_BUTTON,
   },
 };
@@ -211,7 +242,14 @@ async function qualityStop(app: App, why: string) {
 
 // ---- one pitch
 
-export type Pitch = { product: Product; stage: Stage; phone: string; name: string; url: string; ref: string; by: string };
+/** url is the page of the template's first button; url2, Teder's demo, only for both. */
+export type Pitch = { product: Product; stage: Stage; phone: string; name: string; url: string; url2?: string | null; ref: string; by: string };
+
+/**
+ * The products a pitch counts as, for "once per number, product and stage": both is Toran's and Teder's at once, so a
+ * message with both demos is refused after either one alone went at that stage, and either alone after it.
+ */
+const productsOf = (p: Product): Product[] => (p === 'both' ? ['toran', 'teder', 'both'] : [p, 'both']);
 
 const mark = (app: App, id: number | string, data: Record<string, unknown>) => app.db.query("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind = 'outreach_wa'", [id, J(data)]);
 
@@ -245,13 +283,16 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   if (!PHONE.test(phone)) return no('bad_phone');
   const slug = slugOf(p.url);
   if (!slug) return no('bad_page');
+  const slug2 = t.url2 ? slugOf(String(p.url2 || '')) : null;
+  if (t.url2 && !slug2) return no('bad_page');
   const name = cleanLine(p.name, 80) || 'החנות';
-  const same = `kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'product' = $2 AND data->>'stage' = $3 AND (data->>'state' = 'sent' OR (data->>'state' = 'sending' AND at > now() - interval '${SENDING_MINUTES} minutes'))`;
+  const same = `kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'product' = ANY($2::text[]) AND data->>'stage' = $3 AND (data->>'state' = 'sent' OR (data->>'state' = 'sending' AND at > now() - interval '${SENDING_MINUTES} minutes'))`;
+  const products = productsOf(p.product);
   const day = israelDate(now());
   let claim: { id: number | string } | null;
   try {
     if (await stoppedNumber(app, phone)) return no('stopped');
-    if (await app.db.one(`SELECT 1 FROM events WHERE ${same}`, [phone, p.product, p.stage])) return no('already');
+    if (await app.db.one(`SELECT 1 FROM events WHERE ${same}`, [phone, products, p.stage])) return no('already');
     if (customerQuiet(now())) return no('quiet');
     const cap = dailyCap(app.env);
     const today = (await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE kind = 'outreach_wa' AND data->>'day' = $1 AND (data->>'state' IN ('sent', 'undelivered') OR (data->>'state' = 'sending' AND at > now() - interval '2 minutes'))", [day]))?.n || 0;
@@ -279,11 +320,13 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   }
   // Asked and recorded in one statement, so two presses at once send one.
   claim = await app.db
-    .one<{ id: number }>(`INSERT INTO events (store_id, kind, data) SELECT NULL, 'outreach_wa', $4::jsonb WHERE NOT EXISTS (SELECT 1 FROM events WHERE ${same}) RETURNING id`, [phone, p.product, p.stage, J({ product: p.product, stage: p.stage, phone, ref: p.ref, by: p.by, day, template: t.name, state: 'sending' })])
+    .one<{ id: number }>(`INSERT INTO events (store_id, kind, data) SELECT NULL, 'outreach_wa', $4::jsonb WHERE NOT EXISTS (SELECT 1 FROM events WHERE ${same}) RETURNING id`, [phone, products, p.stage, J({ product: p.product, stage: p.stage, phone, ref: p.ref, by: p.by, day, template: t.name, state: 'sending' })])
     .catch(() => null);
   if (!claim) return no('already');
   try {
-    const sent = await cloudSend(app.env, app.graph, phoneId, token, phone, { template: { name: t.name, sid: t.name, vars: [le(name)], url: slug, payload: 'OUTREACH_STOP', payloadIndex: 1 } });
+    // The quick reply comes after every URL button: index 1 after one, 2 after the two of the message with both demos.
+    const urls = slug2 ? [slug, slug2] : [slug];
+    const sent = await cloudSend(app.env, app.graph, phoneId, token, phone, { template: { name: t.name, sid: t.name, vars: [le(name)], urls, payload: 'OUTREACH_STOP', payloadIndex: urls.length } });
     await mark(app, claim.id, { state: 'sent', id: sent.id || null });
     await usage(app.db, { kind: 'bsp', backend: 'meta_line', units: 1, usd: sent.usd, apiUsd: sent.usd, tag: 'wa_outreach' }).catch(() => {});
   } catch (e: any) {
@@ -373,14 +416,17 @@ export function readPitch(raw: string | undefined): Pitch | null {
     return null;
   }
   if (!b || typeof b !== 'object' || Array.isArray(b)) return null;
-  const { product, stage, phone, name, url, ref, by } = b;
-  if (product !== 'teder' && product !== 'toran') return null;
+  const { product, stage, phone, name, url, url2, ref, by } = b;
+  if (product !== 'teder' && product !== 'toran' && product !== 'both') return null;
   if (stage !== 'first' && stage !== 'reminder') return null;
   if (typeof phone !== 'string' || !PHONE.test(phone)) return null;
   if (typeof name !== 'string' || !cleanLine(name, 200)) return null;
-  if (typeof url !== 'string' || !/^https?:\/\//.test(url) || !slugOf(url)) return null;
+  const page = (u: unknown) => typeof u === 'string' && /^https?:\/\//.test(u) && Boolean(slugOf(u));
+  if (!page(url)) return null;
+  // both: url is Toran's page and url2 Teder's demo; a single product takes no url2.
+  if (product === 'both' ? !page(url2) : url2 != null) return null;
   if (typeof ref !== 'string' || !/^[\w.:-]{1,100}$/.test(ref)) return null;
-  return { product, stage, phone, name, url, ref, by: typeof by === 'string' ? cleanLine(by, 120) || 'operator' : 'operator' };
+  return { product, stage, phone, name, url, ...(product === 'both' ? { url2 } : {}), ref, by: typeof by === 'string' ? cleanLine(by, 120) || 'operator' : 'operator' };
 }
 
 export function outreachRoutes(app: App): Route<Req>[] {
@@ -409,7 +455,7 @@ export function submission(t: OutreachTemplate) {
       {
         type: 'BUTTONS',
         buttons: [
-          { type: 'URL', text: t.url.text, url: `${t.url.base}{{1}}`, example: [`${t.url.base}${t.url.example}`] },
+          ...[t.url, ...(t.url2 ? [t.url2] : [])].map((u) => ({ type: 'URL', text: u.text, url: `${u.base}{{1}}`, example: [`${u.base}${u.example}`] })),
           { type: 'QUICK_REPLY', text: t.stop },
         ],
       },
@@ -429,7 +475,9 @@ export function outreachTemplateDoc(): string {
         '| Category | Marketing |',
         `| Language | Hebrew (${t.language}) |`,
         '| Header, footer | none |',
-        `| Buttons | a URL button, "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}); then a quick reply, "${t.stop}" |`,
+        t.url2
+          ? `| Buttons | two URL buttons: "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}), and "${t.url2.text}", to ${t.url2.base}{{1}} (sample ${t.url2.example}); then a quick reply, "${t.stop}" |`
+          : `| Buttons | a URL button, "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}); then a quick reply, "${t.stop}" |`,
         `| Variables (sample) | {{1}} = ${t.example[0]} |`,
         '',
         'The body, exactly:',
@@ -438,7 +486,7 @@ export function outreachTemplateDoc(): string {
         t.body,
         '```',
         '',
-        `As the store reads it: ${outreachFilled(t).split('\n').filter(Boolean).join(' / ')} [${t.url.text}] [${t.stop}]`,
+        `As the store reads it: ${outreachFilled(t).split('\n').filter(Boolean).join(' / ')} [${t.url.text}]${t.url2 ? ` [${t.url2.text}]` : ''} [${t.stop}]`,
         '',
         'Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):',
         '',

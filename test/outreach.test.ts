@@ -61,9 +61,9 @@ async function pitchApp(env: Record<string, string> = {}) {
 
 const pitch = (o: Partial<outreach.Pitch> = {}): outreach.Pitch => ({ product: 'toran', stage: 'first', phone: PHONE, name: 'כלי חרס של נורית', url: 'https://toran.openfrequency.co.il/s/nurit-x1', ref: 'toran:1', by: 'Demo', ...o });
 
-test('the four templates keep Meta\'s rules, read as the store reads them, and docs/whatsapp-templates.md is written from them', () => {
+test('the six templates keep Meta\'s rules, read as the store reads them, and docs/whatsapp-templates.md is written from them', () => {
   const all = Object.values(outreach.OUTREACH_TEMPLATES);
-  assert.deepEqual(all.map((t) => t.name), ['toran_pitch', 'toran_pitch_reminder', 'teder_pitch', 'teder_pitch_reminder']);
+  assert.deepEqual(all.map((t) => t.name), ['toran_pitch', 'toran_pitch_reminder', 'teder_pitch', 'teder_pitch_reminder', 'openfrequency_pitch', 'openfrequency_pitch_reminder']);
   for (const t of all) {
     assert.equal(t.category, 'MARKETING');
     assert.doesNotMatch(t.body, /^\s*\{\{|\}\}\s*$/, `${t.name}: no variable at the body's start or end (Meta refuses one)`);
@@ -73,7 +73,10 @@ test('the four templates keep Meta\'s rules, read as the store reads them, and d
     assert.ok(t.body.includes(`"${outreach.STOP_BUTTON}"`), `${t.name}: says how to stop`);
     assert.ok(t.body.includes('OpenFrequency') || t.stage === 'reminder', `${t.name}: the first one says who writes`);
     const s = outreach.submission(t);
-    assert.deepEqual(s.components[1].buttons!.map((b: any) => b.type), ['URL', 'QUICK_REPLY'], 'the URL button first, the quick reply after it (two groups)');
+    // The URL buttons first, the quick reply after them (two groups); the message with both demos has two URL buttons,
+    // Toran's then Teder's (Meta allows two).
+    assert.deepEqual(s.components[1].buttons!.map((b: any) => b.type), t.url2 ? ['URL', 'URL', 'QUICK_REPLY'] : ['URL', 'QUICK_REPLY']);
+    if (t.url2) assert.deepEqual([t.url.base, t.url2.base, t.url2.text.length <= 25], ['https://toran.openfrequency.co.il/s/', 'https://teder.openfrequency.co.il/s/', true]);
   }
   assert.match(outreach.outreachFilled(outreach.OUTREACH_TEMPLATES.toran_first), /^היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן,/);
   const doc = readFileSync(path.join(ROOT, 'docs', 'whatsapp-templates.md'), 'utf8');
@@ -289,4 +292,51 @@ test('POST /internal/outreach/send, as the contract says (test/fixtures/outreach
     setNow(null);
     await s.close();
   }
+});
+
+test('one message with both demos: two URL buttons (Toran, then Teder), the way out third; counted once a day and as both products\' pitch at its stage', async () => {
+  const { app, meta } = await pitchApp({ TORAN_OUTREACH_DAILY: '2' });
+  const TEDER = 'https://teder.openfrequency.co.il/s/nurit-a1b2c3';
+  try {
+    // both needs Teder's page too.
+    assert.equal((await outreach.sendPitch(app, pitch({ product: 'both' }))).why, 'bad_page');
+    const out = await outreach.sendPitch(app, pitch({ product: 'both', url2: TEDER }));
+    assert.equal(out.sent, true);
+    const [send] = meta.sends();
+    assert.equal(send.body.template.name, 'openfrequency_pitch');
+    assert.deepEqual(send.body.template.components.slice(1), [
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: 'nurit-x1' }] },
+      { type: 'button', sub_type: 'url', index: '1', parameters: [{ type: 'text', text: 'nurit-a1b2c3' }] },
+      { type: 'button', sub_type: 'quick_reply', index: '2', parameters: [{ type: 'payload', payload: 'OUTREACH_STOP' }] },
+    ]);
+    // It was both products' first message: neither goes alone at that stage, nor both again.
+    for (const product of ['toran', 'teder', 'both'] as const) assert.equal((await outreach.sendPitch(app, pitch({ product, ...(product === 'both' ? { url2: TEDER } : {}) }))).why, 'already', product);
+    // Counted once in the day's cap of 2: one more (another number) goes, the third is held.
+    assert.equal((await outreach.sendPitch(app, pitch({ phone: OTHER }))).sent, true);
+    assert.equal((await outreach.sendPitch(app, pitch({ phone: '972500000557' }))).why, 'cap');
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test('one product\'s first message alone, then the message with both is refused at that stage; the reminder with both goes after either', async () => {
+  const { app } = await pitchApp();
+  const TEDER = 'https://teder.openfrequency.co.il/s/nurit-a1b2c3';
+  try {
+    assert.equal((await outreach.sendPitch(app, pitch())).sent, true);
+    assert.equal((await outreach.sendPitch(app, pitch({ product: 'both', url2: TEDER }))).why, 'already');
+    assert.equal((await outreach.sendPitch(app, pitch({ product: 'both', stage: 'reminder', url2: TEDER }))).sent, true);
+    assert.equal((await outreach.sendPitch(app, pitch({ stage: 'reminder' }))).why, 'already', 'Toran\'s reminder went with both');
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test('readPitch: both takes Teder\'s page as url2, a single product takes none', () => {
+  const base = { stage: 'first', phone: PHONE, name: 'כלי חרס', url: 'https://toran.openfrequency.co.il/s/a', ref: 'store:1' };
+  assert.equal(outreach.readPitch(JSON.stringify({ ...base, product: 'both' })), null, 'both without url2');
+  assert.equal(outreach.readPitch(JSON.stringify({ ...base, product: 'toran', url2: 'https://teder.openfrequency.co.il/s/b' })), null, 'url2 on one product');
+  assert.equal(outreach.readPitch(JSON.stringify({ ...base, product: 'both', url2: 'https://teder.openfrequency.co.il/s/b' }))?.url2, 'https://teder.openfrequency.co.il/s/b');
 });
