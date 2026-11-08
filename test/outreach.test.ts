@@ -97,6 +97,25 @@ test('while Toran is not on sale (TORAN_SIGNUP_OPEN), no pitch about it goes out
   }
 });
 
+test("Toran's opening to its waitlist: once a number, as toran_launch with the website's Toran page on its button, and only once Toran is on sale", async () => {
+  const { app, meta } = await pitchApp();
+  try {
+    const launch = { product: 'toran' as const, stage: 'launch' as const, phone: PHONE, name: 'כלי חרס של נורית', url: '', ref: 'waitlist:1', by: 'Demo' };
+    const out = await outreach.sendPitch(app, launch);
+    assert.equal(out.sent, true);
+    const [send] = meta.sends();
+    assert.equal(send.body.template.name, 'toran_launch');
+    assert.deepEqual(send.body.template.components.find((c: any) => c.sub_type === 'url').parameters, [{ type: 'text', text: 'toran' }], "the website's /toran");
+    assert.equal((await outreach.sendPitch(app, launch)).why, 'already', 'once a number');
+    assert.equal((await outreach.sendPitch(app, { ...launch, product: 'teder' as const })).why, 'bad_page', "the opening is Toran's alone");
+    assert.deepEqual(outreach.readPitch(JSON.stringify({ ...launch, url: undefined })), { ...launch, url: '' });
+    assert.equal(outreach.readPitch(JSON.stringify({ ...launch, url: 'https://toran.openfrequency.co.il/s/x' })), null, 'no page on the opening');
+    assert.match(outreach.outreachTemplateDoc(), /### toran_launch/);
+  } finally {
+    await app.db.close();
+  }
+});
+
 test('the sign-up switch is said once a start: quiet when Toran, accounts and the site agree, loud and alerted when they do not', async () => {
   const { checkSignupSwitch } = await import('../src/ops/signupSwitch.ts');
   const { app } = await pitchApp({ TORAN_SIGNUP_OPEN: '', OF_INTERNAL_TOKEN: '' });

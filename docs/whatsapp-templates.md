@@ -311,6 +311,35 @@ curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templat
   --data '{"name":"openfrequency_pitch_reminder","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ במה שהכנו {{1}}? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
+### toran_launch
+
+| | |
+|---|---|
+| Name | toran_launch |
+| Category | Marketing |
+| Language | Hebrew (he) |
+| Header, footer | none |
+| Buttons | a URL button, "להצטרף לתורן", to https://openfrequency.co.il/{{1}} (sample toran); then a quick reply, "הסירו אותי" |
+| Variables (sample) | {{1}} = לכלי חרס של נורית |
+
+The body, exactly:
+
+```
+היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.
+
+המחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב.
+```
+
+As the store reads it: היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו לכלי חרס של נורית: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע. / המחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב. [להצטרף לתורן] [הסירו אותי]
+
+Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
+
+```sh
+curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
+  -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
+  --data '{"name":"toran_launch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"להצטרף לתורן","url":"https://openfrequency.co.il/{{1}}","example":["https://openfrequency.co.il/toran"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+```
+
 ## The owner line (not sent since 2026-11-02)
 
 **Not sent since 2026-11-02.** The owner decided: "managing teder through whatsapp, only through the dashboard".

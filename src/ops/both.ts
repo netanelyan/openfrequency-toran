@@ -3,7 +3,7 @@ import { now } from '../core/clock.ts';
 import { displayName } from '../ingest/brand.ts';
 import { audit, event } from '../db/log.ts';
 import { markReminded, markSent, OpsError, pitchOf } from './actions.ts';
-import { sendPitch, type Stage } from './outreach.ts';
+import { sendPitch, type PitchStage as Stage } from './outreach.ts';
 import { tederMark, tederState, type TederLead } from './tederLeads.ts';
 
 // One store, both products, from Toran's lead page (the owner, 2026-11-08: "i want to be able to build only toran or

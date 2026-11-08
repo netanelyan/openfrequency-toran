@@ -51,7 +51,9 @@ import { toranOnSale } from './signupSwitch.ts';
 
 /** toran, teder, or both: one message with both demos (the owner, 2026-11-08: "i want to be able to send them 2 demos or 1"). */
 export type Product = 'toran' | 'teder' | 'both';
-export type Stage = 'first' | 'reminder';
+/** first and reminder are a lead's pitch; launch is Toran's opening, to the people on its waitlist (TORAN_LAUNCH). */
+export type Stage = 'first' | 'reminder' | 'launch';
+export type PitchStage = Exclude<Stage, 'launch'>;
 
 type UrlButton = { text: string; base: string; example: string };
 export type OutreachTemplate = {
@@ -86,7 +88,7 @@ const TEDER_PAGES = 'https://teder.openfrequency.co.il/s/';
  * first and the quick reply after it (index 1 when sending). {{1}} is the store's name with its "ל" (outreach.ts le():
  * "לכלי חרס של נורית", "ל־Nike", "בשביל הדס"), so the preposition is always right.
  */
-export const OUTREACH_TEMPLATES: Record<`${Product}_${Stage}`, OutreachTemplate> = {
+export const OUTREACH_TEMPLATES: Record<`${Product}_${PitchStage}`, OutreachTemplate> = {
   toran_first: {
     name: 'toran_pitch',
     product: 'toran',
@@ -160,7 +162,25 @@ export const OUTREACH_TEMPLATES: Record<`${Product}_${Stage}`, OutreachTemplate>
   },
 };
 
-export const templateOf = (product: Product, stage: Stage) => OUTREACH_TEMPLATES[`${product}_${stage}`];
+/**
+ * Toran's opening, to the people who asked on the website's waitlist to hear when it opens (TORAN-READINESS.md P1-16):
+ * they asked, so it may go, once, under every guardrail of a pitch (the way out, the quiet hours, the day's cap, Meta's
+ * quality), and only once Toran is on sale. Its button opens the website's Toran page, where sign-up is. {{1}} is the
+ * business's name with its "ל", as on the pitches. Not submitted to Meta yet.
+ */
+export const TORAN_LAUNCH: OutreachTemplate = {
+  name: 'toran_launch',
+  product: 'toran',
+  stage: 'launch',
+  category: 'MARKETING',
+  language: 'he',
+  body: 'היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב.',
+  example: ['לכלי חרס של נורית'],
+  url: { text: 'להצטרף לתורן', base: 'https://openfrequency.co.il/', example: 'toran' },
+  stop: STOP_BUTTON,
+};
+
+export const templateOf = (product: Product, stage: Stage): OutreachTemplate => (stage === 'launch' ? TORAN_LAUNCH : OUTREACH_TEMPLATES[`${product}_${stage}`]);
 
 /** The template as the store reads it, filled in. */
 export const outreachFilled = (t: OutreachTemplate, vars: string[] = t.example) => t.body.replace(/\{\{(\d+)\}\}/g, (_, i) => vars[Number(i) - 1] ?? '');
@@ -286,7 +306,9 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   // A pitch for Toran ("אפשר לנסות אותו עכשיו") goes only once Toran is sold (ops/signupSwitch.ts; TORAN-READINESS.md
   // P0-6): while the site says "בקרוב", Teder's pitch alone may go, and Toran's or the combined one may not.
   if (p.product !== 'teder' && !toranOnSale(app.env)) return no('not_on_sale');
-  const slug = slugOf(p.url);
+  if (p.stage === 'launch' && p.product !== 'toran') return no('bad_page');
+  // The opening's button is the website's Toran page (TORAN_LAUNCH), not a store's pitch page.
+  const slug = p.stage === 'launch' ? TORAN_LAUNCH.url.example : slugOf(p.url);
   if (!slug) return no('bad_page');
   const slug2 = t.url2 ? slugOf(String(p.url2 || '')) : null;
   if (t.url2 && !slug2) return no('bad_page');
@@ -423,10 +445,12 @@ export function readPitch(raw: string | undefined): Pitch | null {
   if (!b || typeof b !== 'object' || Array.isArray(b)) return null;
   const { product, stage, phone, name, url, url2, ref, by } = b;
   if (product !== 'teder' && product !== 'toran' && product !== 'both') return null;
-  if (stage !== 'first' && stage !== 'reminder') return null;
+  if (stage !== 'first' && stage !== 'reminder' && stage !== 'launch') return null;
   if (typeof phone !== 'string' || !PHONE.test(phone)) return null;
   if (typeof name !== 'string' || !cleanLine(name, 200)) return null;
   const page = (u: unknown) => typeof u === 'string' && /^https?:\/\//.test(u) && Boolean(slugOf(u));
+  // Toran's opening (accounts' waitlist): Toran's alone, and its button is the website, so it carries no page.
+  if (stage === 'launch') return product === 'toran' && url == null && url2 == null && typeof ref === 'string' && /^[\w.:-]{1,100}$/.test(ref) ? { product, stage, phone, name, url: '', ref, by: typeof by === 'string' ? cleanLine(by, 120) || 'operator' : 'operator' } : null;
   if (!page(url)) return null;
   // both: url is Toran's page and url2 Teder's demo; a single product takes no url2.
   if (product === 'both' ? !page(url2) : url2 != null) return null;
@@ -469,7 +493,7 @@ export function submission(t: OutreachTemplate) {
 }
 
 export function outreachTemplateDoc(): string {
-  return Object.values(OUTREACH_TEMPLATES)
+  return [...Object.values(OUTREACH_TEMPLATES), TORAN_LAUNCH]
     .map((t) =>
       [
         `### ${t.name}`,
