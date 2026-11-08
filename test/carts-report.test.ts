@@ -94,6 +94,8 @@ test('the owner sees the carts\' month on Today and on the automatic messages, a
     Object.assign(s.app.env, { TORAN_SECRETS_KEY: 'k'.repeat(40), TORAN_CHANNELS: 'whatsapp,email' });
     await db.query('UPDATE stores SET workspace_id = 1 WHERE id = $1', [id]);
     await db.query("INSERT INTO order_access (store_id, platform, secret, status, meta) VALUES ($1, 'shopify', $2, 'active', '{}')", [id, seal(s.app.env, JSON.stringify({ token: 't', shop: 'kli.myshopify.com' }))]);
+    // The channel the reminders go out on: a store answering nobody has no month on Today, only what is left (P0-3).
+    await db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, name) VALUES ($1, 'email', 'sim', 'shop@in.carts.test', 'x')", [id]);
     s.as(s.accounts.session(customer(1)).cookie);
     assert.doesNotMatch(await (await s.get('/')).text(), /עגלות שחזרו החודש/, 'no reminder yet, no line');
     await reminder(db, id, T0 - 2 * day, { checkout: 'a', phone: '972500000111', total: 300 });
