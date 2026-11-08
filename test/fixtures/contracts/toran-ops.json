@@ -13,7 +13,7 @@
       "path": "/internal/ops",
       "listener": "OF_TORAN_INTERNAL (127.0.0.1:4710)",
       "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN> (32 characters or more)",
-      "notes": "One element of each list is shown; every element of a list has the same shape. accounts waits 3 seconds.",
+      "notes": "One element of each list is shown; every element of a list has the same shape. accounts waits 3 seconds. Since 2026-11-08 `customers` is one health row a customer's store (Toran src/ops/health.ts, TORAN-READINESS.md P1-26): paid, live (never | live | paused), its channels, the month's conversations against its plan's cap, customers waiting more than a day, the month's model spend against its cap in dollars, and the last alert about it (null when none); [] with no customer store.",
       "answers": [
         {
           "case": "the dashboard",
@@ -166,7 +166,33 @@
               "live": true,
               "via": "meta",
               "number": "972500000999"
-            }
+            },
+            "customers": [
+              {
+                "storeId": 12,
+                "name": "כלי חרס של נורית",
+                "workspace": 7,
+                "paid": true,
+                "live": "live",
+                "channels": [
+                  {
+                    "channel": "whatsapp",
+                    "kind": "kapso",
+                    "status": "active"
+                  }
+                ],
+                "plan": "store",
+                "conversations": 120,
+                "cap": 300,
+                "waitingOverDay": 0,
+                "spendUsd": 1.2,
+                "capUsd": 15,
+                "lastAlert": {
+                  "at": "2026-11-08T10:00:00.000Z",
+                  "title": "תורן: שאלה מחכה יותר מיום"
+                }
+              }
+            ]
           },
           "nullable": [
             "message",
@@ -183,7 +209,8 @@
             "href",
             "kind",
             "store",
-            "contact"
+            "contact",
+            "lastAlert"
           ]
         },
         {
