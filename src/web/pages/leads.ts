@@ -15,6 +15,7 @@ import { dmConnectReady } from '../../channels/zernio.ts';
 import { socialAccountOf, socialLine } from './social.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { storesOf } from '../workspace.ts';
+import { accountsLinks } from '../accounts.ts';
 import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../channels/config.ts';
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
@@ -64,7 +65,8 @@ async function leadsPage(app: App, r: DashReq) {
   }
   const rows = await app.db.query<any>(`SELECT * FROM stores ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY score DESC, id LIMIT 300`, params);
   const tab = (s: string, label: string, n: number) => `<a href="/leads?${new URLSearchParams({ ...(s ? { status: s } : {}), ...(all ? { all: '1' } : {}) })}"${status === s ? ' aria-current="true"' : ''}>${label} <span class="n">${n}</span></a>`;
-  const body = `<div class="head"><h1>לידים</h1><p class="sub">${all ? 'כל החנויות שנמצאו, גם אלה שלא עברו את הסף.' : 'החנויות שעברו את הסף, מהציון הגבוה לנמוך.'} <a href="/leads?${new URLSearchParams({ ...(status ? { status } : {}), ...(all ? {} : { all: '1' }) })}">${all ? 'רק המתאימים' : 'להציג את כולם'}</a></p></div>
+  const body = `<div class="banner info">${icon('leads')}<div><b>הרשימה המשותפת של תורן ותדר נמצאת בניהול</b><p>כאן נשארים הכלים של תורן לבד: חיפוש חנויות, בדיקת דפים וקריאת אתרים.</p></div><a class="btn sm primary" href="${esc(accountsLinks(app.env).home)}/admin/leads">לרשימה בניהול</a></div>
+<div class="head"><h1>לידים</h1><p class="sub">${all ? 'כל החנויות שנמצאו, גם אלה שלא עברו את הסף.' : 'החנויות שעברו את הסף, מהציון הגבוה לנמוך.'} <a href="/leads?${new URLSearchParams({ ...(status ? { status } : {}), ...(all ? {} : { all: '1' }) })}">${all ? 'רק המתאימים' : 'להציג את כולם'}</a></p></div>
 ${addForm(r)}
 <nav class="tabs mt16" aria-label="סטטוס">${tab('', 'הכול', total)}${STATUS_ORDER.map((s) => tab(s, STATUS_HE[s][0], counts[s] || 0)).join('')}</nav>
 <form class="inline-form mt12" method="get" action="/leads">${status ? `<input type="hidden" name="status" value="${esc(status)}">` : ''}${all ? '<input type="hidden" name="all" value="1">' : ''}<input type="search" name="q" value="${esc(q)}" placeholder="חיפוש לפי שם או דומיין"><button class="btn" type="submit">${icon('search')}חיפוש</button></form>
@@ -179,11 +181,15 @@ ${buildBoth ? '<p class="small muted mt8 m0">"לבנות את שניהם" קור
 
   const statusForm = `<form class="row" method="post" action="/lead/${id}/status">${csrfField(r.ctx)}<select name="status" aria-label="סטטוס">${STATUS_ORDER.map((x) => `<option value="${x}"${x === s.status ? ' selected' : ''}>${STATUS_HE[x][0]}</option>`).join('')}</select><button class="btn sm" type="submit">לעדכן</button></form>`;
 
+  // The lead's main page is the shared one on accounts' /admin, both products on one page (ops/leadsAdmin.ts; the owner,
+  // 2026-11-08: "make the shared lead dashboard be in the admin dashboard, not in one of the products").
+  const shared = `<div class="banner info">${icon('leads')}<div><b>הליד המשותף נמצא בניהול</b><p>שם בונים את תורן, את תדר או את שניהם, ושולחים הודעה אחת או שתיים.</p></div><a class="btn sm primary" href="${esc(accountsLinks(app.env).home)}/admin/leads/${id}">לליד בניהול</a></div>`;
   const body = `<a class="back" href="/leads">${icon('chev')}לידים</a>
 <div class="head"><div class="row">${storeBadge(s, 'initial lg')}<div><h1 class="title">${esc(name)}</h1></div></div>
   <p class="sub"><a href="${esc(s.url)}" target="_blank" rel="noopener"><bdi class="ltr">${esc(s.domain)}</bdi></a> · ${esc(PLATFORM_HE[s.platform] || s.platform)} · ${statusChip(s.status, Boolean(s.approved_at))}${s.reject_reason ? ` · <span class="chip bad">${esc(s.reject_reason)}</span>` : ''}</p>
   <div class="end">${url ? `<a class="btn sm" href="${esc(url)}?preview=1" target="_blank" rel="noopener">${icon('eye')}הדף</a>` : ''}${s.page_built_at ? `<a class="btn sm" href="/lead/${id}/review">${icon('edit')}בדיקה ועריכה</a>` : ''}</div>
 </div>
+${shared}
 ${job && ['queued', 'running'].includes(job.status) ? `<div class="banner info" data-wait-job="${job.id}">${icon('clock')}<div><b>בעבודה</b><p data-progress>${esc(job.progress || 'בתור')}</p></div></div>` : ''}
 ${job?.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>הקריאה האחרונה של האתר נכשלה</b><p>${esc(job.last_error || '')}</p></div></div>` : ''}
 ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד הוסר ${esc(stamp(s.taken_down_at))}</b><p>הקישור כבר לא עובד, הקוד של הדמו כבוי, ולא כותבים להם יותר.</p></div></div>` : s.takedown_asked_at ? `<div class="banner warn">${icon('alert')}<div><b>לחצו על "להוריד את העמוד הזה" ${esc(stamp(s.takedown_asked_at))}</b><p>אם הגיעה מהם הודעה בוואטסאפ, מורידים את העמוד מכאן. הלחיצה לבד עוד לא מורידה אותו.</p></div>${postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm danger', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' })}</div>` : ''}

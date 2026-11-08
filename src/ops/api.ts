@@ -23,8 +23,12 @@ import { customerHealth } from './health.ts';
 /** The caller is accounts (or Teder) on this machine: src/ops/internal.ts, here for its importers. */
 export { internalRefusal };
 
-/** A lead's page, where the operator opens it: Toran's dashboard under accounts' /admin (web/server.ts, ADMIN). */
-const leadUrl = (app: App, id: number | string | null) => (id == null ? null : `${accountsLinks(app.env).home}${ADMIN}/lead/${id}`);
+/**
+ * A lead's page, where the operator opens it: the shared lead page on accounts' own /admin, both products on one page
+ * (ops/leadsAdmin.ts; the owner, 2026-11-08: "make the shared lead dashboard be in the admin dashboard, not in one of
+ * the products").
+ */
+const leadUrl = (app: App, id: number | string | null) => (id == null ? null : `${accountsLinks(app.env).home}/admin/leads/${id}`);
 /** A Teder demo's page, where the operator opens it: Teder's own /demos/<id>, on its public address (TEDER_URL). */
 const tederDemoUrl = (app: App, id: string) => `${tederUrl(app.env)}/demos/${encodeURIComponent(id)}`;
 

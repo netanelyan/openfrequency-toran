@@ -39,6 +39,36 @@
       ]
     },
     {
+      "method": "GET",
+      "path": "/internal/leads/list",
+      "request": {},
+      "answers": [
+        {
+          "case": "every lead Teder has (opted-out ones left out), each as /internal/leads/state gives it, with Toran's store id (null for a lead Teder found itself), its domain and its name, for the shared lead dashboard on accounts' /admin",
+          "status": 200,
+          "body": {
+            "ok": true,
+            "leads": [
+              {
+                "id": 7,
+                "stage": "demo_ready",
+                "sentAt": null,
+                "reminderSentAt": null,
+                "reminderDue": false,
+                "whatsapp": "972500000123",
+                "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "reviewUrl": "https://teder.openfrequency.co.il/demos/14" },
+                "leadUrl": "https://teder.openfrequency.co.il/leads?tab=ready#lead-7",
+                "toranId": "12",
+                "domain": "nurit-ceramics.co.il",
+                "name": "כלי חרס של נורית"
+              }
+            ]
+          },
+          "nullable": ["sentAt", "reminderSentAt", "whatsapp", "demo", "pageUrl", "error", "toranId", "name"]
+        }
+      ]
+    },
+    {
       "method": "POST",
       "path": "/internal/leads/demo",
       "request": {
