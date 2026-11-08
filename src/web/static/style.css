@@ -921,3 +921,9 @@ a.ib-row.is-waiting::before { content: ''; position: absolute; inset-inline-star
 @media (prefers-reduced-transparency: reduce) {
   .ib-pane, .thread, .ib-blank { backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
+
+/* The store's chat on its site (pages/webchat.ts): the line to copy, and the reviews Toran collected. */
+code.snippet { flex: 1 1 280px; min-width: 0; padding: 10px 12px; border-radius: var(--r-m); background: var(--inset); box-shadow: inset 0 0 0 1px var(--line); font-size: 12px; overflow-wrap: anywhere; user-select: all; }
+ul.reviews { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+li.review { padding: 12px 14px; border-radius: var(--r-m); background: var(--inset); box-shadow: inset 0 0 0 1px var(--line); }
+li.review .stars { color: var(--warn); letter-spacing: 1px; font-weight: 600; }

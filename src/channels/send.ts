@@ -13,7 +13,7 @@ import type { Channel, ChannelAdapter, Inbound, SendCtx } from './types.ts';
  * Each channel's event-kind prefix and usage kind (wa_in and wa_out are billed as bsp; mail_in and mail_out as mail;
  * Messenger's fb_ and Instagram's ig_ as dm, which Meta does not charge for).
  */
-export const LEDGER: Record<Channel, { tag: string; kind: 'bsp' | 'mail' | 'dm' }> = { whatsapp: { tag: 'wa', kind: 'bsp' }, email: { tag: 'mail', kind: 'mail' }, messenger: { tag: 'fb', kind: 'dm' }, instagram: { tag: 'ig', kind: 'dm' } };
+export const LEDGER: Record<Channel, { tag: string; kind: 'bsp' | 'mail' | 'dm' | 'web' }> = { whatsapp: { tag: 'wa', kind: 'bsp' }, email: { tag: 'mail', kind: 'mail' }, messenger: { tag: 'fb', kind: 'dm' }, instagram: { tag: 'ig', kind: 'dm' }, web: { tag: 'web', kind: 'web' } };
 
 export type Blocked = 'window_closed' | 'suppressed';
 export type Delivery = { ok: true; ids: string[] } | { ok: false; reason: Blocked };

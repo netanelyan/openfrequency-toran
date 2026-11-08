@@ -19,6 +19,8 @@ superadmin viewing a workspace as its customer sees the customer's dashboard, re
 | The first two weeks we go over the conversations with you | A banner on Today, and a line in the plan, until 14 days after the store's first channel was connected. |
 | No commitment; to stop, write to us; the conversations are kept 30 days so you can export them | `/plan#stop`: the website's text, a WhatsApp link to OpenFrequency (`TORAN_OWNER_WHATSAPP`), and `/export/conversations.csv` for the account's owner. |
 | The owner asks Toran about the store | `/assistant`, unchanged. |
+| A chat on the store's own site (docs/todo.md, the owner 2026-11-06) | Settings, "צ׳אט באתר": turned on by the owner, one line to add (with the steps for Shopify, WooCommerce and Wix), the sites it may show on. The channel `web` (`src/channels/web.ts`, `src/web/widget.ts`): the same agent, the same inbox ("צ׳אט באתר"), counted as a conversation like the others; the owner answers from the inbox and the visitor reads it. |
+| Reviews shown on the store's site (docs/todo.md) | A customer answering a review request with a rating is asked once whether it may be shown with their first name (`src/reviews.ts`); Settings, "ביקורות שנאספו", to show or hide each; the site shows the approved ones where it has `<div data-toran-reviews></div>`. |
 
 The price, the founding offer, the setup fee, the invoices and the people in the account are accounts'. Toran never
 quotes a price to a customer; `/plan` and `/settings` link to accounts for them.

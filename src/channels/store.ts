@@ -14,6 +14,7 @@ import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
 import { customerWrote, OPT_OUT, optOut, optOutReply } from '../auto/consent.ts';
 import { openConversation } from './conversations.ts';
 import { lastAuto } from '../auto/send.ts';
+import { reviewTurn } from '../reviews.ts';
 import { alertOperator } from '../ops/alert.ts';
 
 // A message to a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the
@@ -137,6 +138,15 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
     await hold(app, conv, inbound);
     await event(db, store.id, 'held', { conversationId: conv });
     return { action: 'held', storeId: store.id };
+  }
+  // An answer to the store's review request: a rating kept, or the customer's word on showing it (reviews.ts). Said
+  // back in one line, and nothing for the agent to answer.
+  const said = text ? await reviewTurn(app, store.id, conv, text, storeName) : null;
+  if (said) {
+    await hold(app, conv, inbound);
+    const d = await reply(app, adapter, inbound, said, store.id, conv, { who: 'agent', storeName, ...(own || {}) });
+    await db.query("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'agent', $2, 'אוטומטי', 'review', $3::jsonb)", [conv, said, J(d.ok ? d.ids : [])]);
+    return { action: 'review', storeId: store.id, reply: said };
   }
   if (!text) {
     await hold(app, conv, inbound);

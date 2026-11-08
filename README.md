@@ -63,7 +63,9 @@ copy the message, mark it sent, see the chats.
 | `src/ops` | the operator's dashboard: who to write to today, the conversations, the funnels, the money (docs/operator.md); the operator's alerts, Toran's and Teder's, in the log, the server's alert command and the operator's own WhatsApp (`TORAN_ALERT_WA`, the approved template `operator_alert`) |
 | `src/owners` | the owner line: one WhatsApp number for a Toran store's owners; Teder is managed on its dashboard only since 2026-11-02, and none of its news is sent (docs/owner-line.md) |
 | `src/orders.ts` | a store's own orders (Shopify, WooCommerce, Wix) with the owner's read-only key, for get_order_status |
-| `src/auto` | the store's automatic messages: its platform's webhooks and readings, consent and the quiet link to stop the reminders (`/u/<token>`, src/web/unsubscribe.ts), quiet time, the WhatsApp templates on the store's own account |
+| `src/auto` | the store's automatic messages: its platform's webhooks and readings, consent and the quiet link to stop the reminders and, apart, the order updates (`/u/<token>`, src/web/unsubscribe.ts), quiet time, the WhatsApp templates on the store's own account, what the cart reminders brought back (report.ts) |
+| `src/channels/web.ts`, `src/web/widget.ts` | the chat on the store's own site: one line the store adds, a frame only its domains may show, the channel `web` in the same inbox and agent; its reviews block |
+| `src/reviews.ts` | reviews collected in the conversation after a review request, shown on the store's site only with the customer's yes and the owner's approval |
 | `src/company.ts` | a company store: Toran answering our own support from the site's export, and on our one WhatsApp number as owner line, demo number and support (docs/company.md) |
 | `src/web` | the dashboard (Teder's look), auth, the public routes |
 | `src/jobs` | a Postgres job queue and its worker (WhatsApp messages, ingest, the daily re-scrape, our support's daily re-read of the site's /support.json) |

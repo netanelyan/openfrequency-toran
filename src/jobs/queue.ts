@@ -29,7 +29,7 @@ export const BOOT: string = randomUUID();
 export const LEASE_MINUTES = 3;
 
 /** A customer's message, from any channel, and the owner's own messages to customers: what a customer waits on. */
-export const MESSAGE_KINDS = ['wa_inbound', 'mail_inbound', 'dm_inbound', 'wa_echo', 'dm_echo'];
+export const MESSAGE_KINDS = ['wa_inbound', 'mail_inbound', 'dm_inbound', 'wa_echo', 'dm_echo', 'web_inbound'];
 
 export async function enqueue(db: Db, kind: string, payload: unknown, { dedupeKey = null, runAt = null, maxAttempts = 3 }: { dedupeKey?: string | null; runAt?: Date | null; maxAttempts?: number } = {}): Promise<number> {
   if (dedupeKey) {

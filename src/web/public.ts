@@ -26,6 +26,7 @@ import { remindRoutes } from '../billing/remind.ts';
 import { outreachRoutes } from '../ops/outreach.ts';
 import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
 import { unsubscribeRoutes } from './unsubscribe.ts';
+import { widgetRoutes } from './widget.ts';
 import { errorPage } from './pages/basic.ts';
 
 // The public routes, answered without a session:
@@ -163,6 +164,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
     }],
     ['GET', /^\/s\/([\w-]{3,40})\/?$/, pitch],
     ...unsubscribeRoutes(app, stopOk),
+    ...widgetRoutes(app),
     ['POST', /^\/t$/, async (r) => {
       if (!beaconOk(r.ip)) return { status: 429, text: '' };
       let body: any = {};
