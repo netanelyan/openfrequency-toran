@@ -13,6 +13,7 @@ import { capFor, watchHour } from './spend.ts';
 import { storeAllowed } from '../billing/entitlement.ts';
 import { displayName } from '../ingest/brand.ts';
 import { botLine, botName, markIntroduced, OPENING_NOTE, openingOf } from './intro.ts';
+import { notifyWaiting } from '../owners/waiting.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
@@ -292,6 +293,8 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     if (g.redactions.length) await event(t, store.id, 'guard_cut', { conversationId: input.conversationId, rules: g.redactions.map((r) => r.rule) });
   });
   if (apiUsd > 0) await watchHour(app, store.id).catch((e) => app.log(`[agent] store ${store.id}: the hourly spend check failed: ${e?.message || e}`));
+  // A handoff: the owner is told (owners/waiting.ts; only the store's own channels, never the demo number).
+  if (handoff && !demo) await notifyWaiting(app, store.id, input.conversationId).catch((e) => app.log(`[waiting] store ${store.id}: ${e?.message || e}`));
   return { reply, rawReply: raw, tools, redactions: g.redactions, handoff, miss, rounds, usd, apiUsd, tokens, agentMessageId };
 }
 

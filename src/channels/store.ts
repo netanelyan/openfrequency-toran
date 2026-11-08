@@ -17,6 +17,7 @@ import { lastAuto } from '../auto/send.ts';
 import { reviewTurn } from '../reviews.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { isLive, liveState } from '../golive.ts';
+import { notifyWaiting } from '../owners/waiting.ts';
 
 // A message to a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account): the
 // store is the account's, so there is no code and no binding. The agent answers as the store, with no demo footer, unless the mail
@@ -99,6 +100,7 @@ export async function handOver(app: App, storeId: number, conversationId: number
   await app.db.query('INSERT INTO messages (conversation_id, role, text, handoff) VALUES ($1, $2, $3, $4::jsonb)', [conversationId, 'system', text, J({ reason, summary })]);
   await app.db.query('UPDATE conversations SET handoffs = handoffs + 1, last_at = now() WHERE id = $1', [conversationId]);
   await event(app.db, storeId, 'handoff', { conversationId, reason, summary });
+  await notifyWaiting(app, storeId, conversationId).catch((e) => app.log(`[waiting] store ${storeId}: ${e?.message || e}`));
 }
 
 export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account): Promise<RouteResult> {
@@ -138,6 +140,7 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   if (await isPaused(app, conv)) {
     await hold(app, conv, inbound);
     await event(db, store.id, 'held', { conversationId: conv });
+    await notifyWaiting(app, store.id, conv).catch((e) => app.log(`[waiting] store ${store.id}: ${e?.message || e}`));
     return { action: 'held', storeId: store.id };
   }
   // Not switched on yet, or paused by the owner (golive.ts): the message waits for the owner, and Toran says nothing.

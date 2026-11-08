@@ -26,6 +26,7 @@ import { finishZernioConnect, zernioEcho } from '../channels/zernio.ts';
 import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } from '../auto/jobs.ts';
 import { checkTemplates, templateStatus } from '../auto/templates.ts';
+import { waitingDigest } from '../owners/waiting.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -172,6 +173,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return handleTederReady(app, Number(p.workspace));
     case 'company_reread':
       return rereadCompany(app);
+    case 'owner_waiting':
+      return waitingDigest(app, Number(p.storeId));
     case 'ingest':
     case 'rescrape':
       return { storeId: p.storeId, ...(await ingestAndBuild(app, Number(p.storeId), say, job.kind === 'rescrape')) };
