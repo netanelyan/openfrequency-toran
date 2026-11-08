@@ -15,6 +15,7 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   'GET ^\\/lead\\/(\\d+)\\/knowledge$': (i) => `/lead/${i.b}/knowledge`,
   'POST ^\\/lead\\/(\\d+)\\/reread$': (i) => `/lead/${i.b}/reread`,
   'POST ^\\/lead\\/(\\d+)\\/bot-name$': (i) => `/lead/${i.b}/bot-name`,
+  'POST ^\\/lead\\/(\\d+)\\/live$': (i) => `/lead/${i.b}/live`,
   'POST ^\\/chat\\/(\\d+)\\/settle$': (i) => `/chat/${i.chatB}/settle`,
   'POST ^\\/lead\\/(\\d+)\\/plan$': (i) => `/lead/${i.b}/plan`,
   'GET ^\\/lead\\/(\\d+)\\/whatsapp$': (i) => `/lead/${i.b}/whatsapp`,

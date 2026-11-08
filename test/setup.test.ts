@@ -72,12 +72,12 @@ test('GET /internal/setup: from this machine with the token only; a brand-new wo
     assert.equal(d.product, 'toran');
     assert.equal(d.ready, false);
     // Channels whose code is off here (TORAN_CHANNELS lists none) are not steps at all.
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'whatsapp', 'web', 'orders', 'auto']);
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'live', 'whatsapp', 'web', 'orders', 'auto']);
     assert.deepEqual(d.by.store, { key: 'store', title: 'מוסיפים את החנות', status: 'todo', detail: d.by.store.detail, href: `${BASE}/start`, required: true });
     assert.match(d.by.store.detail, /כותבים את הכתובת/);
     for (const x of d.steps.slice(1)) assert.deepEqual([x.status, x.detail, x.href], ['todo', 'אחרי שהחנות מוכנה', null], x.key);
     // Any one channel is required, not WhatsApp itself (the owner, 2026-11-08: ready for customers like Teder).
-    assert.deepEqual(d.steps.filter((x: any) => x.required).map((x: any) => x.key), ['store', 'channels']);
+    assert.deepEqual(d.steps.filter((x: any) => x.required).map((x: any) => x.key), ['store', 'channels', 'live']);
     for (const x of d.steps) {
       assert.deepEqual(Object.keys(x).sort(), ['detail', 'href', 'key', 'required', 'status', 'title']);
       assert.ok(['todo', 'working', 'done', 'attention', 'soon'].includes(x.status));
@@ -277,7 +277,7 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     // Email, Messenger and Instagram are steps only where TORAN_CHANNELS lists them, and soon until they can connect.
     s.app.env.TORAN_CHANNELS = 'whatsapp,email,messenger';
     d = await steps(s, 21);
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'whatsapp', 'web', 'email', 'messenger', 'orders', 'auto']);
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'live', 'whatsapp', 'web', 'email', 'messenger', 'orders', 'auto']);
     assert.deepEqual([d.by.email.status, d.by.email.href], ['soon', null], 'no mail provider here');
     assert.deepEqual([d.by.messenger.status, d.by.messenger.href], ['todo', `${BASE}/lead/${id}/messenger`], 'the Meta app is set up and PUBLIC_BASE_URL is https');
     assert.equal(d.by.email.required || d.by.messenger.required, false);

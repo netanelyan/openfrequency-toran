@@ -13,6 +13,7 @@ import { anyOn, settingsOf } from './auto/send.ts';
 import { waAccountOf } from './web/pages/whatsapp.ts';
 import { socialAccountOf } from './web/pages/social.ts';
 import { webAccountOf } from './channels/web.ts';
+import { liveOf } from './golive.ts';
 
 // A new customer's setup, step by step. openfrequency-accounts has one checklist page for a new workspace (/setup):
 // it asks each product for the workspace's steps and shows them, and each step's button opens the product's own page
@@ -130,6 +131,16 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     const web = await webAccountOf(app, s.id);
     if (web?.status === 'active') return { status: 'working', detail: 'הצ׳אט פועל, ומחכה שהשורה שלו תתווסף לאתר.', href };
     return { status: 'todo', detail: 'וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר: מתחילים מאחד, ומוסיפים אחר כך.', href };
+  });
+
+  // One press, as Teder's "להעלות לאוויר" (golive.ts; TORAN-READINESS.md P1-7): until then a message on the store's own
+  // channels waits for the owner in the inbox, and Toran says nothing.
+  await step('live', 'מפעילים את תורן', true, async (s) => {
+    const href = at('/#golive');
+    const { state } = await liveOf(app, s.id);
+    if (state === 'live') return { status: 'done', detail: '', href };
+    if (state === 'paused') return { status: 'attention', detail: 'תורן מושהה, אז הודעות של לקוחות מחכות לכם בשיחות. מפעילים אותו שוב בהגדרות.', href: at('/settings#golive') };
+    return { status: 'todo', detail: 'לחיצה אחת, ומהרגע הזה תורן עונה ללקוחות בערוצים המחוברים. עד אז הודעות מחכות לכם בשיחות.', href };
   });
 
   await step('whatsapp', 'מחברים את הוואטסאפ', false, async (s) => {

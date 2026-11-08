@@ -1,0 +1,75 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { customer } from './helpers.ts';
+import { serve } from './serve.ts';
+
+// Going live from the dashboard (TORAN-READINESS.md P1-7, golive.ts): a store with a channel and Toran switched off
+// gets one press on Today; the setup step says it; Settings pauses and switches it on again; a team member cannot.
+
+const member = (ws: number) => ({ ...customer(ws), role: 'client_member' as const });
+
+test('one press to go live on Today, a step in setup, and a pause in Settings', async () => {
+  const s = await serve();
+  try {
+    const id = s.seeded.storeId;
+    await s.app.db.query('UPDATE stores SET workspace_id = 15, agent_live_at = NULL, agent_paused_at = NULL WHERE id = $1', [id]);
+    const live = async () => (await s.app.db.one<any>('SELECT agent_live_at, agent_paused_at FROM stores WHERE id = $1', [id]))!;
+    await s.app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, name) VALUES ($1, 'email', 'sim', 'shop@in.golive.test', 'x')", [id]);
+    s.as(s.accounts.session(customer(15)).cookie);
+
+    // A channel connected, Toran never switched on: the one press, and no month of numbers yet.
+    let page = await (await s.get('/')).text();
+    assert.match(page, /<div class="banner info" id="golive">[^]*נשאר צעד אחד: להפעיל את תורן[^]*action="\/lead\/\d+\/live"/);
+    assert.doesNotMatch(page, /class="kpis"/);
+    const token = await s.csrf('/');
+    let r = await s.post(`/lead/${id}/live`, { _csrf: token, on: '1' });
+    assert.equal(r.status, 303);
+    assert.ok((await live()).agent_live_at, 'switched on');
+    page = await (await s.get('/')).text();
+    assert.doesNotMatch(page, /id="golive"/);
+    assert.match(page, /class="kpis"/, 'answering: the month\'s numbers');
+
+    // Settings: pause, and on again.
+    let settings = await (await s.get('/settings')).text();
+    assert.match(settings, /<section class="panel" id="golive">[^]*עונה ללקוחות[^]*להשהות את תורן/);
+    r = await s.post(`/lead/${id}/live`, { _csrf: token, on: '0' });
+    assert.equal(r.headers.get('location'), '/settings#golive');
+    assert.ok((await live()).agent_paused_at, 'paused');
+    page = await (await s.get('/')).text();
+    assert.match(page, /<div class="banner warn" id="golive">[^]*תורן מושהה/);
+    settings = await (await s.get('/settings')).text();
+    assert.match(settings, /מושהה[^]*להפעיל שוב/);
+    await s.post(`/lead/${id}/live`, { _csrf: token, on: '1' });
+    assert.equal((await live()).agent_paused_at, null);
+
+    // A team member sees where it stands but cannot switch it.
+    s.as(s.accounts.session(member(15)).cookie);
+    const t2 = await s.csrf('/settings');
+    assert.equal((await s.post(`/lead/${id}/live`, { _csrf: t2, on: '0' })).status, 403, 'refused');
+    assert.equal((await live()).agent_paused_at, null, 'still answering');
+  } finally {
+    await s.close();
+  }
+});
+
+test('/internal/setup: "מפעילים את תורן" is required, done once Toran is live, attention while paused', async () => {
+  const { INTERNAL_TOKEN } = await import('./helpers.ts');
+  const s = await serve();
+  try {
+    const id = s.seeded.storeId;
+    await s.app.db.query('UPDATE stores SET workspace_id = 16, agent_live_at = NULL, agent_paused_at = NULL WHERE id = $1', [id]);
+    const step = async () => {
+      const d = await (await fetch(`${s.base}/internal/setup?workspace=16`, { headers: { authorization: `Bearer ${INTERNAL_TOKEN}` } })).json();
+      return d.steps.find((x: any) => x.key === 'live');
+    };
+    let x = await step();
+    assert.deepEqual([x.required, x.status], [true, 'todo']);
+    await s.app.db.query('UPDATE stores SET agent_live_at = now() WHERE id = $1', [id]);
+    assert.equal((await step()).status, 'done');
+    await s.app.db.query('UPDATE stores SET agent_paused_at = now() WHERE id = $1', [id]);
+    x = await step();
+    assert.equal(x.status, 'attention');
+  } finally {
+    await s.close();
+  }
+});
