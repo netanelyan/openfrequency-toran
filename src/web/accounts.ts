@@ -57,6 +57,8 @@ export function accountsLinks(env: Env = process.env) {
     admin: `${base}/admin`,
     /** The new workspace's checklist, every product's steps on one page (src/setup.ts answers Toran's). */
     setup: `${base}/setup`,
+    /** Each person's emails, every product's (Toran's: a question waiting, the monthly report; owners/notify-client.ts). */
+    notifications: `${base}/notifications`,
   };
 }
 

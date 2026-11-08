@@ -381,6 +381,52 @@
     window.addEventListener('hashchange', () => unfold(target()));
   }
 
+  // Notifications on this device (Settings, owners/push.ts), as Teder's: the service worker at the root, the browser's
+  // permission, its subscription with the server's key, then the form posts its endpoint. A device already subscribed is
+  // offered the off button instead.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-push-enable]');
+    if (!btn) return;
+    const form = btn.closest('form[data-push]');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return say('הדפדפן הזה לא תומך בהתראות. בטלפון: מוסיפים את תורן למסך הבית ומנסים משם.', true);
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      if ((await Notification.requestPermission()) !== 'granted') return say('ההתראות לא אושרו בדפדפן.', true);
+      const raw = atob(form.dataset.push.replace(/-/g, '+').replace(/_/g, '/'));
+      const key = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+      const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
+      form.querySelector('[name=endpoint]').value = sub.endpoint;
+      form.requestSubmit();
+    } catch {
+      say('לא הצלחנו להפעיל התראות בדפדפן הזה.', true);
+    }
+  });
+  const pushOn = document.querySelector('form[data-push]');
+  const pushOff = document.querySelector('form[data-push-off]');
+  const thisSub = async () => {
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : null;
+    return reg?.pushManager ? reg.pushManager.getSubscription() : null;
+  };
+  if (pushOn && pushOff) {
+    thisSub().then((sub) => {
+      if (!sub) return;
+      pushOn.hidden = true;
+      pushOff.hidden = false;
+    }).catch(() => {});
+  }
+  document.addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-push-disable]') || !pushOff) return;
+    try {
+      const sub = await thisSub();
+      if (!sub) return say('ההתראות כבר כבויות במכשיר הזה.');
+      pushOff.querySelector('[name=endpoint]').value = sub.endpoint;
+      await sub.unsubscribe();
+      pushOff.requestSubmit();
+    } catch {
+      say('לא הצלחנו לכבות את ההתראות.', true);
+    }
+  });
+
   // The waiting count, live (TORAN-READINESS.md P1-13): while the page is visible, /waiting.json every 45 seconds keeps
   // the Chats badge (side bar and tab bar) and the tab's title true. A conversation that started waiting since the page
   // loaded is said once, with the way to it; an open conversation's own page is left as it is.

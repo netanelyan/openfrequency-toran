@@ -72,12 +72,12 @@ test('GET /internal/setup: from this machine with the token only; a brand-new wo
     assert.equal(d.product, 'toran');
     assert.equal(d.ready, false);
     // Channels whose code is off here (TORAN_CHANNELS lists none) are not steps at all.
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'whatsapp', 'web', 'orders', 'auto']);
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'live', 'whatsapp', 'web', 'orders', 'auto']);
     assert.deepEqual(d.by.store, { key: 'store', title: 'מוסיפים את החנות', status: 'todo', detail: d.by.store.detail, href: `${BASE}/start`, required: true });
     assert.match(d.by.store.detail, /כותבים את הכתובת/);
     for (const x of d.steps.slice(1)) assert.deepEqual([x.status, x.detail, x.href], ['todo', 'אחרי שהחנות מוכנה', null], x.key);
     // Any one channel is required, not WhatsApp itself (the owner, 2026-11-08: ready for customers like Teder).
-    assert.deepEqual(d.steps.filter((x: any) => x.required).map((x: any) => x.key), ['store', 'channels']);
+    assert.deepEqual(d.steps.filter((x: any) => x.required).map((x: any) => x.key), ['store', 'channels', 'live']);
     for (const x of d.steps) {
       assert.deepEqual(Object.keys(x).sort(), ['detail', 'href', 'key', 'required', 'status', 'title']);
       assert.ok(['todo', 'working', 'done', 'attention', 'soon'].includes(x.status));
@@ -144,12 +144,16 @@ test('/start: a customer adds their store; it is born in their workspace, read, 
     assert.deepEqual([d.by.auto.status, d.by.auto.href], ['todo', `${BASE}/settings#auto`]);
     assert.equal(d.ready, false);
 
-    // The owner looks at what Toran knows: done. View-as looking would not have counted.
+    // The review (TORAN-READINESS.md P1-8): looking is not it while there is a sample chat to read; "נראה טוב" is.
+    // View-as can do neither.
     s.as(s.accounts.session(viewingAs(7)).cookie);
     assert.equal((await s.get(`/lead/${store.id}/knowledge`)).status, 200);
     assert.equal((await steps(s, 7)).by.knowledge.status, 'todo', 'view-as is not the owner looking');
     s.as(s.accounts.session(customer(7)).cookie);
     assert.equal((await s.get(`/lead/${store.id}/knowledge`)).status, 200);
+    const hasSample = Boolean((await s.app.db.one<any>("SELECT 1 FROM pitches WHERE store_id = $1 AND jsonb_array_length(sample_chat) >= 2", [store.id])));
+    assert.equal((await steps(s, 7)).by.knowledge.status, hasSample ? 'todo' : 'done', 'looking counts only where there is no sample to read');
+    await s.post(`/lead/${store.id}/answers-ok`, { _csrf: await s.csrf(`/lead/${store.id}/knowledge`) });
     assert.equal((await steps(s, 7)).by.knowledge.status, 'done');
 
     // A second store: a workspace has one, so it is sent to the one it has, and nothing is queued.
@@ -277,7 +281,7 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     // Email, Messenger and Instagram are steps only where TORAN_CHANNELS lists them, and soon until they can connect.
     s.app.env.TORAN_CHANNELS = 'whatsapp,email,messenger';
     d = await steps(s, 21);
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'whatsapp', 'web', 'email', 'messenger', 'orders', 'auto']);
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'live', 'whatsapp', 'web', 'email', 'messenger', 'orders', 'auto']);
     assert.deepEqual([d.by.email.status, d.by.email.href], ['soon', null], 'no mail provider here');
     assert.deepEqual([d.by.messenger.status, d.by.messenger.href], ['todo', `${BASE}/lead/${id}/messenger`], 'the Meta app is set up and PUBLIC_BASE_URL is https');
     assert.equal(d.by.email.required || d.by.messenger.required, false);

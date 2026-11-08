@@ -30,6 +30,8 @@ import { settingsOf } from '../../auto/send.ts';
 import { activeChannels, setupOf, setupStoreOf, storeState, type Setup, type Step } from '../../setup.ts';
 import { waLink } from '../../pitch/page.ts';
 import { webAccountOf } from '../../channels/web.ts';
+import { liveOf, setLive, type LiveState } from '../../golive.ts';
+import { vapid } from '../../owners/push.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -159,6 +161,67 @@ function setupBlock(app: App, st: Setup | null): string {
 </section>`;
 }
 
+/**
+ * The one press, as Teder's "נשאר צעד אחד" (golive.ts; TORAN-READINESS.md P1-7): a store with a channel connected and
+ * Toran switched off, or paused. One button, pressed twice; the owner's alone (a team member sees the line, no button).
+ */
+function goLiveBanner(r: DashReq, s: Store, state: LiveState): string {
+  const may = r.user.role !== 'client_member';
+  const paused = state === 'paused';
+  const button = may ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('check')}${paused ? 'להפעיל שוב את תורן' : 'להפעיל את תורן'}`, { cls: 'btn primary', fields: { on: '1' }, confirm: 'לחצו שוב כדי להפעיל' }) : '';
+  return `<div class="banner ${paused ? 'warn' : 'info'}" id="golive">${icon(paused ? 'alert' : 'check')}<div><b>${paused ? `תורן מושהה ב${esc(s.name)}` : 'נשאר צעד אחד: להפעיל את תורן'}</b><p>${paused ? 'עד שמפעילים אותו שוב, הודעות של לקוחות מחכות לכם בשיחות.' : 'הערוץ מחובר. מהרגע שמפעילים, תורן עונה ללקוחות לבד, ומה שהוא לא יודע מגיע אליכם. עד אז הודעות מחכות לכם בשיחות.'}${may ? '' : ' רק מי שפתח את החשבון יכול להפעיל.'}</p></div>${button}</div>`;
+}
+
+/** Settings: whether Toran answers in the store, and the way to pause it or switch it on again. */
+async function livePanel(app: App, r: DashReq, s: Store): Promise<string> {
+  const { state, pausedAt } = await liveOf(app, s.id);
+  const may = !r.ctx.readOnly && r.user.role !== 'client_member';
+  const chip = state === 'live' ? '<span class="end chip ok">עונה ללקוחות</span>' : state === 'paused' ? '<span class="end chip warn">מושהה</span>' : '<span class="end chip ghost">עוד לא הופעל</span>';
+  const text = state === 'live' ? 'תורן עונה ללקוחות בכל הערוצים המחוברים. משהים כשצריך לעצור אותו לגמרי, למשל במבצע שהאתר עוד לא מעודכן בו: הודעות יחכו לכם בשיחות, ומפעילים שוב כשרוצים.'
+    : state === 'paused' ? `תורן מושהה${pausedAt ? ` מ־${esc(stamp(pausedAt))}` : ''}, אז הודעות של לקוחות מחכות לכם בשיחות.` : 'תורן עוד לא הופעל בחנות, אז הודעות של לקוחות מחכות לכם בשיחות.';
+  const button = !may ? '' : state === 'live'
+    ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('x')}להשהות את תורן`, { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי להשהות. עד שמפעילים שוב, תורן לא עונה לאף לקוח.' })
+    : postButton(r.ctx, `/lead/${s.id}/live`, `${icon('check')}${state === 'paused' ? 'להפעיל שוב' : 'להפעיל את תורן'}`, { cls: 'btn sm primary', fields: { on: '1' }, confirm: 'לחצו שוב כדי להפעיל' });
+  return `<section class="panel" id="golive"><header><h2>תורן ב${esc(s.name)}</h2>${chip}</header><p class="m0">${text}</p>${button ? `<div class="row mt12">${button}</div>` : ''}</section>`;
+}
+
+/**
+ * "ככה תורן עונה" (TORAN-READINESS.md P1-8): the store's sample chat, the one its page was built with, for the owner to
+ * read before customers meet it, with "נראה טוב" (setup's review step) or "לתקן" (an answer of their own, below). Once
+ * said good, one line says so; a store with no sample has no panel.
+ */
+async function sampleReview(app: App, r: DashReq, s: Store): Promise<string> {
+  const pitch = await app.db.one<{ sample_chat: { role: string; text: string }[] }>('SELECT sample_chat FROM pitches WHERE store_id = $1', [s.id]);
+  const chat = (pitch?.sample_chat || []).filter((m) => m && (m.role === 'customer' || m.role === 'agent') && m.text);
+  if (chat.length < 2) return '';
+  const ok = await app.db.one<{ at: string }>("SELECT at FROM events WHERE store_id = $1 AND kind = 'answers_ok' ORDER BY id DESC LIMIT 1", [s.id]);
+  const may = !r.ctx.readOnly && !r.scope.operator;
+  const bubbles = chat.map((m) => `<div class="b ${m.role === 'agent' ? 'agent' : 'customer'}">${esc(m.text)}</div>`).join('');
+  const foot = ok
+    ? `<p class="small muted mt12 m0">${icon('check')} אישרתם שככה תורן עונה, ${esc(shortDate(ok.at))}. אם משהו השתנה, מתקנים בתשובות שלכם.</p>`
+    : may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/answers-ok`, `${icon('check')}נראה טוב`, { cls: 'btn primary sm' })}<a class="btn sm" href="#answers">${icon('edit')}לתקן</a></div>` : '';
+  return `<section class="panel" id="sample"><header><h2>ככה תורן עונה</h2></header>
+  <p class="small muted m0">שאלות שלקוח של ${esc(s.name)} יכול לשאול, והתשובות של תורן מתוך האתר. אם תשובה לא נכונה, כותבים את הנכונה בתשובות שלכם, ותורן יענה ככה.</p>
+  <div class="chat mt12">${bubbles}</div>${foot}
+</section>`;
+}
+
+/**
+ * Notifications on this device, as Teder's (owners/push.ts; TORAN-READINESS.md P1-11): a question that starts waiting wakes
+ * the browser at once, before the email digest. On an iPhone only from the home screen icon, so the line says how.
+ */
+async function pushPanel(app: App, r: DashReq): Promise<string> {
+  const ws = r.scope.workspaceId;
+  const n = (await app.db.one<{ n: number }>(ws == null ? 'SELECT COUNT(*)::int AS n FROM push_subs WHERE workspace_id IS NULL' : 'SELECT COUNT(*)::int AS n FROM push_subs WHERE workspace_id = $1', ws == null ? [] : [ws]))?.n || 0;
+  const key = (await vapid(app.db)).publicKey;
+  return `<section class="panel" id="push"><header><h2>התראות</h2><span class="end">${n ? `<span class="chip ok">${n === 1 ? 'מכשיר אחד' : `${n} מכשירים`}</span>` : '<span class="chip ghost">כבוי</span>'}</span></header>
+  <p class="small m0">כשלקוח מחכה לתשובה שלכם, מגיעה התראה לטלפון או למחשב מיד, בלי לחכות למייל.</p>
+  <p class="small muted mt8 m0">באייפון: פותחים את תורן בספארי, משתפים ואז "הוסף למסך הבית", ופותחים את תורן מהאייקון. רק משם אפשר להפעיל התראות.</p>
+  <form class="mt12" method="post" action="/push/subscribe" data-ajax="reload" data-push="${esc(key)}">${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm primary" type="button" data-push-enable>${icon('spark')}להפעיל התראות במכשיר הזה</button></form>
+  <form class="mt12" method="post" action="/push/unsubscribe" data-ajax="reload" data-push-off hidden>${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm ghost" type="button" data-push-disable>לכבות התראות במכשיר הזה</button></form>
+</section>`;
+}
+
 /** Talking to their own Toran on our demo number, before customers do: tagged demo, never counted (channels/demo.ts). */
 function tryCard(app: App, s: Store, short = false): string {
   if (!s.demo_code || s.taken_down_at) return '';
@@ -209,14 +272,17 @@ async function today(app: App, r: DashReq) {
   // step, trying Toran, and none of the month's zeros.
   const ws = Number(r.scope.workspaceId);
   const setup = !r.scope.operator && ws > 0 ? await setupOf(app, ws) : null;
-  const live = (await Promise.all(stores.map((s) => activeChannels(app, s.id)))).some((x) => x.length > 0);
+  // Answering customers takes a channel and the switch on (golive.ts): a store with a channel and the switch off waits for one press.
+  const states = await Promise.all(stores.map(async (s) => ({ s, channels: (await activeChannels(app, s.id)).length > 0, live: (await liveOf(app, s.id)).state })));
+  const live = states.some((x) => x.channels && x.live === 'live');
+  const goLive = r.ctx.readOnly ? '' : states.filter((x) => x.channels && x.live !== 'live').map((x) => goLiveBanner(r, x.s, x.live)).join('');
   const recap = many ? '' : await readRecap(app, stores[0]);
   const tried = setup?.steps.find((x) => x.key === 'test')?.status === 'done';
-  const notLive = `<div class="banner warn" id="not-live">${icon('alert')}<div><b>תורן עוד לא עונה ללקוחות</b><p>הוא מתחיל לענות מהרגע שמחברים ערוץ אחד: וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר. עד אז אפשר לנסות אותו בעצמכם.</p></div></div>`;
+  const notLive = `<div class="banner warn" id="not-live">${icon('alert')}<div><b>תורן עוד לא עונה ללקוחות</b><p>הוא מתחיל לענות כשמחברים ערוץ אחד (וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר) ומפעילים אותו. עד אז הודעות של לקוחות מחכות לכם בשיחות, ואפשר לנסות אותו בעצמכם.</p></div></div>`;
 
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(dayHe(now()))}${many ? '' : ` · ${esc(stores[0].name)}`}</p></div>
 ${reading}${reconnect}${recap}
-${live ? '' : `${notLive}${setupBlock(app, setup)}${many ? '' : tryCard(app, stores[0])}`}
+${goLive}${live ? '' : `${goLive ? '' : notLive}${setupBlock(app, setup)}${many ? '' : tryCard(app, stores[0])}`}
 ${live && weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
 ${live ? `<div class="kpis">
   <a class="kpi lead" href="/chats?state=waiting"><span class="l">${waitingAll === 1 ? 'שאלה מחכה לכם' : 'שאלות מחכות לכם'}</span><span class="v">${waitingAll}</span><span class="s">${waitingAll ? 'מה שאין עליו תשובה באתר, ותורן העביר אליכם' : 'כל מה שנשאל קיבל תשובה'}</span></a>
@@ -283,6 +349,7 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
       <h3 class="small mt16">משאיר לכם</h3><ul class="m0">${(orders ? LEAVES_YOU.map((x) => (x === LEAVES_YOU[2] ? ORDER_LEAVES : x)) : LEAVES_YOU).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       <p class="small muted mt12 m0">כשאין לו תשובה, הוא אומר ללקוח שהוא לא בטוח ושהעביר את השאלה לנציג, במקום לנחש, והשאלה מגיעה אליכם ל<a href="/chats?state=waiting">שיחות</a>.</p>
     </section>
+    ${await sampleReview(app, r, s)}
     ${r.scope.operator ? '' : tryCard(app, s, true)}
     <section class="panel" id="bot-name"><header><h2>השם של הבוט</h2></header>
       <p class="small muted m0">ככה הוא פותח כל שיחה, כדי שהלקוח ידע שעונה לו בוט: <q>${esc(botLine('first', botName(s), s.name))}</q>. כשאתם עונים בעצמכם, הלקוח מקבל לפני ההודעה שלכם: <q>${esc(personLine(s.name))}</q></p>
@@ -399,7 +466,7 @@ export async function customerSettings(app: App, r: DashReq) {
       ? `<h3 class="small mt16">המייל</h3><p class="small m0">מעבירים לכתובת <bdi class="ltr">${esc(mail.external_id)}</bdi> את המייל של החנות, למשל ב-Gmail: הגדרות, "העברה ו-POP/IMAP", "הוספת כתובת להעברה". Gmail שולח לשם קוד אישור, והוא מופיע אצלכם בשיחות. תורן עונה משם בשם החנות.</p>${r.ctx.readOnly ? '' : `<div class="row mt8">${postButton(r.ctx, `/lead/${s.id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>`}${await mailDomainPanel(app, r, s.id, mail.external_id)}`
       : `<h3 class="small mt16">המייל</h3><p class="small m0">החנות מקבלת כתובת משלה, <bdi class="ltr">${esc(address)}</bdi>, ומעבירה אליה את המייל שלה. תורן עונה משם בשם החנות, ומה שהוא לא יודע מגיע אליכם.</p>${r.ctx.readOnly ? '' : `<div class="row mt8">${postButton(r.ctx, `/lead/${s.id}/channels/email`, 'לחבר את המייל', { cls: 'btn sm primary', fields: { on: '1' } })}</div>`}`;
     // On a phone each part folds to one row (TORAN-READINESS.md P1-19, Teder's fold): a link into one opens it.
-    return `${fold('channels', `הערוצים של ${s.name}`, `<section class="panel" id="channels"><header><h2>הערוצים של ${esc(s.name)}</h2></header>${channelList(await channelsOf(app, s))}${email}
+    return `${await livePanel(app, r, s)}${fold('channels', `הערוצים של ${s.name}`, `<section class="panel" id="channels"><header><h2>הערוצים של ${esc(s.name)}</h2></header>${channelList(await channelsOf(app, s))}${email}
   <p class="small muted mt12 m0">רוצים לעצור את תורן בערוץ אחד, או בכולם? ${support(app) ? `<a href="${esc(support(app)!)}" target="_blank" rel="noopener">כתבו לנו בוואטסאפ</a>` : 'כתבו לנו'}, ואנחנו מכבים אותו. בשיחה אחת עוצרים אותו מכאן, כשעונים בה בעצמכם.</p></section>`)}${fold('auto', 'הודעות אוטומטיות', await autoPanel(app, r, s))}${fold('webchat', 'צ׳אט באתר', await webChatPanel(app, r, s))}${fold('reviews', 'ביקורות', await reviewsPanel(app, r, s))}`;
   }));
   const body = `<div class="head"><h1>הגדרות</h1></div>
@@ -407,6 +474,8 @@ export async function customerSettings(app: App, r: DashReq) {
   <div class="grid12">${panels.join('') || `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>הערוצים יופיעו כאן כשהחנות תתחבר.${mayStart(r) ? `<p class="mt12 m0"><a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a></p>` : ''}</div>`}</div>
   <div class="grid12">
     <section class="panel"><header><h2>החשבון</h2></header><p class="small m0">מי בחשבון, מספרי הוואטסאפ שמהם כותבים לעוזר, החבילה והחשבוניות נמצאים בחשבון שלכם ב-OpenFrequency.</p><div class="row mt12"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></section>
+${r.ctx.readOnly ? '' : await pushPanel(app, r)}
+    <section class="panel" id="mails"><header><h2>מיילים</h2></header><p class="small m0">מייל כשלקוח מחכה לתשובה שלכם, וסיכום של החודש בתחילת כל חודש. כל אחד בחשבון בוחר מה הוא מקבל.</p><div class="row mt12"><a class="btn sm" href="${esc(links.notifications)}">${icon('mail')}לבחור מיילים</a></div></section>
     <a class="btn ghost" href="${esc(r.ctx.logout || '/')}">${icon('logout')}יציאה</a>
   </div>
 </div>
@@ -450,6 +519,23 @@ export { today as customerToday };
 
 export function customerRoutes(app: App): Route<DashReq>[] {
   return [
+    // The owner read how Toran answers and said it is good (sampleReview; setup's review step). Not view-as, not the operator.
+    ['POST', /^\/lead\/(\d+)\/answers-ok$/, async (r, m) => {
+      if (r.scope.operator) throw new ActionError('את זה מאשר בעל החנות.', 403);
+      const id = Number(m[1]);
+      await app.db.query("INSERT INTO events (store_id, kind, data) VALUES ($1, 'answers_ok', $2::jsonb)", [id, J({ by: r.user.name })]);
+      await audit(app.db, { actor: r.user.name, action: 'answers_ok', storeId: id });
+      return { redirect: `/lead/${id}/knowledge#sample`, message: 'נשמר. ככה תורן עונה ללקוחות.' };
+    }],
+    // Switching Toran on in a store, or pausing it (golive.ts): the workspace's owner only, never view-as (server.ts
+    // refuses its posts); the store is the session's (server.ts checks /lead/<id>).
+    ['POST', /^\/lead\/(\d+)\/live$/, async (r, m) => {
+      if (r.user.role === 'client_member') throw new ActionError('רק מי שפתח את החשבון יכול להפעיל או להשהות את תורן.', 403);
+      const id = Number(m[1]);
+      const on = r.form.on === '1';
+      const state = await setLive(app, id, on, r.user.name);
+      return { redirect: on ? '/' : '/settings#golive', message: state === 'live' ? 'תורן פועל. מהרגע הזה הוא עונה ללקוחות.' : 'תורן מושהה. הודעות של לקוחות יחכו לכם בשיחות.' };
+    }],
     ['GET', /^\/knowledge$/, (r) => pick(app, r, 'knowledge', 'מה תורן יודע', 'knowledge')],
     ['GET', /^\/lead\/(\d+)\/knowledge$/, async (r, m) => {
       const html = await knowledge(app, r, Number(m[1]));

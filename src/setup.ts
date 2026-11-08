@@ -13,6 +13,7 @@ import { anyOn, settingsOf } from './auto/send.ts';
 import { waAccountOf } from './web/pages/whatsapp.ts';
 import { socialAccountOf } from './web/pages/social.ts';
 import { webAccountOf } from './channels/web.ts';
+import { liveOf } from './golive.ts';
 
 // A new customer's setup, step by step. openfrequency-accounts has one checklist page for a new workspace (/setup):
 // it asks each product for the workspace's steps and shows them, and each step's button opens the product's own page
@@ -107,9 +108,14 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
   await step('knowledge', 'בודקים את התשובות', false, async (s) => {
     const href = at(`/lead/${s.id}/knowledge`);
     if (!s.ingested_at) return { status: 'todo', detail: 'אחרי שהאתר נקרא', href };
+    // A review that means something, as Teder's samples looked at (TORAN-READINESS.md P1-8): the owner read how Toran
+    // answers ("ככה תורן עונה") and said it is good, or wrote an answer of their own. Opening the page alone is not it,
+    // except for a store with no sample to read (a page never built).
     const own = await app.db.one('SELECT 1 FROM faqs WHERE store_id = $1 AND answer IS NOT NULL LIMIT 1', [s.id]);
-    if (s.knowledge_seen_at || own) return { status: 'done', detail: '', href };
-    return { status: 'todo', detail: 'עוברים על מה שתורן יודע על החנות, ומוסיפים תשובות משלכם.', href };
+    const ok = await app.db.one("SELECT 1 FROM events WHERE store_id = $1 AND kind = 'answers_ok' LIMIT 1", [s.id]);
+    const sample = await app.db.one<{ n: number }>("SELECT jsonb_array_length(sample_chat) AS n FROM pitches WHERE store_id = $1", [s.id]);
+    if (own || ok || (s.knowledge_seen_at && !(sample?.n && sample.n >= 2))) return { status: 'done', detail: '', href };
+    return { status: 'todo', detail: 'קוראים איך תורן עונה על שאלות של לקוחות של החנות, ומאשרים או מתקנים.', href };
   });
 
   await step('test', 'מנסים את תורן', false, async (s) => {
@@ -130,6 +136,16 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     const web = await webAccountOf(app, s.id);
     if (web?.status === 'active') return { status: 'working', detail: 'הצ׳אט פועל, ומחכה שהשורה שלו תתווסף לאתר.', href };
     return { status: 'todo', detail: 'וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר: מתחילים מאחד, ומוסיפים אחר כך.', href };
+  });
+
+  // One press, as Teder's "להעלות לאוויר" (golive.ts; TORAN-READINESS.md P1-7): until then a message on the store's own
+  // channels waits for the owner in the inbox, and Toran says nothing.
+  await step('live', 'מפעילים את תורן', true, async (s) => {
+    const href = at('/#golive');
+    const { state } = await liveOf(app, s.id);
+    if (state === 'live') return { status: 'done', detail: '', href };
+    if (state === 'paused') return { status: 'attention', detail: 'תורן מושהה, אז הודעות של לקוחות מחכות לכם בשיחות. מפעילים אותו שוב בהגדרות.', href: at('/settings#golive') };
+    return { status: 'todo', detail: 'לחיצה אחת, ומהרגע הזה תורן עונה ללקוחות בערוצים המחוברים. עד אז הודעות מחכות לכם בשיחות.', href };
   });
 
   await step('whatsapp', 'מחברים את הוואטסאפ', false, async (s) => {
