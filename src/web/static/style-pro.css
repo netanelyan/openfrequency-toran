@@ -205,7 +205,7 @@ body::before { display: none; }
   .nav a svg.i { color: var(--ink-3); }
   .nav a[aria-current='page'] { background: var(--nav-on); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--edge), 0 1px 0 rgba(26, 26, 26, 0.05); }
   .nav a[aria-current='page'] svg.i { color: var(--accent); stroke-width: 2; }
-  .top .tools { gap: 4px 8px; padding-top: 10px; border-top: 1px solid var(--edge); }
+  .top .tools { gap: 8px; padding-top: 10px; border-top: 1px solid var(--edge); }
   .spend { min-height: 40px; padding: 0 10px; border-radius: 8px; background: var(--fill); gap: 10px; }
   .spend:hover { background: var(--fill-2); }
   /* the foot's two tools 40px, a target a pointer finds at once (theme.test: 40px at least) */
