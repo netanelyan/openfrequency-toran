@@ -24,6 +24,8 @@ export type App = {
   env: Env;
   log: (m: string) => void;
   fetcher: Fetcher;
+  /** Product photos for the model (agent/images.ts): the same address rule as fetcher, its own queue, so a photo never waits behind a re-scrape. */
+  images: Fetcher;
   render?: (url: string) => Promise<string | null>;
   llm: Llm;
   wa: WaProvider;
@@ -55,7 +57,7 @@ export function makeLog(env: Env = process.env, { quiet = false } = {}): (m: str
   };
 }
 
-export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, graph, api, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; llm?: Llm; wa?: WaProvider; mail?: EmailAdapter; graph?: GraphFetch; api?: typeof fetch; quiet?: boolean } = {}): Promise<App> {
+export async function makeApp({ env = process.env, db, fetcher, images, llm, wa, mail, graph, api, quiet = false }: { env?: Env; db?: Db; fetcher?: Fetcher; images?: Fetcher; llm?: Llm; wa?: WaProvider; mail?: EmailAdapter; graph?: GraphFetch; api?: typeof fetch; quiet?: boolean } = {}): Promise<App> {
   if (env === process.env) loadEnv(env);
   const log = makeLog(env, { quiet });
   const theDb = db || (await openDb({ env, log }));
@@ -64,6 +66,8 @@ export async function makeApp({ env = process.env, db, fetcher, llm, wa, mail, g
     env,
     log,
     fetcher: fetcher || liveFetcher(),
+    // A test's fixture fetcher answers for the photos too, so a test never reaches the network.
+    images: images || fetcher || liveFetcher({ gapMs: 150 }),
     render: (url) => renderHtml(url),
     llm: llm || makeLlm(env, { log }),
     wa: wa || makeWaProvider(env, { log }),

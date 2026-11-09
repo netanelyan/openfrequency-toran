@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import os from 'node:os';
 import path from 'node:path';
 import { costUsd } from './cost.ts';
-import { type Block, type Llm, LlmError, type Msg, type TurnReq, type TurnRes, isText } from './types.ts';
+import { type Block, type Llm, LlmError, type Msg, type ToolResultBlock, type TurnReq, type TurnRes, isText, resultText } from './types.ts';
 
 // The development backend: the Claude Code CLI, headless, on the owner's subscription.
 // Ported from Teder's llm/cli.js, extended for tool use.
@@ -50,8 +50,14 @@ export function transcript(messages: Msg[]): string {
     const blocks: Block[] = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content;
     for (const b of blocks) {
       if (b.type === 'text') out.push(`${m.role === 'user' ? '[CUSTOMER]' : '[YOU]'} ${(b as any).text}`);
+      else if (b.type === 'image') out.push('[A PHOTO: this environment cannot show it to you]');
       else if (b.type === 'tool_use') out.push(`[YOU CALLED] ${(b as any).name} ${JSON.stringify((b as any).input)}`);
-      else if (b.type === 'tool_result') out.push(`[TOOL RESULT${(b as any).is_error ? ', ERROR' : ''}]\n${(b as any).content}`);
+      else if (b.type === 'tool_result') {
+        // The photos of a result (view_product_images) cannot be shown here: their text says which they were.
+        const c = (b as ToolResultBlock).content;
+        const photos = typeof c === 'string' ? 0 : c.filter((x) => x.type === 'image').length;
+        out.push(`[TOOL RESULT${(b as any).is_error ? ', ERROR' : ''}]\n${resultText(c)}${photos ? `\n[${photos} photo(s): this environment cannot show them to you, so you do not know how they look]` : ''}`);
+      }
     }
   }
   return out.join('\n\n');

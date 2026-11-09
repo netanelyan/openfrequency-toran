@@ -218,7 +218,7 @@
           "input": {
             "query": "יש לכם קערה?"
           },
-          "result": "2 matching products:\n- [id 3] קערת זית גדולה: 165 ₪, במלאי. https://kli-cheres.example/products/olive-bowl\n- [id 4] קערת דגנים: 72 ₪, במלאי, 3 options. https://kli-cheres.example/products/cereal-bowl\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product."
+          "result": "2 matching products:\n- [id 3] קערת זית גדולה: 165 ₪, במלאי. https://kli-cheres.example/products/olive-bowl\n- [id 4] קערת דגנים: 72 ₪, במלאי, 3 options. https://kli-cheres.example/products/cereal-bowl\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product. When the customer asked for a colour, a pattern or a look that a product's line above does not show, call view_product_images on the closest ids before offering any of them, and offer only one whose photo shows it."
         }
       ],
       "guard": [],
@@ -284,7 +284,7 @@
           "input": {
             "query": "יש מגש?"
           },
-          "result": "1 matching product:\n- [id 16] מגש עץ אלון: 210 ₪, במלאי. https://wood-and-thread.example/products/w-2\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product."
+          "result": "1 matching product:\n- [id 16] מגש עץ אלון: 210 ₪, במלאי. https://wood-and-thread.example/products/w-2\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product. When the customer asked for a colour, a pattern or a look that a product's line above does not show, call view_product_images on the closest ids before offering any of them, and offer only one whose photo shows it."
         }
       ],
       "guard": [],
@@ -878,7 +878,7 @@
           "input": {
             "query": "יש מגש?"
           },
-          "result": "1 matching product:\n- [id 16] מגש עץ אלון: 210 ₪, במלאי. https://wood-and-thread.example/products/w-2\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product."
+          "result": "1 matching product:\n- [id 16] מגש עץ אלון: 210 ₪, במלאי. https://wood-and-thread.example/products/w-2\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product. When the customer asked for a colour, a pattern or a look that a product's line above does not show, call view_product_images on the closest ids before offering any of them, and offer only one whose photo shows it."
         }
       ],
       "guard": [],

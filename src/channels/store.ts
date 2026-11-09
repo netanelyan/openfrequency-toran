@@ -3,7 +3,8 @@ import { cleanLine } from '../core/hebrew.ts';
 import { J } from '../db/index.ts';
 import { event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
-import { runTurn } from '../agent/loop.ts';
+import { MAX_PHOTOS, runTurn } from '../agent/loop.ts';
+import { MAX_PHOTO_BYTES } from '../agent/images.ts';
 import type { RouteResult } from './demo.ts';
 import { hold, isPaused } from './owner.ts';
 import { LEDGER, partsOf, reply } from './send.ts';
@@ -85,11 +86,23 @@ async function remember(app: App, conversationId: number, inbound: Inbound) {
   await app.db.query('UPDATE conversations SET meta = meta || $2::jsonb WHERE id = $1', [conversationId, J({ ids })]);
 }
 
-/** The line the agent is told about the files on a message: their names and kinds; it cannot open them. */
-export function filesContext(files: Attachment[]): string | undefined {
+/** The files of a message the agent is shown (agent/loop.ts photosOf): photos kept, of a kind the model reads, within its size. */
+export const photoIds = (files: Attachment[]) => files.filter((f) => f.id && !f.skipped && PHOTO_TYPES.has(f.type) && f.size <= MAX_PHOTO_BYTES).map((f) => f.id!).slice(0, MAX_PHOTOS);
+const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+/**
+ * The line the agent is told about the files on a message: the photos it is shown with the message, and the names and
+ * kinds of the rest, which it cannot open (the owner sees them in the inbox). seen: the ids it is shown.
+ */
+export function filesContext(files: Attachment[], seen: number[] = []): string | undefined {
   if (!files.length) return undefined;
   const kind = (f: Attachment) => (f.type.startsWith('image/') || f.type === 'image' ? 'an image' : f.type === 'application/pdf' ? 'a PDF' : 'a file');
-  return `The customer attached ${files.length} file(s): ${files.map((f) => `${cleanLine(f.name, 40)} (${kind(f)})`).join(', ')}. You cannot open them; the store's owner sees them in the inbox. If the question depends on them, say someone from the store will look at them, and call handoff.`;
+  const shown = files.filter((f) => f.id && seen.includes(f.id));
+  const rest = files.filter((f) => !shown.includes(f));
+  const parts: string[] = [];
+  if (shown.length) parts.push(`The customer sent ${shown.length === 1 ? 'a photo' : `${shown.length} photos`}, shown with their message: look at ${shown.length === 1 ? 'it' : 'them'}. A product in it: find it with search_products (what you see, in a few words) and compare with view_product_images before saying the store has it. Damage, a wrong item or anything about an order in a photo: say someone from the store will look at it, and call handoff.`);
+  if (rest.length) parts.push(`The customer attached ${rest.length}${shown.length ? ' more' : ''} file(s): ${rest.map((f) => `${cleanLine(f.name, 40)} (${kind(f)})`).join(', ')}. You cannot open ${rest.length === 1 ? 'it' : 'them'}; the store's owner sees ${rest.length === 1 ? 'it' : 'them'} in the inbox. If the question depends on ${rest.length === 1 ? 'it' : 'them'}, say someone from the store will look, and call handoff.`);
+  return parts.join(' ');
 }
 
 /** The conversation a WhatsApp, Messenger or Instagram message belongs to (no threads): one per customer per account. */
@@ -160,7 +173,9 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
     await db.query("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'agent', $2, 'אוטומטי', 'review', $3::jsonb)", [conv, said, J(d.ok ? d.ids : [])]);
     return { action: 'review', storeId: store.id, reply: said };
   }
-  if (!text) {
+  // A photo with no words is answered: the agent sees it (agent/loop.ts). Anything else with no words waits for the owner.
+  const photos = photoIds(files);
+  if (!text && !photos.length) {
     await hold(app, conv, inbound);
     await handOver(app, store.id, conv, 'attachment', `${files.length} files, no text`, 'הלקוח שלח קבצים בלי טקסט, ותורן לא ענה. הקבצים מחכים לך.');
     return { action: 'no_text', storeId: store.id };
@@ -182,8 +197,8 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
 
   await event(db, store.id, `${tag}_in`, { conversationId: conv, chars: text.length, preview: cleanLine(text, 60) });
   // An answer to an automatic message (auto/send.ts): the agent is told what the store sent.
-  const context = [filesContext(files), await lastAuto(app, conv)].filter(Boolean).join('\n') || undefined;
-  const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context });
+  const context = [filesContext(files, photos), await lastAuto(app, conv)].filter(Boolean).join('\n') || undefined;
+  const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context, photos });
   await setAttachments(app, inbound.id, files);
   // Each part's id is written down as it goes: a job run again after a failed send sends only what did not go out.
   const delivered = (ids: string[]) => (o.agentMessageId ? db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [o.agentMessageId, J(ids)]) : Promise.resolve());

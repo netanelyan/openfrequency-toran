@@ -17,11 +17,14 @@ import { type Block, type Llm, LlmError, type TurnReq, type TurnRes } from './ty
 //     customer's message as a SERVER CONTEXT line
 // Longer TTLs come first, as the API requires. Opus 5.5 caches from 512 tokens.
 //
-// Thinking cannot be turned off on Opus 5.5; effort is the dial (low for chat). The
+// Thinking cannot be turned off on Opus 5.5 or Sonnet 5.5; effort is the dial (the agent's turn: TORAN_AGENT_EFFORT,
+// medium unless set; every other call low). Haiku 4.5 and Sonnet 4.5 take no effort, so none is sent to them. Photos
+// (image blocks, in a message or inside a tool's result) go as the loop built them. The
 // server-side refusal fallback ('default') is on, so a safety decline is re-run on the
 // fallback model instead of ending the turn; a final refusal is handed off by the loop.
 
 const FALLBACK_MODELS = /^claude-(opus-5-5|fable-5-1|sonnet-5-5)/;
+const NO_EFFORT = /^claude-(haiku-4-5|sonnet-4-5)/;
 
 export function apiClient({ apiKey, workspaceId, gate }: { apiKey: string; workspaceId?: string; gate?: (what: string) => void }): Llm {
   if (!apiKey) throw new LlmError('ANTHROPIC_API_KEY is not set', 'no_key');
@@ -39,7 +42,7 @@ export function apiClient({ apiKey, workspaceId, gate }: { apiKey: string; works
         ...(req.tools.length ? { tools: req.tools } : {}),
         messages: req.messages,
         cache_control: { type: 'ephemeral' },
-        output_config: { effort: req.effort || 'low' },
+        ...(NO_EFFORT.test(req.model) ? {} : { output_config: { effort: req.effort || 'low' } }),
         ...(fallback ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
       };
       let msg: any;

@@ -1,5 +1,5 @@
-import type { Block, Llm, Msg, TurnReq, TurnRes } from './types.ts';
-import { emptyUsage } from './types.ts';
+import type { Block, Llm, Msg, ToolResultBlock, TurnReq, TurnRes } from './types.ts';
+import { emptyUsage, resultText } from './types.ts';
 
 // The test backend: a function from the request to the answer's blocks. Tests pass
 // their own script to drive the loop down a path (a tool call, an invented price the
@@ -13,9 +13,9 @@ const blocksOf = (m: Msg | undefined): Block[] => (!m ? [] : typeof m.content ==
 
 export const defaultScript: Script = (req) => {
   const blocks = blocksOf(lastUser(req.messages));
-  const results = blocks.filter((b) => b.type === 'tool_result') as { content: string }[];
+  const results = blocks.filter((b) => b.type === 'tool_result') as ToolResultBlock[];
   if (results.length) {
-    const text = String(results[0].content);
+    const text = resultText(results[0].content);
     // A product line: "- [id 12] title: 89 ₪, במלאי, 3 options. https://..."
     const product = /^- \[id \d+\] (.+?): (.+?), (במלאי|אזל מהמלאי)/m.exec(text);
     if (product) return [{ type: 'text', text: `${product[3] === 'במלאי' ? 'כן, יש במלאי.' : 'כרגע זה לא במלאי.'} ${product[1]} עולה ${product[2]}. רוצים שאשלח קישור?` }];

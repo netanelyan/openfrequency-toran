@@ -99,8 +99,11 @@ test('a customer\'s files are kept (by their bytes) or listed with why; the agen
   const msg = await app.db.one<any>('SELECT attachments FROM messages WHERE ext_id = $1', [asked.id]);
   assert.deepEqual(msg.attachments.map((a: any) => [a.name, Boolean(a.id), a.skipped || null]), [['photo.png', true, null], ['order.pdf', true, null], ['not-a-pdf.pdf', true, 'type'], ['huge.mov', true, 'too_big']]);
   assert.ok(!JSON.stringify(msg.attachments).includes(b64(PNG)), 'the bytes are not in the message row');
-  const context = seen.map((q) => JSON.stringify(q.messages)).find((t) => t.includes('photo.png')) || '';
-  assert.match(context, /attached 4 file\(s\): photo\.png \(an image\), order\.pdf \(a PDF\), not-a-pdf\.pdf \(a PDF\), huge\.mov \(a file\)/);
+  const context = seen.map((q) => JSON.stringify(q.messages)).find((t) => t.includes('order.pdf')) || '';
+  // The photo is shown to the model with the message (agent/loop.ts); the rest are told of.
+  assert.match(context, /The customer sent a photo, shown with their message/);
+  assert.match(context, /attached 3 more file\(s\): order\.pdf \(a PDF\), not-a-pdf\.pdf \(a PDF\), huge\.mov \(a file\)/);
+  assert.ok(seen.some((q) => q.messages.some((m) => typeof m.content !== 'string' && m.content.some((b) => b.type === 'image'))), 'the photo reached the model');
 
   const conv = (await app.db.one<{ id: number }>("SELECT id FROM conversations WHERE channel = 'email'"))!.id;
   const d = await ownerReply(app, conv, 'הנה החשבונית', 'owner', [{ name: 'invoice.pdf', type: 'application/pdf', bytes: PDF }]);
@@ -110,8 +113,9 @@ test('a customer\'s files are kept (by their bytes) or listed with why; the agen
   const owner = await app.db.one<any>("SELECT attachments FROM messages WHERE role = 'owner'");
   assert.deepEqual(owner.attachments.map((a: any) => [a.name, a.type]), [['invoice.pdf', 'application/pdf']]);
   assert.equal((await app.db.one<any>("SELECT COUNT(*)::int AS n FROM files WHERE direction = 'out'")).n, 1);
-  // A file with no words still goes to the owner.
-  assert.equal((await handleInbound(app, mail(address, { subject: 'תמונה', text: '', attachments: [{ filename: 'crack.png', content_type: 'image/png', content: b64(PNG) }] }))).action, 'no_text');
+  // A photo with no words is answered (the model sees it); any other file with no words still goes to the owner.
+  assert.equal((await handleInbound(app, mail(address, { subject: 'תמונה', text: '', attachments: [{ filename: 'crack.png', content_type: 'image/png', content: b64(PNG) }] }))).action, 'answered');
+  assert.equal((await handleInbound(app, mail(address, { subject: 'חשבונית', text: '', attachments: [{ filename: 'bill.pdf', content_type: 'application/pdf', content: b64(PDF) }] }))).action, 'no_text');
   // On WhatsApp the owner sends text only.
   const code = (await app.db.one<{ demo_code: string }>('SELECT demo_code FROM stores LIMIT 1'))!.demo_code;
   await handleInbound(app, { from: '972500000777', text: `${code} שלום`, id: 'w-files' });

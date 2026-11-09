@@ -4,8 +4,10 @@ import { normalize, termGroups } from '../core/hebrew.ts';
 import { embed } from '../ingest/embed.ts';
 import { contactsIn, findOrder, fromOrder, orderAccessOf, phoneGiven, type Order } from '../orders.ts';
 import type { ToolDef } from './llm/types.ts';
+import type { Fetcher } from '../core/http.ts';
+import { type Photo, productPhoto } from './images.ts';
 
-// The agent's tools, the same six for every store. Only the store they read changes.
+// The agent's tools, the same seven for every store. Only the store they read changes.
 //
 // The rule from tiyul-plus's booking_search: a tool that cannot lie. No tool has a
 // field for a price, a discount, a date or a promise. Prices come out of the product
@@ -22,15 +24,25 @@ import type { ToolDef } from './llm/types.ts';
 export const TOOLS: ToolDef[] = [
   {
     name: 'search_products',
-    description: 'Search this store\'s catalogue. Returns matching products with their current price and stock, straight from the store\'s product data. Use it for any question about what the store sells, a product, a price, a size, a colour or availability. Search in the customer\'s words (Hebrew or English); try a broader word if nothing comes back.',
+    description: 'Search this store\'s catalogue. Returns matching products with their current price and stock, straight from the store\'s product data, and what their photos look like when that was read. Use it for any question about what the store sells, a product, a price, a size, a colour or availability. Search in the customer\'s words (Hebrew or English); try a broader word if nothing comes back. Its result says which of the customer\'s words no product mentions: when one of them is a colour or a look, check the photos (view_product_images) before you offer anything.',
     input_schema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'What the customer is looking for, in a few words' },
         in_stock_only: { type: 'boolean', description: 'Only products that can be bought now' },
         max_price: { type: 'number', description: 'Only when the customer gave a budget: their number' },
+        page: { type: 'integer', description: 'The next results of the same search: 2 for the 7th to 12th, and so on' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'view_product_images',
+    description: 'See the main photo of up to 6 products, by their ids from search_products. Use it whenever the answer depends on how a product looks and the text does not say it: a colour (צהוב, שחור), a pattern, a print, a style, or whether it matches a photo the customer sent. Look first, then answer: offer only a product whose photo shows what the customer asked for.',
+    input_schema: {
+      type: 'object',
+      properties: { product_ids: { type: 'array', items: { type: 'integer' }, description: 'Up to 6 ids from search_products, the closest first' } },
+      required: ['product_ids'],
     },
   },
   {
@@ -103,10 +115,13 @@ export const COMPANY_TOOLS: ToolDef[] = [
 // said: the customer's own messages in this conversation, this turn's included (an order is told only to whoever wrote
 // its email or phone in them); waPhone: the number the customer writes from on the store's own WhatsApp; api: the way
 // to the store's order API (app.api).
-export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null; fromEmail?: string | null };
-export type ToolOutcome = { ok: boolean; content: string; handoff?: { reason: string; summary: string }; facts?: string[] };
+// images: the fetcher product photos are read with (app.images; absent, view_product_images says it cannot show them).
+export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null; fromEmail?: string | null; images?: Fetcher };
+/** images: photos the model sees with the result's text (view_product_images); the record keeps the text alone. */
+export type ToolOutcome = { ok: boolean; content: string; handoff?: { reason: string; summary: string }; facts?: string[]; images?: Photo[] };
 
-type P = { id: number; ext_id: string; title: string; url: string; handle: string; image: string | null; price_min: number | null; price_max: number | null; compare_at_max: number | null; available: boolean; variants: any[]; body_text: string; search_text: string; product_type: string | null; override: any };
+// looks: what the product's main photo shows (its colours, a pattern), read once from the photo (ingest/looks.ts).
+type P = { id: number; ext_id: string; title: string; url: string; handle: string; image: string | null; price_min: number | null; price_max: number | null; compare_at_max: number | null; available: boolean; variants: any[]; body_text: string; search_text: string; product_type: string | null; override: any; looks: string | null };
 
 /** A fee sold as a line item (exchange shipping, gift wrap, a warranty extension): in the catalogue, not merchandise. */
 export const isFee = (title: string) => /משלוח|שילוח|אריזת מתנה|עטיפת מתנה|אחריות|ביטוח|פיקדון|shipping|delivery|gift ?wrap|warranty|insurance|deposit/i.test(title);
@@ -138,7 +153,7 @@ function priceLine(p: P, currency: string): string {
 }
 
 export async function loadProducts(db: Db, storeId: number): Promise<P[]> {
-  const rows = await db.query<P>("SELECT id, ext_id, title, url, handle, image, price_min::float, price_max::float, compare_at_max::float, available, variants, body_text, search_text, product_type, override FROM products WHERE store_id = $1 AND gone_at IS NULL AND COALESCE((override->>'hidden')::boolean, false) = false", [storeId]);
+  const rows = await db.query<P>("SELECT id, ext_id, title, url, handle, image, price_min::float, price_max::float, compare_at_max::float, available, variants, body_text, search_text, product_type, override, looks FROM products WHERE store_id = $1 AND gone_at IS NULL AND COALESCE((override->>'hidden')::boolean, false) = false", [storeId]);
   return rows.map(effective);
 }
 
@@ -150,12 +165,14 @@ export function rank(products: P[], query: string): { p: P; s: number }[] {
     .map((p) => {
       const title = normalize(p.title);
       const body = normalize(p.body_text.slice(0, 600));
+      const looks = p.looks ? normalize(p.looks) : '';
       let s = 0;
       let hit = 0;
-      // Each word of the query scores once, by its best form and place.
+      // Each word of the query scores once, by its best form and place. What the photo shows (looks) counts as a tag:
+      // "חולצה צהובה" finds the yellow kits of a store whose titles are only team and season.
       for (const g of groups) {
         const inTitle = g.some((t) => title.includes(t));
-        const inSearch = g.some((t) => p.search_text.includes(t));
+        const inSearch = g.some((t) => p.search_text.includes(t) || looks.includes(t));
         const inBody = g.some((t) => body.includes(t));
         if (inTitle) s += 3;
         else if (inSearch) s += 2;
@@ -175,14 +192,63 @@ async function searchProducts(c: ToolContext, input: any): Promise<ToolOutcome> 
   let found = rank(all, String(input.query || ''));
   if (input.in_stock_only) found = found.filter((x) => x.p.available);
   if (input.max_price != null && Number.isFinite(Number(input.max_price))) found = found.filter((x) => x.p.price_min != null && x.p.price_min <= Number(input.max_price));
-  const top = found.slice(0, 6);
+  const page = Math.max(1, Math.min(20, Math.floor(Number(input.page) || 1)));
+  const from = (page - 1) * PAGE;
+  const top = found.slice(from, from + PAGE);
   if (!top.length) {
+    if (page > 1 && found.length) return { ok: true, content: `No more results: the search "${input.query}" has ${found.length}, all shown on the pages before.\nRule: do not suggest or describe a product that is not in a result.` };
     const types = [...new Set(all.map((p) => p.product_type).filter(Boolean))].slice(0, 12);
     return { ok: true, content: `No products match "${input.query}".${types.length ? ` What this store does carry, by type: ${types.join(', ')}.` : ''}\nRule: do not suggest or describe a product that is not in a result. Say the store does not seem to carry it, offer the closest type above if it fits, or hand off.` };
   }
-  const lines = top.map(({ p }) => `- [id ${p.id}] ${p.title}: ${priceLine(p, c.currency)}, ${stockWord(p.available)}${p.variants.length > 1 ? `, ${p.variants.length} options` : ''}. ${p.url}`);
-  return { ok: true, content: `${found.length} matching product${found.length === 1 ? '' : 's'}${found.length > top.length ? ` (the ${top.length} closest)` : ''}:\n${lines.join('\n')}\nRule: quote only prices and stock shown above, exactly. For sizes or colours call get_product.`, facts: lines };
+  // The customer's words that no product in the store mentions, not even in what its photo was read to show: a colour
+  // here means the text cannot tell it, and the photos must (the owner's red kit offered for a yellow shirt, 2026-11-09).
+  const unmatched = unmatchedWords(all, String(input.query || ''));
+  const lines = top.map(({ p }) => `- [id ${p.id}] ${p.title}: ${priceLine(p, c.currency)}, ${stockWord(p.available)}${p.variants.length > 1 ? `, ${p.variants.length} options` : ''}.${p.looks ? ` Photo: ${p.looks}.` : ''} ${p.url}`);
+  const head = `${found.length} matching product${found.length === 1 ? '' : 's'}${found.length > top.length ? ` (${page > 1 ? `page ${page}: ` : 'the '}${from + 1} to ${from + top.length}, the closest first)` : ''}:`;
+  const words = unmatched.length ? `\nNo product's text or photo mentions: ${unmatched.join(', ')}.` : '';
+  const rule = `Rule: quote only prices and stock shown above, exactly. For sizes or colours call get_product. When the customer asked for a colour, a pattern or a look that a product's line above does not show, call view_product_images on the closest ids before offering any of them, and offer only one whose photo shows it.${found.length > from + top.length ? ' page: the next results.' : ''}`;
+  return { ok: true, content: `${head}\n${lines.join('\n')}${words}\n${rule}`, facts: lines };
 }
+
+const PAGE = 6;
+
+/** The query's words (by termGroups) that no product's title, tags, description or photo looks contain. */
+export function unmatchedWords(products: P[], query: string): string[] {
+  const texts = products.map((p) => `${normalize(p.title)} ${p.search_text} ${normalize(p.body_text.slice(0, 600))} ${p.looks ? normalize(p.looks) : ''}`);
+  return termGroups(query)
+    .filter((g) => !texts.some((t) => g.some((w) => t.includes(w))))
+    .map((g) => g[0]);
+}
+
+/** The products' main photos, for the model to look at, each named by its id and title in the text beside them. */
+async function viewProductImages(c: ToolContext, input: any): Promise<ToolOutcome> {
+  const ids = [...new Set((Array.isArray(input.product_ids) ? input.product_ids : [input.product_ids]).map(Number).filter((n: number) => Number.isInteger(n) && n > 0))].slice(0, MAX_VIEW) as number[];
+  if (!ids.length) return { ok: false, content: 'Give product_ids: the ids from search_products.' };
+  const all = await loadProducts(c.db, c.storeId);
+  const lines: string[] = [];
+  const images: Photo[] = [];
+  const photos = await Promise.all(ids.map((id) => {
+    const p = all.find((x) => x.id === id);
+    return p && c.images ? productPhoto(c.images, p.image) : Promise.resolve(null);
+  }));
+  ids.forEach((id, i) => {
+    const p = all.find((x) => x.id === id);
+    if (!p) lines.push(`- [id ${id}]: no such product in this store.`);
+    else if (!photos[i]) lines.push(`- [id ${p.id}] ${p.title}: its photo could not be loaded.`);
+    else {
+      images.push(photos[i]!);
+      lines.push(`- Photo ${images.length}: [id ${p.id}] ${p.title}`);
+    }
+  });
+  if (!images.length) return { ok: true, content: `${lines.join('\n')}\nRule: you could not see these photos, so you do not know how they look. Do not say what colour or style they are; ask the customer one short question (which team, which style), or hand off.` };
+  return {
+    ok: true,
+    content: `The photos below, in this order:\n${lines.join('\n')}\nRule: say only what you plainly see in a photo (its colours, a pattern, a print, the style). Offer only a product whose photo shows what the customer asked for; one whose photo shows otherwise (asked for yellow, it is red) is not an answer, so leave it out without mentioning it. None fits: say plainly you did not find one like that, and ask one short question. Prices and stock only from the search lines, never from a photo.`,
+    images,
+  };
+}
+
+const MAX_VIEW = 6;
 
 async function getProduct(c: ToolContext, input: any): Promise<ToolOutcome> {
   const id = Number(input.product_id);
@@ -193,7 +259,7 @@ async function getProduct(c: ToolContext, input: any): Promise<ToolOutcome> {
   const desc = p.body_text ? p.body_text.slice(0, 900) : '(no description)';
   return {
     ok: true,
-    content: `[id ${p.id}] ${p.title}\nPrice: ${priceLine(p, c.currency)}. ${stockWord(p.available)}.\n${variantLines.length ? `Options:\n${variantLines.join('\n')}\n` : ''}Link: ${p.url}\nDescription (the store's own words): ${desc}\nRule: quote prices, sizes and stock only as written above. Anything the description does not say (materials, care, fit, delivery) you do not know.`,
+    content: `[id ${p.id}] ${p.title}\nPrice: ${priceLine(p, c.currency)}. ${stockWord(p.available)}.\n${variantLines.length ? `Options:\n${variantLines.join('\n')}\n` : ''}Link: ${p.url}\n${p.looks ? `Photo: ${p.looks}.\n` : ''}Description (the store's own words): ${desc}\nRule: quote prices, sizes and stock only as written above. Anything the description does not say (materials, care, fit, delivery) you do not know. How it looks (its colour, a print) you can see with view_product_images.`,
     facts: [p.title],
   };
 }
@@ -378,6 +444,8 @@ export async function runTool(c: ToolContext, name: string, input: any): Promise
         return await searchProducts(c, input || {});
       case 'get_product':
         return await getProduct(c, input || {});
+      case 'view_product_images':
+        return await viewProductImages(c, input || {});
       case 'get_policy':
         return await getPolicy(c, input || {});
       case 'get_plans':

@@ -5,7 +5,7 @@ import { ensureDir, logsDir } from '../../core/paths.ts';
 import { apiClient } from './api.ts';
 import { cliClient } from './cli.ts';
 import { scriptedClient } from './scripted.ts';
-import { type Llm, LlmError } from './types.ts';
+import { type Effort, type Llm, LlmError } from './types.ts';
 
 export type { Llm } from './types.ts';
 
@@ -19,6 +19,20 @@ export type { Llm } from './types.ts';
 type Env = Record<string, string | undefined>;
 
 export const agentModel = (env: Env = process.env) => String(env.TORAN_MODEL_AGENT || '').trim() || 'claude-opus-5-5';
+
+/**
+ * How hard the agent thinks on a customer's turn: TORAN_AGENT_EFFORT (low, medium, high or xhigh), medium when unset
+ * (the owner, 2026-11-09: "make him smarter, make him reason ... even if ai costs double"). It was low until then, and
+ * low answered a request for a yellow shirt with a red one. Every other call (the guard's second opinion, the receipt
+ * check, the photos' looks) stays at low.
+ */
+export const agentEffort = (env: Env = process.env): Effort => {
+  const v = String(env.TORAN_AGENT_EFFORT || '').trim().toLowerCase();
+  return v === 'low' || v === 'medium' || v === 'high' || v === 'xhigh' ? v : 'medium';
+};
+
+/** Is this a backend that can be shown a photo? The Claude Code CLI is given the turn as text, so it cannot. */
+export const canSee = (backend: string) => backend === 'api' || backend === 'scripted';
 
 export function llmBackend(env: Env = process.env): 'api' | 'claude-cli' | 'scripted' {
   const forced = String(env.TORAN_LLM || '').trim().toLowerCase();

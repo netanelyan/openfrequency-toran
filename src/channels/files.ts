@@ -7,8 +7,9 @@ import { J } from '../db/index.ts';
 import type { Attachment, ChannelAdapter, Inbound, OutFile } from './types.ts';
 
 // The files in a conversation: what a customer sends (an email's attachments, a photo on Messenger or Instagram) and
-// what the owner attaches to an answer from the inbox (email only). The agent never opens one and never sends one: it
-// is told a file came (store.ts), and the owner sees it in the inbox.
+// what the owner attaches to an answer from the inbox (email only). The agent never sends one. It sees a kept photo
+// with the message it came on (store.ts photoIds, agent/loop.ts), since 2026-11-09; any other file it is only told
+// came, and the owner sees it in the inbox.
 //
 //   kept      images (JPEG, PNG, GIF, WebP) and PDFs up to MAX_BYTES, the kind told by the bytes themselves, never by
 //             the name or the type the sender gave; the bytes go to the private folder under their SHA-256 (the same

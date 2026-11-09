@@ -8,7 +8,7 @@ export const LIMITS: Record<Channel, ChannelLimits> = {
   // Meta's service window is 24 hours from the customer's last message; past it only an approved template goes out.
   whatsapp: { maxChars: 4096, window: { hours: 24 }, outside: 'template', markup: 'whatsapp', attachments: { inbound: false, outbound: false } },
   // Email has no window. A reply is one message however long; the cap only stops a runaway one. Attachments that come
-  // in are kept for the owner (files.ts; the agent is told they came, and cannot open them). The owner may attach a
+  // in are kept for the owner (files.ts; the agent sees a photo among them, and is told the rest came). The owner may attach a
   // file to an answer from the inbox; the agent never does.
   email: { maxChars: 8000, window: null, outside: null, markup: 'plain', attachments: { inbound: true, outbound: true } },
   // Messenger and Instagram (Meta's Send API): 24 hours from the customer's last message for anything; past it, only a

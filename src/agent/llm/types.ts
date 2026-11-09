@@ -11,10 +11,15 @@ export type ToolDef = { name: string; description: string; input_schema: Record<
 
 export type TextBlock = { type: 'text'; text: string };
 export type ToolUseBlock = { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> };
-export type ToolResultBlock = { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+/** A photo the model looks at: a product's, from its store (view_product_images), or one the customer sent. */
+export type ImageBlock = { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; data: string } };
+export type ToolResultBlock = { type: 'tool_result'; tool_use_id: string; content: string | (TextBlock | ImageBlock)[]; is_error?: boolean };
 /** Blocks a backend returns that the loop passes back untouched within a turn (thinking). */
 export type OpaqueBlock = { type: string; [k: string]: unknown };
-export type Block = TextBlock | ToolUseBlock | ToolResultBlock | OpaqueBlock;
+export type Block = TextBlock | ImageBlock | ToolUseBlock | ToolResultBlock | OpaqueBlock;
+
+/** How hard the model thinks (output_config.effort). */
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh';
 
 export type Msg = { role: 'user' | 'assistant'; content: string | Block[] };
 
@@ -27,7 +32,7 @@ export type TurnReq = {
   tools: ToolDef[];
   model: string;
   maxTokens: number;
-  effort?: 'low' | 'medium' | 'high';
+  effort?: Effort;
   tag?: string;
   /** This call's own limits (the agent's turn passes them: a customer is waiting). Absent: the client's defaults. */
   timeoutMs?: number;
@@ -63,4 +68,6 @@ export class LlmError extends Error {
 
 export const isToolUse = (b: Block): b is ToolUseBlock => b.type === 'tool_use';
 export const isText = (b: Block): b is TextBlock => b.type === 'text';
+/** A tool result's text, its photos left out (the record, the CLI's transcript, the scripted model). */
+export const resultText = (c: ToolResultBlock['content']): string => (typeof c === 'string' ? c : c.filter(isText).map((b) => b.text).join('\n'));
 export const emptyUsage = (): Usage => ({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 });

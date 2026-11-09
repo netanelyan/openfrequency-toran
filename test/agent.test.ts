@@ -201,7 +201,7 @@ test('a model that fails or loops still answers the customer honestly, and hands
   const { app, id } = await storeApp(loops);
   const conv = await conversationFor(app.db, id, 'cli', null);
   const o = await runTurn(app, { storeId: id, conversationId: conv, text: 'ספל?' });
-  assert.equal(o.rounds, 6);
+  assert.equal(o.rounds, 8); // MAX_ROUNDS: a look at the photos is a round of its own
   assert.match(o.reply, /לא בטוח, אז העברתי את השאלה לנציג/);
   assert.equal(o.handoff?.reason, 'unknown');
   await app.db.close();

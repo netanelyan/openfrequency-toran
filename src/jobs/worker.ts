@@ -1,6 +1,7 @@
 import type { App } from '../app.ts';
 import { cleanLine } from '../core/hebrew.ts';
 import { ingestStore } from '../ingest/pack.ts';
+import { readLooks } from '../ingest/looks.ts';
 import { INGESTIBLE, INGESTIBLE_EN, canIngest } from '../ingest/catalogue.ts';
 import { buildPitch } from '../pitch/build.ts';
 import { forgetStorePrompt } from '../agent/loop.ts';
@@ -53,6 +54,8 @@ import { learnVoice } from '../agent/voice.ts';
 //                workspace (never a lead to sell to)
 //   ingest       ingest a store again and rebuild its page (after an edit, or by hand)
 //   rescrape     the daily refresh of a store whose demo is open
+//   looks        after an ingest or a re-scrape: the photos of the products whose photo is new, put into words for the
+//                agent's search (ingest/looks.ts)
 //   company_reread  our support's daily re-read of the website: its /support.json (TORAN_SUPPORT_EXPORT_URL), synced
 //                into the company store when it changed (jobs/reread.ts)
 //   teder_lead   a Teder demo asked for on the website, its code just sent from WhatsApp: handed to Teder (its POST
@@ -178,6 +181,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return rereadCompany(app);
     case 'owner_waiting':
       return waitingDigest(app, Number(p.storeId));
+    case 'looks':
+      return await readLooks(app, Number(p.storeId));
     case 'ingest':
     case 'rescrape':
       return { storeId: p.storeId, ...(await ingestAndBuild(app, Number(p.storeId), say, job.kind === 'rescrape')) };
@@ -199,6 +204,8 @@ async function ingestAndBuild(app: App, storeId: number, say: (l: string) => Pro
     await buildPitch(app, storeId);
   }
   if (rescrape) await event(app.db, storeId, 'rescrape', { products: s.products, gone: s.gone });
+  // The photos are read on their own job: the ingest is done, and its page is not waiting on them.
+  await enqueue(app.db, 'looks', { storeId }, { dedupeKey: `looks:${storeId}`, maxAttempts: 2 });
   return { products: s.products, policies: s.policies.length, warnings: s.warnings };
 }
 

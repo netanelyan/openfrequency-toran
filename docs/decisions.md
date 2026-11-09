@@ -1181,3 +1181,44 @@ every opted-out flag, a pilot not opted out, reopen undoing lost; three pages an
 a path that never sets `updated_at` bringing a store back, a field Teder is not given not; rows at one moment kept in
 one page; the profiles in an HTML page among share links, posts, the pixel and Shopify's and Wix's accounts, 39
 links one by one, the contact page filling a network, and a later find never replacing a profile kept.
+
+## 2026-11-09: Toran sees product photos and the customer's, and thinks at medium effort
+
+**Why:** a football-shirt store (titles are only a team, a season and home or away) was asked "בא לי איזה חולצה צהובה
+יפה", and Toran offered a completely red kit, said it could not confirm the colour because the text has none, and
+listed every price. The owner: "make the AI have a way to watch pictures, and make him smarter, make him reason, etc.
+Even if ai costs double".
+
+**What:**
+- `view_product_images` (src/agent/tools.ts): up to six products' main photos, read with the engine's fetcher (the
+  address rule, robots.txt, a size cap; app.images, its own queue) and returned as image blocks inside the tool's
+  result, each named by id and title in its text. Its rule: offer only a product whose photo shows what was asked;
+  none does, say so and ask one short question. Shopify photos are asked for 640 pixels wide (src/agent/images.ts).
+- The search says which of the customer's words no product's text or photo mentions, and to look before offering;
+  `page` gives the next six.
+- The photos' looks (src/ingest/looks.ts, migration 071): after each ingest, each new photo is put into one short line of
+  colours and look, in Hebrew and English, by the agent's model at low effort from a 320-pixel copy, eight photos a
+  call. The line is cut to letters and a few marks (no digits, no links), and the search ranks by it as by a tag, so
+  "חולצה צהובה" finds the yellow kits first. Read once a photo; a changed photo is read again.
+- The customer's photos (src/channels/store.ts photoIds): up to four kept images of a message go to the model with it,
+  and a photo with no words is answered instead of waiting for the owner. Other files are told of, as before.
+- Effort: `TORAN_AGENT_EFFORT`, medium unless set (was low), with room for the thinking (8,000 output tokens) and up to
+  eight rounds. The prompt asks the model to think through what was asked and whether its offer fits every part, and
+  to offer one product, its price, its link and one question rather than a list.
+- On the Claude Code CLI (development) nothing is shown: the transcript says a photo was there and could not be seen.
+
+**Not changed:** the guard. A colour is not one of its claims, so a colour seen in a photo passes; a material or a price
+read off a photo is still cut, since no tool's text backs it.
+
+**Alternatives:**
+- Photo links for the API to fetch itself: no download here, but a store's image field is a stranger's text, and a link
+  the API cannot fetch fails the whole call.
+- Looking at photos only at answer time: a store with 250 kits shows the model six, and the yellow one is rarely among
+  them; the looks line puts the right ones in front of it.
+
+**Tested** (test/vision.test.ts): the owner's case end to end with a scripted model (search, the unmatched colour, the
+three photos inside the result in order and at 640 pixels, the yellow kit alone offered with its price and link,
+nothing cut, no bytes in the record); a photo that cannot load; the looks read once, cleaned, ranking the yellow kit
+first, read again on a new photo, off and on the CLI; the customer's photo shown with the message, a wordless one
+replayed as text, another conversation's file never shown; which files are shown; the effort setting; the CLI's
+transcript.

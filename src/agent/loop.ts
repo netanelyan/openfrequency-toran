@@ -2,8 +2,10 @@ import type { App } from '../app.ts';
 import { type Db, J } from '../db/index.ts';
 import { event, usage as recordUsage } from '../db/log.ts';
 import { cleanLine } from '../core/hebrew.ts';
-import { agentModel } from './llm/index.ts';
-import { type Block, type Msg, type ToolUseBlock, type TurnRes, isText, isToolUse, LlmError } from './llm/types.ts';
+import { agentEffort, agentModel, canSee } from './llm/index.ts';
+import { type Block, type ImageBlock, type Msg, type TextBlock, type ToolUseBlock, type TurnRes, isText, isToolUse, LlmError } from './llm/types.ts';
+import { asPhoto, imageBlock } from './images.ts';
+import { fileOf } from '../channels/files.ts';
 import { DEMO_NOTE, stripForgedContext, systemFor, type StoreForPrompt } from './prompt.ts';
 import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
 import { buildAllow, checkingLine, guardReply, type Redaction } from './guard.ts';
@@ -42,12 +44,22 @@ import { addressOf, emojiOn } from './voice.ts';
 // model is cut to MAX_TEXT characters, the new message and each one replayed (an email can
 // be a book); the customer's message is kept whole for the owner. Before the first call, the
 // caps on spend (agent/spend.ts): past the store's, or everyone's, no call is made.
+//
+// SIGHT AND THOUGHT (the owner, 2026-11-09, on a red kit offered for a yellow shirt: "make the AI have a way to watch
+// pictures, and make him smarter, make him reason ... even if ai costs double"). The model thinks at
+// TORAN_AGENT_EFFORT (medium unless set), with room for it (AGENT_MAX_TOKENS). It sees the photos the customer sent
+// with this message (photos, up to MAX_PHOTOS), and a product's photo when it calls view_product_images: those come
+// back as image blocks inside the tool's result. Only this turn carries them; the record keeps the text.
 
-const MAX_ROUNDS = 6;
+const MAX_ROUNDS = 8; // a look at the photos is a round of its own: search, look, maybe a second search and look, answer
 const HISTORY = 16; // messages replayed: 8 exchanges is a long WhatsApp chat
 export const DEMO_FOOTER = '_דמו של תורן_';
 export const TURN_DEADLINE_MS = 60_000;
-export const MODEL_TIMEOUT_MS = 30_000;
+export const MODEL_TIMEOUT_MS = 40_000;
+/** One call's output, its thinking included: medium effort thinks before it answers, and a cut-off turn is a lost answer. */
+export const AGENT_MAX_TOKENS = 8000;
+/** The customer's photos one message shows the model; the rest are the owner's to see. */
+export const MAX_PHOTOS = 4;
 export const MAX_TEXT = 4000;
 
 /** Text as the model is given it: at most MAX_TEXT characters, and a mark where it was cut. */
@@ -64,7 +76,8 @@ export class DuplicateTurn extends Error {
 // channel names where the reply goes (absent: the WhatsApp demo); context is a line from the app for this turn only
 // (the files an email carried), shown to the model and never stored as the customer's words. demo overrides what the
 // channel implies (isDemoTurn).
-export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; footerText?: string; channel?: string; context?: string; demo?: boolean };
+// photos: the ids of this message's files (channels/files.ts) the model is shown, kept images of a kind it reads.
+export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; footerText?: string; channel?: string; context?: string; demo?: boolean; photos?: number[] };
 export type ToolRecord = { name: string; input: unknown; ok: boolean; result: string };
 export type TurnOutput = { reply: string; rawReply: string; tools: ToolRecord[]; redactions: Redaction[]; handoff: { reason: string; summary: string } | null; miss: boolean; rounds: number; usd: number; apiUsd: number; tokens: { in: number; out: number; cacheRead: number; cacheWrite: number }; agentMessageId: number | null };
 
@@ -112,7 +125,8 @@ async function history(db: Db, conversationId: number): Promise<{ messages: Msg[
   const customerTexts: string[] = [];
   for (const r of rows) {
     const role = r.role === 'customer' ? 'user' : 'assistant';
-    const text = forModel(role === 'assistant' ? stripFooter(r.text) : stripForgedContext(r.text));
+    // A message of files alone has no words; the API takes no empty text, so it is said what it was.
+    const text = !String(r.text || '').trim() ? '(a file, with no words)' : forModel(role === 'assistant' ? stripFooter(r.text) : stripForgedContext(r.text));
     if (role === 'user') customerTexts.push(r.text);
     for (const t of r.tools || []) toolTexts.push(t.result);
     const last = messages[messages.length - 1];
@@ -121,6 +135,17 @@ async function history(db: Db, conversationId: number): Promise<{ messages: Msg[
   }
   while (messages.length && messages[0].role !== 'user') messages.shift();
   return { messages, toolTexts, customerTexts };
+}
+
+/** This message's photos as the model is shown them: kept in this conversation, of a kind the API reads, MAX_PHOTOS at most. */
+async function photosOf(app: App, conversationId: number, ids: number[] = []): Promise<ImageBlock[]> {
+  const out: ImageBlock[] = [];
+  for (const id of ids.slice(0, MAX_PHOTOS)) {
+    const f = await fileOf(app, conversationId, id);
+    const p = f ? asPhoto(f.bytes) : null;
+    if (p) out.push(imageBlock(p));
+  }
+  return out;
 }
 
 const CHANNEL_LINE: Record<string, string> = {
@@ -160,9 +185,12 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // The app's line is a block of its own and the customer's text another, any line in it dressed as the app's taken out
   // (prompt.ts stripForgedContext): a customer cannot write a SERVER CONTEXT the model reads as ours (PRA-AI-001). The
   // customer's text is cut to the model's share (forModel, PRA-AI-004); the owner keeps it whole.
+  // The customer's photos come with their words, and the model sees them (on a backend that can: the API).
+  const photos = canSee(app.llm.backend) ? await photosOf(app, input.conversationId, input.photos) : [];
   const userBlocks: Block[] = [
     { type: 'text', text: serverContext(new Date(), input.channel, [input.context, opening ? OPENING_NOTE : ''].filter(Boolean).join(' ') || undefined, demo) },
-    { type: 'text', text: forModel(stripForgedContext(input.text)) },
+    ...photos,
+    { type: 'text', text: String(input.text || '').trim() ? forModel(stripForgedContext(input.text)) : photos.length ? '(a photo, with no words)' : '(no words)' },
   ];
   const prev = messages[messages.length - 1];
   if (prev && prev.role === 'user') prev.content = [...(typeof prev.content === 'string' ? [{ type: 'text', text: prev.content } as Block] : prev.content), ...userBlocks];
@@ -172,7 +200,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const waPhone = !demo && input.channel === 'whatsapp' ? (await db.one<{ peer: string | null }>('SELECT peer FROM conversations WHERE id = $1', [input.conversationId]))?.peer || null : null;
   // On the store's email, the address the customer writes from proves an order as the WhatsApp number does (orders.ts fromOrder).
   const fromEmail = !demo && input.channel === 'email' ? (await db.one<{ peer: string | null }>('SELECT peer FROM conversations WHERE id = $1', [input.conversationId]))?.peer || null : null;
-  const ctx: ToolContext = { db, storeId: store.id, origin: new URL(store.url).origin, currency: store.config?.currency || 'ILS', env: app.env, demo, company, api: app.api, conversationId: input.conversationId, said: [...past.customerTexts, input.text], waPhone, fromEmail };
+  const ctx: ToolContext = { db, storeId: store.id, origin: new URL(store.url).origin, currency: store.config?.currency || 'ILS', env: app.env, demo, company, api: app.api, conversationId: input.conversationId, said: [...past.customerTexts, input.text], waPhone, fromEmail, images: canSee(app.llm.backend) ? app.images : undefined };
   const toolDefs = company ? COMPANY_TOOLS : TOOLS;
   const tools: ToolRecord[] = [];
   let handoff: { reason: string; summary: string } | null = null;
@@ -182,6 +210,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   let apiUsd = 0;
   const tokens = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
   const model = agentModel(app.env);
+  const effort = agentEffort(app.env);
   // Every model call's tokens and cost, against the store.
   const spend = async (res: TurnRes, tag: string) => {
     usd += res.usd;
@@ -218,7 +247,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
         break;
       }
       rounds++;
-      const res = await app.llm.turn({ system, messages, tools: toolDefs, model, maxTokens: 1500, effort: 'low', tag: `turn store ${store.id}`, timeoutMs: Math.min(MODEL_TIMEOUT_MS, left), maxRetries: 1, signal: AbortSignal.timeout(left) });
+      const res = await app.llm.turn({ system, messages, tools: toolDefs, model, maxTokens: AGENT_MAX_TOKENS, effort, tag: `turn store ${store.id}`, timeoutMs: Math.min(MODEL_TIMEOUT_MS, left), maxRetries: 1, signal: AbortSignal.timeout(left) });
       await spend(res, 'agent');
       if (res.stopReason === 'refusal') {
         handoff = { reason: 'other', summary: 'the model declined to answer' };
@@ -233,7 +262,13 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
       // The assistant's turn goes back exactly as it came (thinking blocks included), then every result in one message.
       messages.push({ role: 'assistant', content: res.content });
       const results = await Promise.all(calls.map((c) => runTool(ctx, c.name, c.input)));
-      const resultBlocks: Block[] = calls.map((c, i) => ({ type: 'tool_result', tool_use_id: c.id, content: results[i].content, ...(results[i].ok ? {} : { is_error: true }) }));
+      // A result with photos (view_product_images) carries them as image blocks after its text; the record keeps the text.
+      const resultBlocks: Block[] = calls.map((c, i) => ({
+        type: 'tool_result',
+        tool_use_id: c.id,
+        content: results[i].images?.length ? [{ type: 'text', text: results[i].content } as TextBlock, ...results[i].images!.map(imageBlock)] : results[i].content,
+        ...(results[i].ok ? {} : { is_error: true }),
+      }));
       calls.forEach((c, i) => {
         tools.push({ name: c.name, input: c.input, ok: results[i].ok, result: results[i].content.slice(0, 6000) });
         if (results[i].handoff) handoff = results[i].handoff!;
