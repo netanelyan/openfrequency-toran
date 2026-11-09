@@ -28,7 +28,6 @@ import { alertOperator } from '../ops/alert.ts';
 //   automatic messages' log (auto_events)  AUTO_EVENTS_DAYS (90) after it was written, once finished
 //   events        EVENTS_MONTHS (13) months: the funnel and the dashboards read the last year
 //   owner line    its duplicate guard (owner_inbound) after 30 days
-//   tracking      what 17track said of a tracking number (tracking_cache, src/tracking.ts) 30 days after it was checked
 //   conversations silent for 14 days are closed, and what an order lookup said about tracking is taken out of them
 //                 (channels/conversations.ts)
 //
@@ -139,7 +138,6 @@ export async function retention(app: App): Promise<Record<string, number>> {
   add('autoEvents', await n(db, `DELETE FROM auto_events WHERE status NOT IN ('waiting', 'sending') AND created_at < now() - interval '${AUTO_EVENTS_DAYS} days' RETURNING id`));
   add('events', await n(db, `DELETE FROM events WHERE at < now() - interval '${EVENTS_MONTHS} months' RETURNING id`));
   add('ownerInbound', await n(db, "DELETE FROM owner_inbound WHERE at < now() - interval '30 days' RETURNING ext_id"));
-  add('tracking', await n(db, "DELETE FROM tracking_cache WHERE checked_at < now() - interval '30 days' RETURNING number"));
 
   add('closed', await closeSilent(db, 14));
   add('files', await sweepFiles(app));

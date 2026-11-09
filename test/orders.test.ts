@@ -268,7 +268,7 @@ test('WooCommerce orders: read with the REST key (in the query when the host dro
     assert.ok(calls[0].headers.authorization.startsWith('Basic '), 'the header first');
     const r = await runTool({ ...s.ctx, api, said: ['הזמנה 1042', 'הטלפון 050-000-0101'] }, 'get_order_status', { order_number: '#1042' });
     assert.match(r.content, /^Order 1042, placed 21\.10\.2026: paid, being prepared, not shipped yet\./);
-    assert.match(r.content, /- with hfd, tracking number HFD000000, tracking link: https:\/\/t\.17track\.net\/en#nums=HFD000000\n/, 'no link from the store or its tracking plugin: 17track\'s page for the number');
+    assert.match(r.content, /- with hfd, tracking number HFD000000\n/, 'no link from the store or its tracking plugin: the number alone');
     assert.ok(calls.some((c) => c.url.includes('/wp-json/wc-shipment-tracking/v3/orders/7310/shipment-trackings')), 'the plugin was asked for the link it builds');
     assert.doesNotMatch(r.content, /someone|980/, 'order id 1042 is another order, number 980');
   } finally {
@@ -303,44 +303,20 @@ test('Wix orders: searched by number with the API key and the site id, tracking 
 
 // ---- where the package is (src/tracking.ts)
 
-/** 17track's Tracking API, as its docs show it (api.17track.net/en/doc, v2.4): `down` makes every call fail. */
-function track17Answer(state: { down?: boolean; registered: Set<string> }) {
-  return (c: Call) => {
-    if (state.down) return { status: 503, body: { code: 503, data: null } };
-    if (c.headers['17token'] !== 'test-17track-key') return { status: 401, body: { code: -18010002, data: null } };
-    const numbers: string[] = (c.body || []).map((x: any) => x.number);
-    if (c.url.endsWith('/register')) {
-      const fresh = numbers.filter((n) => !state.registered.has(n));
-      for (const n of fresh) state.registered.add(n);
-      return { body: { code: 0, data: { accepted: fresh.map((number) => ({ origin: 1, number, carrier: 3011 })), rejected: numbers.filter((n) => !fresh.includes(n)).map((number) => ({ number, error: { code: -18019901, message: `Tracking number ${number} is already registered.` } })) } } };
-    }
-    if (c.url.endsWith('/gettrackinfo')) {
-      return { body: { code: 0, data: { accepted: numbers.filter((n) => state.registered.has(n)).map((number) => ({ number, carrier: 3011, track_info: {
-        latest_status: { status: 'OutForDelivery', sub_status: 'OutForDelivery_Other', sub_status_descr: null },
-        latest_event: { time_iso: '2026-11-09T10:30:00+02:00', time_utc: '2026-11-09T08:30:00Z', description: 'Out for delivery from the Tel Aviv branch', location: 'TEL AVIV', address: { country: 'IL', city: 'TEL AVIV' } },
-      } })), rejected: numbers.filter((n) => !state.registered.has(n)).map((number) => ({ number, error: { code: -18019902, message: 'The tracking number does not register, please register first.' } })) } } };
-    }
-    return { status: 404, body: {} };
-  };
-}
-
-test('tracking: the website\'s own page first, then the store\'s link; 17track\'s status and last update in words, only after the order matched, and never failing the reply', async () => {
+test('tracking: the website\'s own page when the store has one, else the store\'s link, only after the order matched', async () => {
   const s = await store(EXAMPLE_DOMAIN);
   const { app, id } = s;
   try {
     Object.assign(app.env, KEY);
-    const t17 = { down: false, registered: new Set<string>() };
-    const answer17 = track17Answer(t17);
-    const { api, calls } = fakeApi((c) => (c.url.startsWith('https://api.17track.net/') ? answer17(c) : shopifyAnswer(c)));
+    const { api } = fakeApi(shopifyAnswer);
     app.api = api;
     await connectOrders(app, id, { token: SHOPIFY_TOKEN }, 'owner');
     const ask = (extra: Partial<ToolContext> = {}) => runTool({ ...s.ctx, api, said: ['איפה ההזמנה 1042?'], waPhone: '972500000101', ...extra }, 'get_order_status', { order_number: '1042' });
-    const to17 = () => calls.filter((c) => c.url.startsWith('https://api.17track.net/'));
 
-    // No key: the store's own status and link, and nothing asked of 17track.
+    // Shopify's own status and link.
     let r = await ask();
     assert.match(r.content, /- on its way, with דואר ישראל, tracking number RR000000000IL, tracking link: https:\/\/track\.example\/RR000000000IL\n/);
-    assert.equal(to17().length, 0);
+    assert.match(r.content, /plain, natural Hebrew/);
 
     // The website's tracking page, with the numbers in it, instead of the store's link.
     await app.db.query('UPDATE stores SET tracking_page = $2 WHERE id = $1', [id, 'https://kli-cheres.example/track?n={number}&o={order}']);
@@ -348,37 +324,15 @@ test('tracking: the website\'s own page first, then the store\'s link; 17track\'
     assert.match(r.content, /tracking link: https:\/\/kli-cheres\.example\/track\?n=RR000000000IL&o=1042\n/);
     assert.doesNotMatch(r.content, /track\.example\/RR/);
 
-    // With the key: nothing is asked of 17track before the order is theirs.
-    app.env.TORAN_17TRACK_KEY = 'test-17track-key';
-    const s17 = { ...s.ctx, env: app.env };
-    const before = await runTool({ ...s17, api, said: ['איפה ההזמנה 1042?'], waPhone: '972500000999' }, 'get_order_status', { order_number: '1042' });
+    // Nothing about the package before the order is theirs.
+    const before = await ask({ waPhone: '972500000999' });
     assert.match(before.content, /^ASK PHONE/);
-    assert.match((await runTool({ ...s17, api, said: ['1042', '050-000-0909'] }, 'get_order_status', { order_number: '1042' })).content, /^NO MATCH/);
-    assert.equal(to17().length, 0, 'no tracking details, not even a lookup, before a match');
+    assert.doesNotMatch(before.content, /RR000000000IL|kli-cheres/);
 
-    // Once it matches: registered, then read; the carrier's status and its last update, in Israel time.
-    r = await ask({ env: app.env });
-    assert.deepEqual(to17().map((c) => [c.url, c.body]), [['https://api.17track.net/track/v2.4/register', [{ number: 'RR000000000IL' }]], ['https://api.17track.net/track/v2.4/gettrackinfo', [{ number: 'RR000000000IL' }]]]);
-    assert.equal(to17()[0].headers['content-type'], 'application/json');
-    assert.match(r.content, /- out for delivery \(the carrier's own status, through 17track\), with דואר ישראל, latest update from the carrier: "Out for delivery from the Tel Aviv branch", TEL AVIV, 9\.11\.2026 10:30, tracking number RR000000000IL, tracking link: https:\/\/kli-cheres\.example\/track\?n=RR000000000IL&o=1042\n/);
-    assert.match(r.content, /plain, natural Hebrew/);
-    assert.match(r.content, /A status, a place or a time the lines above do not give, you never say/);
-
-    // Asked again within the hour: from the cache, no call.
-    await ask({ env: app.env });
-    assert.equal(to17().length, 2);
-
-    // When the conversation closes, the update goes with the number and the link; the status words stay.
+    // When the conversation closes, the number and the link go; the status words stay.
     const kept = withoutTracking(r.content);
-    assert.doesNotMatch(kept, /TEL AVIV|RR000000000IL|kli-cheres\.example\/track/);
-    assert.match(kept, /- out for delivery \(the carrier's own status, through 17track\), with דואר ישראל\n/);
-
-    // 17track down: the store's status and the link, as before, and the reply goes on.
-    await app.db.query('DELETE FROM tracking_cache');
-    t17.down = true;
-    r = await ask({ env: app.env });
-    assert.match(r.content, /^Order #1042/);
-    assert.match(r.content, /- on its way, with דואר ישראל, tracking number RR000000000IL, tracking link: https:\/\/kli-cheres\.example\/track/);
+    assert.doesNotMatch(kept, /RR000000000IL|kli-cheres\.example\/track/);
+    assert.match(kept, /- on its way, with דואר ישראל\n/);
   } finally {
     await app.db.close();
   }

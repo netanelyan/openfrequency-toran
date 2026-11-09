@@ -67,7 +67,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'get_order_status',
-    description: 'Look up an existing order by its number in the store\'s own system: its status, its shipments (the carrier, the tracking number, where the package is now when the carrier says so) and the tracking link to give. Ask the customer for the order number only, and call it. It answers when the customer writes from the order\'s own phone (or email address); otherwise its result asks you to check it is really them by asking for the phone number the order was placed with, and you call it again once they give it. When the store\'s orders are not connected, its result says how to hand the question to the store. Tell the customer the status in plain, natural Hebrew with the tracking link as given, and only what the result says: never a status, a place or a date of your own.',
+    description: 'Look up an existing order by its number in the store\'s own system: its status, its shipments (the carrier, the tracking number) and the tracking link to give. Ask the customer for the order number only, and call it. It answers when the customer writes from the order\'s own phone (or email address); otherwise its result asks you to check it is really them by asking for the phone number the order was placed with, and you call it again once they give it. When the store\'s orders are not connected, its result says how to hand the question to the store. Tell the customer the status in plain, natural Hebrew with the tracking link as given, and only what the result says: never a status, a place or a date of your own.',
     input_schema: { type: 'object', properties: { order_number: { type: 'string', description: 'The order number as the customer wrote it' } }, required: ['order_number'] },
   },
   {
@@ -77,7 +77,7 @@ export const TOOLS: ToolDef[] = [
       type: 'object',
       properties: {
         reason: { type: 'string', enum: ['unknown', 'refund', 'discount', 'complaint', 'order', 'human_requested', 'other'] },
-        summary: { type: 'string', description: 'One line for the store owner: what the customer needs' },
+        summary: { type: 'string', description: 'One line for the store owner, in Hebrew: what the customer needs' },
       },
       required: ['reason', 'summary'],
     },
@@ -115,10 +115,9 @@ export const COMPANY_TOOLS: ToolDef[] = [
 
 // said: the customer's own messages in this conversation, this turn's included (an order is told only to whoever wrote
 // its email or phone in them); waPhone: the number the customer writes from on the store's own WhatsApp; api: the way
-// to the store's order API (app.api), and to 17track's (src/tracking.ts); log: the app's log line, for 17track not
-// answering.
+// to the store's order API (app.api).
 // images: the fetcher product photos are read with (app.images; absent, view_product_images says it cannot show them).
-export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null; fromEmail?: string | null; images?: Fetcher; log?: (m: string) => void };
+export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null; fromEmail?: string | null; images?: Fetcher };
 /** images: photos the model sees with the result's text (view_product_images); the record keeps the text alone. */
 export type ToolOutcome = { ok: boolean; content: string; handoff?: { reason: string; summary: string }; facts?: string[]; images?: Photo[] };
 
@@ -398,12 +397,6 @@ async function cartLink(c: ToolContext, input: any): Promise<ToolOutcome> {
 
 const ORDER_TRIES = 3;
 const israelDay = (iso: string) => new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'numeric', year: 'numeric' }).format(new Date(iso));
-/** "9.11.2026 14:05", Israel time; an unreadable time is left out. */
-const israelTime = (iso: string) => {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${israelDay(iso)} ${new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false }).format(d)}`;
-};
 
 // An order is looked up only on a live turn, in the store's own system (src/orders.ts), and told only to whoever
 // wrote the email or phone number on it, or writes from that phone on the store's WhatsApp. A number that is not
@@ -436,15 +429,12 @@ async function orderStatus(c: ToolContext, input: any): Promise<ToolOutcome> {
     return { ok: true, content: `NO MATCH: no order ${order} goes with the phone number the customer gave.\nRule: say you could not find an order with this number and phone, and ask them to check the order number and the phone number they ordered with. Do not say which of them did not match. If it does not match again, tell them you are passing it to the store and call handoff with reason "order".` };
   }
 
-  // Only now, with the order theirs, where its packages are (src/tracking.ts): the carrier's own word through 17track
-  // when the server has its key, and one link each, the website's tracking page first, then the store's tracking link,
-  // then 17track's page for the number. The carrier's last update goes after the carrier's name and before the number
-  // and the link, so the retention pass (channels/conversations.ts withoutTracking) takes it out with them.
+  // Only now, with the order theirs, where its packages are (src/tracking.ts): one link each, the website's tracking
+  // page when the store has one, else the store's own tracking link.
   const store = await c.db.one<{ tracking_page: string | null }>('SELECT tracking_page FROM stores WHERE id = $1', [c.storeId]);
-  const told = await shipmentsTold({ db: c.db, env: c.env || {}, api: c.api || fetch, log: c.log }, store?.tracking_page, o.number, o.shipments);
+  const told = shipmentsTold(store?.tracking_page, o.number, o.shipments);
   const ships = told.map((s) => {
-    const update = s.event ? [`latest update from the carrier: "${s.event.text}"`, s.event.place, s.event.at ? israelTime(s.event.at) : null].filter(Boolean).join(', ') : null;
-    const what = [s.status ? `${s.status}${s.from17 ? ' (the carrier\'s own status, through 17track)' : ''}` : null, s.company ? `with ${s.company}` : null, update, s.number ? `tracking number ${s.number}` : null];
+    const what = [s.status, s.company ? `with ${s.company}` : null, s.number ? `tracking number ${s.number}` : null];
     return `- ${what.filter(Boolean).join(', ') || 'a shipment'}${s.link ? `, tracking link: ${s.link}` : ''}`;
   });
   const page = told.length ? null : pageFor(store?.tracking_page, null, o.number);
@@ -455,7 +445,7 @@ async function orderStatus(c: ToolContext, input: any): Promise<ToolOutcome> {
   ];
   return {
     ok: true,
-    content: `${lines.join('\n')}\nRule: tell the customer this status in your own short words, with the tracking link exactly as written when there is one. Say it in plain, natural Hebrew, the way the store's own staff would text it ("ההזמנה יצאה והיא בדרך"): the carrier's update in your own Hebrew words, with no status codes and no English. A status, a place or a time the lines above do not give, you never say. A delivery date, the reason for a delay, or anything the lines above do not say, you do not know. To change, cancel or return the order, or for a refund: tell them you are passing it to the store and call handoff with reason "order".`,
+    content: `${lines.join('\n')}\nRule: tell the customer this status in your own short words, with the tracking link exactly as written when there is one. Say it in plain, natural Hebrew, the way the store's own staff would text it ("ההזמנה יצאה והיא בדרך"): the status in your own Hebrew words, with no status codes and no English. A status, a place or a time the lines above do not give, you never say. A delivery date, the reason for a delay, or anything the lines above do not say, you do not know. To change, cancel or return the order, or for a refund: tell them you are passing it to the store and call handoff with reason "order".`,
     facts: lines,
   };
 }

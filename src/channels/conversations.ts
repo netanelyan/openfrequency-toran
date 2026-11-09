@@ -12,8 +12,8 @@ import { type Db, J } from '../db/index.ts';
 //
 // A conversation silent for `within` is closed when the customer writes again, and a new one starts; the daily pass
 // closes the ones silent for 14 days (jobs/retention.ts). On closing, what an order lookup said about a shipment's
-// tracking (its number and link, which can open a page with the recipient's name and address, and the carrier's last
-// update) is taken out of the stored tool results; the order's status words stay.
+// tracking (its number and link, which can open a page with the recipient's name and address) is taken out of the
+// stored tool results; the order's status words stay.
 
 export type OpenSpec = {
   storeId: number;
@@ -70,14 +70,9 @@ export async function closeSilent(db: Db, days = 14): Promise<number> {
   return rows.length;
 }
 
-/**
- * A get_order_status result without its tracking numbers and links, and without the carrier's last update (it names a
- * place on the way to the customer, src/tracking.ts), which stands after the carrier and before the number and link:
- * "- shipped, with Israel Post" stays.
- */
+/** A get_order_status result without its tracking numbers and links: "- shipped, with Israel Post" stays. */
 export function withoutTracking(result: string): string {
   return String(result || '')
-    .replace(/,\s*latest update from the carrier: [^\n]*/g, '')
     .replace(/,\s*tracking number [^,\n]+/g, '')
     .replace(/,\s*tracking link: \S+/g, '')
     .replace(/Rule: tell the customer this status in your own short words, with the tracking link exactly as written when there is one\./, 'Rule: tell the customer this status in your own short words.');
