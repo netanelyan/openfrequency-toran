@@ -31,6 +31,7 @@ import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } 
 import { checkTemplates, templateStatus } from '../auto/templates.ts';
 import { waitingDigest } from '../owners/waiting.ts';
 import { learnVoice } from '../agent/voice.ts';
+import { takeOrderKey } from '../domainProof.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -143,6 +144,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       if (workspaceId) await app.db.query('UPDATE stores SET agent_live_at = NULL, agent_paused_at = NULL WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM channel_accounts a WHERE a.store_id = stores.id)', [store.id]);
       // Asked for on the website: the number that asked is the one to send the page to.
       if (/^9725\d{8}$/.test(String(p.whatsapp || ''))) await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [store.id, p.whatsapp]);
+      // The site proven with the store's own key (domainProof.ts): the key is the store's order key now, a step done.
+      if (workspaceId) await takeOrderKey(app, store.id, p.by || 'owner');
       if (!canIngest(store.platform)) return { storeId: store.id, stats: r.stats, ingested: false, why: `the platform is ${store.platform}: Toran reads ${INGESTIBLE_EN} stores` };
       return { storeId: store.id, ...(await ingestAndBuild(app, store.id, say)) };
     }

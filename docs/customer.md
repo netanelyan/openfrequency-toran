@@ -127,9 +127,20 @@ types it ("store.co.il" is enough). `POST /start`:
 - sends a workspace that has a store, or whose site is being read, back to Today (one store a workspace, for now)
 - refuses a domain that is another workspace's store: "החנות הזאת כבר מחוברת לחשבון אחר. כתבו לנו ונבדוק."
 - keeps a claim on a domain this workspace has not proven yet (`src/domainProof.ts`, `domain_claims`) and shows how to
-  prove it: a DNS TXT record `toran-verify=<token>` on the domain or on `_toran-verify.<domain>`, or
-  `<meta name="toran-verify" content="<token>">` on the home page. `POST /start/verify` looks (once every 10 seconds),
-  and only a proven domain goes on to the steps below. Until then Today and accounts' `/setup` say "צריך לאמת שהאתר
+  prove it, the easiest way for what the site is built on first (read once a day: Shopify, WooCommerce, WordPress,
+  Wix, Webflow or other), the others under "עוד דרכים":
+  - Shopify or WooCommerce: "מחברים את החנות", the store's read-orders key (the account's owner only), `POST
+    /start/verify/key`. A Shopify key must be the shop at this site (`orders.ts keyFitsSite`); a WooCommerce key must
+    work on the site's own REST API. The key becomes the store's order key once the store exists
+  - an address published on the site: "שולחים קוד למייל שמופיע באתר", shown masked; `POST /start/verify/email` sends
+    a 6-digit code (30 minutes, 5 tries, 3 codes an hour) and `POST /start/verify/code` checks it
+  - otherwise the tag `<meta name="toran-verify" content="<token>">`, with steps for a site of its own, WordPress
+    (WPCode), Wix, Shopify and Webflow, and a WhatsApp link that sends it to whoever built the site
+  - a DNS TXT record `toran-verify=<token>` on the domain or on `_toran-verify.<domain>`, only where the domain's DNS is
+    the owner's (not on myshopify.com, wixsite.com and the like)
+
+  `POST /start/verify` looks for the tag or the record (once every 10 seconds, the key too), and only a proven domain
+  goes on to the steps below. Until then Today and accounts' `/setup` say "צריך לאמת שהאתר
   שלכם". The operator releases a disputed domain from the lead's page ("לשחרר את האתר מהחשבון")
 - takes one add a minute per workspace (the audit's `start_store`)
 - makes an operator's lead with that domain the workspace's, and reads its site again

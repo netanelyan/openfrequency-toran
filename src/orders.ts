@@ -2,7 +2,7 @@ import type { App } from './app.ts';
 import { type Db, J } from './db/index.ts';
 import { audit, event } from './db/log.ts';
 import { open, seal, SecretError, secretsReady } from './core/secrets.ts';
-import { toIntl } from './core/urls.ts';
+import { canonicalDomain, toIntl } from './core/urls.ts';
 import { shopMeta } from './ingest/shopify.ts';
 
 // A store's own orders, read-only, for get_order_status (agent/tools.ts). The owner pastes a read-only key on the
@@ -402,10 +402,11 @@ const HE = {
   org: 'Shopify לא נתנה לאפליקציה גישה לחנות הזו. צריך ליצור את האפליקציה ב-Dev Dashboard מאותו חשבון שהחנות שייכת אליו, ולהתקין אותה על החנות.',
   install: 'Shopify לא נתנה גישה עם הפרטים האלה. כדאי לבדוק שהאפליקציה מותקנת על החנות (ב-Dev Dashboard, "Install app"), ושהעתקתם את ה-Client ID וה-Client secret שלה עד הסוף.',
   away: 'לא הצלחנו להגיע לחנות כדי לבדוק את המפתח. אפשר לנסות שוב בעוד כמה דקות.',
+  other: 'המפתח הזה של חנות Shopify אחרת, לא של האתר הזה. צריך את הפרטים של האפליקציה שמותקנת על החנות של האתר.',
 };
 
 /** The owner's form as the platform's credentials, or the Hebrew reason it is not one. */
-async function credsOf(app: App, platform: OrderPlatform, origin: string, form: Record<string, string>): Promise<Creds> {
+export async function credsOf(app: App, platform: OrderPlatform, origin: string, form: Record<string, string>): Promise<Creds> {
   if (platform === 'shopify') {
     // A Dev Dashboard app's Client ID and Client secret (since 2026), or an old custom app's shpat_ token.
     const token = str(form.token);
@@ -443,22 +444,17 @@ export function shopOf(input: string): string | null {
 }
 
 /** One small read with the key: refused here, not by a customer later. */
-async function tryKey(api: Api, platform: OrderPlatform, origin: string, c: Creds) {
+export async function tryKey(api: Api, platform: OrderPlatform, origin: string, c: Creds) {
   if (platform === 'shopify') return shopifyGet(api, c, 'orders.json?status=any&limit=1&fields=id');
   if (platform === 'woocommerce') return wooGet(api, origin, c, 'orders?per_page=1');
   return wixPost(api, c, '/ecom/v1/orders/search', { search: { cursorPaging: { limit: 1 } } });
 }
 
-const hintOf = (s: string | undefined) => (s ? `…${s.slice(-4)}` : null);
-
-export async function connectOrders(app: App, storeId: number, form: Record<string, string>, by: string) {
-  if (!secretsReady(app.env)) throw new OrderConnectError('TORAN_SECRETS_KEY is not set', HE.closed);
-  const s = await app.db.one<{ platform: string; url: string }>('SELECT platform, url FROM stores WHERE id = $1', [storeId]);
-  if (!s || !ordersPlatform(s.platform)) throw new OrderConnectError(`no order reader for ${s?.platform}`, HE.platform);
-  const origin = httpsOrigin(s.url);
-  const c = await credsOf(app, s.platform, origin, form);
+/** The owner's form as working credentials, tried once, or an OrderConnectError with the Hebrew reason. */
+export async function checkKey(app: App, platform: OrderPlatform, origin: string, form: Record<string, string>): Promise<Creds> {
+  const c = await credsOf(app, platform, origin, form);
   try {
-    await tryKey(app.api, s.platform, origin, c);
+    await tryKey(app.api, platform, origin, c);
   } catch (e) {
     if (e instanceof OrderApiError && e.status >= 400 && e.status < 500) {
       const he = c.clientId ? (/shop_not_permitted/i.test(e.message) ? HE.org : HE.install) : HE.refused;
@@ -466,14 +462,62 @@ export async function connectOrders(app: App, storeId: number, form: Record<stri
     }
     throw new OrderConnectError(`the key could not be tried: ${(e as Error)?.message || e}`, HE.away);
   }
+  return c;
+}
+
+/**
+ * Whether a Shopify key that works is the shop at this site. Before 2026-11-09 a key was never matched to the store's
+ * domain, so a key for any other shop was kept, and the store answered with another shop's orders. Now it is one of:
+ *   - the site is that shop's own <name>.myshopify.com address
+ *   - the site's public /meta.json gives the shop's myshopify_domain, and it is the shop the key works on (the key
+ *     answered at https://<name>.myshopify.com/admin, so that is its shop's myshopify_domain; when /meta.json names
+ *     another shop, nothing below can override it)
+ *   - no /meta.json (a store behind its password page): the Admin API's GET shop.json says the shop's domain, "The
+ *     shop's domain", is the site's, and its myshopify_domain, "The shop's .myshopify.com domain", is the key's
+ *     (shopify.dev/docs/api/admin-rest/latest/resources/shop). Taken only when the site itself looks like Shopify
+ *     (shopifySite): whether Shopify lets a shop make a domain primary before its DNS points there is UNVERIFIED, so a
+ *     domain alone never proves a site that is not on Shopify. Whether shop.json needs a scope beyond read_orders is
+ *     UNVERIFIED too: when it is refused, this way says no.
+ */
+export async function keyFitsSite(app: Pick<App, 'api' | 'fetcher'>, c: Creds, origin: string, shopifySite: boolean): Promise<boolean> {
+  const shop = shopOf(str(c.shop));
+  if (!shop) return false;
+  const host = new URL(origin).hostname.toLowerCase().replace(/\.$/, '');
+  if (host === shop) return true;
+  const mine = shopOf(str((await shopMeta(app.fetcher, origin)).myshopify_domain));
+  if (mine) return mine === shop;
+  if (!shopifySite) return false;
+  try {
+    const s = (await shopifyCall(app.api, c, 'shop.json'))?.shop;
+    const domain = canonicalDomain(str(s?.domain));
+    return Boolean(domain) && domain === canonicalDomain(origin) && shopOf(str(s?.myshopify_domain)) === shop;
+  } catch {
+    return false;
+  }
+}
+
+const hintOf = (s: string | undefined) => (s ? `…${s.slice(-4)}` : null);
+
+/** A tried key, sealed into the store's order_access (from the knowledge page, or from the key that proved the site at /start). */
+export async function keepAccess(app: App, storeId: number, platform: OrderPlatform, c: Creds, by: string) {
   const meta = { shop: c.shop || null, site_id: c.siteId || null, kind: c.clientId ? 'dev_dashboard' : c.token ? 'custom_app' : null, hint: hintOf(c.clientId || c.token || c.key || c.apiKey), by, checked_at: new Date().toISOString(), why: null };
   await app.db.query(
     `INSERT INTO order_access (store_id, platform, secret, status, meta) VALUES ($1, $2, $3, 'active', $4::jsonb)
      ON CONFLICT (store_id) DO UPDATE SET platform = EXCLUDED.platform, secret = EXCLUDED.secret, status = 'active', meta = EXCLUDED.meta, connected_at = now()`,
-    [storeId, s.platform, seal(app.env, JSON.stringify(c)), J(meta)],
+    [storeId, platform, seal(app.env, JSON.stringify(c)), J(meta)],
   );
-  await audit(app.db, { actor: by, action: 'orders_connect', storeId, detail: { platform: s.platform, hint: meta.hint } });
-  await event(app.db, storeId, 'orders_connected', { platform: s.platform });
+  await audit(app.db, { actor: by, action: 'orders_connect', storeId, detail: { platform, hint: meta.hint } });
+  await event(app.db, storeId, 'orders_connected', { platform });
+}
+
+export async function connectOrders(app: App, storeId: number, form: Record<string, string>, by: string) {
+  if (!secretsReady(app.env)) throw new OrderConnectError('TORAN_SECRETS_KEY is not set', HE.closed);
+  const s = await app.db.one<{ platform: string; url: string }>('SELECT platform, url FROM stores WHERE id = $1', [storeId]);
+  if (!s || !ordersPlatform(s.platform)) throw new OrderConnectError(`no order reader for ${s?.platform}`, HE.platform);
+  const origin = httpsOrigin(s.url);
+  const c = await checkKey(app, s.platform, origin, form);
+  if (s.platform === 'shopify' && !(await keyFitsSite(app, c, origin, true))) throw new OrderConnectError(`the key is for ${c.shop}, not this store's shop`, HE.other);
+  await keepAccess(app, storeId, s.platform, c, by);
   return { platform: s.platform };
 }
 

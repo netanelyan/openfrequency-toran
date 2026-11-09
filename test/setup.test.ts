@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { drain } from '../src/jobs/worker.ts';
 import { queue } from '../src/ops/queue.ts';
 import { startUrl } from '../src/web/pages/start.ts';
-import { proofDeps } from '../src/domainProof.ts';
-import { customer, INTERNAL_TOKEN, viewingAs } from './helpers.ts';
+import { claimFor, hostedDns, mask, platformOf, proofDeps } from '../src/domainProof.ts';
+import { simEmail } from '../src/channels/email.ts';
+import type { Fetcher } from '../src/core/http.ts';
+import { customer, INTERNAL_TOKEN, testApp, viewingAs } from './helpers.ts';
 import { serve } from './serve.ts';
 
 // A new customer's setup (src/setup.ts, docs/operator.md): GET /internal/setup for accounts' /setup checklist, and
@@ -328,7 +330,7 @@ test('a site is proven the workspace\'s before it is read or a lead moves: a TXT
     proofDeps.resolveTxt = async () => [['v=spf1 -all']];
     const no = await s.post('/start/verify', { _csrf: token }, ajax);
     assert.equal(no.status, 422);
-    assert.match(await (await s.get('/start')).text(), /עוד לא מצאנו את הקוד/);
+    assert.match(await (await s.get('/start')).text(), /עוד לא מצאנו את השורה/);
     assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, null);
     // Asked again at once: one look every few seconds.
     assert.equal((await s.post('/start/verify', { _csrf: token }, ajax)).status, 429);
@@ -350,6 +352,238 @@ test('a site is proven the workspace\'s before it is read or a lead moves: a TXT
     assert.equal((await s.post(`/lead/${lead}/release`, { _csrf: op })).status, 303);
     assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, null);
     assert.equal((await s.app.db.one<any>("SELECT COUNT(*)::int AS n FROM domain_claims WHERE domain = 'tavlinim-ba-shuk.example'")).n, 0);
+  } finally {
+    await s.close();
+  }
+});
+
+// ---- Easier ways to prove a site (the owner, 2026-11-09: "any easier way to do that? many business owners dont know
+// how to do that"): the store's own key on Shopify or WooCommerce, a code to an address on the site, or the tag with a
+// builder's steps; the TXT record only where the DNS is the owner's.
+
+const SECRETS = { TORAN_SECRETS_KEY: 's'.repeat(40) };
+// Shaped like each platform's own, and not like a real one (check:public refuses those).
+const SHOPIFY_TOKEN = `shpat_${'TEST'.repeat(6)}`;
+const WOO_KEY = { key: `ck_${'test'.repeat(6)}`, secret: `cs_${'test'.repeat(6)}` };
+/** The fixture fetcher, with a WordPress REST API index that lists WooCommerce's namespaces on these hosts. */
+const withWpJson = (fetcher: Fetcher, hosts: string[]): Fetcher => async (url, opts) => {
+  const u = new URL(url);
+  if (hosts.includes(u.hostname.replace(/^www\./, '')) && u.pathname === '/wp-json/') return { url, status: 200, contentType: 'application/json', headers: {}, text: JSON.stringify({ name: 'x', namespaces: ['oembed/1.0', 'wc/store/v1', 'wc/v3', 'wp/v2'] }) };
+  return fetcher(url, opts);
+};
+/** Shopify's Admin API: one token works on every shop here, and shop.json says each shop's own addresses. */
+const shopifyApi = (): typeof fetch => (async (input: any, init: any = {}) => {
+  const u = new URL(String(input));
+  const out = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
+  if (!u.hostname.endsWith('.myshopify.com') || init.headers?.['x-shopify-access-token'] !== SHOPIFY_TOKEN) return out(401, { errors: 'Invalid API key or access token' });
+  if (u.pathname.endsWith('/orders.json')) return out(200, { orders: [] });
+  if (u.pathname.endsWith('/shop.json')) return out(200, { shop: { myshopify_domain: u.hostname, domain: u.hostname === 'kli-cheres-example.myshopify.com' ? 'kli-cheres.example' : 'another-shop.example' } });
+  return out(404, {});
+}) as typeof fetch;
+const page = async (s: S) => (await s.get('/start')).text();
+const ago = (s: S) => s.app.db.query("UPDATE audit SET at = now() - interval '1 minute' WHERE action = 'verify_domain'");
+
+test('what a claimed site is built on: Shopify from /meta.json or its address, WooCommerce from the REST index, anything else; TXT hidden on a shared host', async () => {
+  const app = await testApp();
+  try {
+    app.fetcher = withWpJson(app.fetcher, ['tavlinim-ba-shuk.example']);
+    const claim = (domain: string, url: string) => claimFor(app, 1, domain, url);
+    assert.equal(await platformOf(app, await claim('kli-cheres.example', 'https://kli-cheres.example/')), 'shopify');
+    assert.equal(await platformOf(app, await claim('tavlinim-ba-shuk.example', 'https://tavlinim-ba-shuk.example/')), 'woocommerce');
+    assert.equal(await platformOf(app, await claim('beit-hasabon.example', 'https://www.beit-hasabon.example/')), 'wordpress', 'WordPress whose REST API is closed: the tag, with WordPress\'s steps');
+    assert.equal(await platformOf(app, await claim('wood-and-thread.example', 'https://wood-and-thread.example/')), 'other');
+    assert.equal(await platformOf(app, await claim('my-shop.myshopify.com', 'https://my-shop.myshopify.com/')), 'shopify', 'a myshopify.com address, even when it does not answer');
+    assert.equal(hostedDns({ domain: 'my-shop.myshopify.com', url: 'https://my-shop.myshopify.com/' }), true);
+    assert.equal(hostedDns({ domain: 'noa-example.wixsite.com', url: 'https://noa-example.wixsite.com/shop' }), true);
+    assert.equal(hostedDns({ domain: 'store.co.il', url: 'https://www.store.co.il/' }), false);
+    assert.deepEqual(['shalom@store.co.il', 'ab@store.co.il', 'a@store.co.il'].map(mask), ['sh***@store.co.il', 'a***@store.co.il', 'a***@store.co.il']);
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('a Shopify store proves its site with its own key: the main card, a key for another shop refused, and the key becomes the store\'s order key', async () => {
+  const s = await serve();
+  try {
+    Object.assign(s.app.env, SECRETS);
+    s.app.api = shopifyApi();
+    const lead = (await s.app.db.one<{ id: number; workspace_id: number | null }>("SELECT id, workspace_id FROM stores WHERE domain = 'kli-cheres.example'"))!;
+    assert.equal(lead.workspace_id, null, 'the seed\'s store is an operator\'s lead');
+    let token = await asCustomer(s, 31);
+    assert.equal((await s.post('/start', { _csrf: token, url: 'kli-cheres.example' })).headers.get('location'), '/start');
+    const html = await page(s);
+    const main = html.split('verify-more')[0];
+    assert.match(main, /<h2>מחברים את החנות ב-Shopify<\/h2>/, 'the key is the main card on Shopify');
+    assert.match(main, /action="\/start\/verify\/key"/);
+    assert.match(main, /name="client_id"/);
+    assert.equal((main.match(/class="btn primary/g) || []).length, 1, 'one main button');
+    assert.match(html, /<summary><h2>עוד דרכים<\/h2><\/summary>/);
+    assert.match(html, /Online Store/, 'the tag\'s steps for Shopify, under more ways');
+    assert.ok(html.includes('https://wa.me/?text='), 'send it to whoever built the site');
+    const claim = (await s.app.db.one<any>('SELECT * FROM domain_claims WHERE workspace_id = 31'))!;
+    assert.equal(claim.platform, 'shopify', 'read once and kept');
+    assert.ok(html.includes(`toran-verify=${claim.token}`), 'its own domain: the TXT record is offered too');
+
+    // A member of the account holds no keys.
+    s.as(s.accounts.session({ ...customer(31), role: 'client_member' }).cookie);
+    assert.equal((await s.post('/start/verify/key', { _csrf: await s.csrf('/start'), token: SHOPIFY_TOKEN }, ajax)).status, 403);
+    token = await asCustomer(s, 31);
+
+    // A key that works, but on another shop: refused, nothing proven.
+    const other = await s.post('/start/verify/key', { _csrf: token, token: SHOPIFY_TOKEN, shop: 'another-shop' }, ajax);
+    assert.equal(other.status, 422);
+    assert.match((await other.json()).message, /של חנות Shopify אחרת/);
+    assert.equal((await s.app.db.one<any>('SELECT proven_at FROM domain_claims WHERE id = $1', [claim.id])).proven_at, null);
+    assert.equal((await s.post('/start/verify/key', { _csrf: token, token: SHOPIFY_TOKEN }, ajax)).status, 429, 'one look every few seconds');
+    await ago(s);
+    const bad = await s.post('/start/verify/key', { _csrf: token, token: `shpat_${'WRONG'.repeat(5)}` }, ajax);
+    assert.equal(bad.status, 422);
+    assert.match((await bad.json()).message, /לא קיבלה את המפתח/);
+
+    // The shop's own key: proven, the lead is theirs, and its orders are connected with the same key.
+    await ago(s);
+    const yes = await s.post('/start/verify/key', { _csrf: token, token: SHOPIFY_TOKEN });
+    assert.equal(yes.headers.get('location'), '/');
+    const done = await s.app.db.one<any>('SELECT how, proven_at, order_creds FROM domain_claims WHERE id = $1', [claim.id]);
+    assert.deepEqual([done.how, Boolean(done.proven_at), done.order_creds], ['shopify', true, null], 'the key moved to the store');
+    await drain(s.app);
+    assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead.id])).workspace_id, 31);
+    const access = await s.app.db.one<any>('SELECT platform, status, secret, meta FROM order_access WHERE store_id = $1', [lead.id]);
+    assert.deepEqual([access.platform, access.status, access.meta.shop], ['shopify', 'active', 'kli-cheres-example.myshopify.com']);
+    assert.ok(!access.secret.includes(SHOPIFY_TOKEN), 'sealed');
+  } finally {
+    await s.close();
+  }
+});
+
+test('a myshopify.com address: the key first and no TXT record, since nobody can add one there', async () => {
+  const s = await serve();
+  try {
+    const token = await asCustomer(s, 32);
+    assert.equal((await s.post('/start', { _csrf: token, url: 'https://my-shop.myshopify.com/' })).headers.get('location'), '/start');
+    const claim = (await s.app.db.one<any>('SELECT * FROM domain_claims WHERE workspace_id = 32'))!;
+    const html = await page(s);
+    assert.match(html.split('verify-more')[0], /<h2>מחברים את החנות ב-Shopify<\/h2>/);
+    assert.ok(!html.includes(`toran-verify=${claim.token}`), 'no TXT value');
+    assert.doesNotMatch(html, /רשומת TXT/);
+    assert.ok(html.includes(`content=&quot;${claim.token}&quot;`), 'the tag is still there, under more ways');
+  } finally {
+    await s.close();
+  }
+});
+
+test('a WooCommerce store proves its site with a REST key the site itself takes, and the new store has its orders connected after add_store', async () => {
+  const s = await serve();
+  const was = proofDeps.hostAllowed;
+  try {
+    Object.assign(s.app.env, SECRETS);
+    s.app.fetcher = withWpJson(s.app.fetcher, ['beit-hasabon.example']);
+    proofDeps.hostAllowed = async () => true;
+    const calls: string[] = [];
+    s.app.api = (async (input: any, init: any = {}) => {
+      const u = new URL(String(input));
+      calls.push(u.host);
+      const ok = init.headers?.authorization === `Basic ${Buffer.from(`${WOO_KEY.key}:${WOO_KEY.secret}`).toString('base64')}`;
+      if (u.host !== 'www.beit-hasabon.example' || !ok) return new Response('{"code":"woocommerce_rest_cannot_view"}', { status: 401 });
+      return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const token = await asCustomer(s, 33);
+    await s.post('/start', { _csrf: token, url: 'https://www.beit-hasabon.example/' });
+    assert.match((await page(s)).split('verify-more')[0], /<h2>מחברים את החנות ב-WooCommerce<\/h2>/);
+    assert.match(await page(s), /name="key"/);
+    const yes = await s.post('/start/verify/key', { _csrf: token, ...WOO_KEY });
+    assert.equal(yes.headers.get('location'), '/');
+    assert.ok(calls.every((h) => h === 'www.beit-hasabon.example'), 'the key is tried on the claimed site only');
+    const claim = await s.app.db.one<any>('SELECT how, order_creds FROM domain_claims WHERE workspace_id = 33');
+    assert.equal(claim.how, 'woo');
+    assert.ok(claim.order_creds && !claim.order_creds.includes(WOO_KEY.secret), 'kept sealed until the store exists');
+    await drain(s.app);
+    const store = (await s.app.db.one<any>("SELECT id, platform, workspace_id FROM stores WHERE domain = 'beit-hasabon.example'"))!;
+    assert.deepEqual([store.platform, store.workspace_id], ['woocommerce', 33]);
+    assert.equal((await s.app.db.one<any>('SELECT platform FROM order_access WHERE store_id = $1', [store.id]))?.platform, 'woocommerce');
+    assert.equal((await s.app.db.one<any>('SELECT order_creds FROM domain_claims WHERE workspace_id = 33')).order_creds, null);
+  } finally {
+    proofDeps.hostAllowed = was;
+    await s.close();
+  }
+});
+
+test('a code to the address on the site: masked on the page, 5 tries, 30 minutes, 3 codes an hour; the right one proves the site', async () => {
+  const s = await serve();
+  try {
+    const mail = simEmail();
+    s.app.mail = mail;
+    const token = await asCustomer(s, 34);
+    await s.post('/start', { _csrf: token, url: 'tavlinim-ba-shuk.example' });
+    const html = await page(s);
+    const main = html.split('verify-more')[0];
+    assert.match(main, /<h2>שולחים קוד למייל שמופיע באתר<\/h2>/, 'not Shopify or WooCommerce here (no REST index): the code is first');
+    assert.ok(main.includes('sh***@tavlinim-ba-shuk.example'));
+    assert.ok(!html.includes('shalom@tavlinim-ba-shuk.example'), 'the address itself is not on the page');
+    const claim = (await s.app.db.one<any>('SELECT * FROM domain_claims WHERE workspace_id = 34'))!;
+    const lead = (await s.app.db.one<any>("SELECT id FROM stores WHERE domain = 'tavlinim-ba-shuk.example'"))!.id;
+    const send = () => s.post('/start/verify/email', { _csrf: token, to: '0' }, ajax);
+    const codeOf = () => /: (\d{6})$/.exec(String(mail.outbox!.at(-1)!.subject))![1];
+    const typed = (code: string) => s.post('/start/verify/code', { _csrf: token, code }, ajax);
+    const wrong = (code: string) => String((Number(code) + 1) % 1_000_000).padStart(6, '0');
+
+    // The first code: five wrong tries, and the sixth is refused even when it is right.
+    const sent = await send();
+    assert.equal(sent.status, 200);
+    assert.match((await sent.json()).message, /שלחנו קוד ל-sh\*\*\*@tavlinim-ba-shuk\.example/);
+    assert.equal(mail.outbox!.at(-1)!.to, 'shalom@tavlinim-ba-shuk.example');
+    assert.match(String(mail.outbox!.at(-1)!.text), /tavlinim-ba-shuk\.example/);
+    const first = codeOf();
+    assert.match(await page(s), /<h2>מקלידים את הקוד מהמייל<\/h2>/, 'a code sent: typing it is the main card');
+    const db = await s.app.db.one<any>('SELECT code_hash, code_to FROM domain_claims WHERE id = $1', [claim.id]);
+    assert.ok(db.code_hash && !db.code_hash.includes(first), 'only its hash');
+    for (let i = 1; i <= 5; i++) {
+      const r = await typed(wrong(first));
+      assert.equal(r.status, 422, `try ${i}`);
+      assert.match((await r.json()).message, /הקוד לא נכון/);
+    }
+    assert.equal((await typed(first)).status, 429, 'the sixth try is refused');
+
+    // The second code expires.
+    await send();
+    const second = codeOf();
+    await s.app.db.query("UPDATE domain_claims SET code_sent_at = now() - interval '31 minutes' WHERE id = $1", [claim.id]);
+    const late = await typed(second);
+    assert.equal(late.status, 422);
+    assert.match((await late.json()).message, /לא בתוקף/);
+
+    // A third code, and no fourth in the same hour.
+    await send();
+    const third = codeOf();
+    const fourth = await send();
+    assert.equal(fourth.status, 429);
+    assert.equal(mail.outbox!.length, 3);
+    assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, null, 'nothing moves before the proof');
+
+    const yes = await s.post('/start/verify/code', { _csrf: token, code: ` ${third.slice(0, 3)} ${third.slice(3)} ` });
+    assert.equal(yes.headers.get('location'), '/');
+    assert.equal((await s.app.db.one<any>('SELECT how FROM domain_claims WHERE id = $1', [claim.id])).how, 'email');
+    assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, 34);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a site with no address and no store: the tag is the main card, the site\'s builder first and open, every builder\'s steps folded below', async () => {
+  const s = await serve();
+  try {
+    s.app.mail = simEmail();
+    const token = await asCustomer(s, 35);
+    await s.post('/start', { _csrf: token, url: 'wood-and-thread.example' });
+    const html = await page(s);
+    const main = html.split('verify-more')[0];
+    assert.match(main, /<h2>מוסיפים שורה קטנה לאתר<\/h2>/);
+    assert.match(main, /data-copy="#verify-tag"/);
+    assert.match(main, /<details class="mt8" open><summary><b>אתר שנבנה בקוד<\/b>/, 'a site of its own: the HTML steps open');
+    for (const b of ['WordPress', 'Wix', 'Shopify', 'Webflow']) assert.match(main, new RegExp(`<summary><b>${b}</b>`), b);
+    assert.match(main, /action="\/start\/verify"/);
+    assert.doesNotMatch(html, /שולחים קוד למייל/, 'no address on the site: no code');
+    assert.doesNotMatch(html, /verify\/key/, 'no store: no key');
   } finally {
     await s.close();
   }

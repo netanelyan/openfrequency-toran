@@ -14,7 +14,7 @@ import { csrfField, esc, icon, postButton, shortDate } from '../ui.ts';
 
 const PLATFORM = { shopify: 'Shopify', woocommerce: 'WooCommerce', wix: 'Wix' } as const;
 
-const STEPS: Record<OrderPlatform, string[]> = {
+export const STEPS: Record<OrderPlatform, string[]> = {
   // Since 2026-01-01 Shopify makes new apps only in its Dev Dashboard (shopify.dev/changelog/posts/legacy-custom-apps-
   // can-t-be-created-after-january-1-2026; shopify.dev/docs/apps/build/dev-dashboard/create-apps-using-dev-dashboard).
   shopify: [
@@ -38,7 +38,7 @@ const STEPS: Record<OrderPlatform, string[]> = {
 const field = (name: string, label: string, { hint = '', placeholder = '', required = true }: { hint?: string; placeholder?: string; required?: boolean } = {}) =>
   `<label class="f mt8">${esc(label)}${hint ? `<small>${esc(hint)}</small>` : ''}<input type="text" name="${name}" dir="ltr" autocomplete="off" spellcheck="false" maxlength="400"${placeholder ? ` placeholder="${esc(placeholder)}"` : ''}${required ? ' required' : ''}></label>`;
 
-const FIELDS: Record<OrderPlatform, string> = {
+export const FIELDS: Record<OrderPlatform, string> = {
   shopify: field('client_id', 'Client ID') + field('client_secret', 'Client secret') + field('shop', 'הכתובת של החנות ב-myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false }),
   woocommerce: field('key', 'Consumer key', { placeholder: 'ck_...' }) + field('secret', 'Consumer secret', { placeholder: 'cs_...' }),
   wix: field('api_key', 'מפתח ה-API') + field('site_id', 'מזהה האתר (Site ID)', { placeholder: '00000000-0000-0000-0000-000000000000' }),

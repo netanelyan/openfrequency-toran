@@ -4,7 +4,7 @@ import { discover } from '../src/leads/discover.ts';
 import { ingestStore } from '../src/ingest/pack.ts';
 import { runTool, type ToolContext } from '../src/agent/tools.ts';
 import { conversationFor, runTurn } from '../src/agent/loop.ts';
-import { connectOrders, contactsIn, matches, OrderConnectError, shopOf, shopifyOrder } from '../src/orders.ts';
+import { connectOrders, contactsIn, keyFitsSite, matches, OrderConnectError, shopOf, shopifyOrder } from '../src/orders.ts';
 import { EXAMPLE_DOMAIN, WIX_DOMAIN, WOO_DOMAIN, WOO_SITEMAP_DOMAIN } from '../src/demo.ts';
 import type { Script } from '../src/agent/llm/scripted.ts';
 import type { App } from '../src/app.ts';
@@ -412,5 +412,32 @@ test('the knowledge page: the owner pastes the key with where to find it, it con
     assert.equal(await s.app.db.one('SELECT 1 FROM order_access WHERE store_id = $1', [a]), null, 'disconnecting forgets the key');
   } finally {
     await s.close();
+  }
+});
+
+test('a Shopify key must be the shop at the store\'s site: a working key for another shop is refused; with no /meta.json, shop.json\'s domain decides on a Shopify site only', async () => {
+  const s = await store(EXAMPLE_DOMAIN);
+  try {
+    Object.assign(s.app.env, KEY);
+    // One token that every shop here takes, so only the shop decides.
+    s.app.api = fakeApi((c) => {
+      const u = new URL(c.url);
+      if (!u.hostname.endsWith('.myshopify.com') || c.headers['x-shopify-access-token'] !== SHOPIFY_TOKEN) return { status: 401, body: {} };
+      if (u.pathname.endsWith('/shop.json')) return { body: { shop: { myshopify_domain: u.hostname, domain: u.hostname === 'quiet-shop.myshopify.com' ? 'quiet-shop.example' : 'another-shop.example' } } };
+      return { body: { orders: [] } };
+    }).api;
+    await assert.rejects(connectOrders(s.app, s.id, { token: SHOPIFY_TOKEN, shop: 'another-shop' }, 'owner'), (e: any) => e instanceof OrderConnectError && /של חנות Shopify אחרת/.test(e.he));
+    assert.equal(await s.app.db.one('SELECT 1 FROM order_access WHERE store_id = $1', [s.id]), null, 'nothing kept');
+    await connectOrders(s.app, s.id, { token: SHOPIFY_TOKEN, shop: 'kli-cheres-example' }, 'owner');
+
+    // A site whose /meta.json does not answer (behind its password page).
+    const app = { api: s.app.api, fetcher: (async (url: string) => { throw new Error(`404 ${url}`); }) as any };
+    const c = (shop: string) => ({ token: SHOPIFY_TOKEN, shop });
+    assert.equal(await keyFitsSite(app, c('quiet-shop.myshopify.com'), 'https://quiet-shop.example', true), true);
+    assert.equal(await keyFitsSite(app, c('quiet-shop.myshopify.com'), 'https://quiet-shop.example', false), false, 'a domain alone never proves a site that is not on Shopify');
+    assert.equal(await keyFitsSite(app, c('another-shop.myshopify.com'), 'https://quiet-shop.example', true), false);
+    assert.equal(await keyFitsSite(app, c('my-shop.myshopify.com'), 'https://my-shop.myshopify.com', false), true, 'the site is the shop\'s own address');
+  } finally {
+    await s.app.db.close();
   }
 });
