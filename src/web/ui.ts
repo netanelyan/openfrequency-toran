@@ -1,5 +1,6 @@
 import { a11yHead, a11yWidget, toranMark, ofMark, iconLinks } from '../brand.ts';
 import { themeButton, themeHead, themeMeta } from './theme.ts';
+import type { InstallCtx } from './install.ts';
 
 // The pieces every page is made of. Pages are functions from data to HTML strings: no
 // framework, so a page can be tested by reading it. Every value that came from outside
@@ -99,6 +100,12 @@ const SPRITE = `<svg class="sr" width="0" height="0" aria-hidden="true"><defs>
 <symbol id="i-camera" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="3.8"/><path d="M16.8 7.2h.01"/></symbol>
 <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.5-7.5"/></symbol>
 <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 5l1.9 5.5L19.5 12l-5.6 1.6L12 19l-1.9-5.4L4.5 12l5.6-1.5z"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><path d="M8.5 9H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1.5"/><path d="M12 3v11M8.5 6.5L12 3l3.5 3.5"/></symbol>
+<symbol id="i-dots" viewBox="0 0 24 24"><path stroke-width="3" d="M5.5 12h.01M12 12h.01M18.5 12h.01"/></symbol>
+<symbol id="i-kebab" viewBox="0 0 24 24"><path stroke-width="3" d="M12 5.5v.01M12 12v.01M12 18.5v.01"/></symbol>
+<symbol id="i-addsq" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
+<symbol id="i-get" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19.5h14"/></symbol>
+<symbol id="i-install" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8.5 20.5h7M12 7.5v6M9.5 11l2.5 2.5 2.5-2.5"/></symbol>
 </defs></svg>`;
 
 // The operator's sections, the same in the tab bar (phone) and the sidebar (desk).
@@ -150,6 +157,8 @@ export type PageCtx = {
   /** The pay reminder (billing/entitlement.ts payReminder) and where to pay: accounts' /setup. */
   pay?: { state: 'soon' | 'due'; until: string } | null;
   payHref?: string | null;
+  /** The browser, for adding Toran to the phone (install.ts); null under accounts' /admin, whose site is not Toran's. */
+  install?: InstallCtx | null;
 };
 
 /**
@@ -202,6 +211,8 @@ export function layout(ctx: PageCtx, body: string): string {
 ${themeMeta()}
 <meta name="robots" content="noindex, nofollow">
 <meta name="apple-mobile-web-app-title" content="תורן">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <title>${esc(ctx.title)} · תורן</title>
 <link rel="stylesheet" href="/static/brand.css?v=${ctx.v || 1}">
 <link rel="stylesheet" href="/static/style.css?v=${ctx.v || 1}">

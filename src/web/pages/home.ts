@@ -8,6 +8,7 @@ import { contactTarget, pitchUrl, reminderMessage } from '../../outreach.ts';
 import { getOffer, offerReady, priceSentence, setOffer, type Offer } from '../../offer.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { ago, csrfField, dayLine, esc, icon, layout, postButton, stamp, storeBadge, timeHe, tokenNum, usd } from '../ui.ts';
+import { installCard, installPanel } from '../install.ts';
 import { addForm, leadRow } from './leads.ts';
 import { selling, storeIdIn, storesOf } from '../workspace.ts';
 import { ALL_CHANNELS, CHANNEL_HE, channelStates, enabledChannels, MESSAGING, messagingSql, setChannelState, type ChannelState } from '../../channels/config.ts';
@@ -58,6 +59,7 @@ async function today(app: App, r: DashReq) {
 ${addForm(r)}
 ${down.length ? `<section class="group mt24"><header><h2>ביקשו להוריד את העמוד</h2></header><div class="panel">${down.map((s) => leadRow(s, postButton(r.ctx, `/lead/${s.id}/takedown`, 'להוריד', { cls: 'btn sm danger', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' }))).join('')}</div><p class="small muted mt8 m0">מישהו לחץ על "להוריד את העמוד הזה". כשההודעה שלהם מגיעה בוואטסאפ, מורידים את העמוד מכאן.</p></section>` : ''}
 ${hand.length ? `<section class="group mt24"><header><h2>העברות אליך</h2><a class="end small" href="/chats?filter=handoff">כל השיחות</a></header><div class="list">${hand.map((h) => `<a href="/chat/${h.id}"><span class="ico bad">${icon('hand')}</span><span class="t"><b>${esc(h.brand?.name || h.name || h.domain)}: ${esc(h.summary || 'תורן העביר שיחה')}</b><small>${esc(ago(h.last_at))}</small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div></section>` : ''}
+${installCard(r.ctx.install)}
 <section class="group mt24" id="ready"><header><h2>מוכנים לשליחה</h2></header>${ready.length ? `<div class="panel">${ready.map((s) => leadRow(s, `<a class="btn sm" href="/lead/${s.id}">${icon('send')}לשליחה</a>`)).join('')}</div>` : `<div class="empty">${icon('send')}<b>אין דפים שמחכים לשליחה</b>דף נכנס לכאן אחרי שמאשרים אותו.</div>`}</section>
 <section class="group"><header><h2>לידים חדשים שמתאימים</h2><a class="end small" href="/leads?status=new">כולם</a></header>${fresh.length ? `<div class="panel">${fresh.map((s) => leadRow(s, canIngest(s.platform) ? postButton(r.ctx, `/lead/${s.id}/build`, 'לבנות דף', { cls: 'btn sm' }) : '')).join('')}</div>` : `<div class="empty">${icon('leads')}<b>אין לידים חדשים</b>אפשר להריץ חיפוש בהגדרות.</div>`}</section>`;
   return layout({ ...r.ctx, title: 'היום', active: 'today' }, body);
@@ -330,6 +332,7 @@ async function settings(app: App, r: DashReq) {
     ${channelsPanel(r, await channelStates(app.db), enabledChannels(app.env))}
     <section class="panel"><header><h2>מפתחות</h2></header><ul class="keys">${keys}</ul><p class="small muted mt12 m0">הערכים נשמרים ב־<span class="ltr">private/.env</span> בלבד ולא מוצגים כאן.</p></section>` : ''}
     <section class="panel"><header><h2>המותג</h2></header><a class="btn sm" href="/brand">לדף המותג</a></section>
+    ${installPanel(r.ctx.install)}
     ${dev ? `<section class="panel dev" id="dev"><header><h2>מצב מפתח</h2></header><dl class="kv"><dt>מודל</dt><dd class="ltr">${esc(app.llm.backend)} · ${esc(app.env.TORAN_MODEL_AGENT || 'claude-opus-5-5')}</dd><dt>וואטסאפ</dt><dd class="ltr">${esc(app.wa.kind)}</dd><dt>מסד נתונים</dt><dd class="ltr">${esc(app.db.kind)}</dd></dl><form method="post" action="/settings/dev" class="mt12">${csrfField(r.ctx)}<input type="hidden" name="on" value="0"><button class="btn sm" type="submit">לסגור מצב מפתח</button></form></section>` : ''}
     <a class="btn ghost" href="${esc(r.ctx.logout || '/')}">${icon('logout')}יציאה</a>
   </div>

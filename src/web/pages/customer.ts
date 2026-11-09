@@ -14,6 +14,7 @@ import { channelStates, CHANNEL_HE, enabledChannels, messagingSql, type AnyChann
 import { accountsLinks } from '../accounts.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, dayHe, esc, fold, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
+import { installCard, installPanel } from '../install.ts';
 import { storesOf, type Scope } from '../workspace.ts';
 import { conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
@@ -241,7 +242,7 @@ async function pushPanel(app: App, r: DashReq): Promise<string> {
   const key = (await vapid(app.db)).publicKey;
   return `<section class="panel" id="push"><header><h2>התראות</h2><span class="end">${n ? `<span class="chip ok">${n === 1 ? 'מכשיר אחד' : `${n} מכשירים`}</span>` : '<span class="chip ghost">כבוי</span>'}</span></header>
   <p class="small m0">כשלקוח מחכה לתשובה שלכם, מגיעה התראה לטלפון או למחשב מיד, בלי לחכות למייל.</p>
-  <p class="small muted mt8 m0">באייפון: פותחים את תורן בספארי, משתפים ואז "הוסף למסך הבית", ופותחים את תורן מהאייקון. רק משם אפשר להפעיל התראות.</p>
+  <p class="small muted mt8 m0">באייפון ההתראות עובדות רק כשפותחים את תורן מהאייקון במסך הבית. <a href="#install">איך מוסיפים את האייקון</a></p>
   <form class="mt12" method="post" action="/push/subscribe" data-ajax="reload" data-push="${esc(key)}">${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm primary" type="button" data-push-enable>${icon('spark')}להפעיל התראות במכשיר הזה</button></form>
   <form class="mt12" method="post" action="/push/unsubscribe" data-ajax="reload" data-push-off hidden>${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm ghost" type="button" data-push-disable>לכבות התראות במכשיר הזה</button></form>
 </section>`;
@@ -325,6 +326,7 @@ ${live ? `<div class="kpis">
   ${recent.length ? `<div class="list">${recent.map(row).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.</div>`}
 </section>
 ${setup && !tried && !many ? tryCard(app, stores[0], true) : ''}` : ''}
+${installCard(r.ctx.install)}
 <section class="group mt24"><header><h2>הערוצים</h2><a class="end small" href="/settings#channels">הגדרות</a></header>
   ${channels.map(({ s, rows }) => `<div class="panel${many ? ' mt12' : ''}">${many ? `<header><h3>${esc(s.name)}</h3></header>` : ''}${channelList(rows)}</div>`).join('')}
 </section>
@@ -496,6 +498,7 @@ export async function customerSettings(app: App, r: DashReq) {
   <div class="grid12">
     <section class="panel"><header><h2>החשבון</h2></header><p class="small m0">מי בחשבון, מספרי הוואטסאפ שמהם כותבים לעוזר, החבילה והחשבוניות נמצאים בחשבון שלכם ב-OpenFrequency.</p><div class="row mt12"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></section>
 ${r.ctx.readOnly ? '' : await pushPanel(app, r)}
+${installPanel(r.ctx.install)}
     <section class="panel" id="mails"><header><h2>מיילים</h2></header><p class="small m0">מייל כשלקוח מחכה לתשובה שלכם, וסיכום של החודש בתחילת כל חודש. כל אחד בחשבון בוחר מה הוא מקבל.</p><div class="row mt12"><a class="btn sm" href="${esc(links.notifications)}">${icon('mail')}לבחור מיילים</a></div></section>
     <a class="btn ghost" href="${esc(r.ctx.logout || '/')}">${icon('logout')}יציאה</a>
   </div>

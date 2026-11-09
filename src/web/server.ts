@@ -16,6 +16,7 @@ import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
 import { themed, themeOf } from './theme.ts';
 import { styleOf, styleSheet } from './style.ts';
+import { installOf } from './install.ts';
 import { boundaryOf, parseMultipart, type Upload } from './multipart.ts';
 import { MAX_BYTES } from '../channels/files.ts';
 import { readiness, revision } from '../health.ts';
@@ -324,7 +325,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const flash = jar.tn_flash || null;
       if (flash) setCookies.push('tn_flash=; Path=/; Max-Age=0; SameSite=Strict');
       const viewAs = session.viewAs ? { name: String(session.workspace?.name || session.workspace?.slug || ''), admin: links.admin } : null;
-      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, pay, payHref: links.setup, ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope)) };
+      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, pay, payHref: links.setup, install: viaAdmin ? null : installOf(String(req.headers['user-agent'] || ''), jar), ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope)) };
       const back = () => refererPath(req.headers.referer, viaAdmin ? adminOrigin : `http://${host}`, viaAdmin) || '/';
       const notFound = () => (method === 'GET' ? send(req, res, 404, notFoundPage({ ...ctx, title: 'לא נמצא' }), 'text/html; charset=utf-8') : ajax ? json(404, { ok: false, message: 'לא נמצא' }) : send(req, res, 404, errorPage(404, 'מה שחיפשתם לא נמצא כאן. אולי הקישור ישן.', back()), 'text/html; charset=utf-8'));
 

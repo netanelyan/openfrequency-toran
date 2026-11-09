@@ -59,7 +59,7 @@ const PREVIEW_HEADERS = {
   'x-frame-options': 'SAMEORIGIN',
 };
 
-const swatch = (c: string, label: string) => `<svg class="sw" role="img" aria-label="${esc(label)}" width="22" height="22" viewBox="0 0 22 22"><title>${esc(label)}</title><circle cx="11" cy="11" r="10" fill="${esc(c)}"/></svg>`;
+const swatch = (c: string, label: string) => `<svg class="look-sw" role="img" aria-label="${esc(label)}" width="22" height="22" viewBox="0 0 22 22"><title>${esc(label)}</title><circle cx="11" cy="11" r="10" fill="${esc(c)}"/></svg>`;
 
 function lookCard(r: DashReq, id: number, s: { brand: any; brand_override: any }, choice: LookChoice, may: boolean): string {
   const site = storeLook(s, null);

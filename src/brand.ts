@@ -108,7 +108,10 @@ svg.mk { display: block; flex: none; }
 export const ICON_FILES: Record<string, { file: string; type: string }> = {
   '/static/brand/toran.svg': { file: 'svg/toran.svg', type: 'image/svg+xml' },
   '/static/brand/toran-180.png': { file: 'png/toran-180.png', type: 'image/png' },
+  '/static/brand/toran-192.png': { file: 'png/toran-192.png', type: 'image/png' },
   '/static/brand/toran-512.png': { file: 'png/toran-512.png', type: 'image/png' },
+  '/static/brand/toran-maskable-192.png': { file: 'png/toran-maskable-192.png', type: 'image/png' },
+  '/static/brand/toran-maskable-512.png': { file: 'png/toran-maskable-512.png', type: 'image/png' },
   '/static/brand/openfrequency.svg': { file: 'svg/openfrequency.svg', type: 'image/svg+xml' },
   '/static/brand/openfrequency-small.svg': { file: 'svg/openfrequency-small.svg', type: 'image/svg+xml' },
   '/static/brand/teder.svg': { file: 'svg/teder.svg', type: 'image/svg+xml' },
@@ -121,6 +124,12 @@ export const MANIFEST = {
   description: 'השיחות של החנות שלכם, והשאלות שמחכות לתשובה שלכם.',
   lang: 'he',
   dir: 'rtl',
+  // The app the phone keeps is the dashboard itself, from its home (the owner, 2026-11-09: "add a little tutorial on how
+  // to add the website as an app to the phone"; src/web/install.ts says how). Chrome's install criteria (web.dev
+  // install-criteria): a name, icons of 192 and 512, start_url and a display of standalone; no service worker since
+  // Chrome 108 on a phone. The maskable icons are the mark on a full square, so the launcher's own shape cuts a colour,
+  // never a transparent corner; "any maskable" on one file is what Chrome's audit warns against.
+  id: '/',
   start_url: '/',
   scope: '/',
   display: 'standalone',
@@ -128,7 +137,10 @@ export const MANIFEST = {
   theme_color: '#eeeff2',
   icons: [
     { src: '/static/brand/toran-180.png', sizes: '180x180', type: 'image/png' },
-    { src: '/static/brand/toran-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    { src: '/static/brand/toran-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: '/static/brand/toran-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+    { src: '/static/brand/toran-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+    { src: '/static/brand/toran-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     { src: '/static/brand/toran.svg', sizes: 'any', type: 'image/svg+xml' },
   ],
 };

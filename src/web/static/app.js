@@ -454,6 +454,60 @@
     }
   });
 
+  // Adding Toran to the phone (src/web/install.ts; the owner, 2026-11-09: "add a little tutorial on how to add the
+  // website as an app to the phone"). Inside the installed app none of it shows, and the browser remembers the app was
+  // opened, so Today's card stays away there too. An iPad that says it is a Mac gets Safari's steps by its touch screen.
+  // Where Chrome offers to install (beforeinstallprompt), its steps become one button that asks it; installed, the
+  // card goes. The x closes Today's card for good in this browser (the cookie tn_install, read by the server).
+  const installs = [...document.querySelectorAll('[data-install]')];
+  if (installs.length) {
+    const keep = (v) => {
+      try {
+        document.cookie = `tn_install=${v}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      } catch {}
+    };
+    const standalone = window.matchMedia?.('(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)').matches || navigator.standalone === true;
+    const show = (key) => {
+      for (const box of installs) for (const v of box.querySelectorAll('[data-for]')) v.hidden = v.dataset.for !== key;
+    };
+    if (standalone) {
+      keep('app');
+      for (const box of installs) box.remove();
+    } else {
+      for (const f of document.querySelectorAll('[data-install-url]')) f.value = `${location.origin}/`;
+      if (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) show('ios-safari');
+      // The steps shown before Chrome's offer, for when its dialog is dismissed: the button would then ask nothing.
+      const steps = installs[0].querySelector('[data-for]:not([hidden])')?.dataset.for;
+      let asked = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        asked = e;
+        show('prompt');
+      });
+      document.addEventListener('click', async (e) => {
+        if (e.target.closest('[data-install-close]')) {
+          keep('hide');
+          e.target.closest('[data-install]')?.remove();
+          return;
+        }
+        if (!e.target.closest('[data-install-go]') || !asked) return;
+        const ask = asked;
+        asked = null;
+        try {
+          await ask.prompt();
+          if ((await ask.userChoice).outcome !== 'accepted' && steps) show(steps);
+        } catch {
+          if (steps) show(steps);
+        }
+      });
+      window.addEventListener('appinstalled', () => {
+        keep('app');
+        document.querySelector('[data-install="card"]')?.remove();
+        say('תורן נוסף למסך הבית');
+      });
+    }
+  }
+
   // The waiting count, live (TORAN-READINESS.md P1-13): while the page is visible, /waiting.json every 45 seconds keeps
   // the Chats badge (side bar and tab bar) and the tab's title true. A conversation that started waiting since the page
   // loaded is said once, with the way to it; an open conversation's own page is left as it is.

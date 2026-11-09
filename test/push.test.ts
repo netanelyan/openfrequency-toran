@@ -67,7 +67,7 @@ test('the routes: the key, a subscription in the session\'s workspace, the newes
     s.as(s.accounts.session(customer(23)).cookie);
     const settings = await (await s.get('/settings')).text();
     assert.match(settings, /<section class="panel" id="push">[^]*data-push="[A-Za-z0-9_-]{80,}"/);
-    assert.match(settings, /הוסף למסך הבית/);
+    assert.match(settings, /הוספה למסך הבית/);
     const key = (await (await s.get('/push/key')).json()).key;
     assert.equal(key, (await vapid(s.app.db)).publicKey);
     const token = await s.csrf('/settings');
