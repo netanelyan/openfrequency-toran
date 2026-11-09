@@ -324,6 +324,20 @@ export function askedAbout(rule: string, asked: string | undefined): boolean {
   return rule in ASKS ? ASKS[rule].test(text) : true;
 }
 
+const EMOJI = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:️|‍\p{Extended_Pictographic})*/gu;
+
+/**
+ * The reply as the store's voice allows it (agent/voice.ts): emoji out when they are off, "!!" or "?!" as one mark, and
+ * the honest lines in the plural when the store talks to its customers in the plural ("יחזור אליכם").
+ */
+export function styleReply(text: string, { emoji = true, plural = false }: { emoji?: boolean; plural?: boolean } = {}): string {
+  let t = String(text || '');
+  if (!emoji) t = t.replace(EMOJI, '').replace(/[ \t]+([,.?!])/g, '$1').replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/gm, '');
+  t = t.replace(/([!?])\1+/g, '$1').replace(/!\?|\?!/g, '?');
+  if (plural) t = t.replace(/יחזור אליך כאן/g, 'יחזור אליכם כאן');
+  return t.trim();
+}
+
 /** The voice rules' punctuation: no em or en dashes as breaks. */
 // A dash between two numbers is a range ("1–3 ימי עסקים"), kept as a plain hyphen; anywhere else it is a sentence
 // break the voice guide does not allow, and becomes a comma.
@@ -332,7 +346,8 @@ export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2
 // verified: sentences the claim check's second opinion (claims.ts, TORAN_GUARD_LLM) found backed; the lexical rules
 // still apply to them.
 // asked: the customer's message this turn; a cut about something it did not ask about gets no honest line and no handoff.
-export function guardReply(text: string, allow: Allow, { company = false, verified, asked }: { company?: boolean; verified?: Set<string>; asked?: string } = {}): GuardResult {
+// voice: the store's emoji switch and address (agent/voice.ts), applied to the whole reply, the honest lines included.
+export function guardReply(text: string, allow: Allow, { company = false, verified, asked, voice }: { company?: boolean; verified?: Set<string>; asked?: string; voice?: { emoji: boolean; plural: boolean } } = {}): GuardResult {
   const english = !/[א-ת]/.test(text) && /[a-z]/i.test(text);
   const lines = company ? (english ? REPLACE_COMPANY_EN : REPLACE_COMPANY) : english ? REPLACE_EN : REPLACE;
   const out: string[] = [];
@@ -375,5 +390,6 @@ export function guardReply(text: string, allow: Allow, { company = false, verifi
   let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
   // Nothing left: the honest line when the customer asked something, a plain offer to help when they did not.
   if (!result) result = handoffReason || askedAbout('claim', asked) ? checkingLine(english, company) : english ? 'How can I help?' : 'במה אפשר לעזור?';
+  if (voice) result = styleReply(result, voice) || result;
   return { text: result, redactions, needsHandoff: Boolean(handoffReason), handoffReason };
 }

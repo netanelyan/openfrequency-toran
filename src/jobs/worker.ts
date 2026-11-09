@@ -29,6 +29,7 @@ import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } from '../auto/jobs.ts';
 import { checkTemplates, templateStatus } from '../auto/templates.ts';
 import { waitingDigest } from '../owners/waiting.ts';
+import { learnVoice } from '../agent/voice.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -187,6 +188,9 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
 
 async function ingestAndBuild(app: App, storeId: number, say: (l: string) => Promise<void>, rescrape = false) {
   const s = await ingestStore(app, storeId, { progress: (m) => void say(m) });
+  // How the store writes, learned again only when its copy changed (agent/voice.ts); never stops the job.
+  const voice = await learnVoice(app, storeId).catch(() => 'failed');
+  if (voice === 'learned') app.log(`[voice] store ${storeId}: learned from its site`);
   forgetStorePrompt(storeId);
   // A daily re-scrape keeps the sample chat the owner approved; an ingest asked for by hand rebuilds the page.
   const built = await app.db.one('SELECT page_built_at FROM stores WHERE id = $1', [storeId]);

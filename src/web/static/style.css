@@ -946,3 +946,16 @@ details.mfold > summary::-webkit-details-marker { display: none; }
   details.mfold > .panel { margin: 0; padding: 4px 20px 20px; border-radius: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
   details.mfold.one > .panel > header:first-child > :is(h2, h3) { display: none; }
 }
+
+/* "איך תורן מדבר" (pages/voice.ts): each way of talking a card to tap, its sample answer in the inbox's bubbles, the
+   chosen one outlined. One column on a phone, two on a desk. */
+.voice-opts { display: grid; gap: 10px; margin-top: 14px; }
+@media (min-width: 900px) { .voice-opts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.voice-opt { position: relative; display: grid; gap: 6px; padding: 14px 16px; border-radius: var(--r-m); background: var(--inset); box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; transition: box-shadow 0.15s ease, background-color 0.15s ease; }
+.voice-opt:hover { background: var(--surface-hi); }
+.voice-opt:has(input:checked) { box-shadow: inset 0 0 0 2px var(--accent-fill); background: var(--surface-hi); }
+.voice-opt input { position: absolute; inset-inline-end: 14px; top: 16px; accent-color: var(--accent-fill); }
+.voice-opt .vo-head { display: flex; align-items: center; gap: 8px; padding-inline-end: 28px; }
+.voice-opt .vo-head b { font-weight: 600; }
+.voice-chat { gap: 4px; padding: 6px 0 0; }
+.voice-chat .b { max-width: 92%; font-size: 13px; }

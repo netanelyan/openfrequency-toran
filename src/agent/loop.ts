@@ -14,6 +14,7 @@ import { storeAllowed } from '../billing/entitlement.ts';
 import { displayName } from '../ingest/brand.ts';
 import { botLine, botName, markIntroduced, OPENING_NOTE, openingOf } from './intro.ts';
 import { notifyWaiting } from '../owners/waiting.ts';
+import { addressOf, emojiOn } from './voice.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
@@ -259,7 +260,9 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts, ownLinks });
   // A service has no stock: "not available yet" is about a feature, never an invented stock level.
   if (company) allow.stockKnown = true;
-  let g = guardReply(raw, allow, { company, asked: input.text });
+  // The store's voice in code (voice.ts): its emoji switch and its plural; a company keeps its own.
+  const voice = company ? undefined : { emoji: emojiOn(store.config), plural: addressOf(store.config) === 'plural' };
+  let g = guardReply(raw, allow, { company, asked: input.text, voice });
   // The claim check's second opinion (claims.ts), off unless TORAN_GUARD_LLM is set: a borderline cut (the tools
   // mention it, not in a way code confirms) is shown to the model with the passages, at most three a reply. A "yes"
   // puts the sentence back; no answer, an error or a "no" keeps the cut.
@@ -275,7 +278,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
         app.log(`[agent] store ${store.id}: the claim check's second opinion failed, the cut stands: ${cleanLine(e?.message || e, 160)}`);
       }
     }
-    if (verified.size) g = guardReply(raw, allow, { company, verified, asked: input.text });
+    if (verified.size) g = guardReply(raw, allow, { company, verified, asked: input.text, voice });
   }
   if (g.needsHandoff && !handoff) handoff = { reason: g.handoffReason || 'unknown', summary: `the guard cut ${g.redactions.map((r) => r.rule).join(', ')}: ${cleanLine(input.text, 160)}` };
   const miss = g.redactions.length > 0 || handoff?.reason === 'unknown';

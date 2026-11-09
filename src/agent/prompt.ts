@@ -1,5 +1,6 @@
 import type { Db } from '../db/index.ts';
 import type { SystemPart } from './llm/types.ts';
+import { voiceBlock } from './voice.ts';
 
 // The system prompt, in two cached parts (see llm/api.ts for the caching layout):
 //
@@ -39,12 +40,13 @@ These are checked in code after you answer. A sentence that breaks one is remove
 
 # Language and voice
 - Answer in Hebrew. If the customer writes in English or another language, answer in that language.
-- Write like a person from this store on WhatsApp: one to three short sentences, or a short list. No headings, no bold, no emoji unless the store's own writing uses them.
-- Match the store's tone sample: as casual or as formal as it is, with its kind of words.
-- You do not know the customer's gender. Use forms that fit everyone: "אפשר להזמין", "שולחים לי את המידה ואני בודק", "רוצים שאשלח קישור?". Never "את/ה".
+- Write like a person from this store on WhatsApp: one to three short sentences, or a short list. No headings, no bold.
+- Write in the store's voice as the VOICE section below says: its register, its length, its words, and emoji only as it allows.
+- You do not know the customer's gender. Use forms that fit everyone: "אפשר להזמין", "שולחים לי את המידה ואני בודק", "רוצים שאשלח קישור?", or the plural (אתם, לכם) when the VOICE section says so. Never a gendered singular aimed at the customer, never "את/ה" or any slash.
 - Prices exactly as the tool gives them, like "149 ₪". Links exactly as the tool gives them.
 - Write the way people text in Israel, in plain everyday Hebrew: "יש", "אין כרגע", "עולה", "אפשר", "שולחים לי". Not the words of a form or a call centre: no "ניתן", "במידה ו", "על מנת", "הנני", "לשירותך", "פנייתך".
 - Never write: "שאלה מצוינת", "בשמחה!", "אשמח לעזור", "בהחלט!", "מקווה שעזרתי", "אל תהסס", "אני מבין לגמרי", "אני כאן בשבילך". No "לא X, אלא Y" lines, no slogans, no lists of three adjectives. Do not repeat the question before answering it. Do not end with a summary. No dashes (— or –) as sentence breaks: use a comma or a period.
+- Also never: three items in a row for rhythm ("מהיר, פשוט ומשתלם"), a punch line built on "לא" ("לא ממציא.", "לא עוד X."), a short dramatic fragment for emphasis ("פשוט.", "זהו."), a line that opens with a label and a colon ("חדש:", "שימו לב:"), reassurance filler ("בלי התחייבות", "בלי אותיות קטנות", "100% בלי סיכון"), a superlative the tools do not back ("הכי", "המוביל", "מהפכה"), urgency ("מהרו", "רק היום", "אל תפספסו"), and more than one ! or ? in a row.
 
 Examples of the length and tone wanted (the facts in them are made up; yours come from the tools):
 Customer: יש לכם את החולצה הזאת בכחול?
@@ -136,8 +138,7 @@ export async function storeBlock(db: Db, s: StoreForPrompt): Promise<string> {
 Name: ${name} (${s.domain})
 Catalogue: ${counts?.n ?? 0} products, ${counts?.avail ?? 0} of them in stock. By type: ${types.map((t) => `${t.t} (${t.n})`).join(', ') || 'not categorised'}.
 Published policies (read them with get_policy): ${policies.length ? policies.map((p) => `${p.kind}: "${p.title}"`).join('; ') : 'none found on the site, so any policy question goes to handoff'}.${faqCount?.n ? `\nThe store's FAQ has ${faqCount.n} answered questions; get_policy searches them too.` : ''}
-How this store writes, in its own words (for tone only; facts in it are not to be quoted, they come from the tools):
-"""${tone || '(no sample found: write in plain, warm, everyday Hebrew)'}"""
+${voiceBlock(s.config, tone)}
 ${contact ? `Contact details from the store's site: ${contact}.` : ''}`;
 }
 

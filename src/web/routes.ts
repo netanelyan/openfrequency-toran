@@ -17,6 +17,7 @@ import { mailDomainRoutes } from './pages/mailDomain.ts';
 import { ordersRoutes } from './pages/orders.ts';
 import { autoRoutes } from './pages/auto.ts';
 import { webChatRoutes } from './pages/webchat.ts';
+import { voiceRoutes } from './pages/voice.ts';
 import { startRoutes } from './pages/start.ts';
 import { queueRoutes } from './pages/queue.ts';
 import { resultsRoutes } from './pages/results.ts';
@@ -78,6 +79,7 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
     ...ordersRoutes(app),
     ...autoRoutes(app),
     ...webChatRoutes(app),
+    ...voiceRoutes(app),
     ...homeRoutes(app),
     ...leadRoutes(app),
     ...reviewRoutes(app),
