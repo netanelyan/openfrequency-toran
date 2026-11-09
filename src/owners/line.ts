@@ -13,8 +13,8 @@ import { supportAccount } from '../company.ts';
 import { storeChannel } from '../channels/store.ts';
 import { tederUrl } from '../ops/sources.ts';
 
-// One message on the owner line (TORAN_ASSISTANT_WA), or from a verified owner's number on the demo number, end to
-// end. In this order:
+// One message on the owner line (TORAN_ASSISTANT_WA), from a verified owner's number on the demo number, or from a
+// store's own owner on the store's own WhatsApp number (storeLine.ts, since 2026-11-09), end to end. In this order:
 //
 //   1. a link code (LINK-XXXXXX from accounts): the number that sent it becomes that user's, through accounts
 //   2. who the number is, asked of accounts now. Not linked: our support agent answers when TORAN_SUPPORT_STORE names
@@ -83,7 +83,20 @@ async function storeOf(app: App, owner: Owner): Promise<number | null> {
   return s?.id ?? null;
 }
 
-export async function ownerLine(app: App, adapter: ChannelAdapter, inbound: Inbound, known: Owner | null = null): Promise<LineResult> {
+/**
+ * Accounts did not answer about a number that looks like a store's owner on the store's own WhatsApp (storeLine.ts):
+ * the same line as on our number, at most once an hour, through the store's adapter, and nothing for its customers.
+ */
+export async function ownerLineDown(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<void> {
+  if (await onceAnHour(app, 'owner_line_down', inbound.from)) await replyParts(app, adapter, inbound, [{ text: say.down }], null);
+}
+
+/**
+ * `known`: the owner accounts vouched for a moment ago. `opts.storeId`: the store the answers are about when the owner
+ * wrote to that store's own number (storeLine.ts, the owner 2026-11-09: "the personal assistant should be the number
+ * of the business"); on our number it is their workspace's most recently active store.
+ */
+export async function ownerLine(app: App, adapter: ChannelAdapter, inbound: Inbound, known: Owner | null = null, opts: { storeId?: number } = {}): Promise<LineResult> {
   const phone = inbound.from;
   const text = String(inbound.text || '').trim();
   const send = async (parts: Part[], storeId: number | null = null) => {
@@ -139,7 +152,7 @@ export async function ownerLine(app: App, adapter: ChannelAdapter, inbound: Inbo
     }
     owner = r.owner;
   }
-  const storeId = await storeOf(app, owner);
+  const storeId = opts.storeId ?? (await storeOf(app, owner));
   const hasTeder = owner.products.includes('teder');
   const dashboard = tederUrl(app.env);
 
@@ -159,7 +172,8 @@ export async function ownerLine(app: App, adapter: ChannelAdapter, inbound: Inbo
     return { action: 'teder_dashboard', reply: line };
   }
 
-  const row = await rememberOwner(app, owner, { inboundAt: inbound.at ?? Date.now() });
+  // last_inbound_at is our number's 24 hours (notify.ts): a message to the store's own number opens only that number's.
+  const row = await rememberOwner(app, owner, { inboundAt: opts.storeId ? null : (inbound.at ?? Date.now()) });
   const base: Pick<AssistantInput, 'storeId' | 'via' | 'phone' | 'workspaceId'> = { storeId, via: 'whatsapp', phone, workspaceId: owner.workspace.id };
   const answer = async (parts: Part[], action: LineResult['action'] = 'assistant'): Promise<LineResult> => {
     if (!row.disclosed_at) {

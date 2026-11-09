@@ -69,6 +69,7 @@ type Canned = Record<string, unknown> | { status: number; body: unknown };
 export async function fakeAccounts() {
   const answers = new Map<string, Canned>();
   const entitlements = new Map<number, 'unpaid' | 'gone' | 'down'>();
+  const phones = new Map<number, string[]>();
   let calls = 0;
   let entitlementCalls = 0;
   const server = http.createServer((req, res) => {
@@ -88,6 +89,11 @@ export async function fakeAccounts() {
       if (e === 'down') return out(503, { error: 'down' });
       const allowed = e !== 'unpaid';
       return out(200, { workspace: ws, product: url.searchParams.get('product'), enabled: true, access: allowed ? 'paid' : 'unpaid', allowed, paidThrough: allowed ? LATER : null, cancelAt: null });
+    }
+    // A workspace's verified WhatsApp numbers (the assistant's page), only for a workspace a test gave numbers to.
+    if (url.pathname === '/internal/owner-phones' && phones.has(Number(url.searchParams.get('workspace')))) {
+      const ws = Number(url.searchParams.get('workspace'));
+      return out(200, { phones: phones.get(ws)!.map((phone) => ({ phone, verifiedAt: LATER, user: { id: 100 + ws, name: 'owner', email: `owner${ws}@example.test` }, workspace: { id: ws, slug: `ws${ws}`, name: `Workspace ${ws}`, disabled: false }, role: 'client_owner', products: ['toran'], optIn: null, optOut: null })) });
     }
     if (url.pathname !== '/internal/session') return out(404, { error: 'not_found' });
     if (url.searchParams.get('product') !== 'toran') return out(400, { error: 'bad_product' });
@@ -125,11 +131,15 @@ export async function fakeAccounts() {
       if (state == null) entitlements.delete(workspaceId);
       else entitlements.set(workspaceId, state);
     },
+    /** The WhatsApp numbers accounts says a workspace verified, from now on. */
+    ownerPhones(workspaceId: number, list: string[]) {
+      phones.set(workspaceId, list);
+    },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
 
-const LATER = '2099-01-01T00:00:00.000Z';
+const LATER ='2099-01-01T00:00:00.000Z';
 
 /** A customer of one workspace, as /internal/session describes them. */
 export const customer = (workspaceId: number, { products = ['toran'] }: { products?: string[] } = {}) => ({

@@ -3,6 +3,7 @@ import { displayName } from '../../ingest/brand.ts';
 import { ask } from '../../assistant/index.ts';
 import { ownersOf } from '../../owners/identity.ts';
 import { lineNumber } from '../../owners/notify.ts';
+import { localPhone } from '../../core/urls.ts';
 import { accountsLinks } from '../accounts.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, layout, postButton, stamp, storeBadge } from '../ui.ts';
@@ -10,9 +11,18 @@ import { storesOf } from '../workspace.ts';
 
 // The owner's assistant on the dashboard (src/assistant): the chat, the one action waiting for "כן" with its two
 // buttons, a few questions to start from, and the owner's WhatsApp numbers (linked in accounts), from which they can
-// write to it too, on the owner line. Under /lead/<id>/, so server.ts lets only the store's own workspace in.
+// write to it too: on the store's own WhatsApp number once it is connected, and on our number (the owner line). Under /lead/<id>/, so server.ts lets only the store's own workspace in.
 
-const STARTERS = ['מה קרה היום?', 'אילו שאלות מחכות לי?', 'על מה לקוחות שאלו השבוע?', 'מה אזל מהמלאי?'];
+/** The store's own WhatsApp number's digits, when one is connected here (on Meta, Kapso or Zernio); else null. */
+export async function bizNumber(app: App, storeId: number): Promise<string | null> {
+  const a = await app.db.one<{ kind: string; external_id: string; meta: any }>("SELECT kind, external_id, meta FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND status IN ('active', 'pending') ORDER BY id DESC LIMIT 1", [storeId]);
+  if (!a) return null;
+  // A number on the simulator (the demo, the tests) is its own id; on Meta, Kapso and Zernio the id is not the number.
+  const d = String(a.meta?.display_phone_number || a.meta?.phone || (a.kind === 'sim' ? a.external_id : '')).replace(/\D/g, '');
+  return d || null;
+}
+
+const STARTERS =['מה קרה היום?', 'אילו שאלות מחכות לי?', 'על מה לקוחות שאלו השבוע?', 'מה אזל מהמלאי?'];
 
 async function page(app: App, r: DashReq, id: number) {
   const s = await app.db.one<any>('SELECT id, name, domain, brand, brand_override, workspace_id FROM stores WHERE id = $1', [id]);
@@ -31,17 +41,38 @@ async function page(app: App, r: DashReq, id: number) {
     ? '<p class="muted m0">במצב צפייה אי אפשר לכתוב לעוזר.</p>'
     : `<div class="row starters">${STARTERS.map((q) => say(q, q)).join('')}</div>
 <form method="post" action="/lead/${id}/assistant" class="mt12">${csrfField(r.ctx)}<textarea name="text" rows="2" dir="auto" required maxlength="2000" class="wide" aria-label="ההודעה לעוזר" placeholder="מה תרצו לדעת על החנות?"></textarea><div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח</button></div></form>`;
-  // The numbers the owner writes from are linked and verified in accounts (src/owners/identity.ts), never typed here.
+  // Where the owner writes to their assistant on WhatsApp (the owner, 2026-11-09: "the personal assistant should be the
+  // number of the business, and the owner messages it personally"): the store's own number once it is connected here
+  // (owners/storeLine.ts answers there), and meanwhile our number (the owner line), which keeps working anyway. The
+  // numbers the owner writes FROM are linked and verified in accounts (src/owners/identity.ts), never typed here; the
+  // business number itself linked as one cannot write to itself, so it is said apart.
+  const biz = await bizNumber(app, id);
   const owners = s.workspace_id ? await ownersOf(app, Number(s.workspace_id)) : [];
   const line = lineNumber(app.env);
-  const linked = owners === null
-    ? 'את המספרים המחוברים לא הצלחתי לבדוק כרגע.'
-    : owners.length
-      ? `מחוברים עכשיו: <bdi class="ltr">${owners.map((o) => esc(o.phone)).join(', ')}</bdi>`
-      : s.workspace_id ? 'עוד לא חיברתם מספר.' : 'החנות הזאת עוד לא שייכת לחשבון של לקוח, אז אין לה מספרים מחוברים.';
+  const num = (d: string) => `<a href="https://wa.me/${esc(d)}"><bdi dir="ltr" class="ltr">${esc(localPhone(d))}</bdi></a>`;
+  const personal = (owners || []).filter((o) => o.phone !== biz);
+  const where = biz
+    ? `כותבים מהטלפון האישי שלכם למספר של העסק, ${num(biz)}, ותורן עונה לכם כעוזר. ללקוחות הוא ממשיך לענות כרגיל.`
+    : `אחרי שתחברו את <a href="/lead/${id}/whatsapp">הוואטסאפ של העסק</a>, כותבים מהטלפון האישי שלכם למספר של העסק, ותורן עונה לכם כעוזר.${line ? ` עד אז כותבים לו למספר שלנו, ${num(line)}.` : ''}`;
+  const linked = !s.workspace_id
+    ? 'החנות הזאת עוד לא שייכת לחשבון של לקוח, אז אין לה מספרים מחוברים.'
+    : owners === null
+      ? 'את המספרים המחוברים לא הצלחתי לבדוק כרגע.'
+      : personal.length
+        ? `זה עובד ממספר שחיברתם בחשבון ב-OpenFrequency. מחוברים עכשיו: ${personal.map((o) => `<bdi dir="ltr" class="ltr">${esc(localPhone(o.phone))}</bdi>`).join(', ')}.`
+        : owners.length
+          ? 'בחשבון מחובר רק המספר של העסק עצמו, וממנו אי אפשר לכתוב לעצמו. צריך לחבר גם את הטלפון האישי.'
+          : 'זה עובד ממספר שחיברתם בחשבון ב-OpenFrequency, ועוד לא חיברתם מספר.';
+  const home = esc(accountsLinks(app.env).home);
+  const act = r.ctx.readOnly || !s.workspace_id
+    ? ''
+    : personal.length
+      ? `<div class="mt8"><p class="small m0"><a href="${home}">לנהל את המספרים בחשבון</a></p></div>`
+      : `<div class="mt12"><a class="btn sm" href="${home}">לחבר מספר בחשבון</a></div>`;
   const wa = `<section class="panel mt16"><header><h2>לכתוב לעוזר מהוואטסאפ</h2></header>
-<p class="small muted m0">מחברים מספר וואטסאפ בחשבון ב-OpenFrequency, ומהמספר הזה כותבים לתורן${line ? ` ב-<a class="ltr" href="https://wa.me/${esc(line)}">${esc(line)}</a>` : ''}. הוא עונה כעוזר שלכם, לא כמו ללקוח. ${linked}</p>
-${r.ctx.readOnly ? '' : `<p class="mt8 m0"><a class="btn sm" href="${esc(accountsLinks(app.env).home)}">לחבר מספר בחשבון</a></p>`}
+<p class="small muted m0">${where}</p>
+<div class="mt8"><p class="small muted m0">${linked}</p></div>
+${act}
 </section>`;
   const body = `<div class="head"><div class="row">${storeBadge({ id: s.id, name, domain: s.domain })}<h1 class="title">העוזר של ${esc(name)}</h1></div><p class="sub">תורן עונה לכם על החנות מתוך השיחות, השאלות שמחכות לכם והמוצרים באתר. את ההזמנות והעגלות של החנות הוא עוד לא רואה.</p></div>
 <section class="panel assistant"><div class="chat">${chat}</div>${waiting}<span id="end"></span>${form}</section>

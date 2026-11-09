@@ -70,6 +70,16 @@ export function toIntl(input: string): string | null {
   return /^\d{10,15}$/.test(d) ? d : null;
 }
 
+/**
+ * A number as people here read it: an Israeli one in its local form (972500000901 is 050-000-0901, 97231234567 is
+ * 03-123-4567), anything else as +digits. For display only, inside <bdi dir="ltr">; links keep the digits.
+ */
+export function localPhone(input: string | null | undefined): string {
+  const d = String(input || '').replace(/\D/g, '');
+  const m = /^972(5\d|7\d)(\d{3})(\d{4})$/.exec(d) || /^972([2-489])(\d{3})(\d{4})$/.exec(d);
+  return m ? `0${m[1]}-${m[2]}-${m[3]}` : d ? `+${d}` : '';
+}
+
 /** An Israeli mobile number (the kind WhatsApp lives on). */
 export const isIsraeliMobile = (intl: string | null) => Boolean(intl && /^9725\d{8}$/.test(intl));
 

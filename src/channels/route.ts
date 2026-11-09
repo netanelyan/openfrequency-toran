@@ -6,6 +6,7 @@ import { lineNumber, lineOf, metaLinesAdapter, oneNumber, withOne } from './line
 import { GraphError, TOKEN_GONE } from './meta.ts';
 import { demoNumber, type RouteResult } from './demo.ts';
 import { ownerLine } from '../owners/line.ts';
+import { storeOwnerLine } from '../owners/storeLine.ts';
 import { payMessage } from './pay.ts';
 import { reminderWord } from '../billing/remind.ts';
 import { outreachWord } from '../ops/outreach.ts';
@@ -23,7 +24,8 @@ import type { Inbound } from './types.ts';
 //
 //   a store's own account (its email address, WhatsApp number, Facebook Page or Instagram account, or mail to the
 //   receiving subdomain of its own domain): the account's store answers (store.ts); while its WhatsApp token needs
-//   connecting again, the message waits for the owner
+//   connecting again, the message waits for the owner. On the store's own WhatsApp number, a message from a phone
+//   accounts verified for the store's workspace is the owner talking to their assistant (owners/storeLine.ts)
 //   the owner line (TORAN_ASSISTANT_WA): business owners talking to their assistant (owners/line.ts)
 //   the shared WhatsApp demo number, whose codes bind a phone to a store (demo.ts)
 //
@@ -101,6 +103,18 @@ async function route(app: App, inbound: Inbound): Promise<RouteResult> {
   const account = own || (msg.account ? (await accountFor(app, adapter.channel, msg.account)) || (adapter.channel === 'email' ? await receivingAccount(app, msg.account) : null) : null);
   if (account) {
     if (account.status === 'pending') await markLive(app, account.id, account.store_id);
+    // The store's own owner writing to the store's own WhatsApp number from their phone (the owner, 2026-11-09: "the
+    // personal assistant should be the number of the business, and the owner messages it personally"): their
+    // assistant answers, through this number, and the store's customers never see it (owners/storeLine.ts).
+    try {
+      const mine = await storeOwnerLine(app, adapter, msg, account);
+      if (mine) return mine;
+    } catch (e: any) {
+      // Meta refused the token while answering the owner: the number needs connecting again; their message is kept.
+      if (!(e instanceof GraphError && e.code === TOKEN_GONE && adapter.channel === 'whatsapp')) throw e;
+      await needsReconnect(app, account.id, 'token');
+      return { action: 'held', storeId: account.store_id };
+    }
     // The store's token ended (waStore.ts): Toran cannot answer, so the message waits for the owner, said so.
     if (account.status === 'reconnect') return heldForReconnect(app, adapter, msg, account);
     try {

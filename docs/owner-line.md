@@ -1,5 +1,27 @@
 # The owner line: one WhatsApp number for a Toran store's owners
 
+## Since 2026-11-09: the assistant on the store's own number too
+
+The owner said on 2026-11-09: "the personal assistant should be the number of the business, and the owner messages it
+personally". So a message to a store's own WhatsApp number (Meta, Kapso or Zernio) from a phone accounts verified for
+that store's workspace (any role, as here) is the owner talking to their assistant about that store
+(`src/owners/storeLine.ts`, called by `src/channels/route.ts` before the store's customer path):
+
+- **Same assistant.** `ownerLine()` with the store's id in place of the workspace's most recently active store: the
+  same disclosure, limits, "כן"/"לא", tools and `assistant_messages` (`via` whatsapp, the owner's `phone`). The answer
+  goes out through the store's adapter, as its customers' answers do; the owner wrote first, so the 24 hours are open.
+- **Not a customer.** No conversation, no customer id, no cart or review dropped, no handoff, no `wa_in`, nothing in
+  the inbox or the conversation counts. Customers on the same number, and the owner of another workspace, are
+  answered as before.
+- **Who is the owner.** The workspace's verified numbers (`/internal/owner-phones`) are kept a minute per workspace in
+  memory; a number not on the list costs no question. A number on it is asked live (`/internal/owner-phone`) before
+  each answer, as here. While accounts does not answer the list (kept 30 seconds), the numbers in `owner_numbers` for
+  the workspace stand in, and such an owner gets the "try again" line, not a customer's answer.
+- **Echoes.** The owner answering customers from the WhatsApp Business app is still `ownerEcho()`. An echo whose `to`
+  is the store's own owner (the app's greeting answering the owner's message) opens no conversation.
+- **Our number stays** the assistant for every owner (a store with no WhatsApp connected yet, several stores). The
+  assistant's page says which number to write to: the store's own once connected, ours meanwhile.
+
 ## Since 2026-11-02: Teder is managed on its dashboard only
 
 The owner decided on 2026-11-02: "managing teder through whatsapp, only through the dashboard. the demo stays". So:

@@ -4,6 +4,7 @@ import { J } from '../db/index.ts';
 import { audit, event } from '../db/log.ts';
 import { seal, open } from '../core/secrets.ts';
 import { ownersOf } from '../owners/identity.ts';
+import { ownedEcho } from '../owners/storeLine.ts';
 import { accountState, debugToken, exchangeCode, lastingToken, phoneInfo, refreshToken, subscribeApp, unsubscribeApp, waConnectReady, type Echo, type PhoneInfo, type Status, type TokenInfo } from './meta.ts';
 import { hold, PAUSE_HOURS } from './owner.ts';
 import { lineNumber, lineOf, oneNumber, withOne, type Line } from './lines.ts';
@@ -178,6 +179,12 @@ export async function ownerEcho(app: App, echo: Echo) {
   if (!a) return { action: 'unknown_account' };
   // Meta reports our own API sends as delivery statuses, not echoes; this guards against one arriving as both.
   if (await sentByUs(app.db, echo.id)) return { action: 'duplicate' };
+  // Sent to the store's own owner (the app's greeting or away message answering the owner's message to their
+  // assistant here, owners/storeLine.ts): the owner is not the store's customer, so no conversation opens for them.
+  if (await ownedEcho(app, a.store_id, echo.to)) {
+    await event(app.db, a.store_id, 'owner_echo_to_owner', { echo: echo.id });
+    return { action: 'to_owner' };
+  }
   const c = await openConversation(app.db, { storeId: a.store_id, channel: 'whatsapp', peer: echo.to, accountId: a.id });
   await app.db.query("INSERT INTO messages (conversation_id, role, text, author, ext_id) VALUES ($1, 'owner', $2, 'מהטלפון', $3)", [c.id, echo.text || '(קובץ)', `echo:${echo.id}`]);
   await app.db.query(`UPDATE conversations SET last_at = now(), agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1`, [c.id]);
