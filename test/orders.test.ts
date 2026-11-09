@@ -166,28 +166,32 @@ test('Shopify orders: the key is tried and sealed; an order is told to whoever g
     assert.deepEqual([a.platform, a.status, a.meta.shop, a.meta.hint], ['shopify', 'active', 'kli-cheres-example.myshopify.com', '…TEST'], 'the myshopify address is read from /meta.json');
     assert.ok(a.secret.startsWith('v1.') && !a.secret.includes(SHOPIFY_TOKEN), 'sealed');
 
-    const told = await ask(['איפה ההזמנה 1042?', 'dana@example.test']);
+    // Writing from the order's own phone is enough (the owner, 2026-11-09).
+    const told = await ask(['איפה ההזמנה 1042?'], { waPhone: '972500000101' });
     assert.match(told.content, /^Order #1042, placed 20\.10\.2026: paid, shipped\./);
     assert.match(told.content, /on its way, with דואר ישראל, tracking number RR000000000IL, tracking link: https:\/\/track\.example\/RR000000000IL/);
     assert.match(told.content, /A delivery date.*you do not know/s);
     assert.ok(calls.at(-1)!.url.includes('/admin/api/2026-04/orders.json?status=any') && calls.at(-1)!.url.includes(`name=${encodeURIComponent('#1042')}`));
-    assert.match((await ask(['ההזמנה שלי 1042, הטלפון 050-000-0101'])).content, /^Order #1042/, 'the phone on the order, in any form');
-    assert.match((await ask(['מה עם 1042?'], { waPhone: '972500000101' })).content, /^Order #1042/, 'the WhatsApp number it was ordered with');
+    assert.match((await ask(['שלום'], { fromEmail: 'Dana@Example.test' })).content, /^Order #1042/, 'on the store\'s email, the address it was ordered with');
 
-    const ask1 = await ask(['איפה ההזמנה 1042?']);
-    assert.match(ask1.content, /needs to give the email address or the phone number/);
-    assert.doesNotMatch(ask1.content, /paid|shipped|RR0/);
-    const wrong = await ask(['1042, other@example.test']);
+    // Anyone else is asked for the phone the order was placed with, and told only once they give it.
+    const ask1 = await ask(['איפה ההזמנה 1042?'], { waPhone: '972500000999' });
+    assert.match(ask1.content, /^ASK PHONE: .*phone number the order was placed with/s);
+    assert.doesNotMatch(ask1.content, /paid|shipped|RR0|dana|0101/);
+    assert.match((await ask(['איפה ההזמנה 1042?', 'הטלפון 050-000-0101'], { waPhone: '972500000999' })).content, /^Order #1042/, 'the phone on the order, in any form');
+    assert.match((await ask(['1042, dana@example.test'])).content, /^ASK PHONE/, 'an email someone types proves nothing');
+    const wrong = await ask(['1042', '050-000-0909']);
     assert.match(wrong.content, /^NO MATCH/);
     assert.doesNotMatch(wrong.content, /dana|0101|shipped/, 'nothing about the order, not even which detail is wrong');
-    assert.equal((await runTool({ ...ctx, said: ['dana@example.test'] }, 'get_order_status', { order_number: '9999' })).content.split('\n')[0], 'NO MATCH: no order 9999 goes with the email or phone number the customer gave.', 'a number that is not there reads the same');
-    assert.match((await runTool({ ...ctx, said: ['dana@example.test'] }, 'get_order_status', { order_number: 'מה זה' })).content, /is not an order number/);
+    assert.equal((await runTool({ ...ctx, said: ['050-000-0101'] }, 'get_order_status', { order_number: '9999' })).content.split('\n')[0], 'NO MATCH: no order 9999 goes with the phone number the customer gave.', 'a number that is not there reads the same');
+    assert.equal((await runTool({ ...ctx, said: ['שלום'] }, 'get_order_status', { order_number: '9999' })).content.split('\n')[0], (await ask(['שלום'])).content.split('\n')[0].replace('1042', '9999'), 'and is asked for the phone the same way');
+    assert.match((await runTool({ ...ctx, said: ['050-000-0101'] }, 'get_order_status', { order_number: 'מה זה' })).content, /is not an order number/);
   } finally {
     await app.db.close();
   }
 });
 
-test('the email or phone must be the customer\'s own words, and a few guesses in one conversation send the question to the store', async () => {
+test('the phone must be the customer\'s own words, and a few guesses in one conversation send the question to the store', async () => {
   let n = 0;
   const script: Script = (req) => {
     const m = req.messages[req.messages.length - 1];
@@ -202,9 +206,14 @@ test('the email or phone must be the customer\'s own words, and a few guesses in
     await connectOrders(app, id, { token: SHOPIFY_TOKEN }, 'owner');
     const conv = await conversationFor(app.db, id, 'email', 'guess@example.test');
     const turn = (text: string) => runTurn(app, { storeId: id, conversationId: conv, text, channel: 'email', footer: false });
-    for (const guess of ['a@example.test', 'b@example.test', 'c@example.test']) assert.match((await turn(`1042, ${guess}`)).tools[0].result, /^NO MATCH/);
-    const fourth = await turn('1042, dana@example.test');
+    assert.match((await turn('איפה ההזמנה 1042?')).tools[0].result, /^ASK PHONE/, 'not the order\'s address: asked for its phone');
+    for (const guess of ['050-000-0911', '050-000-0922', '050-000-0933']) assert.match((await turn(`1042, ${guess}`)).tools[0].result, /^NO MATCH/);
+    const fourth = await turn('1042, 050-000-0101');
     assert.match(fourth.tools[0].result, /Several order numbers and details did not match.*handoff with reason "order"/s);
+
+    // On the store's email, the address the order was placed with is theirs.
+    const mail = await conversationFor(app.db, id, 'email', 'dana@example.test');
+    assert.match((await runTurn(app, { storeId: id, conversationId: mail, text: 'איפה ההזמנה 1042?', channel: 'email', footer: false })).tools[0].result, /^Order #1042/);
 
     // On the store's own WhatsApp the number the customer writes from is theirs.
     const wa = await conversationFor(app.db, id, 'whatsapp', '972500000101');
@@ -257,7 +266,7 @@ test('WooCommerce orders: read with the REST key (in the query when the host dro
     s.app.api = api;
     await connectOrders(s.app, s.id, WOO_KEY, 'owner');
     assert.ok(calls[0].headers.authorization.startsWith('Basic '), 'the header first');
-    const r = await runTool({ ...s.ctx, api, said: ['הזמנה 1042', 'dana@example.test'] }, 'get_order_status', { order_number: '#1042' });
+    const r = await runTool({ ...s.ctx, api, said: ['הזמנה 1042', 'הטלפון 050-000-0101'] }, 'get_order_status', { order_number: '#1042' });
     assert.match(r.content, /^Order 1042, placed 21\.10\.2026: paid, being prepared, not shipped yet\./);
     assert.match(r.content, /- with hfd, tracking number HFD000000\n/, 'no link when the store typed none');
     assert.doesNotMatch(r.content, /someone|980/, 'order id 1042 is another order, number 980');
@@ -294,11 +303,12 @@ test('Wix orders: searched by number with the API key and the site id, tracking 
 test('who may be told: the latest few contacts only, phones in every form, and the order\'s own details never compared loosely', () => {
   const o = shopifyOrder(SHOPIFY_ORDER);
   assert.equal(matches(o, contactsIn(['+972 50-000-0101'])), true);
-  assert.equal(matches(o, contactsIn(['DANA@example.test'])), true);
-  assert.equal(matches(o, contactsIn(['dana@example.tes'])), false);
+  assert.equal(matches(o, contactsIn(['DANA@example.test'])), false, 'an email someone types proves nothing');
+  assert.equal(matches(o, contactsIn(['שלום']), { email: 'DANA@example.test' }), true, 'writing from it does');
+  assert.equal(matches(o, contactsIn(['שלום']), { email: 'dana@example.tes' }), false);
   const list = ['050-000-0101', ...Array.from({ length: 5 }, (_, i) => `050-000-02${i}0`)].join(', ');
   assert.equal(matches(o, contactsIn([list])), false, 'a list of numbers proves nothing');
-  assert.equal(matches(o, contactsIn(['שלום']), '972500000101'), true);
+  assert.equal(matches(o, contactsIn(['שלום']), { waPhone: '972500000101' }), true);
   assert.deepEqual(['my-store', 'my-store.myshopify.com', 'https://admin.shopify.com/store/my-store/orders', 'kli-cheres.example'].map(shopOf), ['my-store.myshopify.com', 'my-store.myshopify.com', 'my-store.myshopify.com', null]);
 });
 

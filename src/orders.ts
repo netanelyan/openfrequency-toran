@@ -21,9 +21,10 @@ import { shopMeta } from './ingest/shopify.ts';
 // A key is tried once before it is kept, so a wrong key is refused on the page and not found later by a customer.
 // A key the platform refuses later marks the row 'error', and the page says so.
 //
-// An order is told only to whoever shows they placed it: the customer wrote the email or the phone number on the
-// order, or writes from that phone on the store's own WhatsApp. findOrder() returns what the platform says, and
-// matches() decides; the tool never says which of the two did not match, or what is on the order.
+// An order is told only to whoever shows they placed it: they write from the order's phone on the store's own WhatsApp
+// (or from its email address on the store's email), and otherwise they are asked for the phone number the order was
+// placed with and must give it (the owner, 2026-11-09). findOrder() returns what the platform says, and fromOrder() and
+// phoneGiven() decide; the tool never says what did not match, whether the order exists, or what is on it.
 //
 // The APIs are called through app.api (fetch, or the tests' stand-in), never through the polite fetcher: these are
 // the store's own keys on the store's own API, not a crawl.
@@ -226,16 +227,27 @@ export function contactsIn(texts: string[]): { emails: string[]; phones: string[
 }
 
 /**
- * Whether the person asking placed this order: an email or a phone number they gave (the latest few only, so a
- * message with a list of numbers proves nothing), or the WhatsApp number they write from, is on it.
+ * Whether the person asking writes from the order's own contact: its phone on the store's WhatsApp, or its email address
+ * on the store's email (the owner, 2026-11-09: "a customer must write from the phone number the order was placed from").
  */
-export function matches(o: Order, said: { emails: string[]; phones: string[] }, waPhone?: string | null): boolean {
-  const emails = new Set(o.emails.map(emailKey));
-  const phones = new Set(o.phones.map(phoneKey).filter(Boolean));
-  if (said.emails.slice(-3).some((e) => emails.has(e))) return true;
-  if (said.phones.slice(-3).some((p) => phones.has(p))) return true;
-  return Boolean(waPhone && phones.has(phoneKey(waPhone)));
+export function fromOrder(o: Order, from: { waPhone?: string | null; email?: string | null }): boolean {
+  if (from.waPhone && o.phones.map(phoneKey).filter(Boolean).includes(phoneKey(from.waPhone))) return true;
+  return Boolean(from.email && o.emails.map(emailKey).includes(emailKey(from.email)));
 }
+
+/**
+ * Whether the person gave the order's phone number in their own words (the latest few only, so a message with a list of
+ * numbers proves nothing): asked of whoever does not write from the order's own contact ("if it does not match, toran
+ * should ask for the phone number to make sure its really the person"). An email address someone types proves nothing,
+ * since anyone may know it.
+ */
+export function phoneGiven(o: Order, said: { phones: string[] }): boolean {
+  const phones = new Set(o.phones.map(phoneKey).filter(Boolean));
+  return said.phones.slice(-3).some((p) => phones.has(p));
+}
+
+/** Whether the person asking may be told this order: writing from its contact, or giving its phone. */
+export const matches = (o: Order, said: { phones: string[] }, from: { waPhone?: string | null; email?: string | null } = {}) => fromOrder(o, from) || phoneGiven(o, said);
 
 // ---- The store's row
 

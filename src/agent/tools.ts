@@ -2,7 +2,7 @@ import type { Db } from '../db/index.ts';
 import { V } from '../db/index.ts';
 import { normalize, termGroups } from '../core/hebrew.ts';
 import { embed } from '../ingest/embed.ts';
-import { contactsIn, findOrder, matches, orderAccessOf, type Order } from '../orders.ts';
+import { contactsIn, findOrder, fromOrder, orderAccessOf, phoneGiven, type Order } from '../orders.ts';
 import type { ToolDef } from './llm/types.ts';
 
 // The agent's tools, the same six for every store. Only the store they read changes.
@@ -54,7 +54,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'get_order_status',
-    description: 'Look up an existing order by its number in the store\'s own system: its status, shipping and tracking link. It answers only when the customer gave, in their own message, the email address or phone number the order was placed with (or writes from that phone on WhatsApp), so ask for the order number and one of them first. When the store\'s orders are not connected, its result says how to hand the question to the store.',
+    description: 'Look up an existing order by its number in the store\'s own system: its status, shipping and tracking link. Ask the customer for the order number only, and call it. It answers when the customer writes from the order\'s own phone (or email address); otherwise its result asks you to check it is really them by asking for the phone number the order was placed with, and you call it again once they give it. When the store\'s orders are not connected, its result says how to hand the question to the store.',
     input_schema: { type: 'object', properties: { order_number: { type: 'string', description: 'The order number as the customer wrote it' } }, required: ['order_number'] },
   },
   {
@@ -103,7 +103,7 @@ export const COMPANY_TOOLS: ToolDef[] = [
 // said: the customer's own messages in this conversation, this turn's included (an order is told only to whoever wrote
 // its email or phone in them); waPhone: the number the customer writes from on the store's own WhatsApp; api: the way
 // to the store's order API (app.api).
-export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null };
+export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null; fromEmail?: string | null };
 export type ToolOutcome = { ok: boolean; content: string; handoff?: { reason: string; summary: string }; facts?: string[] };
 
 type P = { id: number; ext_id: string; title: string; url: string; handle: string; image: string | null; price_min: number | null; price_max: number | null; compare_at_max: number | null; available: boolean; variants: any[]; body_text: string; search_text: string; product_type: string | null; override: any };
@@ -345,7 +345,6 @@ async function orderStatus(c: ToolContext, input: any): Promise<ToolOutcome> {
   if (!/^#?[A-Za-z0-9-]{1,30}$/.test(order)) return { ok: true, content: `"${order}" is not an order number.\nRule: ask the customer for the order number, as it appears in the order confirmation.` };
 
   const said = contactsIn(c.said || []);
-  if (!said.emails.length && !said.phones.length && !c.waPhone) return { ok: true, content: 'To look an order up, the customer needs to give the email address or the phone number the order was placed with, in their own message.\nRule: ask for it in one short question. Say nothing about the order before it matches.' };
   if (c.conversationId) {
     const tried = await c.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM messages m, jsonb_array_elements(m.tools) t WHERE m.conversation_id = $1 AND t->>'name' = 'get_order_status' AND t->>'result' LIKE 'NO MATCH%'", [c.conversationId]);
     if ((tried?.n || 0) >= ORDER_TRIES) return toStore('Several order numbers and details did not match in this conversation, so the store checks this one itself.');
@@ -356,7 +355,12 @@ async function orderStatus(c: ToolContext, input: any): Promise<ToolOutcome> {
   } catch (e: any) {
     return toStore(`The store's order system did not answer (${String(e?.message || e).slice(0, 120)}).`);
   }
-  if (!o || !matches(o, said, c.waPhone)) return { ok: true, content: `NO MATCH: no order ${order} goes with the email or phone number the customer gave.\nRule: say you could not find an order with these details, and ask them to check the order number and the email or phone they ordered with. Do not say which of them did not match. If it does not match again, tell them you are passing it to the store and call handoff with reason "order".` };
+  // Writing from the order's own phone (or email) is enough. Anyone else is asked for the phone number the order was
+  // placed with, and a missing order is asked the same, so the question says nothing about whether it exists.
+  if (!o || !(fromOrder(o, { waPhone: c.waPhone, email: c.fromEmail }) || phoneGiven(o, said))) {
+    if (!said.phones.length) return { ok: true, content: `ASK PHONE: the customer is not writing from the phone number on order ${order}, so first make sure it is really them.\nRule: ask in one short question for the phone number the order was placed with. Say nothing about the order before it matches, not even whether it exists.` };
+    return { ok: true, content: `NO MATCH: no order ${order} goes with the phone number the customer gave.\nRule: say you could not find an order with this number and phone, and ask them to check the order number and the phone number they ordered with. Do not say which of them did not match. If it does not match again, tell them you are passing it to the store and call handoff with reason "order".` };
+  }
 
   const ships = o.shipments.map((s) => `- ${[s.status, s.company ? `with ${s.company}` : null, s.number ? `tracking number ${s.number}` : null].filter(Boolean).join(', ') || 'a shipment'}${s.url ? `, tracking link: ${s.url}` : ''}`);
   const lines = [`Order ${o.number}${o.placed ? `, placed ${israelDay(o.placed)}` : ''}: ${o.status}.`, ships.length ? `Shipments:\n${ships.join('\n')}` : 'No tracking details on the order.'];
