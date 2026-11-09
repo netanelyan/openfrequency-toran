@@ -17,8 +17,9 @@ import type { MessageKey } from './messages.ts';
 //
 //   webhooks   registered at the platform when the key allows it, to /hooks/<platform>/<store id>, signed:
 //              Shopify      checkouts/create|update, orders/create|updated|paid, fulfillments/create|update; signed
-//                           with the custom app's API secret key (X-Shopify-Hmac-Sha256), which the owner pastes in
-//                           Settings, since the access token cannot sign anything. Without it, no webhooks.
+//                           with the app's secret (X-Shopify-Hmac-Sha256): a Dev Dashboard app's client secret, which
+//                           the owner gave to connect the orders; an older custom app's API secret key, pasted in
+//                           Settings, since its access token cannot sign anything. Without one, no webhooks.
 //              WooCommerce  order.created and order.updated, through its webhooks API, signed with a secret Toran
 //                           makes (X-WC-Webhook-Signature). A key with Read permission only cannot register them.
 //              Wix          none: an API key cannot subscribe to Wix's events (only a Wix app can).
@@ -279,6 +280,9 @@ export async function setupSource(app: App, storeId: number, { secret }: { secre
   const can: any = { webhooks: false, checkouts: null, why: {} };
   const hooks: { topic: string; id: string }[] = [];
   const { creds: c, origin } = access;
+  // A Dev Dashboard app signs its webhooks with its own client secret (shopify.dev/docs/apps/build/webhooks/subscribe/
+  // https, "generated using your app's client secret"), which the owner already gave to connect the orders.
+  if (access.platform === 'shopify' && c.clientSecret) hookSecret = c.clientSecret;
   if (!base(app.env).startsWith('https://')) can.why.webhooks = 'no_public_url';
   if (access.platform === 'shopify') {
     try {

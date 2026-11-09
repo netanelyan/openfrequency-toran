@@ -9,8 +9,10 @@ import { shopMeta } from './ingest/shopify.ts';
 // store's knowledge page (web/pages/customer.ts), and it is kept as the store's row of order_access, sealed with
 // TORAN_SECRETS_KEY like a channel's token (core/secrets.ts):
 //
-//   shopify      an Admin API access token of a custom app with read_orders only, and the store's
-//                <name>.myshopify.com address (read from /meta.json when the owner leaves it out);
+//   shopify      the Client ID and Client secret of an app the owner made in Shopify's Dev Dashboard with read_orders
+//                (since 2026; a token from them with the client credentials grant, shopifyToken), or an older custom
+//                app's Admin API access token (shpat_); and the store's <name>.myshopify.com address (read from
+//                /meta.json when the owner leaves it out);
 //                GET /admin/api/<version>/orders.json?name=<number>&status=any
 //   woocommerce  a REST API key with Read permission (its consumer key and secret);
 //                GET /wp-json/wc/v3/orders/<number>, else ?search=<number> for a store that numbers its orders
@@ -34,7 +36,7 @@ export const ORDER_PLATFORMS = ['shopify', 'woocommerce', 'wix'] as const;
 export type OrderPlatform = (typeof ORDER_PLATFORMS)[number];
 export const ordersPlatform = (p: string | null | undefined): p is OrderPlatform => (ORDER_PLATFORMS as readonly string[]).includes(String(p || ''));
 
-export type Creds = { token?: string; shop?: string; key?: string; secret?: string; apiKey?: string; siteId?: string };
+export type Creds = { token?: string; shop?: string; clientId?: string; clientSecret?: string; key?: string; secret?: string; apiKey?: string; siteId?: string };
 export type Shipment = { status: string | null; company: string | null; number: string | null; url: string | null };
 /** One order as every platform's reader gives it: what may be told (number, date, status, shipments) and who may be told (emails, phones). */
 export type Order = { number: string; placed: string | null; status: string; emails: string[]; phones: string[]; shipments: Shipment[] };
@@ -76,8 +78,50 @@ async function call(api: Api, url: string, { method = 'GET', headers = {}, body 
 
 // ---- Shopify
 
-/** One call to the store's Admin API with the owner's token (the automatic messages read checkouts and register webhooks with it too). */
-export const shopifyCall = (api: Api, c: Creds, path: string, { method = 'GET', body }: { method?: Method; body?: unknown } = {}) => call(api, `https://${c.shop}/admin/api/${SHOPIFY_VERSION}/${path}`, { method, headers: { 'x-shopify-access-token': c.token! }, body });
+// Since 2026-01-01 a store can't create a custom app in its admin (shopify.dev/changelog/posts/legacy-custom-apps-can-t-
+// be-created-after-january-1-2026): the owner creates one in the Dev Dashboard, installs it on the store, and gives us
+// its Client ID and Client secret. Toran exchanges them for an access token with the client credentials grant: POST
+// https://<shop>/admin/oauth/access_token, form body grant_type=client_credentials, client_id, client_secret; the answer
+// is {access_token, scope, expires_in: 86399}, 24 hours, with no scope sent (shopify.dev/docs/apps/build/
+// authentication-authorization/client-credentials-grant). Kept in memory, asked again 5 minutes before it ends, and once
+// more on a 401. A store with an old custom app keeps its shpat_ token, which does not expire.
+const shopifyTokens = new Map<string, { token: string; until: number }>();
+const tokenKey = (c: Creds) => `${c.shop}|${c.clientId}`;
+
+/** The token for a call: the old app's own, or one from the client credentials grant. */
+export async function shopifyToken(api: Api, c: Creds): Promise<string> {
+  if (c.token) return c.token;
+  if (!c.clientId || !c.clientSecret) throw new OrderApiError('no Shopify credentials', 401);
+  const hit = shopifyTokens.get(tokenKey(c));
+  if (hit && Date.now() < hit.until) return hit.token;
+  const res = await api(`https://${c.shop}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_id: c.clientId, client_secret: c.clientSecret }).toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data: any = await res.json().catch(() => null);
+  if (!res.ok || !data?.access_token) {
+    const said = str(data?.error_description || data?.errors || data?.error).slice(0, 160);
+    throw new OrderApiError(`${c.shop} did not give a token for the app (${res.status}${said ? `: ${said}` : ''})`, res.ok ? 401 : res.status);
+  }
+  shopifyTokens.set(tokenKey(c), { token: String(data.access_token), until: Date.now() + Math.max(60, Number(data.expires_in) || 86399) * 1000 - 5 * 60_000 });
+  return String(data.access_token);
+}
+
+/** One call to the store's Admin API with the owner's key (the automatic messages read checkouts and register webhooks with it too). */
+export async function shopifyCall(api: Api, c: Creds, path: string, { method = 'GET', body }: { method?: Method; body?: unknown } = {}): Promise<any> {
+  const url = `https://${c.shop}/admin/api/${SHOPIFY_VERSION}/${path}`;
+  const once = async () => call(api, url, { method, headers: { 'x-shopify-access-token': await shopifyToken(api, c) }, body });
+  try {
+    return await once();
+  } catch (e) {
+    // A token from the grant that Shopify stopped taking (the app's secret rotated, the store reinstalled it): one new one.
+    if (c.token || !(e instanceof OrderApiError) || e.status !== 401) throw e;
+    shopifyTokens.delete(tokenKey(c));
+    return once();
+  }
+}
 const shopifyGet = (api: Api, c: Creds, path: string) => shopifyCall(api, c, path);
 const SHOPIFY_FIELDS = 'id,name,order_number,email,contact_email,phone,created_at,cancelled_at,financial_status,fulfillment_status,customer,billing_address,shipping_address,fulfillments';
 
@@ -304,18 +348,29 @@ const HE = {
   closed: 'החיבור להזמנות עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.',
   platform: 'אפשר לחבר הזמנות רק בחנות של Shopify, WooCommerce או Wix.',
   refused: 'החנות לא קיבלה את המפתח. כדאי לבדוק שהעתקתם אותו עד הסוף ושיש לו הרשאה לקרוא הזמנות.',
+  // Shopify's shop_not_permitted: the client credentials grant works only for a store in the app's own organization.
+  org: 'Shopify לא נתנה לאפליקציה גישה לחנות הזו. צריך ליצור את האפליקציה ב-Dev Dashboard מאותו חשבון שהחנות שייכת אליו, ולהתקין אותה על החנות.',
+  install: 'Shopify לא נתנה גישה עם הפרטים האלה. כדאי לבדוק שהאפליקציה מותקנת על החנות (ב-Dev Dashboard, "Install app"), ושהעתקתם את ה-Client ID וה-Client secret שלה עד הסוף.',
   away: 'לא הצלחנו להגיע לחנות כדי לבדוק את המפתח. אפשר לנסות שוב בעוד כמה דקות.',
 };
 
 /** The owner's form as the platform's credentials, or the Hebrew reason it is not one. */
 async function credsOf(app: App, platform: OrderPlatform, origin: string, form: Record<string, string>): Promise<Creds> {
   if (platform === 'shopify') {
+    // A Dev Dashboard app's Client ID and Client secret (since 2026), or an old custom app's shpat_ token.
     const token = str(form.token);
-    if (!/^shp[a-z]{2}_[A-Za-z0-9]{16,}$/.test(token)) throw new OrderConnectError('not a Shopify Admin API token', 'זה לא נראה כמו טוקן של Shopify. הוא מתחיל ב-shpat_ ומופיע באפליקציה, תחת API credentials.');
+    const clientId = str(form.client_id);
+    const clientSecret = str(form.client_secret);
     let shop = shopOf(str(form.shop));
     if (!str(form.shop)) shop = shopOf(str((await shopMeta(app.fetcher, origin)).myshopify_domain));
     if (!shop) throw new OrderConnectError('no myshopify address', 'צריך גם את הכתובת של החנות ב-myshopify, למשל my-store.myshopify.com. רואים אותה בניהול של Shopify, בהגדרות, תחת דומיינים.');
-    return { token, shop };
+    if (token) {
+      if (!/^shp[a-z]{2}_[A-Za-z0-9]{16,}$/.test(token)) throw new OrderConnectError('not a Shopify Admin API token', 'זה לא נראה כמו טוקן של Shopify. הוא מתחיל ב-shpat_ ומופיע באפליקציה, תחת API credentials.');
+      return { token, shop };
+    }
+    if (!/^[A-Za-z0-9]{20,64}$/.test(clientId)) throw new OrderConnectError('not a Shopify Client ID', 'זה לא נראה כמו Client ID של Shopify. מעתיקים אותו מהאפליקציה ב-Dev Dashboard, בהגדרות (Settings).');
+    if (!/^(shpss_)?[A-Za-z0-9_-]{20,}$/.test(clientSecret)) throw new OrderConnectError('not a Shopify Client secret', 'צריך גם את ה-Client secret, מאותו מקום בהגדרות של האפליקציה ב-Dev Dashboard.');
+    return { clientId, clientSecret, shop };
   }
   if (platform === 'woocommerce') {
     const key = str(form.key);
@@ -355,10 +410,13 @@ export async function connectOrders(app: App, storeId: number, form: Record<stri
   try {
     await tryKey(app.api, s.platform, origin, c);
   } catch (e) {
-    if (e instanceof OrderApiError && e.status >= 400 && e.status < 500) throw new OrderConnectError(`the key was refused: ${e.message}`, HE.refused);
+    if (e instanceof OrderApiError && e.status >= 400 && e.status < 500) {
+      const he = c.clientId ? (/shop_not_permitted/i.test(e.message) ? HE.org : HE.install) : HE.refused;
+      throw new OrderConnectError(`the key was refused: ${e.message}`, he);
+    }
     throw new OrderConnectError(`the key could not be tried: ${(e as Error)?.message || e}`, HE.away);
   }
-  const meta = { shop: c.shop || null, site_id: c.siteId || null, hint: hintOf(c.token || c.key || c.apiKey), by, checked_at: new Date().toISOString(), why: null };
+  const meta = { shop: c.shop || null, site_id: c.siteId || null, kind: c.clientId ? 'dev_dashboard' : c.token ? 'custom_app' : null, hint: hintOf(c.clientId || c.token || c.key || c.apiKey), by, checked_at: new Date().toISOString(), why: null };
   await app.db.query(
     `INSERT INTO order_access (store_id, platform, secret, status, meta) VALUES ($1, $2, $3, 'active', $4::jsonb)
      ON CONFLICT (store_id) DO UPDATE SET platform = EXCLUDED.platform, secret = EXCLUDED.secret, status = 'active', meta = EXCLUDED.meta, connected_at = now()`,
