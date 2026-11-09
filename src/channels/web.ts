@@ -2,7 +2,9 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { App } from '../app.ts';
 import { J } from '../db/index.ts';
 import { audit } from '../db/log.ts';
-import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
+import { botName } from '../agent/intro.ts';
+import { displayName } from '../ingest/brand.ts';
+import { lookOf, type Look, type LookChoice } from '../ingest/palette.ts';
 import { LIMITS } from './policy.ts';
 import type { ChannelAdapter } from './types.ts';
 
@@ -39,7 +41,9 @@ export function webAdapter(): ChannelAdapter {
   };
 }
 
-export type WebAccount = { id: number; store_id: number; external_id: string; status: string; meta: { domains?: string[]; first_seen_at?: string } | null };
+// meta.look is the owner's own choice for how the chat looks (the chat's Settings, pages/webchat.ts): a main colour
+// over the site's, and light or dark; nothing there is "as on the site", the default.
+export type WebAccount = { id: number; store_id: number; external_id: string; status: string; meta: { domains?: string[]; first_seen_at?: string; look?: LookChoice } | null };
 
 /** The store's chat account, on or off, or null when it was never turned on. */
 export const webAccountOf = (app: App, storeId: number) =>
@@ -77,27 +81,44 @@ export async function turnOff(app: App, storeId: number, by: string) {
   await audit(app.db, { actor: by, action: 'web_chat_off', storeId });
 }
 
-export type Site = { account: WebAccount; name: string; color: string; ink: string; logo: string | null; domains: string[]; whatsapp: string | null };
+// `look` is the chat's colours, corners and type (ingest/palette.ts lookOf); `color` and `ink` are its main colour and
+// the text on it, as the reviews block and older pages name them. `icon` is the square mark the chat's header shows:
+// the site's apple-touch-icon or favicon, else its logo when that is its mark, else the store's initial. `bot` is the
+// name the owner gave the bot, or null (agent/intro.ts): the header says who answers, never a promise of how fast.
+export type Site = { account: WebAccount; name: string; color: string; ink: string; logo: string | null; domains: string[]; whatsapp: string | null; look: Look; bot: string | null };
+
+/**
+ * A store's chat look: the owner's choice for the chat over the site's own look, over the brand's colour (the
+ * operator's correction of it first, brand_override, as everywhere the store's colour shows).
+ */
+export function storeLook(s: { brand?: any; brand_override?: any } | null | undefined, choice?: LookChoice | null): Look {
+  const brand = { ...(s?.brand || {}), ...(s?.brand_override || {}) };
+  const fixed = s?.brand_override?.colors?.[0] || null;
+  return lookOf({ palette: fixed ? { ...(s?.brand?.palette || {}), primary: fixed, onPrimary: null } : s?.brand?.palette, colors: brand.colors, choice });
+}
 
 /** What the chat shows for a key, or null when the key is not one of an active chat. */
 export async function siteOf(app: App, key: string): Promise<Site | null> {
   if (!isKey(key)) return null;
   const account = await app.db.one<WebAccount>("SELECT id, store_id, external_id, status, meta FROM channel_accounts WHERE channel = 'web' AND external_id = $1 AND status = 'active'", [key]);
   if (!account) return null;
-  const s = await app.db.one<any>('SELECT name, domain, brand, brand_override FROM stores WHERE id = $1', [account.store_id]);
+  const s = await app.db.one<any>('SELECT name, domain, brand, brand_override, platform, agent_name FROM stores WHERE id = $1', [account.store_id]);
   const brand = { ...(s?.brand || {}), ...(s?.brand_override || {}) };
-  const color = readableShade(brandColor(brand) || '#4a4a52');
+  const look = storeLook(s, account.meta?.look);
   // "Continue on WhatsApp": the store's own number, once it answers there, however it is connected (Meta, Kapso, Zernio).
   const wa = await app.db.one<{ meta: any }>("SELECT meta FROM channel_accounts WHERE store_id = $1 AND channel = 'whatsapp' AND status = 'active' AND kind IN ('meta', 'kapso', 'zernio') ORDER BY id DESC LIMIT 1", [account.store_id]);
   const number = String(wa?.meta?.display_phone_number || '').replace(/\D/g, '');
+  const icon = String(s?.brand?.palette?.icon || '');
   return {
     account,
     name: displayName(s?.brand_override?.name, s?.brand?.name, s?.name) || s?.domain || '',
-    color,
-    ink: inkOn(color),
-    logo: brand.logoIsMark && /^https:\/\//.test(String(brand.logo || '')) ? String(brand.logo) : null,
+    color: look.primary,
+    ink: look.onPrimary,
+    logo: /^https:\/\//.test(icon) ? icon : brand.logoIsMark && /^https:\/\//.test(String(brand.logo || '')) ? String(brand.logo) : null,
     domains: (account.meta?.domains || []).filter((d) => siteOrigin(d) === d),
     whatsapp: number.length >= 8 ? number : null,
+    look,
+    bot: botName(s || {}),
   };
 }
 

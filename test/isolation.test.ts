@@ -40,6 +40,9 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   // The chat on B's site and B's reviews (pages/webchat.ts): A turns nothing on and shows nothing.
   'POST ^\\/lead\\/(\\d+)\\/web$': (i) => `/lead/${i.b}/web`,
   'POST ^\\/lead\\/(\\d+)\\/reviews\\/(\\d+)$': (i) => `/lead/${i.b}/reviews/1`,
+  // The chat's look on Settings: A previews nothing of B's, its name, mark or colours.
+  'GET ^\\/lead\\/(\\d+)\\/web\\/preview$': (i) => `/lead/${i.b}/web/preview`,
+  'GET ^\\/lead\\/(\\d+)\\/web\\/look\\.css$': (i) => `/lead/${i.b}/web/look.css`,
   'POST ^\\/lead\\/(\\d+)\\/auto\\/(cart|payment|shipping|review)$': (i) => `/lead/${i.b}/auto/cart`,
   'POST ^\\/lead\\/(\\d+)\\/auto\\/templates$': (i) => `/lead/${i.b}/auto/templates`,
   'POST ^\\/lead\\/(\\d+)\\/auto\\/secret$': (i) => `/lead/${i.b}/auto/secret`,

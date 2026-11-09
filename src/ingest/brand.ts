@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { hebrewRatio } from '../core/hebrew.ts';
+import type { Palette } from './palette.ts';
 
 // A store's brand, from its own site: the logo, two main colours, and a tone sample
 // in its own words. The pitch page dresses in it; the agent writes in the tone.
@@ -19,7 +20,9 @@ import { hebrewRatio } from '../core/hebrew.ts';
 // `logoIsMark` says the logo is the store's mark (an <img> that says logo, the Organization's logo), not the
 // share image a page falls back to (og:image, often a product photo), whose colours are not the brand's.
 // `colorsFrom` is "logo" when the colours were taken from the logo.
-export type Brand = { name?: string | null; logo?: string | null; colors?: string[]; tone?: string | null; description?: string | null; themeColor?: string | null; logoIsMark?: boolean; colorsFrom?: 'logo' | null };
+// `palette` is the site's look for the chat on its own site (palette.ts readPalette): its buttons' colour, its
+// background and text, its corners and type, read at the same site read.
+export type Brand = { name?: string | null; logo?: string | null; colors?: string[]; tone?: string | null; description?: string | null; themeColor?: string | null; logoIsMark?: boolean; colorsFrom?: 'logo' | null; palette?: Palette | null };
 
 const HEX = /#([0-9a-f]{6}|[0-9a-f]{3})\b/gi;
 

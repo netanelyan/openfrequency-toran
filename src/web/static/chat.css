@@ -1,68 +1,142 @@
-/* The chat on a store's site, inside its frame (web/widget.ts, static/chat.js), and its reviews block. Right to left,
-   phone first, the store's colour (--store, from /w/<key>/theme.css) on the button and the visitor's lines, the
-   system's own type. Light only: it sits on the store's page, whatever its theme. */
+/* The chat on a store's site, inside its frame (web/widget.ts, static/chat.js), its preview on Settings (.pv), and the
+   reviews block. In the site's own look (the owner, 2026-11-09: "design the website widget better. make it according to
+   the website's colors"): every colour, corner and the type come from /w/<key>/theme.css (ingest/palette.ts lookCss),
+   where each text colour already reads at 4.5:1 on what it sits on, light or dark as the site is. The values below are
+   the neutral look, for a moment before theme.css arrives.
 
-:root { --ink: #1d1d1f; --ink-2: #424245; --ink-3: #6e6e73; --line: rgba(0, 0, 0, 0.08); --bubble: #f0f0f3; --panel: #ffffff; --store: #4a4a52; --store-ink: #ffffff; color-scheme: light; }
+   Right to left and phone first. The customer's bubbles are in the store's main colour, the store's in a soft surface;
+   the button in the corner is the main colour with a soft shadow. Motion is short and stops for prefers-reduced-motion.
+   Nothing here reaches the store's page: it is a frame of ours. */
+
+@font-face { font-family: 'Heebo'; font-style: normal; font-display: swap; font-weight: 100 900; src: url('/static/fonts/heebo-hebrew.woff2') format('woff2'); unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
+@font-face { font-family: 'Heebo'; font-style: normal; font-display: swap; font-weight: 100 900; src: url('/static/fonts/heebo-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root {
+  --p: #2c2c30; --on-p: #ffffff; --bg: #ffffff; --surface: #f2f2f4; --text: #1d1d1f; --muted: #66666b; --line: #e6e6ea; --accent: #2c2c30; --ink: #2c2c30;
+  --bad: #b3261e; --sh: rgba(0, 0, 0, 0.3);
+  --r-ctl: 22px; --r-bubble: 18px; --r-panel: 20px; --r-launch: 50%;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Noto Sans Hebrew', Roboto, Arial, sans-serif;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --scheme: light;
+  color-scheme: normal;
+}
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: transparent; }
-body { font: 400 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; color: var(--ink); direction: rtl; -webkit-font-smoothing: antialiased; }
-.c-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+body { font: 400 15px/1.45 var(--font); color: var(--text); direction: rtl; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+.c-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 [hidden] { display: none !important; }
-svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-button { font: inherit; cursor: pointer; }
-:focus-visible { outline: 3px solid rgba(0, 102, 204, 0.5); outline-offset: 2px; }
+svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+button { font: inherit; cursor: pointer; color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-/* Closed: the button in the corner of the frame (the frame is 76px square). */
-.c-open { position: fixed; bottom: 8px; width: 60px; height: 60px; border: 0; border-radius: 50%; background: var(--store); color: var(--store-ink); display: grid; place-items: center; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.12); transition: transform 0.15s ease; }
-.side-left .c-open { left: 8px; }
-.side-right .c-open { right: 8px; }
+/* Closed: the button in the corner of an 84px frame, with room for its shadow. */
+.c-open { position: fixed; bottom: 14px; width: 56px; height: 56px; padding: 0; border: 0; border-radius: var(--r-launch); background: var(--p); color: var(--on-p); display: grid; place-items: center;
+  box-shadow: 0 6px 16px -4px var(--sh), 0 2px 5px rgba(0, 0, 0, 0.14); transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease); }
+.side-left .c-open { left: 14px; }
+.side-right .c-open { right: 14px; }
+@media (hover: hover) { .c-open:hover { transform: translateY(-2px); box-shadow: 0 9px 20px -5px var(--sh), 0 3px 6px rgba(0, 0, 0, 0.14); } }
 .c-open:active { transform: scale(0.94); }
-.c-open svg { width: 28px; height: 28px; }
+.c-open:focus-visible { outline: 3px solid var(--p); outline-offset: 3px; }
+.c-ico { width: 30px; height: 30px; }
+.c-ico path { stroke-width: 1.7; }
+.c-ico .c-dot { fill: currentColor; stroke: none; }
+.c-badge { position: absolute; top: 1px; inset-inline-end: 1px; width: 14px; height: 14px; border-radius: 50%; background: #e5243b; box-shadow: 0 0 0 2px #ffffff; }
 
-/* Open: the whole frame is the panel. */
-.c-panel { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--panel); border-radius: 18px; overflow: hidden; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--line); }
-@media (max-width: 519px) { .c-panel { border-radius: 0; } }
-.c-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: var(--store); color: var(--store-ink); }
-.c-logo { width: 36px; height: 36px; border-radius: 9px; object-fit: contain; background: #fff; flex: none; }
-.c-initial { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; background: rgba(255, 255, 255, 0.22); font-weight: 700; font-size: 17px; }
-.c-who { flex: 1; min-width: 0; display: grid; }
-.c-who b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.c-who small { font-size: 12px; opacity: 0.85; }
-.c-close { width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: inherit; display: grid; place-items: center; flex: none; }
-.c-close:hover { background: rgba(255, 255, 255, 0.16); }
+/* Open: a panel with a 12px margin in the frame for its shadow; on a phone (.full, said by the loader), the whole screen. */
+.c-panel { color-scheme: var(--scheme); position: fixed; inset: 12px; display: flex; flex-direction: column; background: var(--bg); color: var(--text); border-radius: var(--r-panel); overflow: hidden;
+  box-shadow: 0 12px 32px -10px var(--sh), 0 2px 8px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--line); transform-origin: bottom left; animation: c-in 0.24s var(--ease); }
+.side-right .c-panel { transform-origin: bottom right; }
+.c-panel.c-out { animation: c-out 0.14s ease-in forwards; }
+@keyframes c-in { from { opacity: 0; transform: translateY(14px) scale(0.98); } }
+@keyframes c-out { to { opacity: 0; transform: translateY(10px) scale(0.98); } }
+.full .c-panel { inset: 0; border-radius: 0; box-shadow: none; }
 
-.c-lines { flex: 1; overflow-y: auto; padding: 16px 14px 8px; display: flex; flex-direction: column; gap: 6px; overscroll-behavior: contain; }
-.c-hello { margin: 0 0 6px; align-self: center; text-align: center; max-width: 90%; font-size: 13px; color: var(--ink-3); }
-.c-line { margin: 0; max-width: 84%; padding: 9px 13px; border-radius: 18px; white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; text-align: start; }
-.c-me { align-self: flex-start; background: var(--store); color: var(--store-ink); border-start-start-radius: 6px; }
-.c-store { align-self: flex-end; background: var(--bubble); border-start-end-radius: 6px; }
+.c-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 14px 10px; padding-top: max(14px, env(safe-area-inset-top)); background: var(--p); color: var(--on-p); flex: none; }
+.c-avatar { width: 40px; height: 40px; border-radius: min(12px, var(--r-panel)); display: grid; place-items: center; overflow: hidden; flex: none; background: rgba(255, 255, 255, 0.2); }
+.c-avatar:has(.c-logo) { background: #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06); }
+.c-logo { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
+.c-initial { font-weight: 700; font-size: 18px; line-height: 1; }
+.c-who { flex: 1; min-width: 0; }
+.c-who h2 { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-who p { margin: 2px 0 0; font-size: 12.5px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-close { position: relative; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: transparent; display: grid; place-items: center; flex: none; }
+.c-close::before { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: currentColor; opacity: 0.12; transition: opacity 0.15s; }
+@media (hover: hover) { .c-close:hover::before { opacity: 0.22; } }
+.c-close:focus-visible { outline-color: currentColor; }
+.c-close svg { width: 22px; height: 22px; position: relative; }
 
-.c-typing { margin: 0 16px 6px; display: flex; gap: 4px; align-self: flex-end; }
-.c-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); opacity: 0.5; animation: c-dot 1.2s infinite ease-in-out; }
-.c-typing span:nth-child(2) { animation-delay: 0.15s; }
-.c-typing span:nth-child(3) { animation-delay: 0.3s; }
-@keyframes c-dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 0.8; transform: translateY(-3px); } }
-@media (prefers-reduced-motion: reduce) { .c-typing span { animation: none; } }
-.c-error { margin: 0 16px 6px; font-size: 13px; color: #c8001b; }
+/* The conversation. A run of one side's bubbles sits close, its last one with the small corner. */
+.c-lines { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 14px 10px; display: flex; flex-direction: column; gap: 3px; overscroll-behavior: contain; }
+.c-lines:focus { outline: none; }
+.c-line { margin: 0; max-width: 82%; padding: 9px 13px; border-radius: var(--r-bubble); white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; text-align: start; line-height: 1.42; animation: c-pop 0.2s var(--ease); }
+.c-me { align-self: flex-start; background: var(--p); color: var(--on-p); }
+.c-store { align-self: flex-end; background: var(--surface); color: var(--text); }
+.c-me + .c-store, .c-store + .c-me { margin-top: 8px; }
+.c-me + .c-me { border-start-start-radius: min(6px, var(--r-bubble)); }
+.c-me:has(+ .c-me) { border-end-start-radius: min(6px, var(--r-bubble)); }
+.c-me:not(:has(+ .c-me)) { border-end-start-radius: min(4px, var(--r-bubble)); }
+.c-store + .c-store { border-start-end-radius: min(6px, var(--r-bubble)); }
+.c-store:has(+ .c-store) { border-end-end-radius: min(6px, var(--r-bubble)); }
+.c-store:not(:has(+ .c-store)) { border-end-end-radius: min(4px, var(--r-bubble)); }
+.c-line a { color: inherit; font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.c-store a { color: var(--accent); }
+.c-line a:hover { text-decoration-thickness: 2px; }
+@keyframes c-pop { from { opacity: 0; transform: translateY(4px); } }
 
-.c-box { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
-.c-box textarea { flex: 1; min-height: 44px; max-height: 120px; resize: none; border: 1px solid rgba(0, 0, 0, 0.14); border-radius: 22px; padding: 11px 14px; font: inherit; font-size: 16px; color: var(--ink); background: #fff; }
-.c-box textarea:focus { outline: none; border-color: var(--store); box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06); }
-.c-send { width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--store); color: var(--store-ink); display: grid; place-items: center; flex: none; }
-.c-send svg { width: 20px; height: 20px; }
+/* The questions to tap before the first message. */
+.c-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; padding: 0 14px 10px; flex: none; }
+.c-chip { padding: 7px 13px; border: 1px solid var(--line); border-radius: min(var(--r-ctl), 18px); background: var(--bg); color: var(--ink); font-size: 13.5px; font-weight: 500; line-height: 1.3; transition: background 0.15s, border-color 0.15s; }
+.c-chip:hover { background: var(--surface); border-color: var(--ink); }
+.c-chip:active { transform: scale(0.97); }
 
-.c-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px 10px; font-size: 12px; color: var(--ink-3); }
-.c-wa { color: #0b7a3b; font-weight: 600; text-decoration: none; padding: 6px 0; }
+.c-typing { align-self: flex-end; margin: 0 14px 8px; padding: 13px 14px; background: var(--surface); border-radius: var(--r-bubble); border-end-end-radius: min(4px, var(--r-bubble)); flex: none; }
+.c-dots { display: flex; gap: 4px; }
+.c-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: 0.45; animation: c-dot 1.2s infinite ease-in-out; }
+.c-dots i:nth-child(2) { animation-delay: 0.15s; }
+.c-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes c-dot { 0%, 80%, 100% { opacity: 0.3; transform: translateY(0); } 40% { opacity: 0.9; transform: translateY(-3px); } }
+.c-error { margin: 0 14px 8px; padding: 8px 12px; border-radius: 10px; font-size: 13px; color: var(--bad); background: var(--surface); flex: none; }
+
+/* The box: one rounded field, the send button inside it, at the end. */
+.c-box { padding: 6px 12px 8px; margin: 0; flex: none; }
+.c-field { display: flex; align-items: flex-end; gap: 6px; padding: 5px; padding-inline-start: 14px; border: 1px solid var(--line); border-radius: min(var(--r-ctl), 24px); background: var(--bg); transition: border-color 0.15s, box-shadow 0.15s; }
+.c-field:focus-within { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.c-field textarea { flex: 1; min-width: 0; min-height: 36px; max-height: 120px; padding: 8px 0; border: 0; outline: 0; resize: none; background: transparent; font: inherit; font-size: 16px; line-height: 1.3; color: var(--text); }
+.c-field textarea::placeholder { color: var(--muted); opacity: 1; }
+.c-send { width: 36px; height: 36px; padding: 0; border: 0; border-radius: min(var(--r-ctl), 18px); background: var(--p); color: var(--on-p); display: grid; place-items: center; flex: none; transition: opacity 0.15s, transform 0.15s var(--ease); }
+.c-send svg { width: 20px; height: 20px; stroke-width: 2.3; }
+.c-send:active { transform: scale(0.92); }
+.c-field:has(textarea:placeholder-shown) .c-send { opacity: 0.4; }
+
+.c-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding: 0 16px; padding-bottom: max(8px, env(safe-area-inset-bottom)); font-size: 11.5px; color: var(--muted); flex: none; }
+.c-foot:not(:has(.c-wa)) { justify-content: center; }
+.c-wa { display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; color: var(--text); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+.c-wa svg { width: 16px; height: 16px; }
 .c-wa:hover { text-decoration: underline; }
 
-/* The reviews block on the store's page. */
+@media (prefers-reduced-motion: reduce) {
+  .c-panel, .c-panel.c-out, .c-line { animation: none; }
+  .c-dots i { animation: none; opacity: 0.6; }
+  .c-open, .c-open:hover, .c-send, .c-chip { transition: none; transform: none; }
+}
+
+/* The preview on Settings: the panel open on the site's own background, the button beside it, nothing to type into. */
+html.pv, .pv-body { height: 100%; }
+.pv-body { background: var(--bg); padding: 16px 16px 14px; overflow: hidden; }
+.pv-stage { height: 100%; max-width: 380px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.pv .c-panel { position: relative; inset: auto; flex: 1; min-height: 0; animation: none; }
+.pv .c-line { animation: none; }
+.pv .pv-open { position: relative; bottom: auto; flex: none; align-self: flex-end; }
+.pv.side-right .pv-open { align-self: flex-start; }
+
+/* The reviews block on the store's page: cards in the site's background and text. */
 .r-body { padding: 4px 2px 12px; }
 .r-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 4px 10px; }
 .r-head b { font-size: 18px; }
-.r-head span { font-size: 13px; color: var(--ink-3); }
+.r-head span { font-size: 13px; color: var(--muted); }
 .r-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-.r-card { padding: 14px 16px; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0, 0, 0, 0.05); }
+.r-card { padding: 14px 16px; border-radius: min(16px, var(--r-panel)); background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0, 0, 0, 0.05); }
 .r-card p { margin: 6px 0; overflow-wrap: anywhere; unicode-bidi: plaintext; text-align: start; }
-.r-card small { color: var(--ink-3); }
-.r-stars { color: var(--store); letter-spacing: 2px; }
-.r-off { color: #d2d2d7; }
+.r-card small { color: var(--muted); }
+.r-stars { color: var(--p); letter-spacing: 2px; }
+.r-off { color: var(--line); }

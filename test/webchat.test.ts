@@ -60,7 +60,7 @@ test('the owner turns the chat on: one line to add, a loader for the key, a fram
     const html = await frame.text();
     assert.match(html, /<html lang="he" dir="rtl" class="side-left">/);
     assert.match(html, /aria-controls="c-panel"/);
-    assert.ok(html.includes('<script src="/static/chat.js" defer></script>'));
+    assert.match(html, /<script src="\/static\/chat\.js\?v=\w+" defer><\/script>/, 'the chat script, versioned by the deploy');
     assert.match(await (await s.get('/static/chat.js')).text(), /toran:open/);
 
     // Off: the frame and the loader answer nothing at once.

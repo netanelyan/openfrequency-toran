@@ -1,7 +1,13 @@
 import type { App } from '../../app.ts';
-import { siteOrigin, turnOff, turnOn, webAccountOf } from '../../channels/web.ts';
+import { siteOrigin, storeLook, turnOff, turnOn, webAccountOf } from '../../channels/web.ts';
+import { botName } from '../../agent/intro.ts';
+import { J } from '../../db/index.ts';
+import { audit } from '../../db/log.ts';
+import { displayName } from '../../ingest/brand.ts';
+import { colorOf, lookCss, type LookChoice, type LookMode } from '../../ingest/palette.ts';
 import { decide, reviewsOf } from '../../reviews.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
+import { previewPage } from '../widget.ts';
 import { csrfField, esc, icon, postButton, stamp } from '../ui.ts';
 
 // The store's chat on its own site (channels/web.ts, web/widget.ts) and the reviews Toran collected (reviews.ts), on
@@ -23,6 +29,56 @@ const PLATFORM_STEPS: [string, string][] = [
   ['Wix', 'בהגדרות האתר: Custom Code, ואז Add Custom Code. מדביקים את השורה, בוחרים All pages ו-Body - end, ומאשרים.'],
 ];
 
+// How the chat looks (the owner, 2026-11-09: "design the website widget better. make it according to the website's
+// colors"): as on the store's site by default, the colours Toran read there shown as swatches; the owner may pick
+// another main colour, and light or dark under "עוד אפשרויות". One button saves; the preview beside it is the real
+// chat, redrawn as the owner picks (static/app.js data-look), from /lead/<id>/web/preview and its look.css.
+
+const MODES: [LookMode, string][] = [['site', 'כמו באתר'], ['light', 'בהיר'], ['dark', 'כהה']];
+
+/** The owner's choice as a form or a query says it: "own" with a colour, else the site's; light, dark or the site's. */
+export function choiceOf(q: { use?: unknown; color?: unknown; mode?: unknown }): LookChoice {
+  const color = q.use === 'own' ? colorOf(String(q.color || '')) : null;
+  const mode = MODES.some(([m]) => m === q.mode) ? (q.mode as LookMode) : 'site';
+  return { color, mode };
+}
+
+const choiceQuery = (p: URLSearchParams) => ({ use: p.get('use') || 'site', color: p.get('color') || '', mode: p.get('mode') || 'site' });
+
+// The preview is a page of the dashboard framed by the dashboard itself, and nothing else may frame it.
+const PREVIEW_HEADERS = {
+  'content-security-policy': "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'none'; font-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
+  'x-frame-options': 'SAMEORIGIN',
+};
+
+const swatch = (c: string, label: string) => `<svg class="sw" role="img" aria-label="${esc(label)}" width="22" height="22" viewBox="0 0 22 22"><title>${esc(label)}</title><circle cx="11" cy="11" r="10" fill="${esc(c)}"/></svg>`;
+
+function lookCard(r: DashReq, id: number, s: { brand: any; brand_override: any }, choice: LookChoice, may: boolean): string {
+  const site = storeLook(s, null);
+  const found = site.from === 'site';
+  const own = Boolean(choice.color);
+  const mode = choice.mode || 'site';
+  const q = (c: LookChoice) => new URLSearchParams({ use: c.color ? 'own' : 'site', color: c.color || '', mode: c.mode || 'site' }).toString();
+  const swatches = `<span class="sws">${swatch(site.primary, 'הצבע הראשי')}${swatch(site.bg, 'הרקע')}${swatch(site.text, 'הטקסט')}${swatch(site.accent, 'הקישורים')}</span>`;
+  const preview = `<div class="look-pv"><iframe id="look-${id}" src="/lead/${id}/web/preview?${esc(q(choice))}" title="תצוגה של הצ׳אט באתר" loading="lazy"></iframe><p class="small muted m0">ככה הלקוחות יראו אותו באתר. השיחה כאן היא דוגמה.</p></div>`;
+  if (!may) return `<h3 class="small mt16">איך הצ׳אט נראה</h3><div class="look-wrap"><div class="look">${preview}</div></div>`;
+  return `<h3 class="small mt16">איך הצ׳אט נראה</h3>
+  <div class="look-wrap"><div class="look">
+  <form method="post" action="/lead/${id}/web" class="look-form" data-look="#look-${id}">${csrfField(r.ctx)}<input type="hidden" name="do" value="look">
+    <fieldset class="look-pick"><legend class="sr">הצבע הראשי</legend>
+      <label class="look-opt"><input type="radio" name="use" value="site"${own ? '' : ' checked'}><span><b>כמו באתר שלכם</b><small>${found ? `הצבעים שמצאתי באתר ${swatches}` : 'לא מצאתי צבעים באתר, אז הצ׳אט בצבעים ניטרליים.'}</small></span></label>
+      <label class="look-opt"><input type="radio" name="use" value="own"${own ? ' checked' : ''}><span><b>צבע אחר</b><small>לכפתור ולבועות של הלקוחות</small></span><input type="color" name="color" value="${esc(choice.color || site.primary)}" aria-label="הצבע הראשי"></label>
+    </fieldset>
+    <details class="mt8"${mode !== 'site' ? ' open' : ''}><summary class="small">עוד אפשרויות</summary>
+      <fieldset class="look-mode mt8"><legend class="small">בהיר או כהה</legend>${MODES.map(([m, t]) => `<label><input type="radio" name="mode" value="${m}"${m === mode ? ' checked' : ''}>${t}${m === 'site' ? (site.dark ? ' (כהה)' : ' (בהיר)') : ''}</label>`).join('')}</fieldset>
+      <p class="small muted mt8 m0">בכל צבע שתבחרו, הטקסט נשאר קריא. כשצריך, אני מכהה או מבהיר אותו קצת.</p>
+    </details>
+    <div class="row mt12"><button class="btn primary sm" type="submit">לשמור</button></div>
+  </form>
+  ${preview}
+  </div></div>`;
+}
+
 /** The chat panel on a store's Settings. */
 export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: string }): Promise<string> {
   const may = !r.ctx.readOnly && r.user.role !== 'client_member';
@@ -35,11 +91,13 @@ export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: 
   }
   const line = `<script src="${publicBase(app)}/w/${a!.external_id}.js" async></script>`;
   const domains = (a!.meta?.domains || []) as string[];
+  const brand = await app.db.one<{ brand: any; brand_override: any }>('SELECT brand, brand_override FROM stores WHERE id = $1', [s.id]);
   return `${head}
   <h3 class="small mt16">השורה שמוסיפים לאתר</h3>
   <div class="row mt8"><code class="snippet ltr" id="snippet-${s.id}">${esc(line)}</code><button class="btn sm" type="button" data-copy="#snippet-${s.id}" data-done="השורה הועתקה">${icon('copy')}להעתיק</button></div>
   <details class="mt12"><summary class="small">איפה מדביקים אותה</summary><ul class="keys mt8">${PLATFORM_STEPS.map(([p, t]) => `<li><b class="ltr">${p}</b><span>${esc(t)}</span></li>`).join('')}</ul></details>
   <p class="small muted mt8 m0">הצ׳אט מופיע רק באתרים שברשימה למטה, גם אם מישהו מעתיק את השורה. כדי להציג ביקורות של לקוחות באתר, מוסיפים בדף את <code class="ltr">&lt;div data-toran-reviews&gt;&lt;/div&gt;</code> במקום שבו הן יופיעו.</p>
+  ${lookCard(r, s.id, brand || { brand: null, brand_override: null }, a!.meta?.look || {}, may)}
   ${may ? `<form method="post" action="/lead/${s.id}/web" class="mt12">${csrfField(r.ctx)}<input type="hidden" name="do" value="domains">
     <label class="f">האתרים שבהם הצ׳אט מופיע<small>כתובת בכל שורה. הכתובת של החנות כבר כאן.</small><textarea name="domains" rows="3" dir="ltr" maxlength="1000">${esc(domains.join('\n'))}</textarea></label>
     <div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div></form>
@@ -90,7 +148,30 @@ export function webChatRoutes(app: App): Route<DashReq>[] {
         await turnOn(app, id, r.user.name, typed);
         return { redirect: '/settings#webchat', message: 'נשמר.' };
       }
+      if (what === 'look') {
+        const look = choiceOf(r.form);
+        const done = await app.db.query("UPDATE channel_accounts SET meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb WHERE store_id = $1 AND channel = 'web' RETURNING id", [id, J({ look })]);
+        if (!done.length) throw new ActionError('קודם מפעילים את הצ׳אט באתר.', 400);
+        await audit(app.db, { actor: r.user.name, action: 'web_chat_look', storeId: id, detail: look });
+        return { redirect: '/settings#webchat', message: 'נשמר. מעכשיו הצ׳אט באתר נראה ככה.' };
+      }
       throw new ActionError('אין פעולה כזו', 404);
+    }],
+    // The preview on Settings: the chat in the look being tried, framed only by our own pages.
+    ['GET', /^\/lead\/(\d+)\/web\/preview$/, async (r, m) => {
+      const id = Number(m[1]);
+      const s = await app.db.one<any>('SELECT name, domain, brand, brand_override, platform, agent_name FROM stores WHERE id = $1', [id]);
+      if (!s) throw new ActionError('לא נמצא', 404);
+      const brand = { ...(s.brand || {}), ...(s.brand_override || {}) };
+      const icon = String(s.brand?.palette?.icon || '');
+      const logo = /^https:\/\//.test(icon) ? icon : brand.logoIsMark && /^https:\/\//.test(String(brand.logo || '')) ? String(brand.logo) : null;
+      const face = { name: displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain, logo, whatsapp: null, bot: botName(s) };
+      const css = `/lead/${id}/web/look.css?${new URLSearchParams(choiceQuery(r.url.searchParams)).toString()}`;
+      return { html: previewPage(face, css), headers: PREVIEW_HEADERS };
+    }],
+    ['GET', /^\/lead\/(\d+)\/web\/look\.css$/, async (r, m) => {
+      const s = await app.db.one<any>('SELECT brand, brand_override FROM stores WHERE id = $1', [Number(m[1])]);
+      return { text: lookCss(storeLook(s, choiceOf(choiceQuery(r.url.searchParams)))), type: 'text/css; charset=utf-8', headers: { 'cache-control': 'private, max-age=60' } };
     }],
     ['POST', /^\/lead\/(\d+)\/reviews\/(\d+)$/, async (r, m) => {
       owner(r);

@@ -469,4 +469,26 @@
     setInterval(ask, 45_000);
     document.addEventListener('visibilitychange', ask);
   }
+
+  // The web chat's look on Settings (pages/webchat.ts): the preview redraws as the owner picks, before saving. Picking a
+  // colour picks "צבע אחר" with it.
+  document.querySelectorAll('form[data-look]').forEach((form) => {
+    const frame = document.querySelector(form.dataset.look);
+    if (!frame) return;
+    const path = (frame.getAttribute('src') || '').split('?')[0];
+    let t = null;
+    const draw = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        const f = new FormData(form);
+        frame.src = `${path}?${new URLSearchParams({ use: String(f.get('use') || 'site'), color: String(f.get('color') || ''), mode: String(f.get('mode') || 'site') })}`;
+      }, 160);
+    };
+    form.querySelector('input[type="color"]')?.addEventListener('input', () => {
+      const own = form.querySelector('input[name="use"][value="own"]');
+      if (own) own.checked = true;
+    });
+    form.addEventListener('input', draw);
+    form.addEventListener('change', draw);
+  });
 })();

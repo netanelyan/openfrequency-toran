@@ -10,6 +10,7 @@ import { siteBase } from '../core/urls.ts';
 import { readBrand } from './brand.ts';
 import { embed } from './embed.ts';
 import { logoColors } from './logo.ts';
+import { cssLinks, readPalette } from './palette.ts';
 import { chunk, faqJsonLd, readPolicies, standardPaths } from './pages.ts';
 import { INGESTIBLE_EN, canIngest, livePrice, readCatalogue } from './catalogue.ts';
 import { pageLinks } from './sitemap.ts';
@@ -73,6 +74,10 @@ export async function ingestStore(app: App, storeId: number, { progress = (_m: s
     const fromLogo = await logoColorsAt(fetcher, brand.logo);
     if (fromLogo.length) Object.assign(brand, { colors: fromLogo, colorsFrom: 'logo' });
   }
+  // The look the chat on the store's site takes (palette.ts): the home page's own CSS, and up to three of the theme's
+  // style sheets (a WordPress theme's colours and an Elementor kit's live there, not in the page).
+  progress('קורא את הצבעים של האתר');
+  brand.palette = readPalette(home.text, home.url, await sheetsAt(fetcher, cssLinks(home.text, home.url)));
 
   progress('קורא את המדיניות: משלוחים, החזרות, תשלום');
   // The home page's links first (their words name the page), then, off Shopify, the pages the sitemap lists.
@@ -164,6 +169,19 @@ async function logoColorsAt(fetcher: Fetcher, url: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+/** The style sheets at these URLs, each at most 600 KB and 8 seconds; one that does not load is left out. */
+async function sheetsAt(fetcher: Fetcher, urls: string[]): Promise<string[]> {
+  const got = await Promise.all(urls.map(async (u) => {
+    try {
+      const r = await fetcher(u, { accept: 'text/css,*/*;q=0.1', maxBytes: 600 * 1024, timeoutMs: 8_000 });
+      return r.status < 400 && !/<html/i.test(r.text.slice(0, 300)) ? r.text : '';
+    } catch {
+      return '';
+    }
+  }));
+  return got.filter(Boolean);
 }
 
 /**
