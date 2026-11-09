@@ -95,7 +95,7 @@ const SPRITE = `<svg class="sr" width="0" height="0" aria-hidden="true"><defs>
 <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M12 3a9 8.5 0 0 0-5.2 15.4V21l3-1.7A9.6 9.6 0 0 0 12 19.5 9 8.5 0 0 0 12 3z"/><path d="M7.5 13.5l3-3.2 2.2 2 3.8-3.6-3 3.2-2.2-2z"/></symbol>
 <symbol id="i-camera" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="3.8"/><path d="M16.8 7.2h.01"/></symbol>
 <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.5-7.5"/></symbol>
-<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.5L19.5 10l-5.6 1.6L12 17l-1.9-5.4L4.5 10l5.6-1.5z"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 5l1.9 5.5L19.5 12l-5.6 1.6L12 19l-1.9-5.4L4.5 12l5.6-1.5z"/></symbol>
 </defs></svg>`;
 
 // The operator's sections, the same in the tab bar (phone) and the sidebar (desk).

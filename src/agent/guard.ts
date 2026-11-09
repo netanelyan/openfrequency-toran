@@ -317,6 +317,23 @@ const ASKS: Record<string, RegExp> = {
   link: /קישור|לינק|link|url|כתובת|אתר/i,
 };
 /** Whether `asked` (the customer's message) asked about a cut sentence's subject; with no message known, it did. */
+// What the guard cut, in the owner's words, for the line the owner reads when Toran hands a conversation over (the
+// owner, 2026-11-09, on "תורן העביר את זה אליכם: the guard cut stock: מה נשמע": "whats the english part? user wont get
+// it"). The rule names stay in the stored record; the owner only ever sees this.
+const CUT_HE: Record<string, string> = { price: 'המחיר', stock: 'המלאי', delivery: 'זמן המשלוח', promise: 'הנחה או החזר', link: 'הקישור' };
+
+/** The handoff line for a reply the guard cut: what Toran was not sure of, and what the customer wrote. */
+export function cutSummary(rules: string[], asked: string): string {
+  const what = [...new Set(rules.filter((r) => r !== 'continuation').map((r) => CUT_HE[r] || 'הפרטים'))];
+  return `תורן לא מצא במידע של החנות תשובה בטוחה על ${what.join(' ועל ') || 'הפרטים'}. הלקוח כתב: "${asked}"`;
+}
+
+/** A handoff line kept in English before the line above was Hebrew ("the guard cut stock: ..."), shown in Hebrew. */
+export function summaryHe(summary: string): string {
+  const m = /^the guard cut ([a-z, ]+): ([\s\S]*)$/.exec(summary || '');
+  return m ? cutSummary(m[1].split(/,\s*/), m[2]) : summary;
+}
+
 export function askedAbout(rule: string, asked: string | undefined): boolean {
   if (asked == null) return true;
   const text = asked.trim();
