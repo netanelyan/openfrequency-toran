@@ -42,7 +42,11 @@ test('the owner turns the chat on: one line to add, a loader for the key, a fram
     assert.match(key, /^w[0-9a-f]{20}$/);
     const settings = await (await s.get('/settings')).text();
     assert.ok(settings.includes(`&lt;script src=&quot;http://localhost:4710/w/${key}.js&quot; async&gt;&lt;/script&gt;`) || settings.includes(`/w/${key}.js`), 'the line to add');
-    assert.match(settings, /Shopify[^]*theme\.liquid[^]*WooCommerce[^]*WPCode[^]*Wix[^]*Custom Code/);
+    // The main button sends whoever runs the site a ready message with the line (the owner, 2026-11-09: no code for
+    // the owner to read); the steps for the store's own platform, and the copy, are folded under "להוסיף בעצמי".
+    assert.match(settings, /href="https:\/\/wa\.me\/\?text=[^"]*%3Cscript[^"]*"[^>]*>[^]*לשלוח למי שמנהל לכם את האתר/);
+    assert.match(settings, /<summary class="small">להוסיף בעצמי<\/summary>[^]*(theme\.liquid|WPCode|Custom Code)/);
+    assert.match(settings, /data-copy="#snippet-\d+"/);
 
     const js = await s.get(`/w/${key}.js`);
     assert.match(String(js.headers.get('content-type')), /javascript/);

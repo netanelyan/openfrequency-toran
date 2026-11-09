@@ -5,7 +5,7 @@ import { dropSource } from '../../auto/platforms.ts';
 import { audit } from '../../db/log.ts';
 import { cleanTrackingPage, PAGE_MAX, TrackingPageError } from '../../tracking.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
-import { csrfField, esc, icon, postButton, shortDate } from '../ui.ts';
+import { csrfField, esc, icon, postButton, sendTo, shortDate } from '../ui.ts';
 
 // The store's orders, read-only (src/orders.ts): a panel on the store's knowledge page (pages/customer.ts) where the
 // owner pastes a key that only reads orders, with where to get it on their platform, and POST /lead/<id>/orders to
@@ -17,21 +17,24 @@ const PLATFORM = { shopify: 'Shopify', woocommerce: 'WooCommerce', wix: 'Wix' } 
 export const STEPS: Record<OrderPlatform, string[]> = {
   // Since 2026-01-01 Shopify makes new apps only in its Dev Dashboard (shopify.dev/changelog/posts/legacy-custom-apps-
   // can-t-be-created-after-january-1-2026; shopify.dev/docs/apps/build/dev-dashboard/create-apps-using-dev-dashboard).
+  // The owner, 2026-11-09: "make everything easy for the user. he also doesnt know anything about tech". The English
+  // words left here are the buttons' own names in each platform, which the owner has to find; everything around them
+  // is plain, and a ready message sends the same steps to whoever runs the store's site.
   shopify: [
-    'נכנסים ל-Dev Dashboard של Shopify, ב-dev.shopify.com, עם החשבון שהחנות שייכת אליו. לוחצים Create app ואז Start from Dev Dashboard, ונותנים לאפליקציה שם, למשל תורן.',
-    'בדף Versions יוצרים גרסה. ב-Scopes מסמנים רק את read_orders, ולוחצים Release.',
+    'נכנסים ל-dev.shopify.com עם החשבון של החנות. לוחצים Create app ואז Start from Dev Dashboard, ונותנים לאפליקציה שם, למשל תורן.',
+    'בדף Versions יוצרים גרסה, מסמנים רק את read_orders (קריאה של הזמנות), ולוחצים Release.',
     'לוחצים Install app ומתקינים את האפליקציה על החנות.',
-    'בהגדרות של האפליקציה (Settings) מעתיקים את ה-Client ID ואת ה-Client secret, ומדביקים אותם כאן.',
+    'ב-Settings של האפליקציה יש שני קודים, Client ID ו-Client secret. מעתיקים ומדביקים אותם כאן.',
   ],
   woocommerce: [
-    'בניהול של וורדפרס נכנסים ל-WooCommerce, להגדרות, ללשונית "מתקדם" ול-REST API.',
+    'בניהול של וורדפרס נכנסים ל-WooCommerce, ל"הגדרות", ללשונית "מתקדם" ואז REST API.',
     'מוסיפים מפתח, ובהרשאות בוחרים "קריאה" (Read).',
-    'מעתיקים את ה-Consumer key ואת ה-Consumer secret. וורדפרס מראה אותם פעם אחת בלבד.',
+    'וורדפרס מראה שני קודים, Consumer key ו-Consumer secret, פעם אחת בלבד. מעתיקים ומדביקים אותם כאן.',
   ],
   wix: [
-    'בחשבון של Wix נכנסים ל-API Keys (בכתובת manage.wix.com/account/api-keys) ויוצרים מפתח.',
+    'נכנסים ל-manage.wix.com/account/api-keys ויוצרים מפתח.',
     'בוחרים את האתר של החנות, ובהרשאות מסמנים קריאה של הזמנות (Read Orders).',
-    'מעתיקים את המפתח. את מזהה האתר (Site ID) רואים בכתובת של הדשבורד, אחרי /dashboard/.',
+    'מעתיקים את המפתח. את הקוד של האתר (Site ID) רואים בכתובת של הדשבורד ב-Wix, אחרי /dashboard/.',
   ],
 };
 
@@ -41,16 +44,16 @@ const field = (name: string, label: string, { hint = '', placeholder = '', requi
 export const FIELDS: Record<OrderPlatform, string> = {
   shopify: field('client_id', 'Client ID') + field('client_secret', 'Client secret') + field('shop', 'הכתובת של החנות ב-myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false }),
   woocommerce: field('key', 'Consumer key', { placeholder: 'ck_...' }) + field('secret', 'Consumer secret', { placeholder: 'cs_...' }),
-  wix: field('api_key', 'מפתח ה-API') + field('site_id', 'מזהה האתר (Site ID)', { placeholder: '00000000-0000-0000-0000-000000000000' }),
+  wix: field('api_key', 'המפתח') + field('site_id', 'הקוד של האתר (Site ID)', { placeholder: '00000000-0000-0000-0000-000000000000' }),
 };
 
 /**
  * A store that made a custom app in its admin before 2026 still has its token (shpat_), and Shopify keeps it working:
  * folded under the Dev Dashboard steps, for the few who have one.
  */
-const oldShopifyApp = (r: DashReq, id: number) => `<details class="mt12"><summary class="small">יש לכם כבר אפליקציה מלפני 2026, עם טוקן שמתחיל ב-shpat_?</summary>
+const oldShopifyApp = (r: DashReq, id: number) => `<details class="mt12"><summary class="small">יש לכם אפליקציה של Shopify מלפני 2026?</summary>
 <ol class="m0 mt8"><li>בניהול של Shopify נכנסים להגדרות, ל"אפליקציות וערוצי מכירה" ול"פיתוח אפליקציות", ופותחים את האפליקציה.</li><li>מוודאים שבהרשאות של Admin API מסומן read_orders, ומעתיקים את ה-Admin API access token.</li></ol>
-<form method="post" action="/lead/${id}/orders" class="mt8">${csrfField(r.ctx)}${field('token', 'Admin API access token', { placeholder: 'shpat_...' })}${field('shop', 'הכתובת של החנות ב-myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false })}<button class="btn sm mt12" type="submit">${icon('check')}לחבר עם הטוקן</button></form></details>`;
+<form method="post" action="/lead/${id}/orders" class="mt8">${csrfField(r.ctx)}${field('token', 'Admin API access token', { placeholder: 'shpat_...' })}${field('shop', 'הכתובת של החנות ב-myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false })}<button class="btn sm mt12" type="submit">${icon('check')}לחבר</button></form></details>`;
 
 /**
  * The store's own tracking page (src/tracking.ts; the owner, 2026-11-09: "or the website's own tracking"), folded under
@@ -68,7 +71,7 @@ async function trackingPageBox(app: App, r: DashReq, id: number, may: boolean): 
 /** Whether this store's orders are connected and working: what the knowledge page's lists say Toran answers. */
 export const ordersOn = (a: AccessRow | null) => a?.status === 'active';
 
-export async function ordersPanel(app: App, r: DashReq, s: { id: number; platform: string }, writeUs: string): Promise<string> {
+export async function ordersPanel(app: App, r: DashReq, s: { id: number; platform: string; name?: string }, writeUs: string): Promise<string> {
   if (!ordersPlatform(s.platform)) return '';
   const a = await orderAccessOf(app.db, s.id);
   const may = !r.ctx.readOnly && r.user.role !== 'client_member';
@@ -84,8 +87,9 @@ export async function ordersPanel(app: App, r: DashReq, s: { id: number; platfor
   if (!secretsReady(app.env)) return `${head}${intro}<p class="small muted mt12 m0">החיבור להזמנות עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.</p>${writeUs ? `<div class="row mt8">${writeUs}</div>` : ''}</section>`;
   if (!may) return `${head}${broken}${intro}<p class="small muted mt12 m0">את המפתח מחבר מי שפתח את החשבון.</p></section>`;
   return `${head}${broken}${intro}
-  <h3 class="small mt16">איפה מוצאים את המפתח</h3><ol class="m0">${STEPS[s.platform].map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
-  <form method="post" action="/lead/${s.id}/orders" class="mt8">${csrfField(r.ctx)}${FIELDS[s.platform]}<button class="btn sm primary mt12" type="submit">${icon('check')}לחבר</button></form>
+  <h3 class="small mt16">איפה מוצאים את המפתח</h3><ol class="steps mt8">${STEPS[s.platform].map((x) => `<li><span>${esc(x)}</span></li>`).join('')}</ol>
+  <form method="post" action="/lead/${s.id}/orders" class="mt12">${csrfField(r.ctx)}${FIELDS[s.platform]}<button class="btn primary mt12" type="submit">${icon('check')}לחבר</button></form>
+  <details class="mt12"><summary class="small">מישהו אחר מנהל לכם את האתר?</summary><p class="small mt8 m0">שולחים לו את השלבים, והוא מחזיר לכם את הקודים להדביק כאן.</p>${sendTo([`שלום, אפשר עזרה לחבר את ההזמנות של ${s.name || "החנות"} לתורן? תורן צריך מפתח של ${name} שרק קורא הזמנות:`, ...STEPS[s.platform].map((x, i) => `${i + 1}. ${x.replace(/ומדביקים אותם כאן\.|מעתיקים ומדביקים אותם כאן\./, 'ושולחים לי אותם.')}`), 'תודה'].join('\n'), `מפתח להזמנות של ${name} בשביל תורן`, 'לשלוח לו את השלבים', 'btn sm')}</details>
   ${s.platform === 'shopify' ? oldShopifyApp(r, s.id) : ''}
   <p class="small muted mt8 m0">לפני ששומרים, תורן בודק שהמפתח עובד. אנחנו שומרים אותו מוצפן, ותורן רק קורא איתו. כשמנתקים, הוא נמחק אצלנו.</p></section>`;
 }

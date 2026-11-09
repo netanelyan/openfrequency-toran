@@ -131,10 +131,10 @@ test('the own domain over HTTP: the form after email is connected, the records t
     s.app.mail = simEmail({ domain: DOMAIN });
     s.login();
     const id = s.seeded.storeId;
-    assert.ok(!/כתובת על הדומיין של החנות/.test(await (await s.get(`/lead/${id}`)).text()), 'email not connected: no domain form');
+    assert.ok(!/לענות מכתובת של החנות/.test(await (await s.get(`/lead/${id}`)).text()), 'email not connected: no domain form');
     await s.post(`/lead/${id}/channels/email`, { _csrf: await s.csrf(), on: '1' });
     const page = await (await s.get(`/lead/${id}`)).text();
-    assert.match(page, /כתובת על הדומיין של החנות/);
+    assert.match(page, /לענות מכתובת של החנות/);
     assert.match(page, /action="\/lead\/\d+\/mail-domain"/);
 
     const bad = await s.post(`/lead/${id}/mail-domain`, { _csrf: await s.csrf(), on: '1', address: `x@${DOMAIN}` }, { referer: `${s.base}/lead/${id}` });
@@ -144,13 +144,18 @@ test('the own domain over HTTP: the form after email is connected, the records t
     assert.match(waiting, /resend\._domainkey\.kli-cheres\.example/);
     assert.match(waiting, /help\.kli-cheres\.example/);
     assert.match(waiting, /לבדוק עכשיו/);
+    assert.match(waiting, /עד אז הן יוצאות מהכתובת של תורן/);
+    // The person who runs the site gets a ready message with every record, and where mail must keep going.
     const shared = storeAddress(await s.app.db.one<any>('SELECT id, slug FROM stores WHERE id = $1', [id]), DOMAIN);
-    assert.match(waiting, new RegExp(`עד אז הוא עונה מ־<bdi class="ltr">${shared.replace(/\./g, '\\.')}`));
+    const message = decodeURIComponent((/href="https:\/\/wa\.me\/\?text=([^"]+)"/.exec(waiting)?.[1] || '').replace(/&amp;/g, '&'));
+    assert.match(message, /resend\._domainkey\.kli-cheres\.example/);
+    assert.ok(message.includes(`(Forwarding) ל-${shared}`), 'the forwarding stays');
+    assert.match(waiting, /לשלוח למי שמנהל לכם את האתר/);
 
     sim(s.app).verifyNow('kli-cheres.example');
     const checked = await s.post(`/lead/${id}/mail-domain/check`, { _csrf: await s.csrf() });
-    assert.match(decodeURIComponent(String(checked.headers.get('set-cookie'))), /הדומיין מאומת/);
-    assert.match(await (await s.get(`/lead/${id}`)).text(), /תורן עונה מ־<bdi class="ltr">support@kli-cheres\.example/);
+    assert.match(decodeURIComponent(String(checked.headers.get('set-cookie'))), /זה עובד/);
+    assert.match(await (await s.get(`/lead/${id}`)).text(), /התשובות יוצאות מ־<bdi class="ltr">support@kli-cheres\.example/);
 
     assert.equal((await s.post(`/lead/${id}/mail-domain`, { _csrf: await s.csrf(), on: '0' })).status, 303);
     assert.equal(await mailDomainOf(s.app, id), null);

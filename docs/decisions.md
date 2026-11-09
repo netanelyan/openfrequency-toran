@@ -1222,3 +1222,13 @@ nothing cut, no bytes in the record); a photo that cannot load; the looks read o
 first, read again on a new photo, off and on the CLI; the customer's photo shown with the message, a wordless one
 replayed as text, another conversation's file never shown; which files are shown; the effort setting; the CLI's
 transcript.
+
+## 2026-11-09: stopping Toran on one channel is a switch on that channel, not a message to us
+
+The owner, on the email card's "רוצים לעצור את תורן בערוץ אחד, או בכולם? כתבו לנו בוואטסאפ, ואנחנו מכבים אותו": "i
+dont understand anything, and i am the owner. make everything easy for the user". Nothing here or in the history said
+stopping must go through us; the line was written before the store-wide pause (golive.ts, 2026-11-08) existed. So each
+connected channel's own card has "תורן עונה ב..." on or off (migration 076, `stores.agent_off`; pages/channelOff.ts),
+the account's owner only, a second press to turn it off, audited and an event. A message on a channel switched off waits
+for the owner in the inbox with one note a day, as on a paused store (channels/store.ts). The whole store stops from
+Settings, "להפסיק את תורן בכל הערוצים", the same pause as before with plainer words.

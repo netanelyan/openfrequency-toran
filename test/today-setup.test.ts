@@ -33,7 +33,7 @@ test('Today before any channel: not answering yet, what is left with one next st
     await s.app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, status, meta) VALUES ($1, 'web', 'web', 'w00112233445566778899', 'active', '{}'::jsonb)", [id]);
     page = await (await s.get('/')).text();
     assert.match(page, /תורן עוד לא עונה ללקוחות/);
-    assert.match(page, /<dt>צ׳אט באתר<\/dt><dd>מופעל, ומחכה/);
+    assert.match(page, /<dt>צ׳אט באתר<\/dt><dd>מופעל, ונשאר להוסיף אותו לאתר/);
 
     // It opened on the store's site: a channel answers, Today has its numbers, and the block is gone.
     await s.app.db.query("UPDATE channel_accounts SET meta = jsonb_build_object('first_seen_at', '2026-11-08T10:00:00Z') WHERE store_id = $1 AND channel = 'web'", [id]);

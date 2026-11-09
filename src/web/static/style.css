@@ -991,3 +991,42 @@ details.mfold > summary::-webkit-details-marker { display: none; }
 .voice-opt .vo-head b { font-weight: 600; }
 .voice-chat { gap: 4px; padding: 6px 0 0; }
 .voice-chat .b { max-width: 92%; font-size: 13px; }
+
+/* A guided card (pages/mailSetup.ts, the email; channelOff.ts, the switch; webchat.ts): one question at a time, big
+   choices, the thing to copy in its own box, numbered steps, and the advanced folded under "עוד אפשרויות". The owner,
+   2026-11-09: "make everything easy for the user. he also doesnt know anything about tech". */
+.steptag { font-size: 12px; font-weight: 600; color: var(--accent); }
+h3.q1 { margin: 6px 0 6px; font: 600 19px/1.3 var(--display); color: var(--ink); }
+.choices { display: grid; gap: 10px; }
+@media (min-width: 560px) { .choices { grid-template-columns: repeat(3, 1fr); } }
+button.choice { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 72px; padding: 14px 16px; border: 0; border-radius: var(--r-m); background: var(--inset); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--ink); font: 600 16px/1.2 var(--text); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color 0.15s ease, box-shadow 0.15s ease; }
+button.choice:hover { background: var(--fill); }
+button.choice small { font-size: 12px; font-weight: 500; }
+button.choice.picked { background: var(--accent-fill); color: var(--accent-ink); box-shadow: none; }
+.copybox { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.copybox code { flex: 1 1 220px; min-width: 0; padding: 14px 16px; border-radius: var(--r-m); background: var(--inset); box-shadow: inset 0 0 0 1px var(--line-2); font: 600 15px/1.4 var(--text); direction: ltr; overflow-wrap: anywhere; user-select: all; text-align: left; }
+.copybox code.big { font-size: 22px; letter-spacing: 2px; text-align: center; }
+.copybox .btn { flex: none; }
+ol.steps { list-style: none; counter-reset: st; margin: 0; padding: 0; display: grid; gap: 16px; }
+ol.steps > li { counter-increment: st; position: relative; padding-inline-start: 40px; min-height: 28px; }
+ol.steps > li::before { content: counter(st); position: absolute; inset-inline-start: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--fill); color: var(--ink); font: 600 14px/1 var(--text); }
+ol.steps > li > b { display: block; font-weight: 600; }
+ol.steps > li > span { display: block; margin-top: 2px; color: var(--ink-2); font-size: 14px; }
+.waitbox { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; border-radius: var(--r-m); background: var(--inset); color: var(--ink-2); font-size: 14px; }
+.waitbox svg.i { flex: none; width: 20px; height: 20px; color: var(--accent); }
+.btn.big { min-height: 52px; padding: 0 28px; font-size: 16px; }
+button.linkbtn { border: 0; background: none; padding: 4px 0; color: var(--accent); cursor: pointer; font: inherit; display: inline-flex; align-items: center; gap: 4px; }
+button.linkbtn svg.i { width: 15px; height: 15px; }
+details.more > summary { cursor: pointer; font-size: 14px; font-weight: 500; color: var(--ink-2); min-height: 32px; display: flex; align-items: center; }
+details.more[open] > summary { margin-bottom: 4px; }
+.swbtn { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 16px; border: 0; border-radius: var(--r-m); background: var(--inset); color: var(--ink); text-align: start; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+div.swbtn { cursor: default; }
+.swbtn .t { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.swbtn .t b { font-weight: 600; font-size: 15px; }
+.swbtn .t small { color: var(--ink-3); font-size: 12px; }
+.sw { flex: none; position: relative; width: 51px; height: 31px; border-radius: 16px; background: var(--fill-2); transition: background-color 0.2s ease; }
+.sw i { position: absolute; top: 2px; inset-inline-start: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); transition: inset-inline-start 0.2s ease; }
+.sw.on { background: var(--ok); }
+.sw.on i { inset-inline-start: 22px; }
+.swbtn.armed { background: var(--bad); color: var(--bad-ink); }
+@media (prefers-reduced-motion: reduce) { .sw, .sw i { transition: none; } }

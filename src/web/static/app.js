@@ -225,6 +225,33 @@
     timer = setTimeout(poll, 1500);
   }
 
+  // The email card waiting for Gmail's confirmation (pages/mailSetup.ts): it asks where the card stands every 5 seconds
+  // while the tab is open, and loads the page again when that changes, so the code shows up by itself. It stops after
+  // 20 minutes, and never asks while the tab is hidden.
+  const mailWait = document.querySelector('[data-wait-mail]');
+  if (mailWait) {
+    const started = Date.now();
+    let timer = null;
+    const ask = async () => {
+      if (document.hidden || Date.now() - started > 20 * 60_000) return;
+      try {
+        const r = await fetch(`${document.documentElement.dataset.base || ''}${mailWait.dataset.waitMail}`, { credentials: 'same-origin', redirect: 'manual' });
+        if (r.ok) {
+          const j = await r.json();
+          if (j.v && j.v !== mailWait.dataset.v) return location.reload();
+        }
+      } catch {}
+      timer = setTimeout(ask, 5000);
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        clearTimeout(timer);
+        ask();
+      }
+    });
+    timer = setTimeout(ask, 3000);
+  }
+
   // Developer mode opens from the settings' version line, tapped seven times in a row.
   let taps = 0;
   let lastTap = 0;

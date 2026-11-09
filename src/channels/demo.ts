@@ -75,7 +75,7 @@ const msg = {
 /** A message that is only this word ends a live demo and goes back to our support. */
 export const SUPPORT_WORD = /^\s*(?:תמיכה|עזרה|סיום|יציאה|לצאת|לסיים)\s*[.!?]*\s*$/;
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact' | 'demo_ended' | 'opt_out' | 'resent' | 'busy' | 'pay' | 'pay_nothing_due' | 'pay_no_details' | 'pay_bad_code' | 'pay_unavailable' | 'pay_receipt' | 'pay_receipt_refused' | 'pay_remind_stop' | 'pay_remind_start' | 'outreach_stop' | 'outreach_stop_again' | 'review' | 'not_live'; storeId?: number; reply?: string };
+export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact' | 'demo_ended' | 'opt_out' | 'resent' | 'busy' | 'pay' | 'pay_nothing_due' | 'pay_no_details' | 'pay_bad_code' | 'pay_unavailable' | 'pay_receipt' | 'pay_receipt_refused' | 'pay_remind_stop' | 'pay_remind_start' | 'outreach_stop' | 'outreach_stop_again' | 'review' | 'not_live' | 'channel_off'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 

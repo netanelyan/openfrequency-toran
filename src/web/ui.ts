@@ -239,6 +239,13 @@ ${a11yWidget()}
 
 export const csrfField = (ctx: { csrf: string }) => `<input type="hidden" name="_csrf" value="${esc(ctx.csrf)}">`;
 
+/**
+ * A ready message for someone else to act on (whoever runs the store's site or mail), on WhatsApp, where the owner
+ * picks the contact, or by email. The owner, 2026-11-09: "make everything easy for the user. he also doesnt know
+ * anything about tech": the technical words go inside this message, never on the card.
+ */
+export const sendTo = (text: string, subject: string, label: string, cls = 'btn') => `<div class="row mt12"><a class="${cls}" href="${esc(`https://wa.me/?text=${encodeURIComponent(text)}`)}" target="_blank" rel="noopener">${icon('send')}${esc(label)}</a><a class="btn ghost sm" href="${esc(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`)}">${icon('mail')}או במייל</a></div>`;
+
 /** A small POST form with one button. */
 export function postButton(ctx: { csrf: string }, action: string, label: string, { cls = 'btn', ajax = null, confirm = null, fields = {}, title = null, iconName = null }: { cls?: string; ajax?: string | null; confirm?: string | null; fields?: Record<string, unknown>; title?: string | null; iconName?: string | null } = {}) {
   const hidden = Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join('');

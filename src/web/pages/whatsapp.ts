@@ -12,6 +12,7 @@ import { tokenState } from '../../channels/waStore.ts';
 import { oneNumberRoles, ROLE_HE, type Role } from '../../channels/lines.ts';
 import { isCompany } from '../../company.ts';
 import { BINDING_DAYS } from '../../channels/demo.ts';
+import { channelSwitch, offChannels } from './channelOff.ts';
 
 // A store connects its own WhatsApp number (channels/meta.ts, waStore.ts): the page under /lead/<id>/whatsapp, which
 // server.ts opens to the store's own workspace only. Before the button, what to check so Meta's window does not stop
@@ -160,6 +161,7 @@ async function page(app: App, r: DashReq, id: number, notice = '') {
   <p class="m0">${waLine(a, s, ready)}</p>
   ${a!.status === 'pending' ? '<p class="small muted mt8 m0">בודקים מול Meta כל עשר דקות. לרוב זה לוקח כמה דקות, לפעמים עד יום.</p>' : ''}
   ${again ? `<p class="small mt12 m0">מחברים מחדש באותו חלון של Meta, עם אותו מספר. השיחות נשארות, והוואטסאפ בטלפון לא משתנה.</p>${connectButton(AGAIN)}` : ''}
+  ${a!.status === 'active' && !ours ? channelSwitch(r, id, 'whatsapp', (await offChannels(app, id)).includes('whatsapp')) : ''}
   <dl class="kv mt12"><dt>שם העסק ב-WhatsApp</dt><dd>${esc(a!.name || a!.meta?.verified_name || '-')}</dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd>${until ? `<dt>החיבור בתוקף עד</dt><dd>${until}</dd>` : ''}</dl>
   <p class="small mt12 m0">${a!.meta?.coexistence === false ? 'המספר הזה מחובר לתורן בלבד, בלי אפליקציה בטלפון. עונים ללקוחות מהשיחות כאן, ואחרי שעניתם תורן מפסיק לענות בשיחה הזו לזמן מה.' : 'כשעונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.'}</p>
   ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: ours ? 'לנתק? תורן יפסיק לענות במספר שלנו: לבעלי העסקים, בדמו ובתמיכה. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' : 'לנתק? תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}

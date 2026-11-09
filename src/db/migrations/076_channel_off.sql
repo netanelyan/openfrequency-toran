@@ -1,0 +1,12 @@
+-- Toran switched off on one channel of a store, by its owner (src/web/pages/channelOff.ts; the owner, 2026-11-09, on
+-- the email card's "רוצים לעצור את תורן בערוץ אחד, או בכולם? כתבו לנו בוואטסאפ, ואנחנו מכבים אותו": "i dont
+-- understand anything, and i am the owner. make everything easy for the user"). Stopping in one channel no longer
+-- takes a message to us: each channel's own card has "תורן עונה ב..." on or off, and Settings keeps the one press that
+-- stops the whole store (golive.ts, migration 063). Nothing in docs/decisions.md or the history asked for the message
+-- to us; it was written before the store-wide pause existed.
+--
+--   stores.agent_off   the channels Toran does not answer on in this store ('whatsapp', 'email', 'messenger',
+--                      'instagram', 'web'); empty, the default, is every connected channel answered as before. A
+--                      message on a channel listed here waits for the owner in the inbox (channels/store.ts), as one
+--                      on a paused store does. The channel stays connected, and the owner answers from the inbox.
+ALTER TABLE stores ADD COLUMN agent_off text[] NOT NULL DEFAULT '{}';

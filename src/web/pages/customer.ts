@@ -10,7 +10,7 @@ import { botLine, botName, cleanBotName, NAME_MAX, personLine } from '../../agen
 import { displayName } from '../../ingest/brand.ts';
 import { ofWhatsapp } from '../../offer.ts';
 import { counted, monthOf, PLANS, planOf, prevMonth, usageOf, type PlanKey, type Usage } from '../../plans.ts';
-import { channelStates, CHANNEL_HE, enabledChannels, messagingSql, storeAddress, type AnyChannel } from '../../channels/config.ts';
+import { channelStates, CHANNEL_HE, enabledChannels, messagingSql, type AnyChannel } from '../../channels/config.ts';
 import { accountsLinks } from '../accounts.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, dayHe, esc, fold, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
@@ -21,7 +21,8 @@ import { storeConnectReady } from '../../channels/kapso.ts';
 import { dmConnectReady } from '../../channels/zernio.ts';
 import { socialAccountOf, socialLine } from './social.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
-import { mailDomainPanel } from './mailDomain.ts';
+import { mailCard } from './mailSetup.ts';
+import { IN_HE, offChannels } from './channelOff.ts';
 import { orderAccessOf } from '../../orders.ts';
 import { ordersOn, ordersPanel } from './orders.ts';
 import { autoPanel } from './auto.ts';
@@ -79,15 +80,19 @@ async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel | 'web';
   const wa = await waAccountOf(app, s.id);
   const mail = has('email');
   const web = await webChatState(app, s.id);
-  return [
+  const rows: { ch: AnyChannel | 'web'; on: boolean; text: string }[] = [
     { ch: 'whatsapp', on: wa?.status === 'active', text: waLine(wa && wa.status !== 'off' ? wa : null, s, storeConnectReady(app.env)) },
-    { ch: 'email', on: Boolean(mail), text: mail ? `מחובר, <bdi class="ltr">${esc(mail.external_id)}</bdi>` : code.has('email') && app.mail ? 'לא מחובר. מחברים בהגדרות.' : 'בקרוב' },
+    // The address on our domain is the email card's business (pages/mailSetup.ts), not this line's.
+    { ch: 'email', on: Boolean(mail), text: mail ? 'מחובר. <a href="/settings#email">למייל</a>' : code.has('email') && app.mail ? '<a href="/settings#email">לחבר את המייל</a>' : 'בקרוב' },
     ...(await Promise.all((['instagram', 'messenger'] as const).map(async (ch) => {
       const a = await socialAccountOf(app, s.id, ch);
       return { ch, on: a?.status === 'active', text: socialLine(a && a.status !== 'off' ? a : null, ch, s, dmConnectReady(app.env, ch)) };
     }))),
-    { ch: 'web' as const, on: web === 'on', text: web === 'on' ? 'פועל באתר' : web === 'waiting' ? 'מופעל, ומחכה שהשורה שלו תתווסף לאתר. <a href="/settings#webchat">לשורה</a>' : 'לא מופעל. <a href="/settings#webchat">מפעילים בהגדרות</a>' },
+    { ch: 'web' as const, on: web === 'on', text: web === 'on' ? 'פועל באתר' : web === 'waiting' ? 'מופעל, ונשאר להוסיף אותו לאתר. <a href="/settings#webchat">איך מוסיפים</a>' : 'לא מופעל. <a href="/settings#webchat">להפעיל</a>' },
   ];
+  // A channel the owner switched Toran off on (pages/channelOff.ts) says so on its line.
+  const off = await offChannels(app, s.id);
+  return rows.map((x) => (x.on && off.includes(x.ch) ? { ...x, text: `${x.text} <span class="chip warn">תורן לא עונה ${IN_HE[x.ch]}</span>` } : x));
 }
 
 const channelList = (rows: { ch: AnyChannel | 'web'; on: boolean; text: string }[]) => `<dl class="kv">${rows.map((c) => `<dt>${esc(CHANNEL_HE[c.ch])}</dt><dd>${c.text}</dd>`).join('')}</dl>`;
@@ -178,10 +183,12 @@ async function livePanel(app: App, r: DashReq, s: Store): Promise<string> {
   const { state, pausedAt } = await liveOf(app, s.id);
   const may = !r.ctx.readOnly && r.user.role !== 'client_member';
   const chip = state === 'live' ? '<span class="end chip ok">עונה ללקוחות</span>' : state === 'paused' ? '<span class="end chip warn">מושהה</span>' : '<span class="end chip ghost">עוד לא הופעל</span>';
-  const text = state === 'live' ? 'תורן עונה ללקוחות בכל הערוצים המחוברים. משהים כשצריך לעצור אותו לגמרי, למשל במבצע שהאתר עוד לא מעודכן בו: הודעות יחכו לכם בשיחות, ומפעילים שוב כשרוצים.'
-    : state === 'paused' ? `תורן מושהה${pausedAt ? ` מ־${esc(stamp(pausedAt))}` : ''}, אז הודעות של לקוחות מחכות לכם בשיחות.` : 'תורן עוד לא הופעל בחנות, אז הודעות של לקוחות מחכות לכם בשיחות.';
+  // The store-wide stop (the owner, 2026-11-09: one "להפסיק את תורן בכל הערוצים" under Settings, owner-role only,
+  // with a confirm step, audited by setLive); one channel alone is the switch on its own card (pages/channelOff.ts).
+  const text = state === 'live' ? 'תורן עונה ללקוחות בכל הערוצים המחוברים. אפשר לעצור אותו בכולם, למשל במבצע שהאתר עוד לא מעודכן בו: הודעות יחכו לכם בשיחות, ומפעילים שוב כשרוצים.'
+    : state === 'paused' ? `תורן מושהה בכל הערוצים${pausedAt ? ` מ־${esc(stamp(pausedAt))}` : ''}, אז הודעות של לקוחות מחכות לכם בשיחות.` : 'תורן עוד לא הופעל בחנות, אז הודעות של לקוחות מחכות לכם בשיחות.';
   const button = !may ? '' : state === 'live'
-    ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('x')}להשהות את תורן`, { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי להשהות. עד שמפעילים שוב, תורן לא עונה לאף לקוח.' })
+    ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('x')}להפסיק את תורן בכל הערוצים`, { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי לעצור. עד שמפעילים שוב, תורן לא עונה לאף לקוח.' })
     : postButton(r.ctx, `/lead/${s.id}/live`, `${icon('check')}${state === 'paused' ? 'להפעיל שוב' : 'להפעיל את תורן'}`, { cls: 'btn sm primary', fields: { on: '1' }, confirm: 'לחצו שוב כדי להפעיל' });
   return `<section class="panel" id="golive"><header><h2>תורן ב${esc(s.name)}</h2>${chip}</header><p class="m0">${text}</p>${button ? `<div class="row mt12">${button}</div>` : ''}</section>`;
 }
@@ -457,18 +464,14 @@ async function plan(app: App, r: DashReq) {
 
 export async function customerSettings(app: App, r: DashReq) {
   const stores = await myStores(app, r.scope);
-  const mailOn = enabledChannels(app.env).has('email') && Boolean(app.mail);
   const links = accountsLinks(app.env);
   const panels = await Promise.all(stores.map(async (s) => {
-    const mail = mailOn ? await app.db.one<any>("SELECT external_id, status FROM channel_accounts WHERE store_id = $1 AND channel = 'email' ORDER BY id DESC LIMIT 1", [s.id]) : null;
-    const on = mail?.status === 'active';
-    const address = mailOn ? storeAddress(s, app.mail!.domain) : '';
-    const email = !mailOn ? '' : on
-      ? `<h3 class="small mt16">המייל</h3><p class="small m0">מעבירים לכתובת <bdi class="ltr">${esc(mail.external_id)}</bdi> את המייל של החנות, למשל ב-Gmail: הגדרות, "העברה ו-POP/IMAP", "הוספת כתובת להעברה". Gmail שולח לשם קוד אישור, והוא מופיע אצלכם בשיחות. תורן עונה משם בשם החנות.</p>${r.ctx.readOnly ? '' : `<div class="row mt8">${postButton(r.ctx, `/lead/${s.id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>`}${await mailDomainPanel(app, r, s.id, mail.external_id)}`
-      : `<h3 class="small mt16">המייל</h3><p class="small m0">החנות מקבלת כתובת משלה, <bdi class="ltr">${esc(address)}</bdi>, ומעבירה אליה את המייל שלה. תורן עונה משם בשם החנות, ומה שהוא לא יודע מגיע אליכם.</p>${r.ctx.readOnly ? '' : `<div class="row mt8">${postButton(r.ctx, `/lead/${s.id}/channels/email`, 'לחבר את המייל', { cls: 'btn sm primary', fields: { on: '1' } })}</div>`}`;
+    // The email is its own card now, a guided flow (pages/mailSetup.ts; the owner, 2026-11-09: "i dont understand
+    // anything, and i am the owner"). Stopping Toran on one channel is a switch on that channel's card
+    // (pages/channelOff.ts), not a message to us: the line under the list says where it is.
     // On a phone each part folds to one row (TORAN-READINESS.md P1-19, Teder's fold): a link into one opens it.
-    return `${await livePanel(app, r, s)}${voicePanel(r, s)}${fold('channels', `הערוצים של ${s.name}`, `<section class="panel" id="channels"><header><h2>הערוצים של ${esc(s.name)}</h2></header>${channelList(await channelsOf(app, s))}${email}
-  <p class="small muted mt12 m0">רוצים לעצור את תורן בערוץ אחד, או בכולם? ${support(app) ? `<a href="${esc(support(app)!)}" target="_blank" rel="noopener">כתבו לנו בוואטסאפ</a>` : 'כתבו לנו'}, ואנחנו מכבים אותו. בשיחה אחת עוצרים אותו מכאן, כשעונים בה בעצמכם.</p></section>`)}${fold('auto', 'הודעות אוטומטיות', await autoPanel(app, r, s))}${fold('webchat', 'צ׳אט באתר', await webChatPanel(app, r, s))}${fold('reviews', 'ביקורות', await reviewsPanel(app, r, s))}`;
+    return `${await livePanel(app, r, s)}${voicePanel(r, s)}${fold('channels', `הערוצים של ${s.name}`, `<section class="panel" id="channels"><header><h2>הערוצים של ${esc(s.name)}</h2></header>${channelList(await channelsOf(app, s))}
+  <p class="small muted mt12 m0">כל ערוץ מחובר אפשר לעצור לבד, במתג "תורן עונה" שבו. בשיחה אחת עוצרים את תורן כשעונים בה בעצמכם.</p></section>`)}${fold('email', 'המייל', await mailCard(app, r, s))}${fold('auto', 'הודעות אוטומטיות', await autoPanel(app, r, s))}${fold('webchat', 'צ׳אט באתר', await webChatPanel(app, r, s))}${fold('reviews', 'ביקורות', await reviewsPanel(app, r, s))}`;
   }));
   const body = `<div class="head"><h1>הגדרות</h1></div>
 <div class="cols">

@@ -8,6 +8,7 @@ import { isCompany } from '../../company.ts';
 import { ConnectError } from '../../channels/waStore.ts';
 import { GraphError } from '../../channels/meta.ts';
 import { SecretError } from '../../core/secrets.ts';
+import { channelSwitch, offChannels } from './channelOff.ts';
 import { ActionError, DASH_CSP, viaAdminReq, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, layout, postButton, stamp, storeBadge } from '../ui.ts';
 
@@ -113,6 +114,7 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
   const state = live
     ? `<section class="panel"><header><h2>${esc(ch)} של ${esc(name)}</h2><span class="end chip ${a!.status === 'active' ? 'ok' : 'bad'}">${a!.status === 'active' ? 'מחובר' : 'נעצר'}</span></header>
   <p class="m0">${socialLine(a, channel, s, ready)}</p>
+  ${a!.status === 'active' ? channelSwitch(r, id, channel, (await offChannels(app, id)).includes(channel)) : ''}
   <dl class="kv mt12"><dt>${channel === 'messenger' ? 'הדף' : 'החשבון'}</dt><dd><bdi>${esc(a!.name || '-')}</bdi></dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd></dl>
   <p class="small mt12 m0">${esc(OWN_REPLY[channel])}</p>
   <p class="small mt8 m0">${esc(WINDOW)}</p>

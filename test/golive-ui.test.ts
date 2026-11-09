@@ -31,7 +31,7 @@ test('one press to go live on Today, a step in setup, and a pause in Settings', 
 
     // Settings: pause, and on again.
     let settings = await (await s.get('/settings')).text();
-    assert.match(settings, /<section class="panel" id="golive">[^]*עונה ללקוחות[^]*להשהות את תורן/);
+    assert.match(settings, /<section class="panel" id="golive">[^]*עונה ללקוחות[^]*להפסיק את תורן בכל הערוצים/);
     r = await s.post(`/lead/${id}/live`, { _csrf: token, on: '0' });
     assert.equal(r.headers.get('location'), '/settings#golive');
     assert.ok((await live()).agent_paused_at, 'paused');

@@ -47,7 +47,7 @@ export function whyHe(why: string | null): string {
     [/no consent/, 'הלקוח לא הסכים לקבל הודעות שיווקיות, או ביקש להפסיק'],
     [/no phone/, 'אין טלפון בהזמנה'],
     [/no address/, 'אין מייל בהזמנה'],
-    [/template not approved/, 'התבנית בוואטסאפ עוד לא אושרה'],
+    [/template not approved/, 'Meta עוד לא אישרה את ההודעה בוואטסאפ'],
     [/no link/, 'אין לינק לשלוח'],
     [/suppressed/, 'מיילים לכתובת הזו חוזרים'],
     [/not connected/, 'הערוץ לא מחובר'],
@@ -62,9 +62,12 @@ function sourceLines(platform: keyof typeof PLATFORM, s: Source | null): string[
   const out: string[] = [];
   const w = String(s.can?.why?.webhooks || '');
   if (s.can?.webhooks) out.push(`${name} מעדכן את תורן ברגע שמשהו קורה בחנות, ותורן גם בודק כל שעה שלא פספס כלום.${w.startsWith('missing') ? ` חלק מהעדכונים ${name} לא הסכים לרשום, ועליהם תורן יודע בבדיקה של כל שעה.` : ''}`);
-  else if (w === 'no_secret') out.push('כרגע תורן בודק את החנות כל רבע שעה, אז הודעה יוצאת עד רבע שעה אחרי שמשהו קרה. כדי שתצא מיד, מדביקים כאן את ה-API secret key של האפליקציה שיצרתם ב-Shopify. הוא באותו מסך של ה-token, תחת API credentials.');
-  else if (w === 'read_only') out.push('המפתח של WooCommerce שחיברתם הוא לקריאה בלבד, ולכן הוא לא יכול לבקש מהחנות לעדכן את תורן מיד. תורן בודק את ההזמנות כל רבע שעה, ומשם הוא יודע מה קרה. כדי שההודעות ייצאו מיד, יוצרים ב-WooCommerce מפתח עם הרשאת Read/Write ומחברים אותו במקום.');
-  else if (w === 'wix_keys') out.push('ב-Wix מפתח API לא יכול לבקש מהאתר לעדכן את תורן מיד, אז תורן בודק את ההזמנות כל רבע שעה.');
+  // The owner, 2026-11-09: "make everything easy for the user. he also doesnt know anything about tech": what each
+  // line costs the store (a message up to a quarter of an hour late), in plain words; the key's own name only where
+  // the owner must find it in the platform, and the form for it under "עוד אפשרויות".
+  else if (w === 'no_secret') out.push('כרגע תורן בודק את החנות כל רבע שעה, אז הודעה יוצאת עד רבע שעה אחרי שמשהו קרה. כדי שתצא מיד, מדביקים את המפתח הסודי של האפליקציה ב-Shopify (API secret key) ב"עוד אפשרויות" למטה.');
+  else if (w === 'read_only') out.push('המפתח של WooCommerce שחיברתם יכול רק לקרוא הזמנות, ולכן תורן בודק אותן כל רבע שעה. כדי שההודעות ייצאו מיד, יוצרים ב-WooCommerce מפתח עם הרשאה של קריאה וכתיבה (Read/Write) ומחברים אותו במקום.');
+  else if (w === 'wix_keys') out.push('ב-Wix תורן בודק את ההזמנות כל רבע שעה, אז הודעה יוצאת עד רבע שעה אחרי שמשהו קרה.');
   else out.push(`תורן בודק את החנות כל רבע שעה${w && w !== 'no_public_url' ? `, כי ${name} לא הסכים לרשום עדכונים מיידיים` : ''}.`);
   if (s.can?.checkouts === false) out.push(`המפתח לא יכול לקרוא עגלות נטושות ב-${name}, אז תזכורת על עגלה לא תצא.${platform === 'wix' ? ' ב-Wix מסמנים במפתח גם קריאה של Abandoned Checkouts.' : ''}`);
   if (s.polled_at) out.push(`הבדיקה האחרונה: ${stamp(s.polled_at)}.`);
@@ -104,7 +107,7 @@ export async function autoPanel(app: App, r: DashReq, s: { id: number; name: str
   const st = await app.db.one<any>('SELECT name, domain, brand, brand_override FROM stores WHERE id = $1', [id]);
   const store = displayName(st?.brand_override?.name, st?.brand?.name, st?.name) || st?.domain || s.name;
 
-  const secretForm = platform === 'shopify' && may && !src?.can?.webhooks ? `<form method="post" action="/lead/${id}/auto/secret" class="mt8">${csrfField(r.ctx)}<label class="f">API secret key<small>מתחיל ב-shpss_. תורן בודק איתו שכל עדכון באמת הגיע מ-Shopify.</small><input type="text" name="secret" dir="ltr" autocomplete="off" spellcheck="false" maxlength="200" required placeholder="shpss_..."></label><button class="btn sm mt8" type="submit">${icon('check')}לחבר עדכונים מיידיים</button></form>` : '';
+  const secretForm = platform === 'shopify' && may && !src?.can?.webhooks ? `<details class="more mt12"><summary>עוד אפשרויות</summary><form method="post" action="/lead/${id}/auto/secret" class="mt8">${csrfField(r.ctx)}<label class="f">המפתח הסודי של האפליקציה (API secret key)<small>הוא באפליקציה שיצרתם ב-Shopify, ליד המפתח שכבר חיברתם. תורן בודק איתו שכל עדכון באמת הגיע מ-Shopify.</small><input type="text" name="secret" dir="ltr" autocomplete="off" spellcheck="false" maxlength="200" required placeholder="shpss_..."></label><button class="btn sm mt8" type="submit">${icon('check')}שההודעות ייצאו מיד</button></form></details>` : '';
   const source = `<h3 class="small mt16">מאיפה תורן יודע מה קרה</h3>${sourceLines(platform, src).map((l) => `<p class="small m0 mt8">${esc(l)}</p>`).join('')}${secretForm}`;
 
   // A marketing template Meta approved in its old wording ("כתבו הסר") still goes out until the new one is approved.
@@ -119,9 +122,9 @@ export async function autoPanel(app: App, r: DashReq, s: { id: number; name: str
   };
   const allSent = wa && KIND_KEYS.every((k) => KINDS[k].messages.every((m) => ['APPROVED', 'PENDING', 'IN_APPEAL'].includes(byName.get(MESSAGES[m].template)?.status || '')));
   const whatsapp = wa
-    ? `<h3 class="small mt16">התבניות בוואטסאפ</h3><p class="small m0">הודעה שהחנות שולחת ראשונה בוואטסאפ צריכה תבנית ש-Meta אישרה בחשבון של החנות. תורן שולח אותן בשמכם, ו-Meta בודקת, בדרך כלל תוך כמה דקות ולפעמים עד יום.</p>
+    ? `<h3 class="small mt16">האישור של Meta בוואטסאפ</h3><p class="small m0">כל הודעה שהחנות שולחת ראשונה בוואטסאפ צריכה אישור של Meta, פעם אחת לכל נוסח. תורן שולח את הנוסחים לאישור בשמכם, ו-Meta בודקת, בדרך כלל תוך כמה דקות ולפעמים עד יום.</p>
   <ul class="keys mt8">${KIND_KEYS.flatMap((k) => KINDS[k].messages).map((m) => tLine(byName.get(MESSAGES[m].template), m)).join('')}</ul>
-  ${may && !allSent ? `<div class="row mt8">${postButton(r.ctx, `/lead/${id}/auto/templates`, 'לשלוח את התבניות לאישור של Meta', { cls: 'btn sm', iconName: 'send' })}</div>` : ''}
+  ${may && !allSent ? `<div class="row mt8">${postButton(r.ctx, `/lead/${id}/auto/templates`, 'לשלוח את ההודעות לאישור של Meta', { cls: 'btn sm', iconName: 'send' })}</div>` : ''}
   <p class="small muted mt8 m0">Meta גובה על ההודעות האלה מהחשבון של החנות ב-WhatsApp, אז צריך שיהיה בו אמצעי תשלום (ב-WhatsApp Manager, תחת "חיוב").</p>`
     : `<h3 class="small mt16">בוואטסאפ</h3><p class="small m0">בוואטסאפ ההודעות יוצאות מהמספר של החנות, אחרי שמחברים אותו, ואף פעם לא ממספר הדמו שלנו. עד אז אפשר לשלוח במייל.</p>`;
 
@@ -131,7 +134,7 @@ export async function autoPanel(app: App, r: DashReq, s: { id: number; name: str
     const on = set.whatsapp || set.email;
     const t = await approvedFor(app, wa?.id ?? null, k);
     const waOk = Boolean(wa && t.ok);
-    const waNote = !wa ? 'המספר של החנות לא מחובר' : !t.ok ? 'התבנית עוד לא אושרה' : '';
+    const waNote = !wa ? 'המספר של החנות לא מחובר' : !t.ok ? 'Meta עוד לא אישרה אותה' : '';
     const mailNote = mail ? '' : 'המייל של החנות לא מחובר';
     const dis = (ok: boolean, checked: boolean) => `${checked ? ' checked' : ''}${ok && may ? '' : ' disabled'}`;
     const delay = def.delay ? `<label class="f mt8">${esc(def.delay.he)}<select name="delay"${may ? '' : ' disabled'}>${def.delay.options.map((o) => `<option value="${o.minutes}"${o.minutes === set.delay_minutes ? ' selected' : ''}>${esc(o.he)}</option>`).join('')}</select></label>` : '';
@@ -197,7 +200,7 @@ export function autoRoutes(app: App): Route<DashReq>[] {
       const id = Number(m[1]);
       if (!(await storeWa(app, id))) throw new ActionError('קודם מחברים את הוואטסאפ של החנות.');
       const out = await submitTemplates(app, id, r.user.name);
-      return { redirect: back, message: out.refused ? `${out.sent} תבניות נשלחו ל-Meta, ו-${out.refused} לא נשלחו. רואים כאן למה.` : 'התבניות נשלחו ל-Meta. כשהן מאושרות, אפשר להפעיל את ההודעות בוואטסאפ.' };
+      return { redirect: back, message: out.refused ? `${out.sent} הודעות נשלחו לאישור של Meta, ו-${out.refused} לא נשלחו. רואים כאן למה.` : 'ההודעות נשלחו לאישור של Meta. כשהן מאושרות, אפשר להפעיל אותן בוואטסאפ.' };
     }],
     ['POST', /^\/lead\/(\d+)\/auto\/secret$/, async (r, m) => {
       owner(r);

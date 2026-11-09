@@ -8,7 +8,8 @@ import { colorOf, lookCss, type LookChoice, type LookMode } from '../../ingest/p
 import { decide, reviewsOf } from '../../reviews.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { previewPage } from '../widget.ts';
-import { csrfField, esc, icon, postButton, stamp } from '../ui.ts';
+import { csrfField, esc, icon, postButton, sendTo, stamp } from '../ui.ts';
+import { channelSwitch, offChannels } from './channelOff.ts';
 
 // The store's chat on its own site (channels/web.ts, web/widget.ts) and the reviews Toran collected (reviews.ts), on
 // the store's Settings: turn the chat on, the one line to add with where to paste it on each platform, the domains it
@@ -20,14 +21,21 @@ import { csrfField, esc, icon, postButton, stamp } from '../ui.ts';
 //                that article's words, it names the editor, not the file)
 //   WooCommerce  the WPCode plugin, Code Snippets > Header & Footer, the Footer box (wpcode.com/docs/using-the-global-header-footer-settings/)
 //   Wix          Settings > Custom Code > + Add Custom Code, All pages, Body - end (support.wix.com/en/article/wix-editor-embedding-custom-code-on-your-site)
+//                The last buttons' names ("Save" in Shopify's editor, "Save Changes" in WPCode, "Apply" in Wix) are UNVERIFIED
+//                against those pages today.
 
 const publicBase = (app: App) => String(app.env.PUBLIC_BASE_URL || '').replace(/\/$/, '') || `http://localhost:${app.env.PORT || 4710}`;
 
-const PLATFORM_STEPS: [string, string][] = [
-  ['Shopify', 'בניהול החנות: Online Store, ואז Themes, בשלוש הנקודות ליד התבנית Edit code. בקובץ theme.liquid מדביקים את השורה ממש לפני </body>, ושומרים.'],
-  ['WooCommerce', 'מתקינים את התוסף WPCode. אחר כך Code Snippets, ואז Header & Footer, מדביקים את השורה בתיבה Footer, ושומרים.'],
-  ['Wix', 'בהגדרות האתר: Custom Code, ואז Add Custom Code. מדביקים את השורה, בוחרים All pages ו-Body - end, ומאשרים.'],
-];
+// The owner, 2026-11-09: "make everything easy for the user. he also doesnt know anything about tech" (the project's
+// rule: one action per screen, no codes shown). Adding the chat to the site is a line of code, so the card's main
+// button sends whoever runs the site a ready message with the line and where it goes; "להוסיף בעצמי" folds the steps
+// for the store's own platform with a copy button, and the line itself, the sites it may show on and the reviews'
+// place are under "עוד אפשרויות". Once the chat opened on the site, the card says so and has the switch.
+const PLATFORM_STEPS: Record<string, { name: string; steps: string[]; dev: string }> = {
+  shopify: { name: 'Shopify', steps: ['בניהול של Shopify נכנסים ל-Online Store ואז ל-Themes.', 'ליד התבנית לוחצים על שלוש הנקודות, ואז Edit code.', 'פותחים את הקובץ theme.liquid, מדביקים את השורה ממש לפני </body>, ולוחצים Save.'], dev: 'ב-Shopify: Online Store > Themes > ... > Edit code, בקובץ layout/theme.liquid לפני </body>.' },
+  woocommerce: { name: 'WooCommerce', steps: ['בניהול של וורדפרס מתקינים את התוסף WPCode.', 'נכנסים ל-Code Snippets ואז ל-Header & Footer.', 'מדביקים את השורה בתיבה Footer, ולוחצים Save Changes.'], dev: 'בוורדפרס: עם WPCode (Code Snippets > Header & Footer > Footer), או ב-footer של התבנית.' },
+  wix: { name: 'Wix', steps: ['בהגדרות האתר ב-Wix נכנסים ל-Custom Code.', 'לוחצים Add Custom Code ומדביקים את השורה.', 'בוחרים All pages ו-Body - end, ולוחצים Apply.'], dev: 'ב-Wix: Settings > Custom Code > Add Custom Code, All pages, Body - end.' },
+};
 
 // How the chat looks (the owner, 2026-11-09: "design the website widget better. make it according to the website's
 // colors"): as on the store's site by default, the colours Toran read there shown as swatches; the owner may pick
@@ -80,11 +88,13 @@ function lookCard(r: DashReq, id: number, s: { brand: any; brand_override: any }
 }
 
 /** The chat panel on a store's Settings. */
-export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: string }): Promise<string> {
+export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: string; platform?: string | null }): Promise<string> {
   const may = !r.ctx.readOnly && r.user.role !== 'client_member';
   const a = await webAccountOf(app, s.id);
   const on = a?.status === 'active';
-  const head = `<section class="panel" id="webchat"><header><h2>צ׳אט באתר</h2><span class="end chip ${on ? 'ok' : 'ghost'}">${on ? 'פעיל' : 'כבוי'}</span></header>
+  const seen = Boolean(a?.meta?.first_seen_at);
+  const chip = !on ? ['ghost', 'כבוי'] : seen ? ['ok', 'פועל באתר'] : ['sig', 'נשאר להוסיף לאתר'];
+  const head = `<section class="panel" id="webchat"><header><h2>צ׳אט באתר</h2><span class="end chip ${chip[0]}">${chip[1]}</span></header>
   <p class="m0">כפתור צ׳אט בפינה של האתר של ${esc(s.name)}: הלקוחות שואלים בלי לצאת מהדף, ותורן עונה כמו בוואטסאפ. השיחות מגיעות לתיבה, ואפשר לענות בהן בעצמכם.</p>`;
   if (!on) {
     return `${head}${may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/web`, 'להפעיל צ׳אט באתר', { cls: 'btn primary sm', fields: { do: 'on' }, iconName: 'chat' })}</div>` : ''}</section>`;
@@ -92,16 +102,35 @@ export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: 
   const line = `<script src="${publicBase(app)}/w/${a!.external_id}.js" async></script>`;
   const domains = (a!.meta?.domains || []) as string[];
   const brand = await app.db.one<{ brand: any; brand_override: any }>('SELECT brand, brand_override FROM stores WHERE id = $1', [s.id]);
-  return `${head}
-  <h3 class="small mt16">השורה שמוסיפים לאתר</h3>
-  <div class="row mt8"><code class="snippet ltr" id="snippet-${s.id}">${esc(line)}</code><button class="btn sm" type="button" data-copy="#snippet-${s.id}" data-done="השורה הועתקה">${icon('copy')}להעתיק</button></div>
-  <details class="mt12"><summary class="small">איפה מדביקים אותה</summary><ul class="keys mt8">${PLATFORM_STEPS.map(([p, t]) => `<li><b class="ltr">${p}</b><span>${esc(t)}</span></li>`).join('')}</ul></details>
-  <p class="small muted mt8 m0">הצ׳אט מופיע רק באתרים שברשימה למטה, גם אם מישהו מעתיק את השורה. כדי להציג ביקורות של לקוחות באתר, מוסיפים בדף את <code class="ltr">&lt;div data-toran-reviews&gt;&lt;/div&gt;</code> במקום שבו הן יופיעו.</p>
-  ${lookCard(r, s.id, brand || { brand: null, brand_override: null }, a!.meta?.look || {}, may)}
-  ${may ? `<form method="post" action="/lead/${s.id}/web" class="mt12">${csrfField(r.ctx)}<input type="hidden" name="do" value="domains">
-    <label class="f">האתרים שבהם הצ׳אט מופיע<small>כתובת בכל שורה. הכתובת של החנות כבר כאן.</small><textarea name="domains" rows="3" dir="ltr" maxlength="1000">${esc(domains.join('\n'))}</textarea></label>
+  const mine = PLATFORM_STEPS[String(s.platform || '')];
+  const steps = (p: { steps: string[] }) => `<ol class="steps mt8">${p.steps.map((x) => `<li><span>${esc(x)}</span></li>`).join('')}</ol>`;
+  const forDev = [
+    `שלום, אפשר להוסיף לאתר של ${s.name} את הצ׳אט של תורן?`,
+    'זו שורה אחת, בסוף כל עמוד (לפני </body>):',
+    line,
+    mine ? mine.dev : Object.values(PLATFORM_STEPS).map((p) => p.dev).join('\n'),
+    'ואם רוצים להציג באתר ביקורות של לקוחות, מוסיפים <div data-toran-reviews></div> במקום שבו הן יופיעו. תודה',
+  ].join('\n');
+  const copy = `<code class="ltr" id="snippet-${s.id}" hidden>${esc(line)}</code><button class="btn sm" type="button" data-copy="#snippet-${s.id}" data-done="השורה הועתקה">${icon('copy')}להעתיק את השורה</button>`;
+  const self = `<details class="mt12"><summary class="small">להוסיף בעצמי</summary>
+    ${mine ? steps(mine) : Object.values(PLATFORM_STEPS).map((p) => `<p class="small mt8 m0"><b class="ltr">${p.name}</b></p>${steps(p)}`).join('')}
+    <div class="row mt8">${copy}</div></details>`;
+  const add = seen ? `${channelSwitch(r, s.id, 'web', (await offChannels(app, s.id)).includes('web'))}` : `<h3 class="q1 mt16">נשאר להוסיף את הצ׳אט לאתר</h3>
+  <p class="small m0">את זה עושה בדרך כלל מי שמנהל לכם את האתר, בכמה דקות. שולחים לו הודעה מוכנה עם כל מה שצריך.</p>
+  ${sendTo(forDev, `הצ׳אט של תורן באתר של ${s.name}`, 'לשלוח למי שמנהל לכם את האתר', 'btn primary')}
+  ${self}`;
+  const more = may ? `<details class="more mt16"><summary>עוד אפשרויות</summary>
+    <h3 class="small mt12">השורה של הצ׳אט</h3><div class="row mt8"><code class="snippet ltr">${esc(line)}</code></div>
+    <p class="small muted mt8 m0">כדי להציג ביקורות של לקוחות באתר, מי שמנהל את האתר מוסיף בדף את <code class="ltr">&lt;div data-toran-reviews&gt;&lt;/div&gt;</code> במקום שבו הן יופיעו.</p>
+    <form method="post" action="/lead/${s.id}/web" class="mt12">${csrfField(r.ctx)}<input type="hidden" name="do" value="domains">
+    <label class="f">האתרים שבהם הצ׳אט מופיע<small>כתובת בכל שורה. הכתובת של החנות כבר כאן. באתר אחר הצ׳אט לא יופיע, גם אם מעתיקים את השורה.</small><textarea name="domains" rows="3" dir="ltr" maxlength="1000">${esc(domains.join('\n'))}</textarea></label>
     <div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div></form>
-  <div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/web`, 'לכבות את הצ׳אט', { cls: 'btn sm ghost', fields: { do: 'off' }, confirm: 'לכבות? הכפתור ייעלם מהאתר מיד.' })}</div>` : ''}
+    <div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/web`, 'לכבות את הצ׳אט', { cls: 'btn sm ghost', fields: { do: 'off' }, confirm: 'לכבות? הכפתור ייעלם מהאתר מיד.' })}</div>
+  </details>` : '';
+  return `${head}
+  ${add}
+  ${lookCard(r, s.id, brand || { brand: null, brand_override: null }, a!.meta?.look || {}, may)}
+  ${more}
 </section>`;
 }
 
@@ -135,7 +164,7 @@ export function webChatRoutes(app: App): Route<DashReq>[] {
       const what = String(r.form.do || '');
       if (what === 'on') {
         await turnOn(app, id, r.user.name);
-        return { redirect: '/settings#webchat', message: 'הצ׳אט פעיל. נשאר להוסיף לאתר את השורה שכאן.' };
+        return { redirect: '/settings#webchat', message: 'הצ׳אט פעיל. נשאר להוסיף אותו לאתר.' };
       }
       if (what === 'off') {
         await turnOff(app, id, r.user.name);

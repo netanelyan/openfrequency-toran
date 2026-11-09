@@ -199,7 +199,7 @@ ${waBanner(await waAccountOf(app, id), id)}
     <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>
     ${tederPanel()}
     <section class="panel"><header><h2>הציון</h2><span class="end">${scoreNum(s.score, s.qualified)}</span></header><ul class="parts">${parts}</ul></section>
-    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env)), social, mailAccount?.status === 'active' ? await mailDomainPanel(app, r, id, mailAccount.external_id) : '') : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env))}</dd>${social}</dl></section>`}
+    ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env)), social, mailAccount?.status === 'active' && app.mail?.domains ? `<h3 class="small mt16">לענות מכתובת של החנות</h3>${await mailDomainPanel(app, r, id, mailAccount.external_id)}` : '') : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env))}</dd>${social}</dl></section>`}
     <section class="panel"><header><h2>שיחות</h2><a class="end small" href="/chats?store=${id}">כולן</a></header>
       ${convs.length ? `<div class="list">${convs.map((c) => `<a href="/chat/${c.id}"><span class="ico ${c.handoffs ? 'bad' : c.misses ? 'warn' : ''}">${icon(c.handoffs ? 'hand' : 'chat')}</span><span class="t"><b>${esc((c.last_text || '').replace(/\n/g, ' ').slice(0, 80))}</b><small>${esc(CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel)} · ${esc(ago(c.last_at))}${c.handoffs ? ` · ${c.handoffs} העברות` : ''}${c.misses ? ` · ${c.misses} פספוסים` : ''}</small></span></a>`).join('')}</div>` : '<p class="muted m0">עוד אין שיחות.</p>'}
     </section>
@@ -284,7 +284,7 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
         await app.db.query("UPDATE channel_accounts SET status = 'off' WHERE store_id = $1 AND channel = 'email'", [s.id]);
       }
       await audit(app.db, { actor: r.user.name, action: r.form.on === '1' ? 'email_connect' : 'email_disconnect', storeId: s.id, detail: { address } });
-      return { redirect: r.scope.operator ? `/lead/${s.id}#channels` : '/settings#channels', message: r.form.on === '1' ? `המייל מחובר. מעבירים אליו את המייל של החנות: ${address}` : 'המייל נותק. תורן לא עונה יותר על מיילים לכתובת הזו.' };
+      return { redirect: r.scope.operator ? `/lead/${s.id}#channels` : '/settings#email', message: r.form.on === '1' ? `המייל מחובר. מעבירים אליו את המייל של החנות: ${address}` : 'המייל נותק. תורן לא עונה יותר על מיילים לכתובת הזו.' };
     }],
     ['POST', /^\/lead\/(\d+)\/build$/, async (r, m) => {
       const s = await store(m[1]);

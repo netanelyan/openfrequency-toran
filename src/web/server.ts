@@ -51,7 +51,8 @@ const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add|re
 /** The operator's pages. A customer who reaches one goes to their own: a store's page to what Toran knows about it. */
 const OPERATOR_PAGES = /^\/(leads|review|followups|brand|queue|job\/\d+|lead\/\d+(\/review)?)$/;
 /** A waiting page's poll (static/app.js): answered without the header's counts, which it never shows (PRA-FE-006). */
-const JOB_POLL = /^\/jobs\/\d+\.json$/;
+// The pages that ask again every few seconds (a job, the email card waiting for Gmail's code): no header counts.
+const JOB_POLL = /^\/(jobs\/\d+|lead\/\d+\/mail\/state)\.json$/;
 export type Route<R> = [method: 'GET' | 'POST', re: RegExp, fn: (r: R, m: RegExpExecArray) => Promise<Out> | Out];
 
 export class ActionError extends Error {

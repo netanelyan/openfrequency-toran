@@ -476,7 +476,7 @@ test('WooCommerce with a read-only key: no webhooks, said plainly; the orders re
     await drain(app, { kinds: ['auto_setup'] });
     const src = await app.db.one<any>('SELECT can FROM auto_sources WHERE store_id = $1', [id]);
     assert.deepEqual([src.can.webhooks, src.can.why.webhooks], [false, 'read_only']);
-    assert.match(await (await s.get('/settings')).text(), /לקריאה בלבד.*כל רבע שעה/s);
+    assert.match(await (await s.get('/settings')).text(), /יכול רק לקרוא הזמנות.*כל רבע שעה/s);
 
     const woo = (o: Record<string, unknown>) => ({ id: 801, number: '801', status: 'processing', date_created_gmt: iso(T0).slice(0, 19), date_modified_gmt: iso(T0).slice(0, 19), date_paid_gmt: iso(T0).slice(0, 19), billing: { first_name: 'יעל', email: 'yael@example.test', phone: '050-000-0324' }, shipping: {}, payment_url: 'https://tavlinim-ba-shuk.example/checkout/order-pay/801/?key=wc_order_x', line_items: [{ product_id: 11, variation_id: 0, quantity: 1 }], meta_data: [], ...o });
     p.state.wooOrders = [woo({}), woo({ id: 802, number: '802', status: 'failed', date_paid_gmt: null, billing: { first_name: 'עמית', email: 'amit@example.test', phone: '' } })];

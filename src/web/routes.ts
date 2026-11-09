@@ -18,6 +18,8 @@ import { ordersRoutes } from './pages/orders.ts';
 import { autoRoutes } from './pages/auto.ts';
 import { webChatRoutes } from './pages/webchat.ts';
 import { voiceRoutes } from './pages/voice.ts';
+import { channelOffRoutes } from './pages/channelOff.ts';
+import { mailSetupRoutes } from './pages/mailSetup.ts';
 import { startRoutes } from './pages/start.ts';
 import { queueRoutes } from './pages/queue.ts';
 import { resultsRoutes } from './pages/results.ts';
@@ -80,6 +82,8 @@ export function dashboardRoutes(app: App): Route<DashReq>[] {
     ...autoRoutes(app),
     ...webChatRoutes(app),
     ...voiceRoutes(app),
+    ...channelOffRoutes(app),
+    ...mailSetupRoutes(app),
     ...homeRoutes(app),
     ...leadRoutes(app),
     ...reviewRoutes(app),

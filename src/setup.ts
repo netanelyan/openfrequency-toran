@@ -14,6 +14,7 @@ import { waAccountOf } from './web/pages/whatsapp.ts';
 import { socialAccountOf } from './web/pages/social.ts';
 import { webAccountOf } from './channels/web.ts';
 import { liveOf } from './golive.ts';
+import { mailState } from './web/pages/mailSetup.ts';
 
 // A new customer's setup, step by step. openfrequency-accounts has one checklist page for a new workspace (/setup):
 // it asks each product for the workspace's steps and shows them, and each step's button opens the product's own page
@@ -134,7 +135,7 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     const wa = await waAccountOf(app, s.id);
     if (wa?.status === 'pending') return { status: 'working', detail: 'המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.', href };
     const web = await webAccountOf(app, s.id);
-    if (web?.status === 'active') return { status: 'working', detail: 'הצ׳אט פועל, ומחכה שהשורה שלו תתווסף לאתר.', href };
+    if (web?.status === 'active') return { status: 'working', detail: 'הצ׳אט מופעל, ונשאר להוסיף אותו לאתר.', href };
     return { status: 'todo', detail: 'וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר: מתחילים מאחד, ומוסיפים אחר כך.', href };
   });
 
@@ -163,17 +164,19 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     const href = at('/settings#webchat');
     const a = await webAccountOf(app, s.id);
     if (a?.status === 'active' && a.meta?.first_seen_at) return { status: 'done', detail: '', href };
-    if (a?.status === 'active') return { status: 'working', detail: 'מעתיקים את השורה מההגדרות ומוסיפים אותה לאתר. הצעד נסגר בפעם הראשונה שהצ׳אט נפתח באתר.', href };
+    if (a?.status === 'active') return { status: 'working', detail: 'נשאר להוסיף אותו לאתר. בהגדרות יש הודעה מוכנה למי שמנהל לכם את האתר.', href };
     return { status: 'todo', detail: 'כפתור צ׳אט בפינה של האתר, ותורן עונה בו כמו בוואטסאפ.', href };
   });
 
   if (on.has('email')) {
     await step('email', 'מחברים את המייל', false, async (s) => {
-      const href = at('/settings#channels');
-      const a = await app.db.one("SELECT 1 FROM channel_accounts WHERE store_id = $1 AND channel = 'email' AND status = 'active' LIMIT 1", [s.id]);
-      if (a) return { status: 'done', detail: '', href };
+      // The email card's guided steps (pages/mailSetup.ts): done once the owner finished them or a mail came through.
+      const href = at('/settings#email');
       if (!app.mail) return { status: 'soon', detail: 'המייל עוד לא פתוח אצלנו.', href: null };
-      return { status: 'todo', detail: 'מעבירים את המייל של החנות לכתובת שתורן עונה ממנה.', href };
+      const st = await mailState(app, s.id);
+      if (st.step === 'done') return { status: 'done', detail: '', href };
+      if (st.on) return { status: 'working', detail: st.step === 'confirm' ? 'מייל האישור מ-Gmail הגיע. מאשרים אותו בהגדרות, בלחיצה אחת.' : 'באמצע. ממשיכים מאיפה שעצרתם.', href };
+      return { status: 'todo', detail: 'בוחרים איזה מייל יש לחנות, ותורן מראה איך מעבירים אותו אליו.', href };
     });
   }
 

@@ -205,7 +205,8 @@ async function chat(app: App, r: DashReq, id: number) {
       ...(m.handoff ? [op ? `<span class="bad">${icon('hand')} הועבר אליך (${esc(REASON_HE[m.handoff.reason] || m.handoff.reason)}): ${esc(summaryHe(m.handoff.summary || ''))}</span>` : `<span class="bad">${icon('hand')} תורן העביר את זה אליכם${/[\u0590-\u05FF]/.test(summaryHe(m.handoff.summary || '')) ? `: ${esc(summaryHe(m.handoff.summary || ''))}` : ''}</span>`] : []),
     ] : m.role === 'owner' ? [`<span>${icon('send')} נשלח מכאן</span>`]
     : m.role === 'customer' ? [
-      ...(m.automated ? [`<span class="warn">${icon('alert')} הודעה אוטומטית (${esc(m.automated)}), ותורן לא ענה עליה</span>`] : []),
+      // Why it was not answered is the operator's to read ("no-reply address", "dmarc=fail"); the owner reads plain words.
+      ...(m.automated ? [`<span class="warn">${icon('alert')} הודעה אוטומטית${op ? ` (${esc(m.automated)})` : ''}, ותורן לא ענה עליה</span>`] : []),
     ] : [];
     return `<div class="b ${cls}">${markup(m.text)}${filesHtml(id, m.attachments)}<time class="at" datetime="${esc(new Date(m.at).toISOString())}" title="${esc(stamp(m.at))}">${esc(timeHe(m.at))}</time></div>${notes.length ? `<div class="note${m.role === 'customer' ? ' start' : ''}">${notes.join('')}</div>` : ''}`;
   }

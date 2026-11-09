@@ -119,7 +119,7 @@ export async function handOver(app: App, storeId: number, conversationId: number
 export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account): Promise<RouteResult> {
   const { db } = app;
   const { tag } = LEDGER[adapter.channel];
-  const store = await db.one<any>('SELECT id, name, domain, brand, brand_override, agent_live_at, agent_paused_at FROM stores WHERE id = $1', [account.store_id]);
+  const store = await db.one<any>('SELECT id, name, domain, brand, brand_override, agent_live_at, agent_paused_at, agent_off FROM stores WHERE id = $1', [account.store_id]);
   if (!store) return { action: 'unknown_account' };
   const conv = await threadFor(app, adapter, account, inbound);
   await remember(app, conv, inbound);
@@ -163,6 +163,14 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
     const noted = await db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'system' AND handoff->>'reason' = 'not_live' AND at > now() - interval '1 day'", [conv]);
     if (!noted) await handOver(app, store.id, conv, 'not_live', 'Toran is not switched on in this store', liveState(store) === 'paused' ? 'תורן מושהה בחנות, אז ההודעה מחכה לך כאן.' : 'תורן עוד לא הופעל בחנות, אז ההודעה מחכה לך כאן.');
     return { action: 'not_live', storeId: store.id };
+  }
+  // Switched off on this channel alone by the owner, from the channel's own card (migration 076, web/pages/channelOff.ts):
+  // the same wait as a paused store, the note saying it is this channel.
+  if ((store.agent_off || []).includes(account.channel)) {
+    await hold(app, conv, inbound);
+    const noted = await db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'system' AND handoff->>'reason' = 'channel_off' AND at > now() - interval '1 day'", [conv]);
+    if (!noted) await handOver(app, store.id, conv, 'channel_off', `Toran is switched off on ${account.channel} in this store`, 'כיביתם את תורן בערוץ הזה, אז ההודעה מחכה לך כאן.');
+    return { action: 'channel_off', storeId: store.id };
   }
   // An answer to the store's review request: a rating kept, or the customer's word on showing it (reviews.ts). Said
   // back in one line, and nothing for the agent to answer.
