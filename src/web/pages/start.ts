@@ -125,7 +125,10 @@ function verifyPage(app: App, r: DashReq, claim: Claim, site: Site) {
   const keyWay = owner && keyPlatform(site.platform);
   const emailWay = mailReady(app) && site.emails.length > 0;
   const live = codeLive(claim);
-  const main = live ? 'code' : keyWay ? 'key' : emailWay ? 'email' : 'tag';
+  // The code to the site's email first when there is one: it is one button and a number to type, while a store key
+  // means making an app in the store's admin (the owner, 2026-11-09: "make everything easy for the user. he also doesnt
+  // know anything about tech"). The key stays under "עוד דרכים", for an owner who wants the orders connected at once.
+  const main = live ? 'code' : emailWay ? 'email' : keyWay ? 'key' : 'tag';
   const h = (isMain: boolean, text: string) => (isMain ? `<header><h2>${text}</h2></header>` : `<h3 class="mt24">${text}</h3>`);
   const btn = (isMain: boolean) => (isMain ? 'btn primary' : 'btn sm');
   const check = (isMain: boolean) => `<form method="post" action="/start/verify" class="mt12">${csrf}<button class="${btn(isMain)}" type="submit">${icon('refresh')}לבדוק עכשיו</button></form>`;
