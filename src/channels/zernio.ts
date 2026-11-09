@@ -176,12 +176,15 @@ async function profileOf(app: App, storeId: number): Promise<string> {
 /** Where Zernio's connect sends the browser: its own welcome screen, or the platform's login. Nowhere else. */
 const LINK = /^https:\/\/(zernio\.com|www\.facebook\.com|www\.instagram\.com|api\.instagram\.com|instagram\.com)\//;
 
+/** Which WhatsApp number a store connects: the one in its WhatsApp Business app (coexistence), or a new one for Toran alone. */
+export type WaNumber = 'app' | 'new';
+
 /**
  * The store pressed "לחבר": its Zernio profile (made once), and the address of Zernio's connect for this channel,
  * limited to messaging, behind the welcome screen with our name. `back` is where Zernio returns the browser: Toran's
- * own name, or accounts' /admin for our company store connected from there.
+ * own name, or accounts' /admin for our company store connected from there. `number`: WhatsApp's, see WaNumber.
  */
-export async function startZernioConnect(app: App, storeId: number, channel: ZChannel, by: string, { viaAdmin = false }: { viaAdmin?: boolean } = {}): Promise<string> {
+export async function startZernioConnect(app: App, storeId: number, channel: ZChannel, by: string, { viaAdmin = false, number = 'app' }: { viaAdmin?: boolean; number?: WaNumber } = {}): Promise<string> {
   if (!readyFor(app.env, channel)) throw new ZernioError('ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET, TORAN_CHANNELS or an https PUBLIC_BASE_URL is missing', `החיבור ל${CHANNEL_HE[channel]} עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.`);
   const s = await app.db.one<{ id: number; name: string | null; domain: string; platform: string | null }>('SELECT id, name, domain, platform FROM stores WHERE id = $1', [storeId]);
   if (!s) throw new ZernioError(`no store ${storeId}`, 'אין חנות כזו.');
@@ -189,14 +192,18 @@ export async function startZernioConnect(app: App, storeId: number, channel: ZCh
   if (channel === 'whatsapp' && isCompany(s)) throw new ZernioError('the company store connects on Meta directly', OURS_HE);
   const z = zernioSettings(app.env);
   const profileId = await profileOf(app, storeId);
-  const back = `${viaAdmin ? `${z.accountsBase}/admin/toran` : z.publicBase}/lead/${storeId}/${channel}/zernio`;
-  // WhatsApp takes no scopes (Zernio refuses them: Meta's dialog cannot be reduced); coexistence (business_app) on a
-  // page of Zernio's own (signup=hosted), so the store's phone keeps the WhatsApp Business app.
-  const q = new URLSearchParams(channel === 'whatsapp' ? { profileId, redirect_url: back, onboarding: 'business_app', signup: 'hosted' } : { profileId, redirect_url: back, scopes: 'messaging', welcome: 'true', brandName: 'Toran' });
+  const dedicated = channel === 'whatsapp' && number === 'new';
+  const back = `${viaAdmin ? `${z.accountsBase}/admin/toran` : z.publicBase}/lead/${storeId}/${channel}/zernio${dedicated ? '?number=new' : ''}`;
+  // WhatsApp takes no scopes (Zernio refuses them: Meta's dialog cannot be reduced), on a page of Zernio's own
+  // (signup=hosted). onboarding=business_app is coexistence: the store's phone keeps the WhatsApp Business app.
+  // onboarding=api is Meta's standard Embedded Signup, its WABA and number picker (zernio.com/openapi.yaml,
+  // getConnectUrl): a number for Toran alone, not on any WhatsApp app, verified with a code Meta sends to it by SMS or
+  // a call in that window (the owner, 2026-11-09: "also build an option for businesses connecting not trough coexistnece").
+  const q = new URLSearchParams(channel === 'whatsapp' ? { profileId, redirect_url: back, onboarding: dedicated ? 'api' : 'business_app', signup: 'hosted' } : { profileId, redirect_url: back, scopes: 'messaging', welcome: 'true', brandName: 'Toran' });
   const out = await api(app, 'GET', `connect/${PLATFORM[channel]}?${q.toString()}`);
   const url = String(out?.authUrl || '');
   if (!LINK.test(url)) throw new GraphError(`Zernio gave a connect address off its own and Meta's: ${url.slice(0, 80)}`, 200, null);
-  await audit(app.db, { actor: by, action: `${channel}_zernio_link`, storeId, detail: { profileId } });
+  await audit(app.db, { actor: by, action: `${channel}_zernio_link`, storeId, detail: { profileId, ...(channel === 'whatsapp' ? { number: dedicated ? 'new' : 'app' } : {}) } });
   return url;
 }
 
@@ -229,7 +236,7 @@ const waMetaOf = (a: any) => ({
  * when Zernio's own API lists it under this store's profile and no other store has it. One Page, or one Instagram
  * account, per store: connecting another turns the old one off, at Zernio too.
  */
-export async function finishZernioConnect(app: App, storeId: number, channel: ZChannel, accountIdIn: unknown, by: string) {
+export async function finishZernioConnect(app: App, storeId: number, channel: ZChannel, accountIdIn: unknown, by: string, { number = 'app' }: { number?: WaNumber } = {}) {
   const accountId = String(accountIdIn ?? '').trim().toLowerCase();
   if (!/^[0-9a-f]{24}$/.test(accountId)) throw new ZernioError('no accountId came back', `Zernio לא החזירה את פרטי ה${CHANNEL_HE[channel]}. אפשר לנסות שוב.`);
   const p = await app.db.one<{ profile_id: string }>('SELECT profile_id FROM zernio_profiles WHERE store_id = $1', [storeId]);
@@ -258,6 +265,8 @@ export async function finishZernioConnect(app: App, storeId: number, channel: ZC
     username: a.username || null,
     platform_user_id: a.platformUserId ? String(a.platformUserId) : null,
     ...(wa || {}),
+    // A number for Toran alone has no WhatsApp app beside it: no echoes come, and the owner answers from the inbox.
+    ...(channel === 'whatsapp' ? { coexistence: number !== 'new' } : {}),
     by,
     checked_at: new Date().toISOString(),
     why: null,

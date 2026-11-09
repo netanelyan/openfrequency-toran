@@ -53,6 +53,9 @@ const noticeHe = (kind: 'info' | 'warn', title: string, text: string) => `<div c
 /** Zernio's own reasons for a WhatsApp connect that did not go through, said to the store (zernio.com/openapi.yaml, getConnectUrl). */
 const ZERNIO_WA_ERRORS_HE: Record<string, string> = {
   whatsapp_coexistence_not_registered: 'המספר עוד לא רשום ב-WhatsApp Business בטלפון, או שהוא בשימוש שם פחות משבוע. אחרי שבוע בשימוש באפליקציה מנסים שוב.',
+  // A number for Toran alone that a WhatsApp app still uses, and Meta's own reason when it gave one.
+  whatsapp_number_in_use: 'המספר הזה עדיין רשום באפליקציית וואטסאפ. כדי לחבר אותו רק לתורן, מוחקים קודם את החשבון שלו באפליקציה, או מחברים אותו כמו שהוא, עם האפליקציה.',
+  whatsapp_error: 'Meta לא השלימה את החיבור. אם זה מספר חדש, כדאי לבדוק שהקוד הגיע אליו ושהוא לא רשום באף אפליקציית וואטסאפ, ולנסות שוב.',
   whatsapp_number_already_connected: 'המספר הזה כבר מחובר לשירות אחר. מנתקים אותו שם, ואז מנסים שוב.',
   one_whatsapp_per_profile: 'לחנות הזו כבר מחובר מספר. מנתקים אותו כאן, ואז מחברים את החדש.',
   connection_cancelled: 'החלון נסגר לפני הסוף. אפשר לנסות שוב.',
@@ -82,7 +85,7 @@ export function waLine(a: WaRow | null, s: { id: number; demo_code?: string | nu
   if (a?.status === 'active' && tokenState(a).soon) return `מחובר, ${phone(a)}. החיבור מסתיים ב-${esc(shortDate(tokenState(a).endsAt))}. <a href="/lead/${s.id}/whatsapp">${AGAIN}</a>`;
   // Our company store's number is our one number (channels/lines.ts): never this store's own WhatsApp.
   if (a?.status === 'active' && isCompany(s)) return `מחובר, ${phone(a)}. זה המספר שלנו: תורן עונה בו לבעלי העסקים, לדמו ולתמיכה, והוואטסאפ בטלפון ממשיך לעבוד. <a href="/lead/${s.id}/whatsapp">מה המספר עושה</a>`;
-  if (a?.status === 'active') return `מחובר, ${phone(a)}. תורן עונה בו, והוואטסאפ בטלפון ממשיך לעבוד.`;
+  if (a?.status === 'active') return a.meta?.coexistence === false ? `מחובר, ${phone(a)}. תורן עונה בו, ועל מה שמחכה לכם עונים מהשיחות כאן.` : `מחובר, ${phone(a)}. תורן עונה בו, והוואטסאפ בטלפון ממשיך לעבוד.`;
   if (a?.status === 'pending') return `${phone(a)} ממתין לאישור של Meta. תורן יתחיל לענות בו לבד כשהמספר מאושר.`;
   if (a?.status === 'error') return `Meta עצרה את המספר ${phone(a)} (${esc(a.meta?.why || 'בלי סיבה')}). תורן לא עונה בו. כתבו לנו ונבדוק יחד.`;
   const demo = s.demo_code && !s.taken_down_at ? `עכשיו תורן עונה על מספר הדמו שלנו, עם הקוד <bdi class="ltr">${esc(s.demo_code)}</bdi>. ` : '';
@@ -109,6 +112,22 @@ async function oursPanel(app: App, storeId: number): Promise<string> {
   <p class="small mt12 m0">כשעונים מהטלפון, התשובה נכנסת לשיחה שבה האדם נמצא עכשיו, ותורן מפסיק לענות בה ל-12 שעות.</p>
 </section>`;
 }
+
+/**
+ * A number for Toran alone, without coexistence (the owner, 2026-11-09: "also build an option for businesses connecting
+ * not trough coexistnece"): folded under the main button, which is the number the store already uses. Zernio opens
+ * Meta's standard window (onboarding=api, channels/zernio.ts), where the number gets a code by SMS or a call. The
+ * number must not be on any WhatsApp app, and none can be on it afterwards: the owner answers from the inbox here.
+ */
+const newNumber = (r: DashReq, id: number) => `<details class="mt16"><summary class="small">אין לכם WhatsApp Business, או שאתם רוצים מספר חדש רק לתורן?</summary>
+  <p class="small mt8 m0">אפשר לחבר מספר שלא נמצא באף אפליקציית וואטסאפ, למשל קו חדש. Meta שולחת אליו קוד ב-SMS או בשיחה, ואחרי החיבור אי אפשר להשתמש בו באפליקציה בטלפון. על מה שתורן מעביר אליכם עונים מהשיחות כאן.</p>
+  <ol class="small m0 mt8">
+    <li>נכנסים לפייסבוק, ובוחרים את העסק או יוצרים אותו.</li>
+    <li>בוחרים להוסיף מספר חדש, ומקלידים את שם העסק כמו שלקוחות יראו אותו. Meta בודקת את השם.</li>
+    <li>מקלידים את המספר, ומקבלים את הקוד ב-SMS או בשיחה.</li>
+  </ol>
+  <div class="mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/zernio/start`, 'לחבר מספר חדש לתורן', { cls: 'btn sm', iconName: 'chat', fields: { number: 'new' } })}</div>
+</details>`;
 
 async function page(app: App, r: DashReq, id: number, notice = '') {
   const s = await app.db.one<any>('SELECT id, name, domain, brand, brand_override, demo_code, taken_down_at, platform FROM stores WHERE id = $1', [id]);
@@ -142,7 +161,7 @@ async function page(app: App, r: DashReq, id: number, notice = '') {
   ${a!.status === 'pending' ? '<p class="small muted mt8 m0">בודקים מול Meta כל עשר דקות. לרוב זה לוקח כמה דקות, לפעמים עד יום.</p>' : ''}
   ${again ? `<p class="small mt12 m0">מחברים מחדש באותו חלון של Meta, עם אותו מספר. השיחות נשארות, והוואטסאפ בטלפון לא משתנה.</p>${connectButton(AGAIN)}` : ''}
   <dl class="kv mt12"><dt>שם העסק ב-WhatsApp</dt><dd>${esc(a!.name || a!.meta?.verified_name || '-')}</dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd>${until ? `<dt>החיבור בתוקף עד</dt><dd>${until}</dd>` : ''}</dl>
-  <p class="small mt12 m0">כשעונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.</p>
+  <p class="small mt12 m0">${a!.meta?.coexistence === false ? 'המספר הזה מחובר לתורן בלבד, בלי אפליקציה בטלפון. עונים ללקוחות מהשיחות כאן, ואחרי שעניתם תורן מפסיק לענות בשיחה הזו לזמן מה.' : 'כשעונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.'}</p>
   ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: ours ? 'לנתק? תורן יפסיק לענות במספר שלנו: לבעלי העסקים, בדמו ובתמיכה. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' : 'לנתק? תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}
 </section>`
     : `<section class="panel"><header><h2>לפני שמחברים</h2></header>
@@ -176,6 +195,7 @@ ${viaZernio ? `<section class="panel mt16"><header><h2>מה קורה אחרי ה
   </ol>`}
   <p class="small mt12 m0">הוואטסאפ בטלפון ממשיך לעבוד כרגיל, ותורן עונה לצידו. כשאתם עונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו.</p>
   ${connectButton('לחבר את הוואטסאפ של החנות')}
+  ${viaZernio && ready && !ro ? newNumber(r, id) : ''}
 </section>`;
   const body = `<a class="back" href="/settings#channels">${icon('chev')}הגדרות</a>
 <div class="head"><div class="row">${storeBadge({ id: s.id, name, domain: s.domain })}<h1 class="title">הוואטסאפ של ${esc(name)}</h1></div><p class="sub">מחברים את המספר שכבר יש לחנות ב-WhatsApp Business, ותורן עונה בו ללקוחות.</p></div>
@@ -228,7 +248,7 @@ export function whatsappRoutes(app: App): Route<DashReq>[] {
     ['POST', /^\/lead\/(\d+)\/whatsapp\/zernio\/start$/, async (r, m) => {
       const id = Number(m[1]);
       try {
-        return { redirect: await startZernioConnect(app, id, 'whatsapp', r.user.name, { viaAdmin: viaAdminReq(r.req) }) };
+        return { redirect: await startZernioConnect(app, id, 'whatsapp', r.user.name, { viaAdmin: viaAdminReq(r.req), number: r.form.number === 'new' ? 'new' : 'app' }) };
       } catch (e: any) {
         if (e instanceof ZernioError) throw new ActionError(e.he);
         app.log(`[zernio] whatsapp connect link for store ${id} failed: ${e?.message || e}`);
@@ -248,8 +268,9 @@ export function whatsappRoutes(app: App): Route<DashReq>[] {
         notice = noticeHe('warn', 'החיבור לא הושלם', ZERNIO_WA_ERRORS_HE[why] || 'אפשר לנסות שוב. אם זה חוזר, כתבו לנו ונחבר יחד.');
       } else {
         try {
-          await finishZernioConnect(app, id, 'whatsapp', q.get('accountId'), r.user.name);
-          notice = noticeHe('info', 'הוואטסאפ מחובר', 'תורן עונה בו מעכשיו, והוואטסאפ בטלפון ממשיך לעבוד.');
+          const number = q.get('number') === 'new' ? 'new' : 'app';
+          await finishZernioConnect(app, id, 'whatsapp', q.get('accountId'), r.user.name, { number });
+          notice = noticeHe('info', 'הוואטסאפ מחובר', number === 'new' ? 'תורן עונה בו מעכשיו. על המספר הזה עונים ללקוחות מהשיחות כאן, לא מאפליקציה בטלפון.' : 'תורן עונה בו מעכשיו, והוואטסאפ בטלפון ממשיך לעבוד.');
         } catch (e: any) {
           if (!(e instanceof ZernioError)) app.log(`[zernio] whatsapp connect for store ${id} failed: ${e?.message || e}`);
           notice = noticeHe('warn', 'החיבור לא הושלם', e instanceof ZernioError ? e.he : 'Zernio לא אישרה את המספר. אפשר לנסות שוב בעוד כמה דקות, ואם זה חוזר, כתבו לנו.');

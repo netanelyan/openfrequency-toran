@@ -166,6 +166,42 @@ test('connecting WhatsApp through Zernio: coexistence on Zernio\'s hosted page a
   }
 });
 
+test('a new number for Toran alone, without coexistence: folded under the main button, Meta\'s standard window (onboarding=api), kept as no coexistence, and the page says the owner answers from the inbox', async () => {
+  const { s, a, z } = await shop();
+  try {
+    const html = await (await s.get(`/lead/${a}/whatsapp`)).text();
+    const fold = html.slice(html.indexOf('<details class="mt16">'));
+    assert.match(fold, /אין לכם WhatsApp Business, או שאתם רוצים מספר חדש רק לתורן\?/, 'the second way, folded under the first');
+    assert.match(fold, /name="number" value="new"/);
+    assert.ok(html.indexOf('לחבר את הוואטסאפ של החנות') < html.indexOf('לחבר מספר חדש לתורן'), 'the number already in use comes first');
+
+    const go = await s.post(`/lead/${a}/whatsapp/zernio/start`, { _csrf: await s.csrf(`/lead/${a}/whatsapp`), number: 'new' });
+    assert.equal(go.status, 303);
+    const q = new URL(`https://x${z.calls.filter((c) => c.path.startsWith('/api/v1/connect/whatsapp')).at(-1)!.path}`).searchParams;
+    assert.equal(q.get('onboarding'), 'api', 'Meta\'s standard window, where a new number gets its code');
+    assert.equal(q.get('signup'), 'hosted');
+    assert.equal(q.get('redirect_url'), `https://toran.test/lead/${a}/whatsapp/zernio?number=new`);
+
+    assert.match(await (await s.get(`/lead/${a}/whatsapp/zernio?error=whatsapp_number_in_use&platform=whatsapp`)).text(), /עדיין רשום באפליקציית וואטסאפ/);
+
+    z.account((await profileOf(s, a))!);
+    const done = await (await s.get(`/lead/${a}/whatsapp/zernio?number=new&connected=whatsapp&accountId=${WA_ACCOUNT}`)).text();
+    assert.match(done, /עונים ללקוחות מהשיחות כאן, לא מאפליקציה בטלפון/);
+    const row = await s.app.db.one<any>("SELECT meta FROM channel_accounts WHERE channel = 'whatsapp' AND kind = 'zernio'");
+    assert.equal(row.meta.coexistence, false);
+    const page = await (await s.get(`/lead/${a}/whatsapp`)).text();
+    assert.match(page, /מחובר לתורן בלבד, בלי אפליקציה בטלפון/);
+    assert.doesNotMatch(page, /כשעונים ללקוח מהטלפון/);
+
+    // The usual way records coexistence, and its page keeps the phone's line.
+    const plain = await start(s, a);
+    assert.equal(plain.status, 303);
+    assert.equal(new URL(`https://x${z.calls.filter((c) => c.path.startsWith('/api/v1/connect/whatsapp')).at(-1)!.path}`).searchParams.get('onboarding'), 'business_app');
+  } finally {
+    await s.close();
+  }
+});
+
 test('a WhatsApp customer through Zernio: answered through Zernio\'s inbox with no tag; ours, Meta\'s agent and the app\'s greeting leave Toran answering; the owner on the phone pauses it; a disconnect waits to be connected again', async () => {
   const { s, a, z } = await shop();
   try {

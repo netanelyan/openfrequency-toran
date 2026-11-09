@@ -620,6 +620,15 @@ and `meta` (step 2) stay in the code. Our own number (step 3) and the company st
 - **Coexistence:** its `onboarding` parameter, "WhatsApp only": "If omitted, the connection defaults to coexistence";
   `business_app`: "Connect existing WhatsApp Business app (a number shared between Cloud API and the consumer WhatsApp
   Business app)". Toran sends `onboarding=business_app`.
+- **A new number for Toran alone, without coexistence** (the owner, 2026-11-09: "also build an option for businesses
+  connecting not trough coexistnece"): the same parameter's `api`, "standard Embedded Signup, showing Meta's WABA/number
+  picker". It sits folded under the main button on the store's WhatsApp page ("אין לכם WhatsApp Business, או שאתם רוצים
+  מספר חדש רק לתורן?"), with `number=new` on the way to `/lead/<id>/whatsapp/zernio/start` and back, and the account
+  is kept with `meta.coexistence = false`: no phone app is on the number, so no echoes come, and the page says the owner
+  answers from the inbox. In Meta's window the number gets a code by SMS or a call and the business name is reviewed:
+  Meta's own Embedded Signup steps, UNVERIFIED here beyond Zernio's description of `api`. A number a WhatsApp app still
+  uses is refused (`whatsapp_number_in_use`, said in Hebrew). Kapso's hosted page needs nothing of ours: its
+  `allowed_connection_types` defaults to both coexistence and dedicated.
 - **Hosted signup:** `signup=hosted`: "authUrl points at a Zernio-hosted page on zernio.com instead of Meta's OAuth
   dialog ... That page opens Meta's Embedded Signup popup itself". Success: "connected=whatsapp, profileId, accountId,
   username"; failure: `error` and `platform=whatsapp`, among them `one_whatsapp_per_profile`,
