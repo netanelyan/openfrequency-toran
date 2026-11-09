@@ -873,7 +873,7 @@ a.ib-row.is-waiting::before { content: ''; position: absolute; inset-inline-star
 .composer { margin: 0; }
 .cmp-box { border-radius: 16px; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-2); padding: 2px 2px 8px; transition: box-shadow 0.15s ease; }
 .cmp-box:focus-within { box-shadow: inset 0 0 0 1px var(--accent-fill), 0 0 0 4px color-mix(in srgb, var(--accent-fill) 22%, transparent); }
-.cmp-box textarea, .cmp-box textarea:focus { display: block; width: 100%; min-height: 72px; max-height: 40vh; resize: vertical; border: 0; background: none; box-shadow: none; padding: 10px 12px; font-size: 15px; }
+.cmp-box textarea, .cmp-box textarea:focus { display: block; width: 100%; min-height: 48px; max-height: 30vh; field-sizing: content; resize: none; border: 0; background: none; box-shadow: none; padding: 10px 12px; font-size: 15px; }
 .cmp-bar { display: flex; align-items: center; gap: 8px; padding: 0 8px; }
 .cmp-bar .btn { margin-inline-start: auto; }
 .cmp-file { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; max-width: 60%; padding: 0 12px; border-radius: var(--r-pill); color: var(--ink-2); font-size: 13px; cursor: pointer; }
@@ -902,21 +902,30 @@ a.ib-row.is-waiting::before { content: ''; position: absolute; inset-inline-star
   a.ib-row { padding: 12px 14px; }
 }
 
-/* A desk: the list beside the conversation, each scrolling inside its own pane, the answer box held at the foot. */
+/* A desk: the list beside the conversation. */
 @media (min-width: 1000px) {
   main.wrap.wide { padding-top: 24px; }
-  .inbox { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: stretch; height: calc(100dvh - 48px); min-height: 560px; }
-  .ib-head + .inbox { height: calc(100dvh - 190px); }
-  .ib-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .inbox { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: stretch; }
   .ib-ch a { min-height: 30px; }
   .th-back { display: none; }
   .th-head { padding: 14px 20px; }
-  /* Newest at the foot, where a thread opens: column-reverse starts the scroll at the end without a line of script. */
-  .th-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column-reverse; padding: 16px 22px 20px; }
-  .th-compose { flex: none; max-height: 55%; overflow-y: auto; padding: 12px 20px 16px; }
+  .th-body { padding: 16px 22px 20px; }
+  .th-compose { padding: 12px 20px 16px; }
   .ib-blank { display: grid; place-content: center; justify-items: center; gap: 6px; text-align: center; color: var(--ink-3); font-size: 13px; }
   .ib-blank > svg.i { width: 44px; height: 44px; stroke-width: 1.3; margin-bottom: 6px; }
   .ib-blank b { color: var(--ink-2); font-size: 16px; font-weight: 600; }
+}
+/* Each pane scrolling inside itself, the answer box held at the foot, only on a screen tall enough for it (the owner,
+   2026-11-09, on a short window with a scroll in the conversation, one in the answer box and one in the page: "make the
+   user have less places to scroll"). The answer box never scrolls: it grows with what is typed, up to a third of the
+   screen. On a shorter screen the page is one scroll. */
+@media (min-width: 1000px) and (min-height: 700px) {
+  .inbox { height: calc(100dvh - 48px); min-height: 560px; }
+  .ib-head + .inbox { height: calc(100dvh - 190px); }
+  .ib-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* Newest at the foot, where a thread opens: column-reverse starts the scroll at the end without a line of script. */
+  .th-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column-reverse; }
+  .th-compose { flex: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
   .ib-pane, .thread, .ib-blank { backdrop-filter: none; -webkit-backdrop-filter: none; }
