@@ -1,0 +1,411 @@
+/* Toran (תורן), the "pro" look: a layer over style.css, served right after it at /static/style.css when TORAN_STYLE is
+   pro, the default (src/web/style.ts). With TORAN_STYLE=glass this file is never sent and the desk is the glass one,
+   exactly as it was on 2026-11-09.
+
+   Why (the owner, 2026-11-09): "make both dashboard look more professional. research. shopify is a good example."
+   The brief is docs/design-pro.md; in short, Shopify's admin (Polaris) and the calm of Stripe's and Linear's desks:
+   - solid surfaces instead of frosted glass: a grey page (#eeeff2), white cards with a 1px border and a hairline of
+     shadow, nothing blurred;
+   - one accent, Toran's own green (#0F7A54), for the one main button of a screen, the chosen item and links; every
+     other colour is a status (green, orange, red);
+   - small radii on a 4px grid: 12px a card, 8px a button, a field, a nav item; a pill only for a count;
+   - a side bar like Shopify's admin on a desk: full height, grey, compact 36px rows with 20px icons, the chosen row
+     white; on a phone a plain white bar on top and a tab bar at the foot, both flush with the screen's edges;
+   - buttons in four kinds: primary (solid green), secondary (white with a border and a darker bottom edge), tertiary
+     (plain text, .ghost) and destructive (.danger, red);
+   - a tight type scale: 24px a page's title, 15-16px a card's, 14px body, 13px labels, 12px the quietest; two
+     weights that every screen draws, 400 and 700 (Windows draws Hebrew 600 as 400, so a title is 700, never 600).
+
+   How: this file only overrides. It first sets style.css's own tokens to the pro values (--surface, --edge, --line,
+   --ink-*, the radii...), so every rule of style.css that reads them changes with no rule of its own here, and the
+   accessibility panel's high contrast (html.a-contrast, more specific than :root) still wins over them. Then it
+   restyles the pieces whose shape changes: the bars, the cards, the buttons, the fields, the labels, the tables.
+   Behaviour, markup and routes are untouched: the same classes, the same light/dark switch (data-theme on <html>),
+   reduced motion as style.css has it. Every new piece a later change adds to style.css looks right in both looks,
+   since the tokens carry it. */
+
+:root {
+  color-scheme: light;
+  /* the page: the grey every OpenFrequency site paints its browser bar with (theme.ts THEME_COLOR), so the bar and
+     the page stay one colour */
+  --bg: #eeeff2;
+  --wall: none;
+  /* the side bar, one step darker than the page, and its chosen row */
+  --nav-bg: #e6e7ea;
+  --nav-on: #ffffff;
+  --surface: #ffffff;
+  --surface-hi: #ffffff;
+  --solid: #ffffff;
+  /* a card's quieter part: a row under the pointer, a fact, a quote */
+  --sub: #f7f7f7;
+  --inset: #f7f7f7;
+  /* a card's border, the divider between rows in it, a control's border, a field's border (3:1 on white, WCAG 1.4.11) */
+  --edge: #e3e3e3;
+  --rim: transparent;
+  --line: #ebebeb;
+  --line-2: #d4d4d4;
+  --field-edge: #8a8a8a;
+  --fill: rgba(0, 0, 0, 0.05);
+  --fill-2: rgba(0, 0, 0, 0.08);
+  --pill: #ebebeb;
+  --seg-on: #ffffff;
+  --field: #ffffff;
+  /* ink: 12.6:1, 8.9:1 and 6.2:1 on white; the quietest keeps 5.3:1 on the grey page */
+  --ink: #303030;
+  --ink-2: #4a4a4a;
+  --ink-3: #616161;
+  --ink-p: #4a4a4a;
+  /* the one accent: Toran's green (src/brand.ts COLORS.toran). White on it 5.4:1; as text, a step darker, 6.1:1 */
+  --accent-fill: #0f7a54;
+  --accent-fill-2: #0c6646;
+  --accent: #0b6a48;
+  --accent-p: #0b6a48;
+  --accent-ink: #ffffff;
+  --accent-soft: #e4f3ec;
+  --ok: #19702f;
+  --ok-bg: #e7f5ea;
+  --warn: #9a4200;
+  --warn-bg: #fff1e3;
+  --bad: #c70a24;
+  --bad-bg: #fee8eb;
+  --bad-ink: #ffffff;
+  --badge: #c70a24;
+  --badge-ink: #ffffff;
+  --bar: #ffffff;
+  --bar-float: #ffffff;
+  --bar-edge: #e3e3e3;
+  --toast: #1f1f1f;
+  /* depth: a card sits on a hairline; only what floats (the toast, the phone's action bar) has a real shadow */
+  --shadow-tile: 0 1px 0 rgba(26, 26, 26, 0.07);
+  --shadow-float: 0 8px 16px -4px rgba(26, 26, 26, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --sh-card: 0 0 0 1px var(--edge), var(--shadow-tile);
+  /* a secondary button: a 1px border and a darker bottom edge, Polaris's bevel */
+  --sh-btn: inset 0 0 0 1px rgba(0, 0, 0, 0.13), inset 0 -1px 0 rgba(0, 0, 0, 0.13);
+  --sh-primary: inset 0 0 0 1px rgba(0, 0, 0, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --r: 12px;
+  --r-m: 8px;
+  --r-s: 6px;
+  --r-pill: 8px;
+  --tab: 60px;
+  --top: 56px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111113;
+  --nav-bg: #19191b;
+  --nav-on: #2b2b2b;
+  --surface: #1f1f1f;
+  --surface-hi: #1f1f1f;
+  --solid: #1f1f1f;
+  --sub: #262626;
+  --inset: #262626;
+  --edge: #313131;
+  --line: #2b2b2b;
+  --line-2: #3f3f3f;
+  --field-edge: #757575;
+  --fill: rgba(255, 255, 255, 0.06);
+  --fill-2: rgba(255, 255, 255, 0.1);
+  --pill: #2b2b2b;
+  --seg-on: #333333;
+  --field: #181818;
+  --ink: #ececec;
+  --ink-2: #c7c7c7;
+  --ink-3: #a3a3a3;
+  --ink-p: #c7c7c7;
+  --accent-fill: #0f7a54;
+  --accent-fill-2: #12895f;
+  --accent: #4fcf9d;
+  --accent-p: #4fcf9d;
+  --accent-soft: #10291f;
+  --ok: #4cc777;
+  --ok-bg: #11291a;
+  --warn: #ffab45;
+  --warn-bg: #2e1f0c;
+  --bad: #ff7a7a;
+  --bad-bg: #3a1619;
+  --bad-ink: #1f1f1f;
+  --badge: #e5484d;
+  --badge-ink: #ffffff;
+  --bar: #1b1b1b;
+  --bar-float: #1f1f1f;
+  --bar-edge: #313131;
+  --toast: #2e2e2e;
+  --shadow-tile: 0 1px 0 rgba(0, 0, 0, 0.4);
+  --shadow-float: 0 8px 24px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --sh-btn: inset 0 0 0 1px rgba(255, 255, 255, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --sh-primary: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* Increase Contrast, again after the tokens above (style.css's own came before them): quiet text up to the ink,
+   borders and dividers darker. */
+@media (prefers-contrast: more) {
+  :root { --ink-2: #303030; --ink-3: #4a4a4a; --ink-p: #303030; --edge: #8a8a8a; --line: #b5b5b5; --line-2: #6b6b6b; --bar-edge: #8a8a8a; --field-edge: #5c5c5c; }
+  :root[data-theme="dark"] { --ink-2: #ececec; --ink-3: #d4d4d4; --ink-p: #ececec; --edge: #8a8a8a; --line: #5a5a5a; --line-2: #a3a3a3; --bar-edge: #8a8a8a; --field-edge: #a3a3a3; }
+}
+
+/* ------------------------------------------------------------ the page: grey, solid, nothing blurred */
+
+body { background: var(--bg); }
+body::before { display: none; }
+:focus-visible { outline: 2px solid var(--accent-fill); outline-offset: 2px; }
+.top .wrap, .tabbar, .actionbar, #toast, .card, .panel, .list, .kpi, .ib-pane, .thread, .ib-blank, details.mfold, .theme.corner { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* ------------------------------------------------------------ the bars */
+
+/* A phone (and a narrow window): a white bar flush with the top, the mark, the month's meter and two quiet tools. */
+@media (max-width: 899px) {
+  .top { padding: 0; }
+  .top .wrap, .scrolled .top .wrap { height: 56px; max-width: none; padding-inline: 16px 10px; border-radius: 0; background: var(--bar); box-shadow: 0 1px 0 var(--bar-edge); }
+  .brand svg.mk { width: 30px; height: 30px; }
+  .brand b { font: 700 17px/1 var(--display); }
+  .top .tools { gap: 8px; }
+  .spend { min-height: 36px; padding: 0 10px; border-radius: 8px; background: var(--fill); }
+  .top .theme { width: 40px; height: 40px; border-radius: 8px; background: none; color: var(--ink-2); }
+  .top .logout { min-height: 40px; min-width: 40px; border-radius: 8px; background: none; padding: 0 10px; }
+  @media (hover: hover) { .top .theme:hover, .top .logout:hover { background: var(--fill); } }
+}
+@media (max-width: 520px) { .top .logout { padding: 0; } }
+
+/* The tab bar: white, flush with the foot of the screen, a line above it; the chosen tab in the accent, no pill. */
+.tabbar {
+  inset-inline: 0;
+  bottom: 0;
+  height: calc(var(--tab) + env(safe-area-inset-bottom));
+  padding: 4px 4px env(safe-area-inset-bottom);
+  gap: 0;
+  border-radius: 0;
+  background: var(--bar);
+  box-shadow: 0 -1px 0 var(--bar-edge);
+}
+.tabbar a { gap: 3px; border-radius: 8px; color: var(--ink-3); font-weight: 500; }
+.tabbar a svg.i { width: 22px; height: 22px; }
+.tabbar a[aria-current='page'] { background: none; color: var(--accent); font-weight: 600; }
+.tabbar .badge { top: 2px; }
+
+/* A desk: Shopify's side bar. Full height at the start edge, a step darker than the page, a 1px line where it meets
+   it; rows 36px tall, 20px icons, the chosen row white with its icon in the accent. */
+@media (min-width: 900px) {
+  :root { --side: 240px; }
+  .side-mini { --side: 64px; }
+  body { padding-inline-start: var(--side); }
+  .top { top: 0; bottom: 0; inset-inline-start: 0; }
+  .top .wrap, .scrolled .top .wrap {
+    padding: 12px 10px 10px; gap: 2px;
+    border-radius: 0; background: var(--nav-bg);
+    box-shadow: none; border-inline-end: 1px solid var(--edge);
+  }
+  .brand { min-height: 40px; padding: 0 6px; gap: 10px; }
+  .brand svg.mk { width: 28px; height: 28px; }
+  .brand b { font: 700 16px/1 var(--display); }
+  .sidetoggle { width: 32px; height: 32px; border-radius: 8px; color: var(--ink-3); }
+  .nav { margin-top: 14px; gap: 2px; }
+  .nav a { min-height: 36px; gap: 10px; padding: 0 10px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: var(--ink-2); }
+  .nav a:hover { background: var(--fill); color: var(--ink); }
+  .nav a svg.i { color: var(--ink-3); }
+  .nav a[aria-current='page'] { background: var(--nav-on); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--edge), 0 1px 0 rgba(26, 26, 26, 0.05); }
+  .nav a[aria-current='page'] svg.i { color: var(--accent); stroke-width: 2; }
+  .top .tools { gap: 4px 8px; padding-top: 10px; border-top: 1px solid var(--edge); }
+  .spend { min-height: 40px; padding: 0 10px; border-radius: 8px; background: var(--fill); gap: 10px; }
+  .spend:hover { background: var(--fill-2); }
+  /* the foot's two tools 40px, a target a pointer finds at once (theme.test: 40px at least) */
+  .top .logout { min-height: 40px; padding: 0 10px; gap: 10px; border-radius: 8px; color: var(--ink-2); }
+  .top .theme { width: 40px; height: 40px; border-radius: 8px; }
+  .side-mini .top .wrap { padding: 12px 10px 10px; }
+  .side-mini .nav a { padding: 0; }
+  .side-mini .spend, .side-mini .top .logout, .side-mini .top .theme { width: 44px; min-height: 40px; height: 40px; border-radius: 8px; }
+  .side-mini .top .tools { border-top: 0; }
+}
+
+/* ------------------------------------------------------------ a page's header: the title, a line under it, the main
+   action at the end of the title's row */
+
+main.wrap { padding-top: 20px; }
+.head { align-items: center; gap: 4px 16px; margin-bottom: 20px; }
+.head h1 { font: 700 22px/1.25 var(--display); letter-spacing: 0; }
+.head h1.title { font-size: 20px; line-height: 1.3; }
+.head .sub { font-size: 13px; color: var(--ink-2); }
+@media (min-width: 900px) {
+  main.wrap { padding-top: 28px; }
+  .head { margin-bottom: 24px; }
+  .head h1 { font-size: 24px; line-height: 1.25; }
+  .head h1.title { font-size: 22px; line-height: 1.3; }
+}
+h2 { font: 700 15px/1.35 var(--display); }
+h3 { font-size: 14px; font-weight: 600; }
+.lede { color: var(--ink-2); font-size: 14px; }
+
+/* ------------------------------------------------------------ cards */
+
+.card, .panel, .list, .kpi, .ib-pane, .thread, .ib-blank { background: var(--surface); border-radius: var(--r); box-shadow: var(--sh-card); }
+.panel { padding: 20px; }
+.panel + .panel { margin-top: 16px; }
+.panel > header { gap: 8px; margin-bottom: 14px; }
+@media (max-width: 699px) { .panel { padding: 16px; } }
+.cols, .cards { gap: 16px; }
+.group { margin-bottom: 32px; }
+.group > header { margin: 0 2px 10px; }
+.group > header h2 { font: 700 16px/1.3 var(--display); }
+.qgroup > header h3 { font-size: 14px; }
+
+/* A fold on a phone (ui.ts fold): a white card with its name in the row, the panel inside without a card of its own. */
+@media (max-width: 699px) {
+  details.mfold { background: var(--surface); box-shadow: var(--sh-card); }
+  details.mfold > summary { min-height: 52px; padding: 0 16px; font: 700 15px/1.3 var(--display); }
+  details.mfold > .panel { padding: 0 16px 16px; }
+}
+
+/* The KPIs on Today: a metric card, its label small and grey, its number large but not shouting. */
+a.kpi:hover { background: var(--sub); }
+.kpi.lead { padding: 16px 20px; }
+.kpi.lead .l { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.kpi.lead .v { font: 700 40px/1 var(--display); letter-spacing: -0.01em; margin: 12px 0 6px; }
+.kpi.lead .s { font-size: 13px; color: var(--ink-3); }
+.kpi.side { padding: 4px 16px; }
+.kpi.side > a, .kpi.side > div { min-height: 46px; }
+.kpi.side .l { font-size: 13px; color: var(--ink-2); }
+.kpi.side .cnt { font: 700 18px/1 var(--display); }
+
+/* ------------------------------------------------------------ banners: the status's soft colour and a 1px edge in it */
+
+.banner { gap: 12px; padding: 12px 16px; border-radius: var(--r); background: var(--surface); box-shadow: var(--sh-card); }
+.banner.info { background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-fill) 22%, transparent); }
+.banner.warn { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 24%, transparent); }
+.banner.bad { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad) 24%, transparent); }
+.banner b { font-weight: 600; }
+
+/* ------------------------------------------------------------ buttons
+   Four kinds, 8px corners. The label is 600 weight, the icon its colour; on a phone 44px tall (36px small), on a desk
+   36px (32px small), the height of a field beside them. */
+
+.btn {
+  gap: 6px; padding: 0 16px; border-radius: 8px;
+  font: 600 14px/1 var(--text);
+  background: var(--surface); color: var(--ink); box-shadow: var(--sh-btn);
+  transition: background-color 0.1s ease, box-shadow 0.1s ease;
+}
+.btn:hover { background: var(--sub); }
+.btn:active { opacity: 1; background: var(--fill-2); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(0, 0, 0, 0.13); }
+.btn.primary { background: var(--accent-fill); color: var(--accent-ink); box-shadow: var(--sh-primary); }
+.btn.primary:hover { background: var(--accent-fill-2); }
+.btn.primary:active { background: var(--accent-fill-2); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.3); }
+.btn.ghost { background: transparent; color: var(--ink-2); box-shadow: none; }
+.btn.ghost:hover { background: var(--fill); color: var(--ink); }
+.btn.danger { color: var(--bad); }
+.btn.danger:hover, .btn.danger.armed { background: var(--bad); color: var(--bad-ink); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25); }
+.btn.sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
+.btn.copied { background: var(--ok-bg); color: var(--ok); }
+.btn[disabled] { box-shadow: var(--sh-btn); }
+@media (min-width: 900px) {
+  .btn { min-height: 36px; padding: 0 14px; font-size: 13px; }
+  .btn.sm { min-height: 32px; padding: 0 10px; }
+}
+/* The icon and the label centred as the eye sees them (the owner, 2026-11-09: "some buttons are not centered", on
+   "✦ לעוזר", the label sitting lower than its spark). The icon's box is centred on the label's capital height, not on
+   the line box, which the font's ascent and descent push off centre (Segoe UI's and SF's Hebrew sit low in it). */
+.btn > svg.i, .tabs a > svg.i, .ib-ch a > svg.i, .chip > svg.i { align-self: center; }
+
+/* ------------------------------------------------------------ fields: a clear label above, a 1px border, a focus ring */
+
+label.f { gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+label.f small { font-weight: 400; color: var(--ink-3); }
+input[type='text'], input[type='password'], input[type='url'], input[type='number'], input[type='search'], select, textarea {
+  font: 400 16px/1.4 var(--text);
+  min-height: 44px; padding: 10px 12px;
+  background: var(--field); border: 1px solid var(--field-edge); border-radius: 8px;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-fill); outline-offset: 1px; border-color: var(--field-edge); box-shadow: none; }
+/* A desk with a mouse: 14px and 36px, as the buttons beside them. A phone keeps 16px, so iOS never zooms into a field. */
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) {
+  input[type='text'], input[type='password'], input[type='url'], input[type='number'], input[type='search'], select, textarea { font-size: 14px; min-height: 36px; padding: 7px 12px; }
+  textarea { min-height: 88px; }
+}
+.table input[type='text'], .table input[type='number'] { min-height: 34px; padding: 5px 10px; font-size: 14px; }
+
+/* ------------------------------------------------------------ labels: a status is a small badge in its soft colour */
+
+.chip:is(.ok, .warn, .bad, .sig) { padding: 2px 8px; border-radius: 6px; font-weight: 600; line-height: 16px; }
+.chip.ok { background: var(--ok-bg); }
+.chip.warn { background: var(--warn-bg); }
+.chip.bad { background: var(--bad-bg); }
+.chip.sig { background: var(--accent-soft); color: var(--accent); }
+.meta .chip:is(.ok, .warn, .bad, .sig)::before, .meta .chip:is(.ok, .warn, .bad, .sig) + .chip::before { content: none; }
+.ib-meta .chip:is(.bad, .ok, .sig), .th-facts .chip:is(.bad, .ok, .sig) { padding: 2px 8px; border-radius: 6px; }
+.badge { border-radius: 9px; }
+
+/* Filters (.tabs) and the inbox's segments: plain rows, the chosen one on a grey fill, no outline. */
+.tabs { gap: 4px; }
+.tabs a { min-height: 36px; padding: 0 12px; border-radius: 8px; background: none; box-shadow: none; color: var(--ink-2); font-weight: 500; }
+.tabs a:hover { background: var(--fill); color: var(--ink); }
+.tabs a[aria-current='true'] { background: var(--fill-2); color: var(--ink); font-weight: 600; box-shadow: none; }
+.seg { padding: 3px; border-radius: 8px; background: var(--fill); }
+.seg a { min-height: 30px; border-radius: 6px; }
+.seg a[aria-current='true'] { background: var(--seg-on); box-shadow: 0 0 0 1px var(--edge), 0 1px 0 rgba(26, 26, 26, 0.06); }
+.ib-ch a { min-height: 32px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line-2); }
+.ib-ch a[aria-current='true'] { background: var(--fill-2); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line-2); }
+@media (min-width: 900px) { .tabs a { min-height: 32px; } }
+
+/* ------------------------------------------------------------ tables and lists: aligned columns, quiet heads, hairlines */
+
+.table th { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--edge); }
+.table td { padding: 10px 12px; }
+.table tbody tr:hover td { background: var(--sub); }
+.table .n { text-align: end; }
+.list a, .list button { min-height: 52px; padding: 10px 16px; }
+.list a:hover, .list button:hover { background: var(--sub); }
+.list .ico { width: 32px; height: 32px; border-radius: 8px; }
+.list .t b { font-weight: 600; }
+.qrow { min-height: 60px; }
+.empty { padding: 40px 24px; color: var(--ink-2); background: var(--surface); box-shadow: var(--sh-card); }
+.empty > svg.i { width: 32px; height: 32px; }
+.empty b { font-size: 15px; font-weight: 700; }
+.keys li { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line); }
+details.panel > summary { min-height: 28px; }
+
+/* ------------------------------------------------------------ the review queue's cards */
+
+.rcard .preview { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--edge); }
+.rcard .who h3 { font: 700 16px/1.3 var(--display); }
+@media (max-width: 899px) {
+  .actionbar { bottom: calc(var(--tab) + 12px + env(safe-area-inset-bottom)); padding: 8px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-float); }
+}
+
+/* ------------------------------------------------------------ conversations */
+
+.chat .b { border-radius: 14px; }
+.chat .b.customer, .chat .b.toran { background: var(--bg); border-start-start-radius: 4px; }
+.chat .b.agent, .chat .b.owner { border-start-end-radius: 4px; }
+.chat .b.agent { background: color-mix(in srgb, var(--accent-fill) 11%, var(--solid)); }
+.ib-search input[type='search'] { min-height: 36px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--field); font-size: 14px; }
+.ib-tools { padding: 12px; }
+a.ib-row:hover { background: var(--sub); }
+a.ib-row[aria-current='page'] { background: var(--accent-soft); }
+.th-who h1.title { font: 700 17px/1.3 var(--display); }
+.cmp-box { border-radius: 10px; box-shadow: inset 0 0 0 1px var(--field-edge); }
+.cmp-box:focus-within { box-shadow: inset 0 0 0 1px var(--accent-fill), 0 0 0 1px var(--accent-fill); }
+.cmp-box textarea:focus { outline: none; }
+.av { box-shadow: none; }
+.assistant .pending { border-radius: 8px; background: var(--warn-bg); }
+.voice-opt:hover, .voice-opt:has(input:checked) { background: var(--surface); }
+
+/* ------------------------------------------------------------ the rest */
+
+#toast { border-radius: 10px; background: var(--toast); box-shadow: var(--shadow-float); }
+@media (max-width: 899px) { #toast { bottom: calc(var(--tab) + 16px + env(safe-area-inset-bottom)); } }
+.theme.corner { background: var(--surface); box-shadow: var(--shadow-float); }
+@media (hover: hover) { .theme.corner:hover { background: var(--sub); } }
+.login .card { padding: 32px 24px 24px; border-radius: 16px; box-shadow: var(--sh-card), 0 12px 32px -12px rgba(26, 26, 26, 0.18); }
+.login .hero b { font-size: 26px; }
+.login h1 { font-size: 20px; }
+.sk.btn, .sk-tabs .sk { border-radius: 8px; }
+.sk.h1 { height: 26px; border-radius: 6px; }
+.panel.dev { box-shadow: var(--sh-card); }
+.foot { color: var(--ink-3); }
+
+/* ------------------------------------------------------------ style.css's small utilities, again last, so a margin a
+   page asks for (.mt24 on a group) wins over a margin this layer gives the piece itself. */
+.mt8 { margin-top: 8px; }
+.mt12 { margin-top: 12px; }
+.mt16 { margin-top: 16px; }
+.mt24 { margin-top: 24px; }
+.m0 { margin: 0; }

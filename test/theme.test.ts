@@ -125,6 +125,8 @@ test('no page stylesheet asks the device for dark: every dark rule hangs on data
     ['pitch.css', readFileSync(path.join(STATIC, 'pitch.css'), 'utf8')],
     ['a11y.css', readFileSync(path.join(STATIC, 'a11y.css'), 'utf8')],
     ['brand.css', brandCss()],
+    // The pro look's layer (style.ts), sent after style.css unless TORAN_STYLE=glass.
+    ['style-pro.css', readFileSync(path.join(STATIC, 'style-pro.css'), 'utf8')],
   ];
   for (const [name, css] of sheets) {
     assert.doesNotMatch(css, /prefers-color-scheme/, `${name}: no prefers-color-scheme`);

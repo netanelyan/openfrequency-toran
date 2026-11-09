@@ -15,6 +15,7 @@ import { dashboardRoutes, headerCounts, storesCss } from './routes.ts';
 import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
 import { themed, themeOf } from './theme.ts';
+import { styleOf, styleSheet } from './style.ts';
 import { boundaryOf, parseMultipart, type Upload } from './multipart.ts';
 import { MAX_BYTES } from '../channels/files.ts';
 import { readiness, revision } from '../health.ts';
@@ -149,7 +150,7 @@ const UPLOAD = /^\/chat\/\d+\/reply$/;
 const flashCookie = (msg: string) => `tn_flash=${encodeURIComponent(String(msg).slice(0, 200))}; Path=/; Max-Age=20; SameSite=Strict`;
 
 const STATIC_FILES: Record<string, { file: string; type: string; cache: string }> = {
-  '/static/style.css': { file: path.join(STATIC, 'style.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
+  // /static/style.css is not here: it is the look TORAN_STYLE picks, glass or pro (style.ts), answered in the handler.
   '/static/app.js': { file: path.join(STATIC, 'app.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.css': { file: path.join(STATIC, 'pitch.css'), type: 'text/css; charset=utf-8', cache: 'public, max-age=3600' },
   '/static/pitch.js': { file: path.join(STATIC, 'pitch.js'), type: 'text/javascript; charset=utf-8', cache: 'public, max-age=3600' },
@@ -192,6 +193,8 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
   })();
   const origins = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, ...(publicHost ? [`https://${publicHost}`] : []), ...(pitchHost ? [`https://${pitchHost}`] : []), ...(adminOrigin ? [adminOrigin] : [])]);
   const dash = dashboardRoutes(app);
+  // The desk's look (style.ts): read once, as the server starts, so a change to TORAN_STYLE needs a restart.
+  const style = styleOf(env);
   const pub = publicRoutes(app, accounts);
 
   return async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -221,6 +224,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       if (method === 'GET') {
         const sf = STATIC_FILES[p];
         if (sf) return send(req, res, 200, readFileSync(sf.file), sf.type, { 'cache-control': sf.cache });
+        if (p === '/static/style.css') return send(req, res, 200, styleSheet(style), 'text/css; charset=utf-8', { 'cache-control': 'public, max-age=3600' });
         const icon = ICON_FILES[p];
         if (icon) return send(req, res, 200, readFileSync(path.join(BRAND_DIR, icon.file)), icon.type, { 'cache-control': 'public, max-age=86400' });
         if (p === '/static/brand.css') return send(req, res, 200, brandCss(), 'text/css; charset=utf-8', { 'cache-control': 'public, max-age=3600' });
