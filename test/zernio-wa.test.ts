@@ -170,10 +170,10 @@ test('a new number for Toran alone, without coexistence: folded under the main b
   const { s, a, z } = await shop();
   try {
     const html = await (await s.get(`/lead/${a}/whatsapp`)).text();
-    const fold = html.slice(html.indexOf('<details class="mt16">'));
-    assert.match(fold, /אין לכם WhatsApp Business, או שאתם רוצים מספר חדש רק לתורן\?/, 'the second way, folded under the first');
+    const fold = html.slice(html.lastIndexOf('<details class="mt16">'));
+    assert.match(fold, /אין לכם WhatsApp Business, או שרוצים מספר חדש רק לתורן\?/, 'the second way, folded under the first');
     assert.match(fold, /name="number" value="new"/);
-    assert.ok(html.indexOf('לחבר את הוואטסאפ של החנות') < html.indexOf('לחבר מספר חדש לתורן'), 'the number already in use comes first');
+    assert.ok(html.indexOf('לחבר את הוואטסאפ של העסק') < html.indexOf('לחבר מספר חדש לתורן'), 'the number already in use comes first');
 
     const go = await s.post(`/lead/${a}/whatsapp/zernio/start`, { _csrf: await s.csrf(`/lead/${a}/whatsapp`), number: 'new' });
     assert.equal(go.status, 303);

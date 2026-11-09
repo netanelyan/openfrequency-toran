@@ -13,6 +13,7 @@ import { oneNumberRoles, ROLE_HE, type Role } from '../../channels/lines.ts';
 import { isCompany } from '../../company.ts';
 import { BINDING_DAYS } from '../../channels/demo.ts';
 import { channelSwitch, offChannels } from './channelOff.ts';
+import { pendingClaim } from '../../domainProof.ts';
 
 // A store connects its own WhatsApp number (channels/meta.ts, waStore.ts): the page under /lead/<id>/whatsapp, which
 // server.ts opens to the store's own workspace only. Before the button, what to check so Meta's window does not stop
@@ -89,9 +90,13 @@ export function waLine(a: WaRow | null, s: { id: number; demo_code?: string | nu
   if (a?.status === 'active') return a.meta?.coexistence === false ? `מחובר, ${phone(a)}. תורן עונה בו, ועל מה שמחכה לכם עונים מהשיחות כאן.` : `מחובר, ${phone(a)}. תורן עונה בו, והוואטסאפ בטלפון ממשיך לעבוד.`;
   if (a?.status === 'pending') return `${phone(a)} ממתין לאישור של Meta. תורן יתחיל לענות בו לבד כשהמספר מאושר.`;
   if (a?.status === 'error') return `Meta עצרה את המספר ${phone(a)} (${esc(a.meta?.why || 'בלי סיבה')}). תורן לא עונה בו. כתבו לנו ונבדוק יחד.`;
-  const demo = s.demo_code && !s.taken_down_at ? `עכשיו תורן עונה על מספר הדמו שלנו, עם הקוד <bdi class="ltr">${esc(s.demo_code)}</bdi>. ` : '';
-  return ready ? `${demo}<a href="/lead/${s.id}/whatsapp">לחבר את הוואטסאפ של החנות</a>` : `${demo}החיבור של המספר של החנות עוד לא פתוח.`;
+  // Not connected: one clear button (the owner, 2026-11-09: "i dont see a place where to connect the whatsapp number"),
+  // and no demo code on the line (the project's rule: no codes or mechanics shown).
+  return ready ? `<a class="btn sm" href="/lead/${s.id}/whatsapp">${icon('chat')}${CONNECT}</a>` : 'החיבור של הוואטסאפ של העסק עוד לא פתוח אצלנו.';
 }
+
+/** The button's words wherever the store's WhatsApp is connected from: Settings, Today, setup, its own page. */
+export const CONNECT = 'לחבר את הוואטסאפ של העסק';
 
 /**
  * On our company store's page: what our one number does once it is connected here (channels/lines.ts), in the order
@@ -120,15 +125,84 @@ async function oursPanel(app: App, storeId: number): Promise<string> {
  * Meta's standard window (onboarding=api, channels/zernio.ts), where the number gets a code by SMS or a call. The
  * number must not be on any WhatsApp app, and none can be on it afterwards: the owner answers from the inbox here.
  */
-const newNumber = (r: DashReq, id: number) => `<details class="mt16"><summary class="small">אין לכם WhatsApp Business, או שאתם רוצים מספר חדש רק לתורן?</summary>
-  <p class="small mt8 m0">אפשר לחבר מספר שלא נמצא באף אפליקציית וואטסאפ, למשל קו חדש. Meta שולחת אליו קוד ב-SMS או בשיחה, ואחרי החיבור אי אפשר להשתמש בו באפליקציה בטלפון. על מה שתורן מעביר אליכם עונים מהשיחות כאן.</p>
-  <ol class="small m0 mt8">
-    <li>נכנסים לפייסבוק, ובוחרים את העסק או יוצרים אותו.</li>
-    <li>בוחרים להוסיף מספר חדש, ומקלידים את שם העסק כמו שלקוחות יראו אותו. Meta בודקת את השם.</li>
-    <li>מקלידים את המספר, ומקבלים את הקוד ב-SMS או בשיחה.</li>
+const newNumber = (r: DashReq, id: number) => `<details class="mt16"><summary class="small">אין לכם WhatsApp Business, או שרוצים מספר חדש רק לתורן?</summary>
+  <p class="small mt8 m0">אפשר לחבר מספר שלא נמצא באף אפליקציית וואטסאפ, למשל קו חדש. אחרי החיבור אי אפשר להשתמש בו באפליקציה בטלפון, ועל מה שתורן מעביר אליכם עונים מהשיחות כאן.</p>
+  <ol class="steps mt12">
+    <li><span>נכנסים לפייסבוק, ובוחרים את העסק או יוצרים אותו.</span></li>
+    <li><span>בוחרים להוסיף מספר חדש, וכותבים את שם העסק כמו שלקוחות יראו אותו. Meta בודקת את השם.</span></li>
+    <li><span>מקלידים את המספר, ומקבלים אליו קוד ב-SMS או בשיחה.</span></li>
   </ol>
   <div class="mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/zernio/start`, 'לחבר מספר חדש לתורן', { cls: 'btn sm', iconName: 'chat', fields: { number: 'new' } })}</div>
 </details>`;
+
+/**
+ * Connecting the number the business already uses, as a guided card (the owner, 2026-11-09: "make everything easy for
+ * the user. he also doesnt know anything about tech", and "i dont see a place where to connect the whatsapp number.
+ * copy the setup process from teder"): what to have ready, what happens after the one button, step by step, and what
+ * changes in the app and what Meta charges, folded. No "coexistence", WABA or phone number id on it.
+ *
+ * Checked 2026-11-09:
+ *   - Zernio's hosted page is in English (its language parameter has en, es and pt-BR only, "videos stay in English";
+ *     docs.zernio.com/platforms/whatsapp/connection), with a checklist that follows Meta's window.
+ *   - The approval on the phone: Zernio's docs say "The user opens the WhatsApp Business app and taps the camera icon at
+ *     the top right to scan it, or scans it from Settings > Linked devices"; Meta's own page says a message comes from
+ *     the official Facebook Business account and the owner taps Connect, then confirms sharing the chat history
+ *     (developers.facebook.com, onboarding business app users). Which one the owner sees is UNVERIFIED, so the step
+ *     names both; the Hebrew words of the app's buttons are UNVERIFIED and not quoted.
+ *   - Meta: app version 2.24.17 or newer; up to 6 months of 1:1 chats can be shared; "Messages sent and received are
+ *     mirrored between the Cloud API and WhatsApp Business app"; disappearing messages, view once and live location are
+ *     turned off in 1:1 chats and broadcast lists are disabled; groups are not synced; the app must be opened about
+ *     every 14 days or the connection stops. A week of use in the app before connecting is said only by third parties
+ *     (UNVERIFIED), so it is not on the list; Zernio's own refusal for a number too new still says it (ZERNIO_WA_ERRORS_HE).
+ *   - Meta's fees changed on 2026-10-01: a free tier of 1,000 service messages a month per number, then per message;
+ *     messages the business starts are charged per message; a payment method in Meta's Billing Hub
+ *     (developers.facebook.com/documentation/business-messaging/whatsapp/pricing). Whose Billing Hub holds it on a
+ *     number connected through Zernio is UNVERIFIED, so the line says "בחשבון של העסק ב-Meta" as the page did.
+ */
+function connectGuide(via: 'zernio' | 'kapso' | 'meta', button: string, extra = ''): string {
+  const page = via === 'zernio' ? 'של Zernio, השירות שמחבר את הוואטסאפ לתורן. העמוד מראה כל שלב בזמן שהוא קורה.' : via === 'kapso' ? 'של Kapso, השירות שמחבר את הוואטסאפ לתורן. שם בוחרים WhatsApp Business App.' : 'בו עושים את כל השלבים הבאים.';
+  return `<section class="panel" id="connect"><header><h2>מחברים את הוואטסאפ של העסק</h2></header>
+  <p class="m0">תורן עונה במספר שכבר יש לעסק, והוואטסאפ בטלפון ממשיך לעבוד. כשעונים ללקוח מהטלפון, התשובה מופיעה גם כאן, ותורן לא מתערב בשיחה הזו.</p>
+  <h3 class="small mt16">מה צריך לפני</h3>
+  <ul class="m0">
+    <li>הוואטסאפ של העסק באפליקציית WhatsApp Business, מעודכנת. אם זה הוואטסאפ הרגיל, עוברים ל-WhatsApp Business בחינם, והשיחות עוברות איתו.</li>
+    <li>חשבון פייסבוק להיכנס איתו.</li>
+    <li>הטלפון עם הוואטסאפ של העסק לידכם.</li>
+  </ul>
+  <h3 class="small mt16">מה קורה אחרי הלחיצה</h3>
+  <ol class="steps mt8">
+    <li><b>${via === 'meta' ? 'נפתח חלון של Meta' : 'נפתח עמוד באנגלית'}</b><span>${esc(page)}</span></li>
+    <li><b>נכנסים לפייסבוק</b><span>ובוחרים את העסק, או יוצרים אותו.</span></li>
+    <li><b>בוחרים לחבר את WhatsApp Business הקיים</b><span>ומקלידים את המספר של העסק.</span></li>
+    <li><b>מאשרים בטלפון</b><span>באפליקציית WhatsApp Business: סורקים את הקוד שעל המסך במצלמה שבאפליקציה, או פותחים את ההודעה מ-Facebook Business ומאשרים. אפשר לשתף גם את השיחות של חצי השנה האחרונה.</span></li>
+    <li><b>חוזרים לכאן לבד</b><span>והעמוד אומר שהמספר מחובר.</span></li>
+  </ol>
+  ${button}
+  <details class="mt16"><summary class="small">מה משתנה באפליקציה אחרי החיבור?</summary><p class="small mt8 m0">רשימות תפוצה נכבות, ובשיחות עם לקוחות נכבים הודעות נעלמות, צפייה חד-פעמית ומיקום חי. קבוצות לא עוברות לתורן. כדאי לפתוח את האפליקציה לפחות פעם בשבועיים, אחרת Meta מנתקת את החיבור.</p></details>
+  <details class="mt8"><summary class="small">כמה זה עולה ב-Meta?</summary><p class="small mt8 m0">Meta גובה מהחשבון של העסק על הודעות שיוצאות דרך תורן. 1,000 תשובות ללקוחות בחודש בלי תשלום, ואחר כך לפי הודעה. הודעה שהעסק שולח ראשון, למשל תזכורת על עגלה, בתשלום לכל הודעה. בשביל זה צריך אמצעי תשלום בחשבון של העסק ב-Meta.</p></details>
+  ${extra}
+</section>`;
+}
+
+/**
+ * /whatsapp: the WhatsApp page of the session's store, or, before the store exists, what to have ready and why the
+ * button waits. Connecting needs the store (its Zernio profile, its channel account), and the store exists only once
+ * its site is proven the workspace's (domainProof.ts, PRA-SEC-003: nothing is read and no lead is taken before the
+ * proof), so the button opens right after the proof, while the site is still being read (as Teder's "אפשר לחבר כבר
+ * עכשיו, עוד לפני שהחשבון מוכן"). Until then this page has the guide and one button, to the proof.
+ */
+async function prepPage(app: App, r: DashReq) {
+  const ws = Number(r.scope.workspaceId) || 0;
+  const claim = ws > 0 ? await pendingClaim(app, ws) : null;
+  const ro = r.ctx.readOnly;
+  const wait = claim
+    ? `<div class="banner info">${icon('clock')}<div><b>החיבור נפתח מיד אחרי שמאמתים את האתר</b><p>זה לוקח דקה, ומיד אחרי זה הכפתור כאן פתוח, גם בזמן שתורן קורא את האתר.</p></div>${ro ? '' : `<a class="btn sm primary" href="/start">${icon('check')}לאמת את האתר</a>`}</div>`
+    : `<div class="banner info">${icon('clock')}<div><b>קודם מוסיפים את החנות</b><p>כותבים את הכתובת של האתר ומאמתים שהוא שלכם. מיד אחרי זה הכפתור כאן פתוח.</p></div>${ro ? '' : `<a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a>`}</div>`;
+  const body = `<div class="head"><h1>הוואטסאפ של העסק</h1></div>
+${wait}
+${connectGuide(waProvider(app.env) === 'zernio' ? 'zernio' : waProvider(app.env) === 'kapso' ? 'kapso' : 'meta', `<p class="small muted mt16 m0">הכפתור "${CONNECT}" יופיע כאן מיד אחרי האימות.</p>`)}`;
+  return layout({ ...r.ctx, title: 'הוואטסאפ של העסק', active: 'settings' }, body);
+}
 
 async function page(app: App, r: DashReq, id: number, notice = '') {
   const s = await app.db.one<any>('SELECT id, name, domain, brand, brand_override, demo_code, taken_down_at, platform FROM stores WHERE id = $1', [id]);
@@ -166,41 +240,9 @@ async function page(app: App, r: DashReq, id: number, notice = '') {
   <p class="small mt12 m0">${a!.meta?.coexistence === false ? 'המספר הזה מחובר לתורן בלבד, בלי אפליקציה בטלפון. עונים ללקוחות מהשיחות כאן, ואחרי שעניתם תורן מפסיק לענות בשיחה הזו לזמן מה.' : 'כשעונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.'}</p>
   ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: ours ? 'לנתק? תורן יפסיק לענות במספר שלנו: לבעלי העסקים, בדמו ובתמיכה. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' : 'לנתק? תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}
 </section>`
-    : `<section class="panel"><header><h2>לפני שמחברים</h2></header>
-  <ul class="m0">
-    <li>הוואטסאפ של החנות הוא באפליקציית <b>WhatsApp Business</b>. אם זה הוואטסאפ הרגיל, מעבירים אותו ל-WhatsApp Business בחינם, והשיחות עוברות איתו.</li>
-    <li>האפליקציה מעודכנת לגרסה האחרונה.</li>
-    <li>המספר פעיל ב-WhatsApp Business כבר שבוע לפחות.</li>
-    <li>יש לכם חשבון פייסבוק. נכנסים איתו לחלון של Meta.</li>
-    <li>הטלפון עם הוואטסאפ של החנות לידכם, כדי לאשר בו.</li>
-  </ul>
-</section>
-${viaZernio ? `<section class="panel mt16"><header><h2>מה קורה אחרי הלחיצה</h2></header>
-  <ol class="m0">
-    <li>נפתח עמוד החיבור של Zernio, השותף שמחבר את הוואטסאפ שלכם ל-Meta. העמוד באנגלית.</li>
-    <li>נכנסים לפייסבוק, ובוחרים את העסק או יוצרים אותו.</li>
-    <li>בוחרים לחבר את ה-WhatsApp Business הקיים, מקלידים את המספר של החנות, ובטלפון סורקים את הקוד שמופיע בעמוד.</li>
-    <li>בסוף חוזרים לכאן לבד, והעמוד אומר שהמספר מחובר.</li>
-  </ol>
-  <p class="small mt8 m0">החיוב של Meta על הודעות שהחנות שולחת יוזמה (תבניות) יוצא מהחשבון של החנות ב-Meta. תשובות ללקוחות שכתבו בעשרים וארבע השעות האחרונות לא עולות כלום.</p>` : viaKapso ? `<section class="panel mt16"><header><h2>מה קורה אחרי הלחיצה</h2></header>
-  <ol class="m0">
-    <li>נפתח עמוד החיבור של Kapso, השותף שמחבר את הוואטסאפ שלכם ל-Meta. העמוד באנגלית.</li>
-    <li>בוחרים <b>WhatsApp Business App</b>, נכנסים לפייסבוק, ובוחרים את העסק או יוצרים אותו.</li>
-    <li>מקלידים את המספר של החנות, וב-WhatsApp Business בטלפון סורקים את הקוד שמופיע בעמוד.</li>
-    <li>בסוף חוזרים לכאן לבד, והעמוד אומר שהמספר מחובר.</li>
-  </ol>
-  <p class="small mt8 m0">החיוב של Meta על הודעות שהחנות שולחת יוזמה (תבניות) יוצא מהחשבון של החנות ב-Meta. תשובות ללקוחות שכתבו בעשרים וארבע השעות האחרונות לא עולות כלום.</p>` : `<section class="panel mt16"><header><h2>מה קורה בחלון של Meta</h2></header>
-  <ol class="m0">
-    <li>נכנסים לפייסבוק, ובוחרים את העסק, או יוצרים אותו.</li>
-    <li>בוחרים לחבר את מספר ה-WhatsApp Business הקיים, ומקלידים אותו.</li>
-    <li>ב-WhatsApp Business בטלפון מופיעה בקשה. מאשרים אותה עם הקוד שבחלון.</li>
-  </ol>`}
-  <p class="small mt12 m0">הוואטסאפ בטלפון ממשיך לעבוד כרגיל, ותורן עונה לצידו. כשאתם עונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו.</p>
-  ${connectButton('לחבר את הוואטסאפ של החנות')}
-  ${viaZernio && ready && !ro ? newNumber(r, id) : ''}
-</section>`;
+    : connectGuide(viaZernio ? 'zernio' : viaKapso ? 'kapso' : 'meta', connectButton(CONNECT), viaZernio && ready && !ro ? newNumber(r, id) : '');
   const body = `<a class="back" href="/settings#channels">${icon('chev')}הגדרות</a>
-<div class="head"><div class="row">${storeBadge({ id: s.id, name, domain: s.domain })}<h1 class="title">הוואטסאפ של ${esc(name)}</h1></div><p class="sub">מחברים את המספר שכבר יש לחנות ב-WhatsApp Business, ותורן עונה בו ללקוחות.</p></div>
+<div class="head"><div class="row">${storeBadge({ id: s.id, name, domain: s.domain })}<h1 class="title">הוואטסאפ של ${esc(name)}</h1></div></div>
 ${notice}
 ${live ? waBanner(a, id, { here: true }) : ''}
 ${state}
@@ -211,6 +253,12 @@ ${ready && !viaKapso && !viaZernio && (!live || again) && !ro ? '<script src="/s
 
 export function whatsappRoutes(app: App): Route<DashReq>[] {
   return [
+    // The store's WhatsApp from anywhere (setup's step, Today, Settings): its page once the store exists, else the guide.
+    ['GET', /^\/whatsapp$/, async (r) => {
+      if (r.scope.operator) return { redirect: '/' };
+      const s = await app.db.one<{ id: number }>('SELECT id FROM stores WHERE workspace_id = $1 ORDER BY id LIMIT 1', [Number(r.scope.workspaceId) || 0]);
+      return s ? { redirect: `/lead/${s.id}/whatsapp` } : { html: await prepPage(app, r) };
+    }],
     ['GET', /^\/lead\/(\d+)\/whatsapp$/, async (r, m) => {
       // Kapso's hosted page sends the store back here when the connection did not go through.
       const failed = r.url.searchParams.get('kapso') === 'failed' ? noticeHe('warn', 'החיבור לא הושלם', 'אפשר לנסות שוב. אם זה חוזר, כתבו לנו ונחבר יחד.') : '';

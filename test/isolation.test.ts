@@ -39,6 +39,10 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   'POST ^\\/lead\\/(\\d+)\\/tracking-page$': (i) => `/lead/${i.b}/tracking-page`,
   // The chat on B's site and B's reviews (pages/webchat.ts): A turns nothing on and shows nothing.
   'POST ^\\/lead\\/(\\d+)\\/web$': (i) => `/lead/${i.b}/web`,
+  // The email card's steps and the switch on a channel (pages/mailSetup.ts, channelOff.ts): A neither reads nor changes B's.
+  'GET ^\\/lead\\/(\\d+)\\/mail\\/state\\.json$': (i) => `/lead/${i.b}/mail/state.json`,
+  'POST ^\\/lead\\/(\\d+)\\/mail\\/setup$': (i) => `/lead/${i.b}/mail/setup`,
+  'POST ^\\/lead\\/(\\d+)\\/channel-off$': (i) => `/lead/${i.b}/channel-off`,
   'POST ^\\/lead\\/(\\d+)\\/reviews\\/(\\d+)$': (i) => `/lead/${i.b}/reviews/1`,
   // The chat's look on Settings: A previews nothing of B's, its name, mark or colours.
   'GET ^\\/lead\\/(\\d+)\\/web\\/preview$': (i) => `/lead/${i.b}/web/preview`,
@@ -99,6 +103,7 @@ const NO_ID: Record<string, string> = {
   'GET ^\\/notifications\\/latest\\.json$': "the session's own workspace's newest (push.test.ts)",
   'GET ^\\/export\\/conversations\\.csv$': "the session's own conversations (customer.test.ts)",
   'GET ^\\/start$': "the session's own workspace",
+  'GET ^\\/whatsapp$': "the session's own store's WhatsApp page, or the guide while it has none (setup.test.ts)",
   'POST ^\\/start$': "the session's own workspace (setup.test.ts)",
   'POST ^\\/start\\/verify$': "the session's own workspace's claim (setup.test.ts)",
   'POST ^\\/start\\/verify\\/key$': "the session's own workspace's claim (setup.test.ts)",

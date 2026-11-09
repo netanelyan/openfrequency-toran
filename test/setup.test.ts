@@ -15,6 +15,8 @@ import { serve } from './serve.ts';
 // seed) and wood-and-thread.example (a site that is not a store).
 
 const BASE = 'https://toran.test';
+/** A server that connects WhatsApp numbers through Zernio (channels/zernio.ts zernioWaReady): its key, its webhook's secret. */
+const ZERNIO_ENV = { TORAN_WA_PROVIDER: 'zernio', ZERNIO_API_KEY: 'sk_zernio_test_key', ZERNIO_WEBHOOK_SECRET: 'zernio-webhook-secret-0123456789' };
 type S = Awaited<ReturnType<typeof serve>>;
 
 async function setup(s: S, ws: number | string, headers: Record<string, string> = { authorization: `Bearer ${INTERNAL_TOKEN}` }) {
@@ -74,10 +76,13 @@ test('GET /internal/setup: from this machine with the token only; a brand-new wo
     assert.equal(d.product, 'toran');
     assert.equal(d.ready, false);
     // Channels whose code is off here (TORAN_CHANNELS lists none) are not steps at all.
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'live', 'whatsapp', 'web', 'orders', 'auto']);
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'whatsapp', 'knowledge', 'test', 'channels', 'live', 'web', 'orders', 'auto']);
     assert.deepEqual(d.by.store, { key: 'store', title: 'מוסיפים את החנות', status: 'todo', detail: d.by.store.detail, href: `${BASE}/start`, required: true });
     assert.match(d.by.store.detail, /כותבים את הכתובת/);
-    for (const x of d.steps.slice(1)) assert.deepEqual([x.status, x.detail, x.href], ['todo', 'אחרי שהחנות מוכנה', null], x.key);
+    // The business's WhatsApp is never "after the store" (the owner, 2026-11-09): here this server cannot connect a
+    // number, so it says so; every other step waits for the store.
+    assert.deepEqual([d.by.whatsapp.status, d.by.whatsapp.href, d.by.whatsapp.title], ['soon', null, 'מחברים את הוואטסאפ של העסק']);
+    for (const x of d.steps.slice(2)) assert.deepEqual([x.status, x.detail, x.href], ['todo', 'אחרי שהחנות מוכנה', null], x.key);
     // Any one channel is required, not WhatsApp itself (the owner, 2026-11-08: ready for customers like Teder).
     assert.deepEqual(d.steps.filter((x: any) => x.required).map((x: any) => x.key), ['store', 'channels', 'live']);
     for (const x of d.steps) {
@@ -283,7 +288,7 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     // Email, Messenger and Instagram are steps only where TORAN_CHANNELS lists them, and soon until they can connect.
     s.app.env.TORAN_CHANNELS = 'whatsapp,email,messenger';
     d = await steps(s, 21);
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'knowledge', 'test', 'channels', 'live', 'whatsapp', 'web', 'email', 'messenger', 'orders', 'auto']);
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'whatsapp', 'knowledge', 'test', 'channels', 'live', 'web', 'email', 'messenger', 'orders', 'auto']);
     assert.deepEqual([d.by.email.status, d.by.email.href], ['soon', null], 'no mail provider here');
     assert.deepEqual([d.by.messenger.status, d.by.messenger.href], ['todo', `${BASE}/lead/${id}/messenger`], 'the Meta app is set up and PUBLIC_BASE_URL is https');
     assert.equal(d.by.email.required || d.by.messenger.required, false);
@@ -325,6 +330,19 @@ test('a site is proven the workspace\'s before it is read or a lead moves: a TXT
     assert.ok(page.includes(`&lt;meta name=&quot;toran-verify&quot; content=&quot;${claim.token}&quot;&gt;`), 'the meta tag');
     const st = await steps(s, 21);
     assert.deepEqual([st.by.store.status, st.by.store.href], ['attention', `${BASE}/start`]);
+    // Waiting for the proof, the business's WhatsApp is already reachable: its guide, which opens the proof first. No
+    // store row exists for the site yet (PRA-SEC-003), so nothing is connected or read before the proof.
+    Object.assign(s.app.env, ZERNIO_ENV);
+    const waiting = await steps(s, 21);
+    assert.deepEqual([waiting.by.whatsapp.status, waiting.by.whatsapp.href], ['todo', `${BASE}/whatsapp`]);
+    assert.match(waiting.by.whatsapp.detail, /מיד אחרי שמאמתים את האתר/);
+    const guide = await (await s.get('/whatsapp')).text();
+    assert.match(guide, /החיבור נפתח מיד אחרי שמאמתים את האתר[^]*<a class="btn sm primary" href="\/start">[^]*לאמת את האתר/);
+    assert.match(guide, /מחברים את הוואטסאפ של העסק[^]*מה צריך לפני[^]*מאשרים בטלפון/);
+    assert.doesNotMatch(guide, /coexistence|WABA|phone number id|תבניות/i);
+    const today = await (await s.get('/')).text();
+    assert.match(today, /<section class="panel setupbox mt16" id="setup">[^]*<a href="\/whatsapp">[^]*מחברים את הוואטסאפ של העסק/, 'Today lists every step, WhatsApp linked');
+    for (const k of Object.keys(ZERNIO_ENV)) delete s.app.env[k];
     // Nothing there yet: refused, and the page says it looked.
     const was = proofDeps.resolveTxt;
     proofDeps.resolveTxt = async () => [['v=spf1 -all']];
@@ -342,6 +360,15 @@ test('a site is proven the workspace\'s before it is read or a lead moves: a TXT
     assert.equal(yes.headers.get('location'), '/');
     assert.equal((await s.app.db.one<any>('SELECT how FROM domain_claims WHERE id = $1', [claim.id])).how, 'meta');
     assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, 21, 'proven: the lead is theirs');
+    // Proven: the button is open at once, while the site is still being read, and /whatsapp is the store's page.
+    Object.assign(s.app.env, ZERNIO_ENV);
+    const proven = await steps(s, 21);
+    assert.equal(proven.steps[1].key, 'whatsapp');
+    assert.deepEqual([proven.by.whatsapp.status, proven.by.whatsapp.href], ['todo', `${BASE}/lead/${lead}/whatsapp`]);
+    assert.equal((await s.get('/whatsapp')).headers.get('location'), `/lead/${lead}/whatsapp`);
+    const wa = await (await s.get(`/lead/${lead}/whatsapp`)).text();
+    assert.match(wa, /action="\/lead\/\d+\/whatsapp\/zernio\/start"[^]*לחבר את הוואטסאפ של העסק/);
+    for (const k of Object.keys(ZERNIO_ENV)) delete s.app.env[k];
     s.app.fetcher = fetcher;
     proofDeps.resolveTxt = was;
 

@@ -115,7 +115,7 @@ test('connecting through Kapso: one customer per store, a setup link with coexis
   try {
     const res = await s.get(`/lead/${a}/whatsapp`);
     const html = await res.text();
-    assert.match(html, /עמוד החיבור של Kapso/);
+    assert.match(html, /של Kapso, השירות שמחבר את הוואטסאפ לתורן/);
     assert.match(html, new RegExp(`action="/lead/${a}/whatsapp/kapso/start"`));
     assert.ok(!html.includes('wa-connect.js'), 'no Meta SDK on a Kapso page');
     assert.match(String(res.headers.get('content-security-policy')), /form-action 'self' https:\/\/app\.kapso\.ai/);

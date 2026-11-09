@@ -63,3 +63,24 @@ test('the web chat\'s first opening on the store\'s own site is kept; a page els
     await s.close();
   }
 });
+
+test('with WhatsApp open on this server, the one main button on Today is "לחבר את הוואטסאפ של העסק", and Settings has it on the channel\'s line', async () => {
+  // The owner, 2026-11-09: "i dont see a place where to connect the whatsapp number. copy the setup process from teder".
+  const s = await serve();
+  try {
+    Object.assign(s.app.env, { PUBLIC_BASE_URL: 'https://toran.example', TORAN_WA_PROVIDER: 'zernio', ZERNIO_API_KEY: 'sk_zernio_test_key', ZERNIO_WEBHOOK_SECRET: 'zernio-webhook-secret-0123456789' });
+    const id = s.seeded.storeId;
+    await s.app.db.query('UPDATE stores SET workspace_id = 6 WHERE id = $1', [id]);
+    await s.app.db.query('DELETE FROM channel_accounts WHERE store_id = $1', [id]);
+    s.as(s.accounts.session(customer(6)).cookie);
+    const page = await (await s.get('/')).text();
+    assert.match(page, /<b>מחברים את הוואטסאפ של העסק<\/b>/);
+    assert.match(page, new RegExp(`<a class="btn primary" href="/lead/${id}/whatsapp">[^]*לחבר את הוואטסאפ של העסק</a>`));
+    assert.equal((page.match(/class="btn primary"/g) || []).length, 1, 'one main button');
+    const settings = await (await s.get('/settings')).text();
+    assert.match(settings, new RegExp(`<dt>וואטסאפ</dt><dd><a class="btn sm" href="/lead/${id}/whatsapp">[^]*לחבר את הוואטסאפ של העסק`));
+    assert.doesNotMatch(settings, /עם הקוד/, 'no demo code on the line');
+  } finally {
+    await s.close();
+  }
+});

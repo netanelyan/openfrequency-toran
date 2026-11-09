@@ -274,7 +274,7 @@ test('disconnecting: Meta stops sending, the token is gone, and a message to the
     assert.equal(g.calls.filter((c) => c.path === `${PHONE_ID}/messages`).length, sends);
     assert.equal(s.app.wa.outbox!.filter((m) => m.to === CUSTOMER).length, 0, 'nor through the demo number');
     assert.ok(await s.app.db.one("SELECT 1 FROM events WHERE kind = 'wa_unknown_account'"));
-    assert.match(await (await s.get(`/lead/${a}/whatsapp`)).text(), /לחבר את הוואטסאפ של החנות/, 'it can be connected again');
+    assert.match(await (await s.get(`/lead/${a}/whatsapp`)).text(), /לחבר את הוואטסאפ של העסק/, 'it can be connected again');
   } finally {
     await s.close();
   }

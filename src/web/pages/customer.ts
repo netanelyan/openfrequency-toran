@@ -121,8 +121,14 @@ async function setupPage(app: App, r: DashReq, title: string, active: string) {
     : st?.status === 'attention'
       ? `<div class="empty">${icon('alert')}<b>לא הצלחנו לקרוא את האתר</b>כדאי לבדוק שהכתובת נכונה ולנסות שוב. אם זה חוזר, כתבו לנו.${actions(mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('refresh')}לנסות שוב</a>` : '')}</div>`
       : `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>${add ? 'כותבים את הכתובת של האתר, ותורן קורא ממנו את המוצרים ואת דפי המדיניות. אחר כך תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.' : 'כשהחנות תתחבר, תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.'}${actions(add)}</div>`;
+  // Every step below the box, as Teder's checklist and accounts' /setup show them: the box has the one main button, and
+  // the business's WhatsApp is reachable from here before the store exists (the owner, 2026-11-09: "i dont see a place
+  // where to connect the whatsapp number. copy the setup process from teder"). Only on Today, the owner's own.
+  const ws = Number(r.scope.workspaceId);
+  const steps = active === 'today' && mayStart(r) ? (await setupOf(app, ws)).steps : [];
+  const list = steps.length ? `<section class="panel setupbox mt16" id="setup"><header><h2>מה נשאר</h2></header><div class="list">${steps.map(stepItem).join('')}</div></section>` : '';
   return layout({ ...r.ctx, title, active }, `<div class="head"><h1>${esc(title)}</h1></div>
-${box}`);
+${box}${list}`);
 }
 
 /** On Today while the store's site is read for the first time, or cannot be: a banner above the rest. */
@@ -142,27 +148,38 @@ const STEP_MARK: Record<Step['status'], [string, string]> = { done: ['check', 'o
 /** The step to do now: the first required one not done, else the first optional one that can be done. */
 export function nextStep(st: Setup): Step | null {
   const open = (x: Step) => x.status !== 'done' && x.status !== 'soon' && x.href;
-  return st.steps.find((x) => x.required && open(x)) || st.steps.find((x) => open(x) && x.status !== 'working') || null;
+  const next = st.steps.find((x) => x.required && open(x)) || st.steps.find((x) => open(x) && x.status !== 'working') || null;
+  // "מחברים ערוץ אחד לפחות" with nothing connected yet: the one button is the business's WhatsApp, where most start
+  // (the owner, 2026-11-09: "i dont see a place where to connect the whatsapp number"); the other channels are in the list.
+  const wa = st.steps.find((x) => x.key === 'whatsapp');
+  if (next?.key === 'channels' && next.status === 'todo' && wa?.status === 'todo' && wa.href) return wa;
+  return next;
 }
+
+/** The main button's words for a step: the step's own action where it has one, else "להמשיך". */
+const STEP_BUTTON: Record<string, string> = { whatsapp: 'לחבר את הוואטסאפ של העסק' };
 
 /**
  * On Today until setup is done: how many steps are done, the next one as the one button, the rest folded, and the way
  * to accounts' checklist. Nothing once every required step is done (the store answers on a channel).
  */
+const rel = (href: string | null) => (href ? href.replace(/^https?:\/\/[^/]+/, '') || '/' : null);
+/** One step as a row: done checked, the others linked to where they are done when they can be. */
+const stepItem = (x: Step) => {
+  const [ic, cls] = STEP_MARK[x.status];
+  const href = rel(x.href);
+  const label = `<span class="ico ${cls}">${icon(ic)}</span><span class="t"><b>${esc(x.title)}</b>${x.detail ? `<small>${esc(x.detail)}</small>` : ''}</span>`;
+  return href && x.status !== 'done' ? `<a href="${esc(href)}">${label}</a>` : `<div class="li">${label}</div>`;
+};
+
 function setupBlock(app: App, st: Setup | null): string {
   if (!st || st.ready) return '';
   const counted = st.steps.filter((x) => x.status !== 'soon');
   const done = counted.filter((x) => x.status === 'done').length;
   const next = nextStep(st);
-  const rel = (href: string | null) => (href ? href.replace(/^https?:\/\/[^/]+/, '') || '/' : null);
-  const item = (x: Step) => {
-    const [ic, cls] = STEP_MARK[x.status];
-    const href = rel(x.href);
-    const label = `<span class="ico ${cls}">${icon(ic)}</span><span class="t"><b>${esc(x.title)}</b>${x.detail ? `<small>${esc(x.detail)}</small>` : ''}</span>`;
-    return href && x.status !== 'done' ? `<a href="${esc(href)}">${label}</a>` : `<div class="li">${label}</div>`;
-  };
+  const item = stepItem;
   return `<section class="panel setupbox" id="setup"><header><h2>מה נשאר</h2><span class="end chip">${done} מתוך ${counted.length}</span></header>
-  ${next ? `<p class="m0"><b>${esc(next.title)}</b>${next.detail ? `<br><span class="muted">${esc(next.detail)}</span>` : ''}</p><p class="mt12 m0"><a class="btn primary" href="${esc(rel(next.href)!)}">${icon('chev')}להמשיך</a></p>` : ''}
+  ${next ? `<p class="m0"><b>${esc(next.title)}</b>${next.detail ? `<br><span class="muted">${esc(next.detail)}</span>` : ''}</p><p class="mt12 m0"><a class="btn primary" href="${esc(rel(next.href)!)}">${STEP_BUTTON[next.key] ? `${icon('chat')}${STEP_BUTTON[next.key]}` : `${icon('chev')}להמשיך`}</a></p>` : ''}
   <details class="mt12"><summary class="small">כל הצעדים</summary><div class="list mt8">${st.steps.map(item).join('')}</div><p class="small muted mt8 m0">אותם צעדים, עם תדר אם יש לכם, בדף <a href="${esc(accountsLinks(app.env).setup)}">ההקמה בחשבון</a>.</p></details>
 </section>`;
 }
@@ -231,13 +248,13 @@ async function pushPanel(app: App, r: DashReq): Promise<string> {
 }
 
 /** Talking to their own Toran on our demo number, before customers do: tagged demo, never counted (channels/demo.ts). */
-function tryCard(app: App, s: Store, short = false): string {
+function tryCard(app: App, s: Store, short = false, main = !short): string {
   if (!s.demo_code || s.taken_down_at) return '';
   const href = waLink(app.env, s.demo_code, s.name);
   if (!href) return '';
   return `<section class="panel" id="try"><header><h2>לנסות את תורן</h2></header>
-  <p class="m0">${short ? 'שואלים שאלה של לקוח, ורואים מה תורן עונה.' : `שואלים את תורן בוואטסאפ מה שלקוח של ${esc(s.name)} היה שואל: מחיר, משלוח, אם משהו במלאי. הכפתור פותח שיחה עם הקוד של החנות כבר כתוב בה, ושולחים אותו כמו שהוא.`}</p>
-  <p class="mt12 m0"><a class="btn${short ? '' : ' primary'}" href="${esc(href)}" target="_blank" rel="noopener">${icon('chat')}לשאול את תורן בוואטסאפ</a></p>
+  <p class="m0">${short ? 'שואלים שאלה של לקוח, ורואים מה תורן עונה.' : `שואלים את תורן בוואטסאפ מה שלקוח של ${esc(s.name)} היה שואל: מחיר, משלוח, אם משהו במלאי. הכפתור פותח שיחה שבה ההודעה הראשונה כבר כתובה, ושולחים אותה כמו שהיא.`}</p>
+  <p class="mt12 m0"><a class="btn${main ? ' primary' : ''}" href="${esc(href)}" target="_blank" rel="noopener">${icon('chat')}לשאול את תורן בוואטסאפ</a></p>
   <p class="small muted mt8 m0">השיחה מסומנת דמו ולא נספרת בחבילה.</p>
 </section>`;
 }
@@ -290,7 +307,7 @@ async function today(app: App, r: DashReq) {
 
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(dayHe(now()))}${many ? '' : ` · ${esc(stores[0].name)}`}</p></div>
 ${reading}${reconnect}${recap}
-${goLive}${live ? '' : `${goLive ? '' : notLive}${setupBlock(app, setup)}${many ? '' : tryCard(app, stores[0])}`}
+${goLive}${live ? '' : `${goLive ? '' : notLive}${setupBlock(app, setup)}${many ? '' : tryCard(app, stores[0], false, !setupBlock(app, setup) && !goLive)}`}
 ${live && weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
 ${live ? `<div class="kpis">
   <a class="kpi lead" href="/chats?state=waiting"><span class="l">${waitingAll === 1 ? 'שאלה מחכה לכם' : 'שאלות מחכות לכם'}</span><span class="v">${waitingAll}</span><span class="s">${waitingAll ? 'מה שאין עליו תשובה באתר, ותורן העביר אליכם' : 'כל מה שנשאל קיבל תשובה'}</span></a>
@@ -475,7 +492,7 @@ export async function customerSettings(app: App, r: DashReq) {
   }));
   const body = `<div class="head"><h1>הגדרות</h1></div>
 <div class="cols">
-  <div class="grid12">${panels.join('') || `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>הערוצים יופיעו כאן כשהחנות תתחבר.${mayStart(r) ? `<p class="mt12 m0"><a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a></p>` : ''}</div>`}</div>
+  <div class="grid12">${panels.join('') || `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>הערוצים נפתחים כאן מיד אחרי שהאתר מאומת. את הוואטסאפ של העסק אפשר כבר להכין.${mayStart(r) ? `<p class="row mt12 m0"><a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a><a class="btn sm" href="/whatsapp">${icon('chat')}הוואטסאפ של העסק</a></p>` : ''}</div>`}</div>
   <div class="grid12">
     <section class="panel"><header><h2>החשבון</h2></header><p class="small m0">מי בחשבון, מספרי הוואטסאפ שמהם כותבים לעוזר, החבילה והחשבוניות נמצאים בחשבון שלכם ב-OpenFrequency.</p><div class="row mt12"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></section>
 ${r.ctx.readOnly ? '' : await pushPanel(app, r)}

@@ -28,20 +28,27 @@ import { mailState } from './web/pages/mailSetup.ts';
 // From this machine only, with OF_INTERNAL_TOKEN and no X-Forwarded-For (ops/api.ts internalRefusal: 401 bad_token, 503 not_configured, 403 forbidden, as accounts' contract says).
 //
 // The steps are about the workspace's store, its first one (a workspace has one for now), in this order:
-//   store      required  the site read (pages/start.ts adds it): none yet, being read, read, or a site Toran cannot read
+//   store      required  the site read (pages/start.ts adds it): none yet, waiting for the proof that the site is the
+//                        workspace's, being read, read, or a site Toran cannot read
+//   whatsapp             the business's own number (the owner, 2026-11-09: "i dont see a place where to connect the
+//                        whatsapp number. copy the setup process from teder"): second, and never without a link. Before
+//                        the store exists it opens /whatsapp, what to have ready and the proof to do first; once the
+//                        store exists it opens the store's WhatsApp page at once, while the site is still being read
+//                        (as Teder's connect step, "אפשר לחבר כבר עכשיו, עוד לפני שהחשבון מוכן"). Through Zernio,
+//                        Kapso or our own Meta app, as TORAN_WA_PROVIDER says (kapso.ts waProvider); "soon" only while
+//                        that provider is not set up on this server (kapso.ts storeConnectReady).
 //   knowledge            "בודקים את התשובות": the owner opened what Toran knows (stores.knowledge_seen_at) or wrote an answer
 //   test                 "מנסים את תורן": the owner chatted with their own Toran on our demo number (a demo_bound event)
 //   channels   required  any one channel answers customers: WhatsApp, the web chat (once it opened on the store's site),
 //                        email, Instagram or Messenger (the owner, 2026-11-08: Toran ready for customers like Teder,
-//                        whose "connect" step takes any one platform). Each channel is then a step of its own:
-//   whatsapp             the store's own number; "soon" while this server cannot connect one (kapso.ts storeConnectReady: Meta, or Kapso with TORAN_WA_PROVIDER=kapso)
+//                        whose "connect" step takes any one platform). Each other channel is then a step of its own:
 //   web                  the chat on the store's site: done the first time it opens on one of the store's pages (widget.ts)
 //   email                only where TORAN_CHANNELS lists it; "soon" without a mail provider here
 //   messenger, instagram only where TORAN_CHANNELS lists them; "soon" until dmConnectReady (zernio.ts: Zernio or our Meta app)
 //   orders               the read-only order key; "soon" on a platform whose orders Toran does not read yet
 //   auto                 the automatic messages: done once any kind is on
-// Until the store exists, every step after it is todo, with no link, "אחרי שהחנות מוכנה". A workspace Toran has
-// never heard of is a brand-new one, and answers the same way: nothing is an error here.
+// Until the store exists, every step after it but WhatsApp is todo, with no link, "אחרי שהחנות מוכנה". A workspace
+// Toran has never heard of is a brand-new one, and answers the same way: nothing is an error here.
 //
 // Nothing here is new tracking: every state is read from what the pages already keep (jobs, channel_accounts,
 // order_access, auto_settings), except the one marker above.
@@ -51,6 +58,8 @@ export type Step = { key: string; title: string; status: StepStatus; detail: str
 export type Setup = { product: 'toran'; ready: boolean; steps: Step[] };
 
 const AFTER_STORE = 'אחרי שהחנות מוכנה';
+/** The WhatsApp step's title, as Teder's "מחברים את ...". */
+export const WA_TITLE = 'מחברים את הוואטסאפ של העסק';
 const LIVE = ['queued', 'running'];
 
 export type SetupStore = { id: number; domain: string; platform: string; ingested_at: string | null; knowledge_seen_at: string | null };
@@ -106,6 +115,27 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     steps.push({ key, title, required, ...(s ? await fn(s) : { status: 'todo' as const, detail: AFTER_STORE, href: null }) });
   };
 
+  // The business's WhatsApp, second and always with a link (see the list above). Before the store exists: /whatsapp,
+  // which says what to have ready and opens the proof first; it is never 'soon' for a store still being set up unless
+  // this server cannot connect any number.
+  const waReady = storeConnectReady(app.env);
+  if (!s) {
+    steps.push({ key: 'whatsapp', title: WA_TITLE, required: false, ...(waReady
+      ? { status: 'todo' as const, detail: found.claim ? 'אפשר לחבר מיד אחרי שמאמתים את האתר. בינתיים אפשר לראות מה צריך להכין.' : 'אפשר לחבר מיד אחרי שמוסיפים את החנות. בינתיים אפשר לראות מה צריך להכין.', href: at('/whatsapp') }
+      : { status: 'soon' as const, detail: 'החיבור של הוואטסאפ עוד לא פתוח אצלנו.', href: null }) });
+  } else {
+    await step('whatsapp', WA_TITLE, false, async (s) => {
+      const href = at(`/lead/${s.id}/whatsapp`);
+      const a = await waAccountOf(app, s.id);
+      if (a?.status === 'active') return { status: 'done', detail: '', href };
+      if (a?.status === 'pending') return { status: 'working', detail: 'המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.', href };
+      if (a?.status === 'reconnect') return { status: 'attention', detail: 'החיבור הסתיים. צריך לחבר את המספר מחדש.', href };
+      if (a?.status === 'error') return { status: 'attention', detail: 'Meta עצרה את המספר. כתבו לנו ונבדוק יחד.', href };
+      if (!waReady) return { status: 'soon', detail: 'החיבור של הוואטסאפ עוד לא פתוח אצלנו.', href: null };
+      return { status: 'todo', detail: s.ingested_at ? 'תורן עונה במספר שכבר יש לעסק, והוואטסאפ בטלפון ממשיך לעבוד.' : 'אפשר לחבר כבר עכשיו, עוד לפני שתורן סיים לקרוא את האתר. הוואטסאפ בטלפון ממשיך לעבוד.', href };
+    });
+  }
+
   await step('knowledge', 'בודקים את התשובות', false, async (s) => {
     const href = at(`/lead/${s.id}/knowledge`);
     if (!s.ingested_at) return { status: 'todo', detail: 'אחרי שהאתר נקרא', href };
@@ -136,7 +166,7 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     if (wa?.status === 'pending') return { status: 'working', detail: 'המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.', href };
     const web = await webAccountOf(app, s.id);
     if (web?.status === 'active') return { status: 'working', detail: 'הצ׳אט מופעל, ונשאר להוסיף אותו לאתר.', href };
-    return { status: 'todo', detail: 'וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר: מתחילים מאחד, ומוסיפים אחר כך.', href };
+    return { status: 'todo', detail: 'רוב העסקים מתחילים מהוואטסאפ. אפשר גם צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר, ולהוסיף עוד אחר כך.', href };
   });
 
   // One press, as Teder's "להעלות לאוויר" (golive.ts; TORAN-READINESS.md P1-7): until then a message on the store's own
@@ -149,16 +179,6 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     return { status: 'todo', detail: 'לחיצה אחת, ומהרגע הזה תורן עונה ללקוחות בערוצים המחוברים. עד אז הודעות מחכות לכם בשיחות.', href };
   });
 
-  await step('whatsapp', 'מחברים את הוואטסאפ', false, async (s) => {
-    const href = at(`/lead/${s.id}/whatsapp`);
-    const a = await waAccountOf(app, s.id);
-    if (a?.status === 'active') return { status: 'done', detail: '', href };
-    if (a?.status === 'pending') return { status: 'working', detail: 'המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.', href };
-    if (a?.status === 'reconnect') return { status: 'attention', detail: 'החיבור הסתיים. צריך לחבר את המספר מחדש.', href };
-    if (a?.status === 'error') return { status: 'attention', detail: 'Meta עצרה את המספר. כתבו לנו ונבדוק יחד.', href };
-    if (!storeConnectReady(app.env)) return { status: 'soon', detail: 'החיבור של מספר החנות עוד לא פתוח.', href: null };
-    return { status: 'todo', detail: 'מחברים את המספר של החנות, והוואטסאפ בטלפון ממשיך לעבוד.', href };
-  });
 
   await step('web', 'מוסיפים צ׳אט לאתר', false, async (s) => {
     const href = at('/settings#webchat');
