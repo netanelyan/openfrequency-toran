@@ -63,7 +63,7 @@ export class DuplicateTurn extends Error {
 // channel names where the reply goes (absent: the WhatsApp demo); context is a line from the app for this turn only
 // (the files an email carried), shown to the model and never stored as the customer's words. demo overrides what the
 // channel implies (isDemoTurn).
-export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; channel?: string; context?: string; demo?: boolean };
+export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; footerText?: string; channel?: string; context?: string; demo?: boolean };
 export type ToolRecord = { name: string; input: unknown; ok: boolean; result: string };
 export type TurnOutput = { reply: string; rawReply: string; tools: ToolRecord[]; redactions: Redaction[]; handoff: { reason: string; summary: string } | null; miss: boolean; rounds: number; usd: number; apiUsd: number; tokens: { in: number; out: number; cacheRead: number; cacheWrite: number }; agentMessageId: number | null };
 
@@ -281,7 +281,8 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const miss = g.redactions.length > 0 || handoff?.reason === 'unknown';
   const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
   const said = opening ? `${botLine(opening, botName(store), storeName, english)}\n\n${g.text}` : g.text;
-  const reply = input.footer === false ? said : `${said}\n\n${DEMO_FOOTER}`;
+  // footerText: the demo's own line with its count (channels/demo.ts, "דמו של תורן (3/10)").
+  const reply = input.footer === false ? said : `${said}\n\n${input.footerText || DEMO_FOOTER}`;
 
   let agentMessageId: number | null = null;
   await db.tx(async (t) => {

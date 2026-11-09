@@ -221,7 +221,7 @@ test('our one number: a demo ends back into our support, when the person writes 
     await s.write('DEMO-K7MQ', CUSTOMER);
     const asked = await s.write('תמיכה', CUSTOMER);
     assert.equal(asked.action, 'demo_ended');
-    assert.match(s.to(CUSTOMER).at(-1)!.body.text.body, /^סגרנו את הדמו\. מעכשיו עונה לכם כאן התמיכה של OpenFrequency/);
+    assert.match(s.to(CUSTOMER).at(-1)!.body.text.body, /^סגרנו את הדמו\. מעכשיו עונה לכם כאן תורן של OpenFrequency/);
     assert.ok(!(await s.app.db.one('SELECT 1 FROM wa_users WHERE phone = $1', [CUSTOMER])));
     const next = await s.write('כמה זה עולה?', CUSTOMER);
     assert.deepEqual([next.storeId, next.reply], [s.support, OPENED]);
@@ -235,7 +235,7 @@ test('our one number: a demo ends back into our support, when the person writes 
     const late = await s.write('כמה זה עולה?', STRANGER);
     assert.deepEqual([late.action, late.storeId], ['demo_ended', s.support]);
     const two = s.to(STRANGER).slice(before).map((c) => c.body.text.body);
-    assert.match(two[0], /^עברו 7 ימים מאז שהדמו התחיל, אז סגרנו אותו\. מעכשיו עונה לכם כאן התמיכה/);
+    assert.match(two[0], /^עברו 7 ימים מאז שהדמו התחיל, אז סגרנו אותו. מעכשיו עונה לכם כאן תורן של OpenFrequency/);
     assert.equal(two[1], OPENED);
     assert.ok(!(await s.app.db.one('SELECT 1 FROM wa_users WHERE phone = $1', [STRANGER])));
 
@@ -279,6 +279,30 @@ test('the company store\'s WhatsApp page says what our number does, in order; a 
     assert.match(html, /זה המספר שלנו: תורן עונה בו לבעלי העסקים, לדמו ולתמיכה/);
     const shop = await (await s.get(`/lead/${s.seeded.storeId}/whatsapp`)).text();
     assert.doesNotMatch(shop, /מה המספר הזה עושה/);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a demo is 10 answers: each footer counts it, "סיום" leaves early, and after the tenth our support answers (the owner, 2026-11-09)', async () => {
+  const s = await setup();
+  try {
+    await connectOurs(s.app, s.support);
+    await s.write('DEMO-K7MQ', CUSTOMER);
+    assert.match(s.to(CUSTOMER).at(-1)!.body.text.body, /בדמו יש 10 הודעות, ואם רוצים לדבר איתנו ב-OpenFrequency כותבים "סיום"/, 'the welcome says the count and the way out');
+    for (let i = 1; i <= 9; i++) {
+      const r = await s.write(`שאלה ${i}`, CUSTOMER);
+      assert.match(r.reply!, new RegExp(`_דמו של תורן \\(${i}/10\\)_$`), `answer ${i} counted`);
+    }
+    const tenth = await s.write('שאלה 10', CUSTOMER);
+    assert.match(tenth.reply!, /_דמו של תורן \(10\/10\)_\n\nזו הייתה ההודעה האחרונה בדמו\. מעכשיו עונה לכם כאן תורן של OpenFrequency/);
+    assert.ok(!(await s.app.db.one('SELECT 1 FROM wa_users WHERE phone = $1', [CUSTOMER])), 'the demo ended');
+    const after = await s.write('כמה זה עולה?', CUSTOMER);
+    assert.equal(after.storeId, s.support, 'our support answers from here');
+    // A new code starts from 1 again, and "סיום" leaves before the tenth.
+    await s.write('DEMO-K7MQ', CUSTOMER);
+    assert.match((await s.write('שאלה', CUSTOMER)).reply!, /\(1\/10\)_$/);
+    assert.equal((await s.write('סיום', CUSTOMER)).action, 'demo_ended');
   } finally {
     await s.close();
   }
