@@ -2,6 +2,8 @@ import type { App } from '../../app.ts';
 import { secretsReady } from '../../core/secrets.ts';
 import { connectOrders, disconnectOrders, OrderConnectError, orderAccessOf, ordersPlatform, type AccessRow, type OrderPlatform } from '../../orders.ts';
 import { dropSource } from '../../auto/platforms.ts';
+import { audit } from '../../db/log.ts';
+import { cleanTrackingPage, PAGE_MAX, TrackingPageError } from '../../tracking.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, postButton, shortDate } from '../ui.ts';
 
@@ -50,6 +52,19 @@ const oldShopifyApp = (r: DashReq, id: number) => `<details class="mt12"><summar
 <ol class="m0 mt8"><li>בניהול של Shopify נכנסים להגדרות, ל"אפליקציות וערוצי מכירה" ול"פיתוח אפליקציות", ופותחים את האפליקציה.</li><li>מוודאים שבהרשאות של Admin API מסומן read_orders, ומעתיקים את ה-Admin API access token.</li></ol>
 <form method="post" action="/lead/${id}/orders" class="mt8">${csrfField(r.ctx)}${field('token', 'Admin API access token', { placeholder: 'shpat_...' })}${field('shop', 'הכתובת של החנות ב-myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false })}<button class="btn sm mt12" type="submit">${icon('check')}לחבר עם הטוקן</button></form></details>`;
 
+/**
+ * The store's own tracking page (src/tracking.ts; the owner, 2026-11-09: "or the website's own tracking"), folded under
+ * the connected orders: Toran gives it instead of the carrier's link, with {number} and {order} filled in. Shown once
+ * the orders are connected, since only then does Toran tell a shipment; the account's owner sets it, a member sees it.
+ */
+async function trackingPageBox(app: App, r: DashReq, id: number, may: boolean): Promise<string> {
+  const page = (await app.db.one<{ tracking_page: string | null }>('SELECT tracking_page FROM stores WHERE id = $1', [id]))?.tracking_page || '';
+  if (!may) return page ? `<p class="small muted mt12 m0">דף המעקב שתורן שולח: <bdi class="ltr">${esc(page)}</bdi></p>` : '';
+  return `<details class="mt12" id="tracking-page"${page ? ' open' : ''}><summary class="small">יש לכם באתר דף למעקב אחרי משלוח?</summary>
+<p class="small muted mt8 m0">מדביקים כאן את הכתובת שלו, ותורן ישלח ללקוח אותה במקום הלינק של חברת המשלוחים. אם הדף צריך את מספר המעקב, כותבים במקומו {number}. את מספר ההזמנה כותבים {order}.</p>
+<form method="post" action="/lead/${id}/tracking-page" class="mt8">${csrfField(r.ctx)}<label class="f">הכתובת של דף המעקב<small>למשל https://my-store.co.il/track?n={number}. משאירים ריק, ותורן ישלח את הלינק שבהזמנה.</small><input type="url" name="tracking_page" value="${esc(page)}" dir="ltr" autocomplete="off" spellcheck="false" maxlength="${PAGE_MAX}" placeholder="https://"></label><button class="btn sm mt12" type="submit">לשמור</button></form></details>`;
+}
+
 /** Whether this store's orders are connected and working: what the knowledge page's lists say Toran answers. */
 export const ordersOn = (a: AccessRow | null) => a?.status === 'active';
 
@@ -61,6 +76,7 @@ export async function ordersPanel(app: App, r: DashReq, s: { id: number; platfor
   const head = `<section class="panel" id="orders"><header><h2>שאלות על הזמנות</h2>${a ? `<span class="end chip ${ordersOn(a) ? 'ok' : 'warn'}">${ordersOn(a) ? 'מחובר' : 'המפתח לא עובד'}</span>` : ''}</header>`;
   if (a && ordersOn(a)) {
     return `${head}<p class="m0">מחובר ל-${name} מ-${esc(shortDate(a.connected_at))}${a.meta?.hint ? `, עם המפתח שנגמר ב-<bdi class="ltr">${esc(a.meta.hint)}</bdi>` : ''}. כשלקוח שואל איפה ההזמנה שלו, תורן מבקש את מספר ההזמנה, בודק ועונה לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. מי שלא כותב מהטלפון שההזמנה נעשתה ממנו מתבקש קודם את המספר הזה. כל השאר מגיע אליכם.</p>
+  ${await trackingPageBox(app, r, s.id, may)}
   ${may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/orders/off`, 'לנתק', { cls: 'btn sm danger', confirm: 'לנתק? שאלות על הזמנות יגיעו שוב אליכם. כדאי למחוק את המפתח גם ב-' + name + '.' })}</div>` : ''}</section>`;
   }
   const broken = a ? `<div class="banner warn">${icon('alert')}<div><p>${name} הפסיק לקבל את המפתח, אז שאלות על הזמנות מגיעות שוב אליכם. אפשר להדביק כאן מפתח חדש.</p></div></div>` : '';
@@ -92,6 +108,22 @@ export function ordersRoutes(app: App): Route<DashReq>[] {
         throw e;
       }
       return { redirect: `/lead/${id}/knowledge#orders`, message: 'ההזמנות מחוברות. מעכשיו תורן עונה לבד על שאלות כמו "איפה ההזמנה שלי".' };
+    }],
+    // The store's own tracking page: an https address, or empty to go back to the order's link. The server already
+    // checked the store is this workspace's.
+    ['POST', /^\/lead\/(\d+)\/tracking-page$/, async (r, m) => {
+      owner(r);
+      const id = Number(m[1]);
+      let page: string | null;
+      try {
+        page = cleanTrackingPage(String(r.form.tracking_page || ''));
+      } catch (e) {
+        if (e instanceof TrackingPageError) throw new ActionError(e.he);
+        throw e;
+      }
+      await app.db.query('UPDATE stores SET tracking_page = $2, updated_at = now() WHERE id = $1', [id, page]);
+      await audit(app.db, { actor: r.user.name, action: 'tracking_page', storeId: id, detail: { page } });
+      return { redirect: `/lead/${id}/knowledge#orders`, message: page ? 'מעכשיו תורן שולח ללקוחות את דף המעקב שלכם.' : 'דף המעקב נמחק. תורן ישלח את הלינק שבהזמנה.' };
     }],
     ['POST', /^\/lead\/(\d+)\/orders\/off$/, async (r, m) => {
       owner(r);

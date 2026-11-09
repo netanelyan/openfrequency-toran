@@ -36,6 +36,7 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   'POST ^\\/lead\\/(\\d+)\\/mail-domain\\/check$': (i) => `/lead/${i.b}/mail-domain/check`,
   'POST ^\\/lead\\/(\\d+)\\/orders$': (i) => `/lead/${i.b}/orders`,
   'POST ^\\/lead\\/(\\d+)\\/orders\\/off$': (i) => `/lead/${i.b}/orders/off`,
+  'POST ^\\/lead\\/(\\d+)\\/tracking-page$': (i) => `/lead/${i.b}/tracking-page`,
   // The chat on B's site and B's reviews (pages/webchat.ts): A turns nothing on and shows nothing.
   'POST ^\\/lead\\/(\\d+)\\/web$': (i) => `/lead/${i.b}/web`,
   'POST ^\\/lead\\/(\\d+)\\/reviews\\/(\\d+)$': (i) => `/lead/${i.b}/reviews/1`,

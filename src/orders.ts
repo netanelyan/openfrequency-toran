@@ -64,12 +64,12 @@ const str = (v: unknown) => (v == null ? '' : String(v).trim());
 
 type Method = 'GET' | 'POST' | 'DELETE';
 
-async function call(api: Api, url: string, { method = 'GET', headers = {}, body }: { method?: Method; headers?: Record<string, string>; body?: unknown } = {}): Promise<any> {
+async function call(api: Api, url: string, { method = 'GET', headers = {}, body, timeout = 15_000 }: { method?: Method; headers?: Record<string, string>; body?: unknown; timeout?: number } = {}): Promise<any> {
   const res = await api(url, {
     method,
     headers: { accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
     ...(body ? { body: JSON.stringify(body) } : {}),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(timeout),
   });
   const data: any = await res.json().catch(() => null);
   if (!res.ok) throw new OrderApiError(`${new URL(url).host} answered ${res.status}${data?.message ? `: ${str(data.message).slice(0, 160)}` : ''}`, res.status);
@@ -137,7 +137,7 @@ export function shopifyOrder(o: any): Order {
     status: SHOPIFY_SHIPMENT[str(f.shipment_status)] || null,
     company: str(f.tracking_company) || null,
     number: str(f.tracking_number || f.tracking_numbers?.[0]) || null,
-    url: str(f.tracking_url || f.tracking_urls?.[0]) || null,
+    url: webLink(f.tracking_url || f.tracking_urls?.[0]),
   }));
   return {
     number: str(o?.name) || str(o?.order_number),
@@ -174,11 +174,40 @@ const WOO_STATUS: Record<string, string> = {
   'checkout-draft': 'not placed: the checkout was not finished',
 };
 
+/**
+ * The tracking a WooCommerce order carries. WooCommerce Shipment Tracking (woocommerce.com/document/shipment-tracking)
+ * and Advanced Shipment Tracking (docs.zorem.com: "the Shipping Tracking plugin stores the tracking information in the
+ * order meta with the meta key _wc_shipment_tracking_items") keep a list there: tracking_provider (a provider the
+ * store picked from the plugin's list) or custom_tracking_provider (one it typed), tracking_number, and
+ * custom_tracking_link when the store typed a link. The link of a provider from the list is built by the plugin and is
+ * not in the meta, so wooTrackingLinks asks the plugin's own REST route for it. formatted_tracking_provider,
+ * formatted_tracking_link and tracking_link are read too, where a plugin version keeps them in the meta (UNVERIFIED in
+ * the meta: documented only in the REST route's answer).
+ */
+export function wooShipments(o: any): Shipment[] {
+  const tracking = (o?.meta_data || []).find((m: any) => m?.key === '_wc_shipment_tracking_items')?.value;
+  return (Array.isArray(tracking) ? tracking : []).filter((t: any) => t && typeof t === 'object').map((t: any) => ({
+    status: null,
+    company: str(t.custom_tracking_provider || t.formatted_tracking_provider || t.tracking_provider) || null,
+    number: str(t.tracking_number) || null,
+    url: webLink(t.custom_tracking_link || t.formatted_tracking_link || t.tracking_link),
+  }));
+}
+
+/** A link from the store's data, kept only when it is an http(s) address (never javascript: or a bare word). */
+export const webLink = (v: unknown): string | null => {
+  const s = str(v);
+  if (!s) return null;
+  try {
+    return /^https?:$/.test(new URL(s).protocol) ? s : null;
+  } catch {
+    return null;
+  }
+};
+
 export function wooOrder(o: any): Order {
   const status = str(o?.status);
-  // The Shipment Tracking extension keeps its numbers on the order; a link only when the store typed one.
-  const tracking = (o?.meta_data || []).find((m: any) => m?.key === '_wc_shipment_tracking_items')?.value;
-  const shipments: Shipment[] = (Array.isArray(tracking) ? tracking : []).map((t: any) => ({ status: null, company: str(t?.custom_tracking_provider || t?.tracking_provider) || null, number: str(t?.tracking_number) || null, url: str(t?.custom_tracking_link) || null }));
+  const shipments = wooShipments(o);
   return {
     number: str(o?.number) || str(o?.id),
     placed: o?.date_created_gmt ? `${o.date_created_gmt}Z` : o?.date_created || null,
@@ -190,32 +219,53 @@ export function wooOrder(o: any): Order {
 }
 
 /** One call to the store's REST API with the owner's key (the automatic messages read orders and register webhooks with it too). */
-export async function wooCall(api: Api, origin: string, c: Creds, path: string, { method = 'GET', body }: { method?: Method; body?: unknown } = {}): Promise<any> {
-  const url = `${origin}/wp-json/wc/v3/${path}`;
+export async function wooCall(api: Api, origin: string, c: Creds, path: string, { method = 'GET', body, ns = 'wc/v3', timeout }: { method?: Method; body?: unknown; ns?: string; timeout?: number } = {}): Promise<any> {
+  const url = `${origin}/wp-json/${ns}/${path}`;
   try {
-    return await call(api, url, { method, headers: { authorization: `Basic ${Buffer.from(`${c.key}:${c.secret}`).toString('base64')}` }, body });
+    return await call(api, url, { method, headers: { authorization: `Basic ${Buffer.from(`${c.key}:${c.secret}`).toString('base64')}` }, body, timeout });
   } catch (e) {
     if (!(e instanceof OrderApiError && e.status === 401)) throw e;
     // Some hosts drop the Authorization header before WordPress sees it; WooCommerce then takes the key in the query,
     // over HTTPS only (origin is always https here).
-    return call(api, `${url}${path.includes('?') ? '&' : '?'}consumer_key=${encodeURIComponent(c.key!)}&consumer_secret=${encodeURIComponent(c.secret!)}`, { method, body });
+    return call(api, `${url}${path.includes('?') ? '&' : '?'}consumer_key=${encodeURIComponent(c.key!)}&consumer_secret=${encodeURIComponent(c.secret!)}`, { method, body, timeout });
   }
 }
 const wooGet = (api: Api, origin: string, c: Creds, path: string) => wooCall(api, origin, c, path);
+
+/**
+ * The links the tracking plugin builds for a provider picked from its list: GET wc-shipment-tracking/v3/orders/<id>/
+ * shipment-trackings answers [{tracking_id, tracking_provider, tracking_link, tracking_number, date_shipped}]
+ * (docs.zorem.com, "Shipment Tracking API", the same route as WooCommerce Shipment Tracking's). Asked only when a number
+ * on the order has no link, with a short timeout; a store without the route keeps its numbers without links.
+ */
+async function wooTrackingLinks(api: Api, origin: string, c: Creds, o: any, order: Order): Promise<Order> {
+  if (!o?.id || !order.shipments.some((s) => s.number && !s.url)) return order;
+  try {
+    const list = await wooCall(api, origin, c, `orders/${encodeURIComponent(str(o.id))}/shipment-trackings`, { ns: 'wc-shipment-tracking/v3', timeout: 4_000 });
+    const links = new Map<string, string>();
+    for (const t of Array.isArray(list) ? list : []) {
+      const link = webLink(t?.tracking_link);
+      if (str(t?.tracking_number) && link) links.set(str(t.tracking_number), link);
+    }
+    return { ...order, shipments: order.shipments.map((s) => (s.url || !s.number || !links.has(s.number) ? s : { ...s, url: links.get(s.number)! })) };
+  } catch {
+    return order;
+  }
+}
 
 async function wooFind(api: Api, origin: string, c: Creds, number: string): Promise<Order | null> {
   const n = bare(number);
   if (/^\d+$/.test(n)) {
     try {
       const o = await wooGet(api, origin, c, `orders/${n}`);
-      if (o && str(o.number || o.id) === n) return wooOrder(o);
+      if (o && str(o.number || o.id) === n) return wooTrackingLinks(api, origin, c, o, wooOrder(o));
     } catch (e) {
       if (!(e instanceof OrderApiError && e.status === 404)) throw e;
     }
   }
   const list = await wooGet(api, origin, c, `orders?search=${encodeURIComponent(n)}&per_page=10`);
   const o = (Array.isArray(list) ? list : []).find((x: any) => str(x?.number).toLowerCase() === n);
-  return o ? wooOrder(o) : null;
+  return o ? wooTrackingLinks(api, origin, c, o, wooOrder(o)) : null;
 }
 
 // ---- Wix
@@ -235,7 +285,7 @@ export function wixOrder(o: any, fulfillments: any[] = []): Order {
     status: status === 'CANCELED' ? 'cancelled' : status === 'INITIALIZED' ? 'not placed: the checkout was not finished' : [paid, sent].filter(Boolean).join(', ') || 'placed',
     emails: [o?.buyerInfo?.email, o?.billingInfo?.contactDetails?.email].map(str).filter(Boolean),
     phones: [o?.billingInfo?.contactDetails?.phone, o?.shippingInfo?.logistics?.shippingDestination?.contactDetails?.phone, o?.recipientInfo?.contactDetails?.phone].map(str).filter(Boolean),
-    shipments: fulfillments.map((f: any) => f?.trackingInfo).filter(Boolean).map((t: any) => ({ status: null, company: str(t.shippingProvider) || null, number: str(t.trackingNumber) || null, url: str(t.trackingLink) || null })),
+    shipments: fulfillments.map((f: any) => f?.trackingInfo).filter(Boolean).map((t: any) => ({ status: null, company: str(t.shippingProvider) || null, number: str(t.trackingNumber) || null, url: webLink(t.trackingLink) })),
   };
 }
 
