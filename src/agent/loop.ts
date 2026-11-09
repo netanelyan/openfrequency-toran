@@ -259,7 +259,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts, ownLinks });
   // A service has no stock: "not available yet" is about a feature, never an invented stock level.
   if (company) allow.stockKnown = true;
-  let g = guardReply(raw, allow, { company });
+  let g = guardReply(raw, allow, { company, asked: input.text });
   // The claim check's second opinion (claims.ts), off unless TORAN_GUARD_LLM is set: a borderline cut (the tools
   // mention it, not in a way code confirms) is shown to the model with the passages, at most three a reply. A "yes"
   // puts the sentence back; no answer, an error or a "no" keeps the cut.
@@ -275,7 +275,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
         app.log(`[agent] store ${store.id}: the claim check's second opinion failed, the cut stands: ${cleanLine(e?.message || e, 160)}`);
       }
     }
-    if (verified.size) g = guardReply(raw, allow, { company, verified });
+    if (verified.size) g = guardReply(raw, allow, { company, verified, asked: input.text });
   }
   if (g.needsHandoff && !handoff) handoff = { reason: g.handoffReason || 'unknown', summary: `the guard cut ${g.redactions.map((r) => r.rule).join(', ')}: ${cleanLine(input.text, 160)}` };
   const miss = g.redactions.length > 0 || handoff?.reason === 'unknown';

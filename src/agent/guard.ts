@@ -304,6 +304,26 @@ const REPLACE_COMPANY_EN = COMPANY_LINES.en;
 /** The honest line when nothing is left to say, for a store or for a company. */
 export const checkingLine = (english: boolean, company = false) => (company ? COMPANY_LINES : STORE_LINES)[english ? 'en' : 'he'].claim;
 
+// Whether the customer's own message asked about what a cut sentence was about. Only then does the cut get its honest
+// line and the conversation go to the store: a sentence the model added unasked is dropped quietly (the owner,
+// 2026-11-09, on a "מה נשמע" answered with "על המלאי אני לא בטוח, אז העברתי את השאלה לנציג": "i did not ask anything
+// about that, only asked whats up. fix!").
+const SMALL_TALK = /^[\s,.!?]*(?:(?:היי|הי|הייי|שלום|אהלן|הלו|בוקר טוב|ערב טוב|צהריים טובים|לילה טוב|מה נשמע|מה שלומך|מה שלומכם|מה קורה|מה המצב|מה העניינים|תודה רבה|תודה|סבבה|אוקיי|אוקי|יופי|מעולה|hi|hello|hey|thanks|thank you|ok|okay)[\s,.!?]*)+$/i;
+const ASKS: Record<string, RegExp> = {
+  price: new RegExp(`${CURRENCY.source}|${MONEY_WORD.source}|כמה זה|how much`, 'i'),
+  stock: new RegExp(`${STOCK.source}|(?:^|[\\s,])יש(?:\\s+(?:לכם|לך|לכן|עוד|את|במידה|בצבע|בגודל))?(?=[\\s?,.!]|$)|\\b(have|got)\\b`, 'i'),
+  delivery: new RegExp(`${DELIVERY.source}|${TIME.source}|מתי|when`, 'i'),
+  promise: /הנחה|הנחות|קופון|קוד הנחה|מבצע|החזר|זיכוי|להחזיר|discount|coupon|refund|sale/i,
+  link: /קישור|לינק|link|url|כתובת|אתר/i,
+};
+/** Whether `asked` (the customer's message) asked about a cut sentence's subject; with no message known, it did. */
+export function askedAbout(rule: string, asked: string | undefined): boolean {
+  if (asked == null) return true;
+  const text = asked.trim();
+  if (!text || SMALL_TALK.test(text)) return false;
+  return rule in ASKS ? ASKS[rule].test(text) : true;
+}
+
 /** The voice rules' punctuation: no em or en dashes as breaks. */
 // A dash between two numbers is a range ("1–3 ימי עסקים"), kept as a plain hyphen; anywhere else it is a sentence
 // break the voice guide does not allow, and becomes a comma.
@@ -311,7 +331,8 @@ export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2
 
 // verified: sentences the claim check's second opinion (claims.ts, TORAN_GUARD_LLM) found backed; the lexical rules
 // still apply to them.
-export function guardReply(text: string, allow: Allow, { company = false, verified }: { company?: boolean; verified?: Set<string> } = {}): GuardResult {
+// asked: the customer's message this turn; a cut about something it did not ask about gets no honest line and no handoff.
+export function guardReply(text: string, allow: Allow, { company = false, verified, asked }: { company?: boolean; verified?: Set<string>; asked?: string } = {}): GuardResult {
   const english = !/[א-ת]/.test(text) && /[a-z]/i.test(text);
   const lines = company ? (english ? REPLACE_COMPANY_EN : REPLACE_COMPANY) : english ? REPLACE_EN : REPLACE;
   const out: string[] = [];
@@ -339,16 +360,20 @@ export function guardReply(text: string, allow: Allow, { company = false, verifi
       continue;
     }
     redactions.push(claim ? { rule, sentence: trimmed, claim: claim.kind, borderline: claim.borderline } : { rule, sentence: trimmed });
-    if (HANDOFF_REASON[rule]) handoffReason ??= HANDOFF_REASON[rule];
+    const wasAsked = askedAbout(rule, asked);
+    if (HANDOFF_REASON[rule] && wasAsked) handoffReason ??= HANDOFF_REASON[rule];
     if (trimmed.endsWith(':')) dropContinuation = true;
     // An introduction ending in a colon ("there are two options:") introduced what was just cut: it goes too.
     if (out.length && out[out.length - 1].trim().endsWith(':')) redactions.push({ rule: 'continuation', sentence: out.pop()!.trim() });
+    // Not asked about: the sentence just goes, with nothing said in its place.
+    if (!wasAsked) continue;
     if (done.has(rule)) continue;
     done.add(rule);
     const lead = /^\s*/.exec(sentence)?.[0] || '';
     if (lines[rule]) out.push(`${lead}${lines[rule]}${sentence.endsWith('\n') ? '\n' : ' '}`);
   }
   let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
-  if (!result) result = checkingLine(english, company);
+  // Nothing left: the honest line when the customer asked something, a plain offer to help when they did not.
+  if (!result) result = handoffReason || askedAbout('claim', asked) ? checkingLine(english, company) : english ? 'How can I help?' : 'במה אפשר לעזור?';
   return { text: result, redactions, needsHandoff: Boolean(handoffReason), handoffReason };
 }

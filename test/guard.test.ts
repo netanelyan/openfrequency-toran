@@ -150,3 +150,22 @@ test('a link may point only where the tools or the store\'s own address do (PRA-
   assert.equal(guardReply('The mug is at bit.ly/mug123', a).redactions[0]?.rule, 'link');
   assert.equal(guardReply('כתבו לנו ל-info@s.example ונחזור אליכם.', a).redactions.length, 0, 'an email address is not a link');
 });
+
+test('a cut the customer did not ask about goes quietly: a greeting never gets "I am not sure about stock, I passed it on" (the owner, 2026-11-09)', () => {
+  const noStock = buildAllow({ toolTexts: [], customerTexts: ['מה נשמע'] });
+  const reply = 'הכול טוב, תודה. יש לנו המון מוצרים במלאי. מה מחפשים?';
+  const g = guardReply(reply, noStock, { asked: 'מה נשמע' });
+  assert.equal(g.text, 'הכול טוב, תודה. מה מחפשים?');
+  assert.equal(g.needsHandoff, false, 'nothing to hand to the store');
+  assert.equal(g.redactions[0].rule, 'stock', 'the cut is still recorded');
+  // Asked about stock: the honest line and the handoff, as before.
+  const asked = guardReply('כן, יש במלאי.', buildAllow({ toolTexts: [], customerTexts: ['יש לכם ספל ירוק?'] }), { asked: 'יש לכם ספל ירוק?' });
+  assert.match(asked.text, /על המלאי אני לא בטוח/);
+  assert.equal(asked.needsHandoff, true);
+  // Nothing left after a quiet cut: an offer to help, not a handoff.
+  const empty = guardReply('יש לנו הכול במלאי.', noStock, { asked: 'היי!' });
+  assert.equal(empty.text, 'במה אפשר לעזור?');
+  assert.equal(empty.needsHandoff, false);
+  // No message known (other callers): as before.
+  assert.equal(guardReply(reply, noStock).needsHandoff, true);
+});
