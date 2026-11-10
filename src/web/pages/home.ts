@@ -22,7 +22,7 @@ import { customerSettings, customerToday } from './customer.ts';
 import { canIngest } from '../../ingest/catalogue.ts';
 import { MESSAGES } from '../../auto/messages.ts';
 import { outreachLive } from '../../ops/outreach.ts';
-import { summaryHe } from '../../agent/guard.ts';
+import { REASON_HE, summaryHe } from '../../agent/guard.ts';
 
 // Today, the inbox (every channel's conversations, the owner's reply in each with a file where the channel takes one,
 // the files customers sent, and the customer's other conversations), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
@@ -202,7 +202,7 @@ async function chat(app: App, r: DashReq, id: number) {
       ...(m.auto ? [`<span>${icon('send')} ${m.auto === 'opt_out' ? 'תשובה אוטומטית ללקוח שביקש להסיר' : `הודעה אוטומטית: ${esc(AUTO_HE[m.auto] || m.auto)}`}</span>`] : []),
       ...(op ? m.tools || [] : []).map((t: any) => `<span>${icon('search')} ${esc(t.name)} ${esc(JSON.stringify(t.input)).slice(0, 120)}</span>`),
       ...(m.guard || []).filter((g: any) => g.rule !== 'continuation').map((g: any) => `<span class="warn">${icon('alert')} נמחק לפני השליחה (${esc(RULE_HE[g.rule] || g.rule)}): "${esc(g.sentence)}"</span>`),
-      ...(m.handoff ? [op ? `<span class="bad">${icon('hand')} הועבר אליך (${esc(m.handoff.reason)}): ${esc(m.handoff.summary)}</span>` : `<span class="bad">${icon('hand')} תורן העביר את זה אליכם${/[\u0590-\u05FF]/.test(summaryHe(m.handoff.summary || '')) ? `: ${esc(summaryHe(m.handoff.summary || ''))}` : ''}</span>`] : []),
+      ...(m.handoff ? [op ? `<span class="bad">${icon('hand')} הועבר אליך (${esc(REASON_HE[m.handoff.reason] || m.handoff.reason)}): ${esc(summaryHe(m.handoff.summary || ''))}</span>` : `<span class="bad">${icon('hand')} תורן העביר את זה אליכם${/[\u0590-\u05FF]/.test(summaryHe(m.handoff.summary || '')) ? `: ${esc(summaryHe(m.handoff.summary || ''))}` : ''}</span>`] : []),
     ] : m.role === 'owner' ? [`<span>${icon('send')} נשלח מכאן</span>`]
     : m.role === 'customer' ? [
       ...(m.automated ? [`<span class="warn">${icon('alert')} הודעה אוטומטית (${esc(m.automated)}), ותורן לא ענה עליה</span>`] : []),

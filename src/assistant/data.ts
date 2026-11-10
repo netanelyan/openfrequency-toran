@@ -1,4 +1,5 @@
 import type { Db } from '../db/index.ts';
+import { summaryHe } from '../agent/guard.ts';
 
 // What the owner's assistant can read about a store: Toran's own records, never the store's orders or carts (it has
 // no access to them yet). Every function takes the store's id and reads only its rows; each returns plain lines the
@@ -65,7 +66,7 @@ export async function waiting(db: Db, storeId: number, { raw = false }: { raw?: 
   );
   if (raw) return rows;
   if (!rows.length) return 'No questions are waiting for the owner.';
-  return [`Questions waiting for the owner: ${rows.length}.`, ...rows.map((r) => `- [conversation ${r.id}] ${who(r.channel, r.peer)}, ${timeHe(r.at)}: ${r.question ? customerText(r.question, 220) : `"${clip(String(r.summary || ''), 220)}"`}`)].join('\n');
+  return [`Questions waiting for the owner: ${rows.length}.`, ...rows.map((r) => `- [conversation ${r.id}] ${who(r.channel, r.peer)}, ${timeHe(r.at)}: ${r.question ? customerText(r.question, 220) : `"${clip(summaryHe(String(r.summary || '')), 220)}"`}`)].join('\n');
 }
 
 /** One conversation's last messages, for the owner to see what was said before answering. */

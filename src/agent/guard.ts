@@ -328,11 +328,37 @@ export function cutSummary(rules: string[], asked: string): string {
   return `תורן לא מצא במידע של החנות תשובה בטוחה על ${what.join(' ועל ') || 'הפרטים'}. הלקוח כתב: "${asked}"`;
 }
 
-/** A handoff line kept in English before the line above was Hebrew ("the guard cut stock: ..."), shown in Hebrew. */
+/** What the customer wrote, after a handoff line's reason. */
+const wrote = (t: string) => (t.trim() ? ` הלקוח כתב: "${t.trim()}"` : '');
+
+// The app's own handoff lines (agent/loop.ts), in Hebrew, and the English ones kept before they were Hebrew, shown in
+// Hebrew wherever the owner or the operator reads them (the owner, 2026-11-09, on "the guard cut stock" still showing:
+// "still has the guard cut sock text"). Each is the reason, then what the customer wrote.
+const OLD: [RegExp, (m: RegExpExecArray) => string][] = [
+  [/^the guard cut ([a-z, ]+): ([\s\S]*)$/, (m) => cutSummary(m[1].split(/,\s*/), m[2])],
+  [/^Toran is not paid for in this store's workspace: ([\s\S]*)$/, (m) => `תורן לא ענה, כי החשבון של החנות לא שולם.${wrote(m[1])}`],
+  [/^the (?:store's|monthly) spend cap \(\$[\d.]+\) is reached: ([\s\S]*)$/, (m) => `תורן לא ענה, כי הגיע לתקרת ההוצאה.${wrote(m[1])}`],
+  [/^no answer within \d+ seconds: ([\s\S]*)$/, (m) => `תורן לא הספיק לענות בזמן.${wrote(m[1])}`],
+  [/^the model declined to answer$/, () => 'תורן לא ענה על ההודעה הזו.'],
+  [/^the agent failed: [\s\S]*$/, () => 'משהו אצלנו לא עבד, ותורן לא ענה.'],
+  [/^no answer after \d+ rounds: ([\s\S]*)$/, (m) => `תורן לא מצא תשובה.${wrote(m[1])}`],
+];
+
+/** A handoff line as the owner reads it: in Hebrew, whatever it was kept as. */
 export function summaryHe(summary: string): string {
-  const m = /^the guard cut ([a-z, ]+): ([\s\S]*)$/.exec(summary || '');
-  return m ? cutSummary(m[1].split(/,\s*/), m[2]) : summary;
+  for (const [re, he] of OLD) {
+    const m = re.exec(summary || '');
+    if (m) return he(m);
+  }
+  return summary;
 }
+
+/** Why Toran handed a conversation over, in Hebrew (the handoff tool's reasons, and the app's own). */
+export const REASON_HE: Record<string, string> = {
+  unknown: 'לא מצא תשובה', refund: 'החזר', discount: 'הנחה', complaint: 'תלונה', order: 'הזמנה', human_requested: 'ביקשו נציג',
+  other: 'אחר', demo: 'דמו', join: 'הצטרפות', account: 'חשבון', billing: 'תשלום', cancel: 'ביטול', limit: 'עומס', price: 'מחיר',
+  stock: 'מלאי', delivery: 'משלוח', promise: 'הבטחה', claim: 'עובדה', link: 'קישור', superlative: 'הגזמה',
+};
 
 export function askedAbout(rule: string, asked: string | undefined): boolean {
   if (asked == null) return true;

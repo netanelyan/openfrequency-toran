@@ -293,7 +293,7 @@ test('the store\'s spend cap: past it that store hands off with no model call, w
     await usage(app.db, { storeId, kind: 'llm', usd: 30, tag: 'agent' });
     const capped = await runTurn(app, { storeId, conversationId: conv, text: 'ועוד שאלה', extId: 'cap-2' });
     assert.equal(m.calls.length, 1, 'past the cap: no model call');
-    assert.match(String(capped.handoff?.summary), /store's spend cap/);
+    assert.match(String(capped.handoff?.summary), /תקרת ההוצאה/);
     // Another store is not stopped by this one.
     const other = (await app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, source, platform) VALUES ('other.example', 'https://other.example/', 'אחרת', 'manual', 'shopify') RETURNING id"))!.id;
     const conv2 = await conversationFor(app.db, other, 'whatsapp', '972500000302');
@@ -321,7 +321,7 @@ test('the monthly cap over every store: reached, a message gets the holding line
     forgetMonthSpend();
     const out = await runTurn(app, { storeId, conversationId: conv, text: 'עוד', extId: 'g-2' });
     assert.equal(m.calls.length, 1);
-    assert.match(String(out.handoff?.summary), /monthly spend cap/);
+    assert.match(String(out.handoff?.summary), /תקרת ההוצאה/);
     assert.ok(out.reply.length > 0, 'the holding line');
   } finally {
     forgetMonthSpend();
@@ -385,7 +385,7 @@ test('a long email reaches the model cut to 4,000 characters, and the owner keep
     });
     const conv = (await s.app.db.one<any>("SELECT id FROM conversations WHERE channel = 'email'")).id;
     const out = await runTurn(s.app, { storeId: s.storeId, conversationId: conv, text: 'עוד שאלה', channel: 'email', footer: false });
-    assert.match(String(out.handoff?.summary), /no answer within 2 seconds/);
+    assert.match(String(out.handoff?.summary), /לא הספיק לענות בזמן/);
   } finally {
     await s.app.db.close();
   }

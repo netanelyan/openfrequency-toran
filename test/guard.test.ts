@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAllow, guardReply, numbersIn, splitSentences, undash } from '../src/agent/guard.ts';
+import { buildAllow, guardReply, numbersIn, splitSentences, summaryHe, undash } from '../src/agent/guard.ts';
 
 const tool = `2 matching products:
 - [id 12] ספל חול 350 מ"ל: 89 ₪, במלאי, 3 options. https://s.example/products/sandy-mug
@@ -168,4 +168,13 @@ test('a cut the customer did not ask about goes quietly: a greeting never gets "
   assert.equal(empty.needsHandoff, false);
   // No message known (other callers): as before.
   assert.equal(guardReply(reply, noStock).needsHandoff, true);
+});
+
+test('every handoff line kept in English reads in Hebrew for the owner and the operator', () => {
+  for (const old of ['the guard cut stock: מה נשמע', "Toran is not paid for in this store's workspace: היי", "the store's spend cap ($5) is reached: היי", 'no answer within 30 seconds: היי', 'the model declined to answer', 'the agent failed: boom', 'no answer after 6 rounds: היי']) {
+    const he = summaryHe(old);
+    assert.doesNotMatch(he, /[a-z]{3,}/i, old);
+    assert.match(he, /[֐-׿]/, old);
+  }
+  assert.equal(summaryHe('הלקוח רוצה החזר'), 'הלקוח רוצה החזר', 'a Hebrew line stays as it is');
 });

@@ -8,7 +8,7 @@ import { asPhoto, imageBlock } from './images.ts';
 import { fileOf } from '../channels/files.ts';
 import { DEMO_NOTE, stripForgedContext, systemFor, type StoreForPrompt } from './prompt.ts';
 import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
-import { buildAllow, checkingLine, cutSummary, guardReply, type Redaction } from './guard.ts';
+import { buildAllow, checkingLine, cutSummary, guardReply, summaryHe, type Redaction } from './guard.ts';
 import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
 import { openConversation } from '../channels/conversations.ts';
 import { capFor, watchHour } from './spend.ts';
@@ -231,10 +231,10 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const cap = unpaid ? null : await capFor(app, store);
   const capped = unpaid || Boolean(cap);
   if (unpaid) {
-    handoff = { reason: 'other', summary: `Toran is not paid for in this store's workspace: ${cleanLine(input.text, 120)}` };
+    handoff = { reason: 'other', summary: summaryHe(`Toran is not paid for in this store's workspace: ${cleanLine(input.text, 120)}`) };
     app.log(`[agent] store ${store.id}: its workspace has not paid for Toran; handed off without a model call`);
   } else if (cap) {
-    handoff = { reason: 'other', summary: `the ${cap.by === 'store' ? "store's" : 'monthly'} spend cap ($${cap.cap}) is reached: ${cleanLine(input.text, 120)}` };
+    handoff = { reason: 'other', summary: summaryHe(`the ${cap.by === 'store' ? "store's" : 'monthly'} spend cap ($${cap.cap}) is reached: ${cleanLine(input.text, 120)}`) };
     app.log(`[agent] ${cap.by} cap $${cap.cap} reached ($${cap.spent.toFixed(2)}); store ${store.id} handed off without a model call`);
   }
   const deadline = Number(app.env.TORAN_TURN_DEADLINE_MS) || TURN_DEADLINE_MS;
@@ -242,7 +242,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     for (; rounds < MAX_ROUNDS && !capped; ) {
       const left = deadline - (Date.now() - started);
       if (left <= 1000) {
-        handoff ??= { reason: 'other', summary: `no answer within ${Math.round(deadline / 1000)} seconds: ${cleanLine(input.text, 120)}` };
+        handoff ??= { reason: 'other', summary: summaryHe(`no answer within ${Math.round(deadline / 1000)} seconds: ${cleanLine(input.text, 120)}`) };
         raw = '';
         break;
       }
@@ -250,7 +250,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
       const res = await app.llm.turn({ system, messages, tools: toolDefs, model, maxTokens: AGENT_MAX_TOKENS, effort, tag: `turn store ${store.id}`, timeoutMs: Math.min(MODEL_TIMEOUT_MS, left), maxRetries: 1, signal: AbortSignal.timeout(left) });
       await spend(res, 'agent');
       if (res.stopReason === 'refusal') {
-        handoff = { reason: 'other', summary: 'the model declined to answer' };
+        handoff = { reason: 'other', summary: summaryHe('the model declined to answer') };
         raw = '';
         break;
       }
@@ -279,13 +279,13 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     app.log(`[agent] store ${store.id} conversation ${input.conversationId}: ${e instanceof LlmError ? `${e.code} ${e.message}` : e?.stack || e}`);
     if (e instanceof LlmError && e.code === 'api_refused') throw e;
     raw = '';
-    handoff ??= { reason: 'other', summary: `the agent failed: ${cleanLine(e?.message || e, 120)}` };
+    handoff ??= { reason: 'other', summary: summaryHe(`the agent failed: ${cleanLine(e?.message || e, 120)}`) };
   }
 
   const english = !/[א-ת]/.test(input.text) && /[a-z]{3}/i.test(input.text);
   if (!raw) {
     raw = checkingLine(english, company);
-    handoff ??= { reason: 'unknown', summary: `no answer after ${rounds} rounds: ${cleanLine(input.text, 160)}` };
+    handoff ??= { reason: 'unknown', summary: summaryHe(`no answer after ${rounds} rounds: ${cleanLine(input.text, 160)}`) };
   }
 
   // A company's "works today" list sits in its prompt, not in a tool result: it backs a claim as a tool would.
