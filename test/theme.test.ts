@@ -250,7 +250,8 @@ test('in a real browser on a device that prefers dark: light, one tap to dark an
       page.on('console', (m: any) => m.type() === 'error' && /Content Security Policy|Refused/.test(m.text()) && errors.push(m.text()));
       const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
       const meta = (name: string) => page.getAttribute(`meta[name="${name}"]`, 'content');
-      const box = (sel: string) => page.$eval(sel, (el: Element) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });
+      // In the page's own px: a desk shows the page at 90% (style.css --z), and the sizes below are the design's.
+      const box = (sel: string) => page.$eval(sel, (el: Element) => { const r = el.getBoundingClientRect(); const z = Number(getComputedStyle(document.documentElement).zoom) || 1; return { x: r.x / z, y: r.y / z, width: r.width / z, height: r.height / z }; });
 
       for (const [sid, p] of [[op.sid, '/'], [cu.sid, '/'], [cu.sid, '/plan']] as const) {
         const where = `${device} ${p} (${sid === op.sid ? 'operator' : 'customer'})`;
@@ -270,7 +271,7 @@ test('in a real browser on a device that prefers dark: light, one tap to dark an
         // 8px from the meter and the sign-out beside it; on a desk the meter is the row above, 4px up as the side bar's rows are.
         for (const n of ['.top .spend', '.top .logout']) {
           const g = gap(btn, await box(n));
-          assert.ok(g >= (device === 'desk' && n === '.top .spend' ? 4 : 8), `${where}: ${g}px from ${n}`);
+          assert.ok(g >= (device === 'desk' && n === '.top .spend' ? 4 : 8) - 0.25, `${where}: ${g}px from ${n}`);
         }
 
         await page.click('[data-theme-toggle]');

@@ -60,7 +60,7 @@ test('a store of a workspace that has not paid gets no model call and the owner 
     calls = 0;
     const out = await runTurn(s.app, { storeId: a, conversationId: conv, text: 'ועוד שאלה', channel: 'whatsapp', footer: false });
     assert.equal(calls, 0, 'no model call');
-    assert.match(out.handoff?.summary || '', /not paid for/);
+    assert.match(out.handoff?.summary || '', /לא שולם/);
     assert.equal(await storeAllowed(s.app, a), false);
     // The 30-day clock on a stopped store's chats hangs off the same answer (planAccess, refreshWorkspaces).
     assert.deepEqual(await planAccess(s.app.db, 7, false), [a]);
