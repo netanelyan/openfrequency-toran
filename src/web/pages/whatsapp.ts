@@ -149,6 +149,11 @@ const newNumber = (r: DashReq, id: number) => `<details class="mt16"><summary cl
  *     the official Facebook Business account and the owner taps Connect, then confirms sharing the chat history
  *     (developers.facebook.com, onboarding business app users). Which one the owner sees is UNVERIFIED, so the step
  *     names both; the Hebrew words of the app's buttons are UNVERIFIED and not quoted.
+ *   - Meta's Embedded Signup now asks for the number first ("Phone Number First", rolling out): "If ... the business
+ *     customer enters a phone number that is already in use with the WhatsApp Business app, Embedded Signup enters the
+ *     Coexistence flow automatically" (developers.facebook.com, embedded-signup/default-flow, read 2026-11-10). So the
+ *     first screen says "Add your WhatsApp phone number" with SMS or a call; the owner types the number and presses Next
+ *     (the owner, 2026-11-10, on that screen: "i think this is not the coexsitence screen").
  *   - Meta: app version 2.24.17 or newer; up to 6 months of 1:1 chats can be shared; "Messages sent and received are
  *     mirrored between the Cloud API and WhatsApp Business app"; disappearing messages, view once and live location are
  *     turned off in 1:1 chats and broadcast lists are disabled; groups are not synced; the app must be opened about
@@ -173,7 +178,7 @@ function connectGuide(via: 'zernio' | 'kapso' | 'meta', button: string, extra = 
   <ol class="steps mt8">
     <li><b>${via === 'meta' ? 'נפתח חלון של Meta' : 'נפתח עמוד באנגלית'}</b><span>${esc(page)}</span></li>
     <li><b>נכנסים לפייסבוק</b><span>ובוחרים את העסק, או יוצרים אותו.</span></li>
-    <li><b>בוחרים לחבר את WhatsApp Business הקיים</b><span>ומקלידים את המספר של העסק.</span></li>
+    <li><b>מקלידים את המספר של העסק</b><span>בוחרים ישראל +972 ומקלידים את המספר בלי ה-0. אם מופיעה בחירה בין SMS לשיחה, לא נוגעים בה ולוחצים Next: Meta מזהה שהמספר באפליקציה ועוברת לחיבור שלה, בלי SMS. לא בוחרים מספר מהרשימה שנפתחת.</span></li>
     <li><b>מאשרים בטלפון</b><span>באפליקציית WhatsApp Business: סורקים את הקוד שעל המסך במצלמה שבאפליקציה, או פותחים את ההודעה מ-Facebook Business ומאשרים. אפשר לשתף גם את השיחות של חצי השנה האחרונה.</span></li>
     <li><b>חוזרים לכאן לבד</b><span>והעמוד אומר שהמספר מחובר.</span></li>
   </ol>

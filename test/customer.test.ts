@@ -42,7 +42,7 @@ test('a customer\'s menu is the website\'s: Today, the inbox, what Toran knows, 
     for (const href of ['/leads', '/review', '/followups']) assert.ok(!page.includes(`href="${href}"`), `no ${href}`);
     assert.match(page, /<span class="lbl">שיחות<\/span>/, 'the header counts conversations against the plan, not tokens');
     assert.ok(!/טוקנים/.test(page));
-    assert.match(page, /הערוצים/);
+    assert.match(page, /מה מחובר לתורן/);
     assert.match(page, /בשבועיים הראשונים אנחנו עוברים איתכם על השיחות/, 'the email was connected today');
     assert.equal((await s.get('/knowledge')).headers.get('location'), `/lead/${s.seeded.storeId}/knowledge`, 'one store goes straight to its page');
   } finally {

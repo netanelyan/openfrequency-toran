@@ -73,7 +73,14 @@ async function webChatState(app: App, storeId: number): Promise<'on' | 'waiting'
 }
 
 /** Each of the website's four channels for one store, and the web chat: connected, on our demo number, or still to come. */
-async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel | 'web'; on: boolean; text: string }[]> {
+// Each row's state, for the card's chip (the owner, 2026-11-10: "toran should have a clear place that shows what
+// accounts are connected to the bot. whatsapp, instagram, messanger, mail, website"): connected, waiting (Meta's
+// approval, the chat not yet on the site), stopped (the connection ended or Meta stopped it), switched off by the
+// owner on its card, not connected, or not open here yet.
+type ConnState = 'on' | 'wait' | 'bad' | 'paused' | 'off' | 'soon';
+type ChannelRow = { ch: AnyChannel | 'web'; on: boolean; text: string; state: ConnState };
+
+async function channelsOf(app: App, s: Store): Promise<ChannelRow[]> {
   const accounts = await app.db.query<{ channel: string; external_id: string }>("SELECT channel, external_id FROM channel_accounts WHERE store_id = $1 AND status = 'active'", [s.id]);
   const has = (ch: string) => accounts.find((a) => a.channel === ch);
   const code = enabledChannels(app.env);
@@ -81,22 +88,35 @@ async function channelsOf(app: App, s: Store): Promise<{ ch: AnyChannel | 'web';
   const wa = await waAccountOf(app, s.id);
   const mail = has('email');
   const web = await webChatState(app, s.id);
-  const rows: { ch: AnyChannel | 'web'; on: boolean; text: string }[] = [
-    { ch: 'whatsapp', on: wa?.status === 'active', text: waLine(wa && wa.status !== 'off' ? wa : null, s, storeConnectReady(app.env)) },
+  const waState: ConnState = wa?.status === 'active' ? 'on' : wa?.status === 'pending' ? 'wait' : wa?.status === 'reconnect' || wa?.status === 'error' ? 'bad' : storeConnectReady(app.env) ? 'off' : 'soon';
+  const rows: ChannelRow[] = [
+    { ch: 'whatsapp', on: wa?.status === 'active', state: waState, text: waLine(wa && wa.status !== 'off' ? wa : null, s, storeConnectReady(app.env)) },
     // The address on our domain is the email card's business (pages/mailSetup.ts), not this line's.
-    { ch: 'email', on: Boolean(mail), text: mail ? 'מחובר. <a href="/settings#email">למייל</a>' : code.has('email') && app.mail ? '<a href="/settings#email">לחבר את המייל</a>' : 'בקרוב' },
+    { ch: 'email', on: Boolean(mail), state: mail ? 'on' : code.has('email') && app.mail ? 'off' : 'soon', text: mail ? 'מחובר. <a href="/settings#email">למייל</a>' : code.has('email') && app.mail ? '<a href="/settings#email">לחבר את המייל</a>' : 'בקרוב' },
     ...(await Promise.all((['instagram', 'messenger'] as const).map(async (ch) => {
       const a = await socialAccountOf(app, s.id, ch);
-      return { ch, on: a?.status === 'active', text: socialLine(a && a.status !== 'off' ? a : null, ch, s, dmConnectReady(app.env, ch)) };
+      const state: ConnState = a?.status === 'active' ? 'on' : a?.status === 'error' ? 'bad' : dmConnectReady(app.env, ch) ? 'off' : 'soon';
+      return { ch, on: a?.status === 'active', state, text: socialLine(a && a.status !== 'off' ? a : null, ch, s, dmConnectReady(app.env, ch)) };
     }))),
-    { ch: 'web' as const, on: web === 'on', text: web === 'on' ? 'פועל באתר' : web === 'waiting' ? 'מופעל, ונשאר להוסיף אותו לאתר. <a href="/settings#webchat">איך מוסיפים</a>' : 'לא מופעל. <a href="/settings#webchat">להפעיל</a>' },
+    { ch: 'web' as const, on: web === 'on', state: web === 'on' ? 'on' : web === 'waiting' ? 'wait' : 'off', text: web === 'on' ? 'פועל באתר' : web === 'waiting' ? 'מופעל, ונשאר להוסיף אותו לאתר. <a href="/settings#webchat">איך מוסיפים</a>' : 'לא מופעל. <a href="/settings#webchat">להפעיל</a>' },
   ];
   // A channel the owner switched Toran off on (pages/channelOff.ts) says so on its line.
   const off = await offChannels(app, s.id);
-  return rows.map((x) => (x.on && off.includes(x.ch) ? { ...x, text: `${x.text} <span class="chip warn">תורן לא עונה ${IN_HE[x.ch]}</span>` } : x));
+  return rows.map((x) => (x.on && off.includes(x.ch) ? { ...x, state: 'paused' as const } : x));
 }
 
-const channelList = (rows: { ch: AnyChannel | 'web'; on: boolean; text: string }[]) => `<dl class="kv">${rows.map((c) => `<dt>${esc(CHANNEL_HE[c.ch])}</dt><dd>${c.text}</dd>`).join('')}</dl>`;
+const CONN_ICON: Record<string, string> = { whatsapp: 'phone', email: 'mail', messenger: 'bolt', instagram: 'camera', web: 'chat' };
+const CONN_CHIP: Record<ConnState, [string, string]> = { on: ['ok', 'מחובר'], wait: ['', 'מחכה'], bad: ['bad', 'צריך לחבר שוב'], paused: ['warn', 'תורן לא עונה כאן'], off: ['muted', 'לא מחובר'], soon: ['muted', 'בקרוב'] };
+const CONN_NAME: Record<string, string> = { whatsapp: 'וואטסאפ', email: 'מייל', instagram: 'אינסטגרם', messenger: 'מסנג׳ר', web: 'צ׳אט באתר' };
+
+/**
+ * What is connected to Toran, one row a channel: its mark, its name and what is connected (the number, the page, the
+ * address, the site), a chip that says where it stands, and the line with its one link or button.
+ */
+const channelList = (rows: ChannelRow[]) => `<ul class="conns">${rows.map((c) => {
+  const [cls, label] = CONN_CHIP[c.state];
+  return `<li class="conn conn-${c.state}"><span class="conn-ic chn-${esc(c.ch)}" aria-hidden="true">${icon(CONN_ICON[c.ch] || 'chat')}</span><div class="conn-t"><b>${esc(CONN_NAME[c.ch] || CHANNEL_HE[c.ch])}</b><span class="small">${c.text}</span></div><span class="chip ${cls}">${label}</span></li>`;
+}).join('')}</ul>`;
 
 /** The first two weeks, while they last: the date they end. */
 function firstWeeks(stores: Store[]): number | null {
@@ -327,7 +347,7 @@ ${live ? `<div class="kpis">
 </section>
 ${setup && !tried && !many ? tryCard(app, stores[0], true) : ''}` : ''}
 ${installCard(r.ctx.install)}
-<section class="group mt24"><header><h2>הערוצים</h2><a class="end small" href="/settings#channels">הגדרות</a></header>
+<section class="group mt24"><header><h2>מה מחובר לתורן</h2><a class="end small" href="/settings#channels">לנהל</a></header>
   ${channels.map(({ s, rows }) => `<div class="panel${many ? ' mt12' : ''}">${many ? `<header><h3>${esc(s.name)}</h3></header>` : ''}${channelList(rows)}</div>`).join('')}
 </section>
 <section class="group mt24"><header><h2>לשאול את תורן על החנות</h2></header>
@@ -489,8 +509,8 @@ export async function customerSettings(app: App, r: DashReq) {
     // anything, and i am the owner"). Stopping Toran on one channel is a switch on that channel's card
     // (pages/channelOff.ts), not a message to us: the line under the list says where it is.
     // On a phone each part folds to one row (TORAN-READINESS.md P1-19, Teder's fold): a link into one opens it.
-    return `${await livePanel(app, r, s)}${voicePanel(r, s)}${fold('channels', `הערוצים של ${s.name}`, `<section class="panel" id="channels"><header><h2>הערוצים של ${esc(s.name)}</h2></header>${channelList(await channelsOf(app, s))}
-  <p class="small muted mt12 m0">כל ערוץ מחובר אפשר לעצור לבד, במתג "תורן עונה" שבו. בשיחה אחת עוצרים את תורן כשעונים בה בעצמכם.</p></section>`)}${fold('email', 'המייל', await mailCard(app, r, s))}${fold('auto', 'הודעות אוטומטיות', await autoPanel(app, r, s))}${fold('webchat', 'צ׳אט באתר', await webChatPanel(app, r, s))}${fold('reviews', 'ביקורות', await reviewsPanel(app, r, s))}`;
+    return `${await livePanel(app, r, s)}${fold('channels', 'מה מחובר לתורן', `<section class="panel" id="channels"><header><h2>מה מחובר לתורן</h2></header>${channelList(await channelsOf(app, s))}
+  <p class="small muted mt12 m0">כל ערוץ מחובר אפשר לעצור לבד, במתג "תורן עונה" שבו. בשיחה אחת עוצרים את תורן כשעונים בה בעצמכם.</p></section>`)}${voicePanel(r, s)}${fold('email', 'המייל', await mailCard(app, r, s))}${fold('auto', 'הודעות אוטומטיות', await autoPanel(app, r, s))}${fold('webchat', 'צ׳אט באתר', await webChatPanel(app, r, s))}${fold('reviews', 'ביקורות', await reviewsPanel(app, r, s))}`;
   }));
   const body = `<div class="head"><h1>הגדרות</h1></div>
 <div class="cols single">

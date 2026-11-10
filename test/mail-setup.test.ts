@@ -164,7 +164,7 @@ test('"תורן עונה במייל" off: the next mail waits for the owner, aud
     assert.equal((await s.app.db.one<any>("SELECT COUNT(*)::int AS n FROM audit WHERE action = 'channel_off' AND store_id = $1", [id])).n, 1);
     let page = await (await s.get('/settings')).text();
     assert.match(page, /role="switch" aria-checked="false"[^]*תורן עונה במייל[^]*כרגע לא/);
-    assert.match(page, /<dt>מייל<\/dt><dd>[^<]*<a[^>]*>[^<]*<\/a> <span class="chip warn">תורן לא עונה במייל<\/span>/);
+    assert.match(page, /<li class="conn conn-paused">[^]*?<b>מייל<\/b>[^]*?<span class="chip warn">תורן לא עונה כאן<\/span>/);
 
     const mail = (n: number) => fetch(`${s.base}/mail/sim`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: 'Dana <dana@example.test>', to: [address], subject: `שאלה ${n}`, text: 'יש לכם קערה?', message_id: `<q-${n}@example.test>` }) });
     await mail(1);

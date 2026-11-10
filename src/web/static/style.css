@@ -336,6 +336,23 @@ h3 { font-size: 14px; margin: 0; font-weight: 600; }
 .chip.ok { color: var(--ok); }
 .chip.warn { color: var(--warn); }
 .chip.bad { color: var(--bad); }
+.chip.muted { color: var(--ink-3); }
+/* What is connected to Toran (pages/customer.ts channelList; the owner, 2026-11-10: "toran should have a clear place
+   that shows what accounts are connected to the bot"): a row a channel, its mark in a tile, its name and what is
+   connected, and the chip at the end. On a phone the chip goes under the name. */
+.conns { list-style: none; margin: 0; padding: 0; display: grid; }
+.conn { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.conn:last-child { border-bottom: 0; }
+.conn-ic { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--fill); color: var(--ink-2); }
+.conn-ic svg.i { width: 20px; height: 20px; }
+.conn-on .conn-ic { background: var(--ok-bg, var(--fill)); color: var(--ok); }
+.conn-bad .conn-ic { color: var(--bad); }
+.conn-t { display: grid; gap: 2px; min-width: 0; }
+.conn-t b { font-weight: 600; font-size: 15px; }
+.conn-t .small { color: var(--ink-2); overflow-wrap: anywhere; }
+.conn-t .btn { justify-self: start; margin-top: 6px; }
+.conn > .chip { justify-self: end; white-space: nowrap; }
+@media (max-width: 520px) { .conn { grid-template-columns: 40px minmax(0, 1fr); } .conn > .chip { grid-column: 2; justify-self: start; } }
 /* a form's own failure, said inside it (the inbox reply, app.js data-error) */
 [data-error] { color: var(--bad); }
 .chip.sig { color: var(--accent); }

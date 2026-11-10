@@ -27,20 +27,20 @@ test('Today before any channel: not answering yet, what is left with one next st
     assert.ok(page.includes(`https://wa.me/${s.app.env.DEMO_WA_NUMBER}?text=`) && page.includes(encodeURIComponent(store.demo_code)), 'the try button opens our demo number with the store\'s code');
     assert.match(page, /השיחה מסומנת דמו ולא נספרת בחבילה/);
     assert.doesNotMatch(page, /class="kpis"/, 'no month of zeros');
-    assert.match(page, /<dt>צ׳אט באתר<\/dt><dd>לא מופעל/, 'the web chat is among the channels');
+    assert.match(page, /<b>צ׳אט באתר<\/b><span class="small">לא מופעל/, 'the web chat is among the channels');
 
     // The chat switched on but not yet on the site is not answering anyone.
     await s.app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, status, meta) VALUES ($1, 'web', 'web', 'w00112233445566778899', 'active', '{}'::jsonb)", [id]);
     page = await (await s.get('/')).text();
     assert.match(page, /תורן עוד לא עונה ללקוחות/);
-    assert.match(page, /<dt>צ׳אט באתר<\/dt><dd>מופעל, ונשאר להוסיף אותו לאתר/);
+    assert.match(page, /<b>צ׳אט באתר<\/b><span class="small">מופעל, ונשאר להוסיף אותו לאתר/);
 
     // It opened on the store's site: a channel answers, Today has its numbers, and the block is gone.
     await s.app.db.query("UPDATE channel_accounts SET meta = jsonb_build_object('first_seen_at', '2026-11-08T10:00:00Z') WHERE store_id = $1 AND channel = 'web'", [id]);
     page = await (await s.get('/')).text();
     assert.doesNotMatch(page, /תורן עוד לא עונה ללקוחות|id="setup"/);
     assert.match(page, /class="kpis"/);
-    assert.match(page, /<dt>צ׳אט באתר<\/dt><dd>פועל באתר/);
+    assert.match(page, /<b>צ׳אט באתר<\/b><span class="small">פועל באתר/);
   } finally {
     await s.close();
   }
@@ -78,7 +78,7 @@ test('with WhatsApp open on this server, the one main button on Today is "לחב
     assert.match(page, new RegExp(`<a class="btn primary" href="/lead/${id}/whatsapp">[^]*לחבר את הוואטסאפ של העסק</a>`));
     assert.equal((page.match(/class="btn primary"/g) || []).length, 1, 'one main button');
     const settings = await (await s.get('/settings')).text();
-    assert.match(settings, new RegExp(`<dt>וואטסאפ</dt><dd><a class="btn sm" href="/lead/${id}/whatsapp">[^]*לחבר את הוואטסאפ של העסק`));
+    assert.match(settings, new RegExp(`<b>וואטסאפ</b><span class="small"><a class="btn sm" href="/lead/${id}/whatsapp">[^]*לחבר את הוואטסאפ של העסק`));
     assert.doesNotMatch(settings, /עם הקוד/, 'no demo code on the line');
   } finally {
     await s.close();
