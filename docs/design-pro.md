@@ -132,8 +132,9 @@ of them changes the other the same way, and both repos keep this section the sam
   store (its colour, name and address, nothing to open). On a phone that pill sits beside the mark, which gives up its
   word for it; on a desk it is a row of its own under the mark, above the sections, with the side bar's toggle beside the
   mark.
-- **The side bar's foot.** The month's meter across (a ring that fills, orange then red, and "used / of the plan": Toran's
-  conversations, Teder's suggestions), then signing out, then light or dark at its end. On a phone the same three sit in
+- **The side bar's foot.** The month's meter across, a ring that fills and "N / of the plan": Toran's conversations
+  (orange, then red, as the plan runs out), Teder's posts that went out ("פורסמו", never a warning: a full ring is the
+  month kept); then signing out, then light or dark at its end. On a phone the same three sit in
   the top bar. The accessibility button sits inside the end of the tab bar on a phone, at the corner on a desk.
 - **The page head.** `.head`: the title (22px, 24px on a desk), a 13px line under it, the main action at the end of the
   title's row. Today's line is the day.
