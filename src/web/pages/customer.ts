@@ -493,7 +493,7 @@ export async function customerSettings(app: App, r: DashReq) {
   <p class="small muted mt12 m0">כל ערוץ מחובר אפשר לעצור לבד, במתג "תורן עונה" שבו. בשיחה אחת עוצרים את תורן כשעונים בה בעצמכם.</p></section>`)}${fold('email', 'המייל', await mailCard(app, r, s))}${fold('auto', 'הודעות אוטומטיות', await autoPanel(app, r, s))}${fold('webchat', 'צ׳אט באתר', await webChatPanel(app, r, s))}${fold('reviews', 'ביקורות', await reviewsPanel(app, r, s))}`;
   }));
   const body = `<div class="head"><h1>הגדרות</h1></div>
-<div class="cols">
+<div class="cols single">
   <div class="grid12">${panels.join('') || `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>הערוצים נפתחים כאן מיד אחרי שהאתר מאומת. את הוואטסאפ של העסק אפשר כבר להכין.${mayStart(r) ? `<p class="row mt12 m0"><a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a><a class="btn sm" href="/whatsapp">${icon('chat')}הוואטסאפ של העסק</a></p>` : ''}</div>`}</div>
   <div class="grid12">
     <section class="panel"><header><h2>החשבון</h2></header><p class="small m0">מי בחשבון, מספרי הוואטסאפ שמהם כותבים לעוזר, החבילה והחשבוניות נמצאים בחשבון שלכם ב-OpenFrequency.</p><div class="row mt12"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></section>

@@ -116,13 +116,18 @@
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 html, body { margin: 0; }
+/* A desk shows the pages at 90% (the owner, 2026-11-09: "all of the websites look better on 90% zoom. make it the
+   default"). A phone keeps 100%: its text is already as small as it should be. --z undoes the zoom where a height is
+   the screen's (a zoomed 100dvh is 90% of the screen). */
+:root { --z: 1; }
+@media (min-width: 1000px) { :root { --z: 0.9; } html { zoom: 0.9; } }
 body {
   background: var(--bg);
   color: var(--ink);
   font: 400 14px/1.47 var(--text);
   direction: rtl;
   text-align: right;
-  min-height: 100vh;
+  min-height: calc(100vh / var(--z));
   padding-bottom: calc(var(--tab) + 24px + env(safe-area-inset-bottom));
   -webkit-font-smoothing: antialiased;
 }
@@ -378,6 +383,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .cols { display: grid; gap: 20px; }
 .cols > * { min-width: 0; }
 @media (min-width: 1000px) { .cols { grid-template-columns: 1.15fr 0.85fr; align-items: start; } .cols.even { grid-template-columns: 1fr 1fr; } }
+/* Settings is one column in the middle, on a desk as on a phone (the owner, 2026-11-09, on two columns that ran out
+   beside a long one: "the same problem that was on teder. starts with 2 colums, continues with 1"; Teder's /new did the
+   same). */
+.cols.single { grid-template-columns: minmax(0, 1fr) !important; max-width: 760px; margin-inline: auto; }
 
 .group { margin: 0 0 40px; }
 .group > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 4px 14px; }
@@ -920,8 +929,8 @@ a.ib-row.is-waiting::before { content: ''; position: absolute; inset-inline-star
    user have less places to scroll"). The answer box never scrolls: it grows with what is typed, up to a third of the
    screen. On a shorter screen the page is one scroll. */
 @media (min-width: 1000px) and (min-height: 700px) {
-  .inbox { height: calc(100dvh - 48px); min-height: 560px; }
-  .ib-head + .inbox { height: calc(100dvh - 190px); }
+  .inbox { height: calc(100dvh / var(--z) - 48px); min-height: 560px; }
+  .ib-head + .inbox { height: calc(100dvh / var(--z) - 190px); }
   .ib-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
   /* Newest at the foot, where a thread opens: column-reverse starts the scroll at the end without a line of script. */
   .th-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column-reverse; }
@@ -1019,6 +1028,17 @@ button.linkbtn { border: 0; background: none; padding: 4px 0; color: var(--accen
 button.linkbtn svg.i { width: 15px; height: 15px; }
 details.more > summary { cursor: pointer; font-size: 14px; font-weight: 500; color: var(--ink-2); min-height: 32px; display: flex; align-items: center; }
 details.more[open] > summary { margin-bottom: 4px; }
+/* A fold's small line looks like something to press (the owner, 2026-11-09, on "אין לכם WhatsApp Business...?" that
+   read as plain text: "make those looks clikable"): the accent colour, a chevron that turns when it opens, an underline
+   on hover, and a row tall enough for a finger. */
+summary.small, details.more > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; color: var(--accent); font-weight: 500; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+summary.small::-webkit-details-marker, details.more > summary::-webkit-details-marker { display: none; }
+summary.small::before, details.more > summary::before { content: ''; flex: none; width: 7px; height: 7px; border-inline-start: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); transition: transform 0.2s ease; margin-inline-end: 2px; }
+details[open] > summary.small::before, details.more[open] > summary::before { transform: rotate(-45deg); }
+summary.small:hover, details.more > summary:hover { text-decoration: underline; text-underline-offset: 3px; }
+summary.small:focus-visible, details.more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { summary.small::before, details.more > summary::before { transition: none; } }
+.head:has(+ .cols.single) { max-width: 760px; margin-inline: auto; }
 .swbtn { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 16px; border: 0; border-radius: var(--r-m); background: var(--inset); color: var(--ink); text-align: start; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 div.swbtn { cursor: default; }
 .swbtn .t { flex: 1; display: flex; flex-direction: column; gap: 2px; }
