@@ -155,6 +155,12 @@ export const customer = (workspaceId: number, { products = ['toran'] }: { produc
 /** The superadmin outside view-as: Toran's operator. */
 export const operator = () => ({ user: { id: 1, email: 'operator@example.test', name: 'operator', superadmin: true }, workspace: null, role: 'superadmin', products: ['teder', 'toran'], readOnly: false, viewAs: null, expiresAt: LATER });
 
+/**
+ * The superadmin in their own workspace, as accounts answers on the products' own sites when OF_OPERATOR_WORKSPACE
+ * names one (accounts' docs/admin-split.md): its owner, and still the superadmin.
+ */
+export const operatorAt = (workspaceId: number) => ({ ...customer(workspaceId), user: { id: 1, email: 'operator@example.test', name: 'operator', superadmin: true } });
+
 /** The superadmin viewing one workspace as its customer sees it: read-only. */
 export const viewingAs = (workspaceId: number) => ({
   user: { id: 1, email: 'operator@example.test', name: '', superadmin: true },

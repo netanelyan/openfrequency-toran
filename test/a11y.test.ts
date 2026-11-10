@@ -180,9 +180,13 @@ test('in a real browser: Tab reaches the button, a switch stays on after a reloa
       assert.equal(await page.isVisible('.a11y-btn'), true, `${p}: the button`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0, `${p}: no sideways scroll at 390 with larger text`);
       const btn = await box('.a11y-btn');
-      for (const bar of ['.tabbar', '.actionbar']) {
-        if (await page.$(bar)) assert.ok(!overlap(btn, await box(bar)), `${p}: the button is off the ${bar}`);
+      // On the tab bar it has a slot of its own at the bar's end, as Teder's (docs/design-pro.md, "The two desks side by
+      // side"): on none of its tabs. Off the page's own bar.
+      if (await page.$('.tabbar')) {
+        const tabs = await page.$$eval('.tabbar a', (as: Element[]) => as.map((a) => { const r = a.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }));
+        assert.ok(tabs.every((t) => !overlap(btn, t)), `${p}: the button is on none of the tabs`);
       }
+      if (await page.$('.actionbar')) assert.ok(!overlap(btn, await box('.actionbar')), `${p}: the button is off the .actionbar`);
     }
     // A pitch page's docked WhatsApp button, once the hero's has scrolled away: the button rises over it.
     await context.clearCookies();

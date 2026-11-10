@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { customer, INTERNAL_TOKEN } from './helpers.ts';
+import { customer, INTERNAL_TOKEN, operatorAt } from './helpers.ts';
 import { serve } from './serve.ts';
 import { underBase } from '../src/web/server.ts';
 
@@ -67,7 +67,9 @@ test("the operator's dashboard under /admin/toran: pages, links and redirects un
   }
 });
 
-test("on Toran's own name the operator is sent to /admin; a customer stays; without the header nothing changes", async () => {
+test("on Toran's own name the operator sees the product: their own workspace as its owner, operator addresses sent to /admin, and without a workspace a page pointing there", async () => {
+  // The owner, 2026-11-10: "Make teder and toran of natikyan153@gmail.com regular, just like a customer's. Everything
+  // else, leads etc should be in other places. The admin dashboard is for that" (accounts' docs/admin-split.md).
   const s = await serve();
   const port = Number(new URL(s.base).port);
   Object.assign(s.app.env, { PUBLIC_HOST: 'toran.test' });
@@ -77,14 +79,36 @@ test("on Toran's own name the operator is sent to /admin; a customer stays; with
     const server = http.createServer(createHandler(s.app, { port }));
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const p2 = (server.address() as any).port;
+    const at = (path: string, session: { cookie: string }) => raw(p2, path, { host: 'toran.test', cookie: session.cookie.replace('of_session', '__Secure-of_session'), 'x-forwarded-proto': 'https' });
     try {
+      // No workspace of their own: Today is a short page to /admin, any other address the same page under /admin/toran.
       const op = s.login();
-      const toOp = await raw(p2, '/leads?x=1', { host: 'toran.test', cookie: op.cookie.replace('of_session', '__Secure-of_session'), 'x-forwarded-proto': 'https' });
+      const toOp = await at('/leads?x=1', op);
       assert.equal(toOp.status, 303);
       assert.equal(toOp.headers.location, 'https://accounts.test/admin/toran/leads?x=1');
-      const cust = s.accounts.session(customer(5));
-      const toCust = await raw(p2, '/', { host: 'toran.test', cookie: cust.cookie.replace('of_session', '__Secure-of_session'), 'x-forwarded-proto': 'https' });
-      assert.equal(toCust.status, 200, 'the product, for a customer');
+      const home = await at('/', op);
+      assert.equal(home.status, 200);
+      assert.match(home.body, /data-refusal="operator"/);
+      assert.match(home.body, /<a class="btn primary" href="https:\/\/accounts\.test\/admin\/toran\/">ללוח הניהול<\/a>/);
+
+      // In their own workspace: the customer's Today and nav, nothing of the operator's.
+      const mine = s.accounts.session(operatorAt(5));
+      const today = await at('/', mine);
+      assert.equal(today.status, 200, 'the product, as its owner sees it');
+      const cust = await at('/', s.accounts.session(customer(5)));
+      const nav = (html: string) => /<nav class="nav" aria-label="ראשי">([^]*?)<\/nav>/.exec(html)![1];
+      assert.equal(nav(today.body), nav(cust.body), 'the same nav as the workspace\'s customer');
+      assert.doesNotMatch(today.body, /href="\/(leads|review|followups)"|טוקנים/);
+      // An operator page, or a store outside the workspace (a lead, our support store's chat in an alert), goes to /admin.
+      for (const path of ['/leads', '/review', '/followups', '/queue', `/lead/${s.seeded.storeId}`, `/lead/${s.seeded.storeId}/knowledge`]) {
+        const r = await at(path, mine);
+        assert.equal(r.status, 303, path);
+        assert.equal(r.headers.location, `https://accounts.test/admin/toran${path}`, path);
+      }
+      // A customer gets what they got: their own Today for an operator page, "not found" for another's store.
+      const custLeads = await at('/leads', s.accounts.session(customer(5)));
+      assert.deepEqual([custLeads.status, custLeads.headers.location], [303, '/']);
+      assert.equal((await at(`/lead/${s.seeded.storeId}/knowledge`, s.accounts.session(customer(5)))).status, 404);
     } finally {
       server.close();
     }

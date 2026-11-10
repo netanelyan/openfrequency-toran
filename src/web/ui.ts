@@ -69,6 +69,7 @@ export const icon = (name: string, cls = 'i') => `<svg class="${cls}" aria-hidde
 // (the owner, 2026-11-09: "some buttons are not centered", on "✦ לעוזר": the spark spanned 3 to 17 and sat 2 units
 // high, the label looking low beside it; the book reached 23 and sat 1 low). Both are moved to the centre.
 const SPRITE = `<svg class="sr" width="0" height="0" aria-hidden="true"><defs>
+<symbol id="i-results" viewBox="0 0 24 24"><path d="M6 20V10M12 20V4M18 20v-7M3 20h18"/></symbol>
 <symbol id="i-today" viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z"/></symbol>
 <symbol id="i-leads" viewBox="0 0 24 24"><path d="M3 9.5L5 4h14l2 5.5"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-4h4v4"/></symbol>
 <symbol id="i-review" viewBox="0 0 24 24"><path d="M9 4h6M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="M8.5 13l2.5 2.5 4.5-5"/></symbol>
@@ -125,8 +126,9 @@ export const CUSTOMER_NAV: [string, string, string, string][] = [
   ['/chats', 'שיחות', 'chats', 'chat'],
   ['/knowledge', 'מה הוא יודע', 'knowledge', 'book'],
   ['/assistant', 'העוזר', 'assistant', 'spark'],
-  // Results in the plan's place (TORAN-READINESS.md P1-12): the plan is the header's meter and its own page, /plan.
-  ['/results', 'תוצאות', 'results', 'today'],
+  // Results in the plan's place (TORAN-READINESS.md P1-12): the plan is the header's meter and its own page, /plan. Its
+  // icon is Teder's results' bars (the owner, 2026-11-10: "Toran and teder dashboards should be consistent").
+  ['/results', 'תוצאות', 'results', 'results'],
   ['/settings', 'הגדרות', 'settings', 'settings'],
 ];
 const SECTION_OF: Record<string, string> = { lead: 'leads', add: 'leads', chat: 'chats', brand: 'settings', discover: 'leads' };
@@ -159,6 +161,13 @@ export type PageCtx = {
   payHref?: string | null;
   /** The browser, for adding Toran to the phone (install.ts); null under accounts' /admin, whose site is not Toran's. */
   install?: InstallCtx | null;
+  /** The workspace's store, shown in the header as Teder shows the account (routes.ts headerCounts); none for the operator. */
+  store?: { id: number; name: string; domain: string; more: number } | null;
+  /**
+   * Under accounts' /admin/toran, accounts' /admin: not Toran's own site, so nothing offers it as the app on a phone (no
+   * manifest), and a line at the top of every page leads back to the admin dashboard.
+   */
+  admin?: string | null;
 };
 
 /**
@@ -175,6 +184,16 @@ const PAY_DATE = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', 
  */
 export const fold = (key: string, label: string, inner: string) => (inner ? `<details class="mfold one" data-mfold="${esc(key)}" open><summary>${esc(label)}</summary>${inner}</details>` : '');
 
+/**
+ * The way back to the admin dashboard, on every page of Toran's under accounts' /admin/toran (accounts'
+ * docs/admin-split.md): those are every store's pages, and the owner reaches them from there. Its address is accounts'
+ * own, absolute, so the prefix never goes in front of it.
+ */
+export function adminBar(ctx: Pick<PageCtx, 'admin'>): string {
+  if (!ctx.admin) return '';
+  return `<div class="banner info adminbar" role="note">${icon('shield')}<div><b>כאן רואים את תורן של כל החנויות והלידים.</b></div><a class="btn sm" href="${esc(ctx.admin)}">חזרה ללוח הניהול</a></div>`;
+}
+
 export function payBanner(ctx: Pick<PageCtx, 'pay' | 'payHref'>): string {
   const r = ctx.pay;
   if (!r || !ctx.payHref) return '';
@@ -183,6 +202,30 @@ export function payBanner(ctx: Pick<PageCtx, 'pay' | 'payHref'>): string {
   const title = due ? 'החודש ששילמתם עליו נגמר, והתשלום על החודש הבא עוד לא הגיע אלינו.' : `המנוי לתורן שולם עד ${when}.`;
   const text = due ? `תורן ממשיך לענות ללקוחות עד סוף ${when}, ואז ייעצר עד שהתשלום יגיע.` : 'אפשר כבר לשלם על החודש הבא, כדי שתורן ימשיך לענות בלי הפסקה.';
   return `<div class="banner ${due ? 'warn' : 'info'} pay" id="pay">${icon(due ? 'alert' : 'clock')}<div><b>${esc(title)}</b><p>${esc(text)}</p></div><a class="btn sm${due ? ' primary' : ''}" href="${esc(ctx.payHref)}">איך משלמים</a></div>`;
+}
+
+/**
+ * What makes a page the app a phone keeps (the owner, 2026-11-10, of Toran's mark on a phone): on Toran's own site only.
+ * Under accounts' /admin/toran a saved icon would open accounts (the manifest's start_url is the site's root), so those
+ * pages offer none; the operator keeps Toran on the phone from Toran's own address, where they see it as its owner
+ * sees it, with its mark (accounts' docs/admin-split.md).
+ */
+const APP_META = `<meta name="apple-mobile-web-app-title" content="תורן">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+`;
+
+/**
+ * The store the pages are about, where Teder's header has the account it shows (the owner, 2026-11-10: "Toran and teder
+ * dashboards should be consistent"; docs/design-pro.md, "The two desks side by side"): its colour, its name and its
+ * address, in the same pill, under the mark on a desk and beside it on a phone. Toran's workspace has one store, so there
+ * is nothing to switch to; a second one is counted in the title.
+ */
+export function storePill(ctx: Pick<PageCtx, 'store' | 'operator'>): string {
+  const s = ctx.store;
+  if (!s || ctx.operator) return '';
+  const title = s.more > 0 ? `${s.name} ועוד ${s.more === 1 ? 'חנות אחת' : `${s.more} חנויות`}` : s.name;
+  return `<div class="acctswitch store" title="${esc(title)}"><span class="pill"><span class="ic"><span class="dot st-${Number(s.id)}" aria-hidden="true"></span></span><span class="nm"><b>${esc(s.name)}</b><small class="ltr">${esc(s.domain)}</small></span></span></div>`;
 }
 
 export function layout(ctx: PageCtx, body: string): string {
@@ -197,11 +240,13 @@ export function layout(ctx: PageCtx, body: string): string {
   const spent = Number(s.usd) || 0;
   const ringOf = (used: number) => `<svg class="ring${used >= 90 ? ' bad' : used >= 70 ? ' warn' : ''}" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle class="v" cx="10" cy="10" r="8" pathLength="100" stroke-dasharray="${used} 100"/></svg>`;
   const ring = ringOf(cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0);
-  // The operator reads the server's tokens; a customer reads their conversations against the plan, which is what they pay for.
-  const p = ctx.plan;
-  const meter = ctx.operator || !p
+  // The operator reads the server's tokens; a customer reads their conversations against the plan, which is what they pay
+  // for, from the first day: a workspace with no store yet reads 0, never the tokens (the owner, 2026-11-10, seeing Toran
+  // as a customer does: "regular, just like a customer's").
+  const p = ctx.operator ? null : ctx.plan || { used: 0, cap: 0 };
+  const meter = !p
     ? `<a class="spend" href="/settings#costs" title="טוקנים החודש: ${tokenNum(spent)}${cap ? ` מתוך ${tokenNum(cap)}` : ''}">${ring}<span class="lbl">טוקנים</span><span class="amt num ltr"><b>${tokenNum(spent)}</b>${cap ? `<span> / ${tokenNum(cap)}</span>` : ''}</span></a>`
-    : `<a class="spend" href="/plan" title="שיחות החודש: ${p.used.toLocaleString('en-US')} מתוך ${p.cap.toLocaleString('en-US')} בחבילה">${ringOf(p.cap ? Math.min(100, Math.round((p.used / p.cap) * 100)) : 0)}<span class="lbl">שיחות</span><span class="amt num ltr"><b>${p.used.toLocaleString('en-US')}</b><span> / ${p.cap.toLocaleString('en-US')}</span></span></a>`;
+    : `<a class="spend" href="/plan" title="שיחות החודש: ${p.used.toLocaleString('en-US')}${p.cap ? ` מתוך ${p.cap.toLocaleString('en-US')} בחבילה` : ''}">${ringOf(p.cap ? Math.min(100, Math.round((p.used / p.cap) * 100)) : 0)}<span class="lbl">שיחות</span><span class="amt num ltr"><b>${p.used.toLocaleString('en-US')}</b>${p.cap ? `<span> / ${p.cap.toLocaleString('en-US')}</span>` : ''}</span></a>`;
   const flash = ctx.flash ? ` data-flash="${esc(ctx.flash)}"` : '';
   return `<!doctype html>
 <html lang="he" dir="rtl" data-theme="light"${ctx.side === 'mini' ? ' class="side-mini"' : ''}>
@@ -210,23 +255,20 @@ export function layout(ctx: PageCtx, body: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 ${themeMeta()}
 <meta name="robots" content="noindex, nofollow">
-<meta name="apple-mobile-web-app-title" content="תורן">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<title>${esc(ctx.title)} · תורן</title>
+${ctx.admin ? '' : APP_META}<title>${esc(ctx.title)} · תורן</title>
 <link rel="stylesheet" href="/static/brand.css?v=${ctx.v || 1}">
 <link rel="stylesheet" href="/static/style.css?v=${ctx.v || 1}">
 <link rel="stylesheet" href="/static/stores.css?v=${ctx.v || 1}">
 ${a11yHead(ctx.v || 1)}
 ${themeHead(ctx.v || 1)}
 ${iconLinks()}
-<link rel="manifest" href="/static/manifest.webmanifest">
-</head>
+${ctx.admin ? '' : '<link rel="manifest" href="/static/manifest.webmanifest">\n'}</head>
 <body${ctx.readOnly ? ' class="ro"' : ''}>
 ${SPRITE}
 ${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צפייה בחשבון <b>${esc(ctx.viewAs.name)}</b>, כמו שהלקוח רואה אותו. אי אפשר לשנות כאן כלום.</span><a href="${esc(ctx.viewAs.admin)}">חזרה לניהול</a></div>` : ''}
 <header class="top"><div class="wrap">
   <a class="brand" href="/" aria-label="תורן, להיום">${toranMark(34, { label: null })}<b>תורן</b></a>
+  ${storePill(ctx)}
   <button class="sidetoggle" type="button" data-side aria-label="${ctx.side === 'mini' ? 'הרחבת סרגל הצד' : 'כיווץ סרגל הצד'}" aria-expanded="${ctx.side === 'mini' ? 'false' : 'true'}">${icon('sidebar')}</button>
   <nav class="nav" aria-label="ראשי">${nav}</nav>
   <div class="tools">
@@ -236,7 +278,7 @@ ${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צ�
   </div>
 </div></header>
 <main class="wrap${ctx.wide ? ' wide' : ''}" id="main">
-${payBanner(ctx)}
+${adminBar(ctx)}${payBanner(ctx)}
 ${body}
 <footer class="foot">${ofMark(20, { label: null })}<span class="ltr">OpenFrequency<sup>™</sup></span></footer>
 </main>

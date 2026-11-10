@@ -89,6 +89,36 @@
           ]
         },
         {
+          "case": "the superadmin outside view-as, in the workspace OF_OPERATOR_WORKSPACE names (docs/admin-split.md): as its owner sees it; without the setting, or for a product it lacks, the operator's answer with a null workspace and every product",
+          "status": 200,
+          "body": {
+            "user": {
+              "id": 1,
+              "email": "admin@example.com",
+              "name": "Admin",
+              "superadmin": true
+            },
+            "workspace": {
+              "id": 1,
+              "slug": "openfrequency",
+              "name": "OpenFrequency",
+              "disabled": false
+            },
+            "role": "client_owner",
+            "products": [
+              "teder",
+              "toran"
+            ],
+            "readOnly": false,
+            "viewAs": null,
+            "expiresAt": "2026-10-22T22:00:00.000Z"
+          },
+          "nullable": [
+            "workspace",
+            "viewAs"
+          ]
+        },
+        {
           "case": "no session, a signed-out, expired or idle one, or a disabled user",
           "status": 401,
           "body": {

@@ -7,6 +7,13 @@ the outreach. Teder's store demos and the accounts customers are read from those
 machine, at each page load. Teder's demos are copied into Toran every few minutes, so that Toran can also keep
 their outreach.
 
+Toran's own operator pages (the leads, a lead's page, the review queue, the follow-ups, the queue, every store's chats,
+the server's settings) are on accounts' `/admin/toran`, and Teder's (the demos, its leads, every workspace's accounts,
+the server's settings) on `/admin/teder` (accounts' docs/admin-split.md). On `toran.openfrequency.co.il` the operator
+sees Toran as a store owner does, in their own workspace (accounts' `OF_OPERATOR_WORKSPACE`); an operator address there
+(a bookmark, an alert's link) goes to the same page under `/admin/toran`, and with no workspace of their own Today is a
+short page pointing to `/admin`.
+
 ```
    Toran (the dashboard) ── GET /internal/ops/customers ──▶ accounts  (workspaces, subscriptions, invoices)
                          ── GET /internal/demos ──────────▶ Teder     (the store demos and their opens)

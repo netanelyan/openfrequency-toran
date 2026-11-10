@@ -1,10 +1,11 @@
 {
   "name": "admin-toran-operator",
-  "doc": "src/web/admin-toran.js; README, \"/admin/toran\"",
+  "doc": "src/web/admin-toran.js, src/web/admin-teder.js; README, \"/admin/toran\"; docs/admin-split.md",
   "servedBy": [
     "accounts"
   ],
   "calledBy": [
+    "teder",
     "toran"
   ],
   "kind": "header",
@@ -15,6 +16,26 @@
       "listener": "OF_TORAN_INTERNAL (127.0.0.1:4710), from accounts on the same machine",
       "auth": "X-OF-Operator: <payload>.<signature>. payload: base64url of the JSON below. signature: base64url of HMAC-SHA256 of the payload's characters, keyed with OF_INTERNAL_TOKEN. No Cookie header but Toran's own tn_* cookies: the superadmin's session never reaches Toran.",
       "notes": "Toran accepts it only from a loopback socket with X-OF-Admin-Prefix, a good signature (compared in constant time) and exp in the future. exp is milliseconds since 1970, 60 seconds after accounts signed it. ses is the same for every request of one accounts session and says nothing about it (HMAC-SHA256 of \"ses:<session id>\" under OF_INTERNAL_TOKEN, its first 32 base64url characters): Toran derives its CSRF tokens from it. Without OF_INTERNAL_TOKEN accounts sends no header and Toran sends the browser to sign in.",
+      "answers": [
+        {
+          "case": "the payload of X-OF-Operator",
+          "status": 0,
+          "body": {
+            "id": 1,
+            "email": "admin@example.com",
+            "name": "Admin",
+            "ses": "Qm9vazEyMzQ1Njc4OTBhYmNkZWZnaGlq",
+            "exp": 1792832460000
+          }
+        }
+      ]
+    },
+    {
+      "method": "ANY",
+      "path": "/admin/teder/* (accounts' proxy to Teder, X-OF-Admin-Prefix: /admin/teder)",
+      "listener": "OF_TEDER_INTERNAL (127.0.0.1:4700), from accounts on the same machine",
+      "auth": "X-OF-Operator, the same statement as for /admin/toran. No Cookie header but Teder's own cookies, named td_* on accounts' host, and of-theme: the superadmin's session never reaches Teder. Of the X-OF-* family the browser sends, only X-OF-Ajax: 1 is passed on.",
+      "notes": "The same terms as /admin/toran: Teder accepts it only from a loopback socket with X-OF-Admin-Prefix: /admin/teder, a good signature and exp in the future, and derives its CSRF tokens from ses. Under the prefix Teder answers as the operator (every workspace) and never serves /internal, the assistant's API, the signed slide links or the connect returns.",
       "answers": [
         {
           "case": "the payload of X-OF-Operator",

@@ -258,6 +258,33 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
   .side-mini .ring { width: 22px; height: 22px; }
 }
 
+/* The store the pages are about (ui.ts storePill), where Teder's header has its account switcher, and drawn as it is
+   (the owner, 2026-11-10: "Toran and teder dashboards should be consistent"): a pill with the store's colour, its name and
+   its address beside the mark on a phone, where the mark gives up its word for it; a row of its own under the mark on a
+   desk, above the sections. Nothing to open: a workspace has one store. */
+.acctswitch { min-width: 0; }
+.acctswitch .pill { display: flex; align-items: center; gap: 10px; min-height: 40px; max-width: 46vw; padding: 0 12px; border-radius: 999px; background: var(--fill); }
+.acctswitch .ic { flex: none; width: 10px; display: grid; place-items: center; }
+.acctswitch .dot { display: block; width: 10px; height: 10px; border-radius: 50%; background: var(--store, var(--accent-fill)); }
+.acctswitch .nm { display: grid; min-width: 0; line-height: 1.25; text-align: start; }
+.acctswitch .nm b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acctswitch .nm small { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 899px) { .acctswitch .nm small { display: none; } .acctswitch .pill { max-width: 58vw; } .top .wrap:has(.acctswitch) .brand b { display: none; } .top .wrap:has(.acctswitch) .brand { padding-inline-end: 0; } }
+@media (max-width: 520px) { .top .wrap:has(.acctswitch) { gap: 8px; } .acctswitch .pill { gap: 8px; padding: 0 10px; } }
+@media (min-width: 900px) {
+  .top .wrap:has(.acctswitch) { grid-template-rows: auto auto auto 1fr; }
+  .acctswitch { grid-column: 1 / -1; grid-row: 2; margin-top: 14px; }
+  .acctswitch .pill { max-width: none; min-height: 48px; border-radius: 14px; }
+  .top .wrap:has(.acctswitch) .nav { grid-row: 3; }
+  .top .wrap:has(.acctswitch) .tools { grid-row: 4; }
+  .side-mini .top .wrap:has(.acctswitch) { grid-template-rows: auto auto auto auto 1fr; }
+  .side-mini .acctswitch { grid-row: 3; width: 100%; margin-top: 8px; }
+  .side-mini .acctswitch .pill { justify-content: center; padding: 0; }
+  .side-mini .acctswitch .nm { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .side-mini .top .wrap:has(.acctswitch) .nav { grid-row: 4; }
+  .side-mini .top .wrap:has(.acctswitch) .tools { grid-row: 5; }
+}
+
 /* ------------------------------------------------------------ the tab bar (phone): a floating glass bar, as on iOS */
 
 .tabbar {

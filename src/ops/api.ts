@@ -1,7 +1,7 @@
 import type { App } from '../app.ts';
 import type { Out, Req, Route } from '../web/server.ts';
 import { accountsLinks, ADMIN } from '../web/accounts.ts';
-import { syncTeder, tederUrl, websiteLeads } from './sources.ts';
+import { syncTeder, websiteLeads } from './sources.ts';
 import { conversations, queue, RECONNECT_AGAIN_DAYS, stuckRequests, tederDemos } from './queue.ts';
 import { funnels } from './funnel.ts';
 import { demoLine, oneNumberRoles, ROLE_HE } from '../channels/lines.ts';
@@ -29,8 +29,12 @@ export { internalRefusal };
  * the products").
  */
 const leadUrl = (app: App, id: number | string | null) => (id == null ? null : `${accountsLinks(app.env).home}/admin/leads/${id}`);
-/** A Teder demo's page, where the operator opens it: Teder's own /demos/<id>, on its public address (TEDER_URL). */
-const tederDemoUrl = (app: App, id: string) => `${tederUrl(app.env)}/demos/${encodeURIComponent(id)}`;
+/**
+ * A Teder demo's page, where the operator opens it: Teder's /demos/<id> under accounts' /admin/teder, its operator pages
+ * now that Teder's own site shows the product only (accounts' docs/admin-split.md; the owner, 2026-11-10: "Everything
+ * else, leads etc should be in other places. The admin dashboard is for that").
+ */
+const tederDemoUrl = (app: App, id: string) => `${accountsLinks(app.env).admin}/teder/demos/${encodeURIComponent(id)}`;
 
 const ACTIONS = ['sent', 'reminded', 'direct', 'replied', 'next', 'later', 'lost', 'reopen', 'pilot', 'paid', 'won'] as const;
 const SAID: Record<(typeof ACTIONS)[number], string> = {

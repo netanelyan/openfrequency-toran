@@ -72,8 +72,9 @@ export const DASH_CSP = "default-src 'self'; img-src 'self' data: https:; style-
 
 // The operator's dashboard lives on accounts' /admin (docs/operator.md): accounts proxies /admin/toran/... here with
 // X-OF-Admin-Prefix, and Toran answers as if the prefix were its root, then puts it back on every path it hands the
-// browser (links, forms, redirects, its CSS's fonts, the script's base). Toran's own name shows the product only:
-// the operator is sent to /admin/toran there.
+// browser (links, forms, redirects, its CSS's fonts, the script's base). Toran's own name shows the product only, to
+// the operator too: there they are in their own workspace as its owner (accounts' OF_OPERATOR_WORKSPACE), and an
+// operator page is sent to /admin/toran (the handler, ownName).
 const BASE = new WeakMap<IncomingMessage, string>();
 
 /** A body served under the admin prefix, its root-relative paths moved under it. */
@@ -280,17 +281,28 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       }
       const session = who.body as Session;
       const scope = scopeOf(session);
-      // /admin/toran is the operator's alone; Toran's own name shows the product, so the operator is sent to /admin.
+      // /admin/toran is the operator's alone.
       if (viaAdmin && !scope.operator) return send(req, res, 404, errorPage(404, 'אין דף כזה.'), 'text/html; charset=utf-8');
-      if (!viaAdmin && scope.operator && publicHost && host === publicHost && adminOrigin) {
-        const there = `${adminOrigin}${ADMIN}${p === '/' ? '/' : p}${url.search}`;
-        if (method === 'GET') return reply(req, res, { redirect: there });
-        return ajax ? json(409, { ok: false, message: 'הניהול של תורן עבר ל־/admin.', redirect: there }) : send(req, res, 409, errorPage(409, 'הניהול של תורן עבר ל־/admin.', there), 'text/html; charset=utf-8');
+      // Toran's own name shows the product, to the operator too (the owner, 2026-11-10: "Make teder and toran of
+      // natikyan153@gmail.com regular, just like a customer's. Everything else, leads etc should be in other places. The
+      // admin dashboard is for that. Toran and teder should stay toran and teder, even for admins"; accounts'
+      // docs/admin-split.md). accounts puts the superadmin in their own workspace here (OF_OPERATOR_WORKSPACE), as its
+      // owner, so every page below is a customer's. Without one (scope.operator) there is nothing of the product to
+      // show: Today is a short page pointing to /admin, and any other address, an operator page from an old bookmark,
+      // an email or a WhatsApp alert, goes to the same page under /admin/toran. On a laptop (no PUBLIC_HOST) the
+      // operator still sees everything here, for development and the tests.
+      const ownName = !viaAdmin && Boolean(session.user.superadmin) && !session.viewAs && Boolean(publicHost) && host === publicHost && Boolean(adminOrigin);
+      const atAdmin = `${adminOrigin}${ADMIN}${p === '/' ? '/' : p}${url.search}`;
+      if (ownName && scope.operator) {
+        if (method === 'GET' && p === '/') return send(req, res, 200, refusalPage('operator', `${adminOrigin}${ADMIN}/`), 'text/html; charset=utf-8');
+        if (method === 'GET') return reply(req, res, { redirect: atAdmin });
+        return ajax ? json(409, { ok: false, message: 'הניהול של תורן נמצא בלוח הניהול.', redirect: atAdmin }) : send(req, res, 409, errorPage(409, 'הניהול של תורן נמצא בלוח הניהול.', atAdmin), 'text/html; charset=utf-8');
       }
       // ---- the paywall (billing/entitlement.ts, PRA-SEC-002): a customer whose workspace has not paid for Toran gets the
-      // pay page, and posts nothing. The operator, and the operator viewing as the customer, are never asked about.
+      // pay page, and posts nothing. The operator, the operator viewing as the customer, and the operator in their own
+      // workspace (above) are never asked about.
       let pay: PayReminder | null = null;
-      if (!scope.operator && !session.viewAs && session.workspace) {
+      if (!scope.operator && !session.viewAs && session.workspace && !session.user.superadmin) {
         const wsId = session.workspace.id;
         // "בדקו שוב" on the pay page: accounts is asked afresh now, as when it says the access changed (as Teder's
         // POST /paywall/check), then the page it came from.
@@ -325,19 +337,23 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const flash = jar.tn_flash || null;
       if (flash) setCookies.push('tn_flash=; Path=/; Max-Age=0; SameSite=Strict');
       const viewAs = session.viewAs ? { name: String(session.workspace?.name || session.workspace?.slug || ''), admin: links.admin } : null;
-      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, pay, payHref: links.setup, install: viaAdmin ? null : installOf(String(req.headers['user-agent'] || ''), jar), ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope)) };
+      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, pay, payHref: links.setup, install: viaAdmin ? null : installOf(String(req.headers['user-agent'] || ''), jar), admin: viaAdmin ? links.admin : null, ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope)) };
       const back = () => refererPath(req.headers.referer, viaAdmin ? adminOrigin : `http://${host}`, viaAdmin) || '/';
       const notFound = () => (method === 'GET' ? send(req, res, 404, notFoundPage({ ...ctx, title: 'לא נמצא' }), 'text/html; charset=utf-8') : ajax ? json(404, { ok: false, message: 'לא נמצא' }) : send(req, res, 404, errorPage(404, 'מה שחיפשתם לא נמצא כאן. אולי הקישור ישן.', back()), 'text/html; charset=utf-8'));
 
-      // One store, chat or job: only inside its workspace. Another workspace's is "not found", as one that never was.
+      // One store, chat or job: only inside its workspace. Another workspace's is "not found", as one that never was. The
+      // operator in their own workspace on Toran's own name (ownName) is sent to it under /admin/toran instead: a lead's
+      // page or a chat of our support store in an alert, a job from a bookmark. So is an operator page (OPERATOR_PAGES).
+      const elsewhere = () => (ownName && method === 'GET' ? reply(req, res, { redirect: atAdmin }) : notFound());
       const idOf = (re: RegExp) => Number(re.exec(p)?.[1] || 0);
       const leadId = idOf(/^\/lead\/(\d+)(?:\/|$)/);
-      if (leadId && !(await ownsStore(app.db, scope, leadId))) return notFound();
+      if (leadId && !(await ownsStore(app.db, scope, leadId))) return elsewhere();
       const chatId = idOf(/^\/chat\/(\d+)(?:\/|$)/);
-      if (chatId && !(await ownsConversation(app.db, scope, chatId))) return notFound();
+      if (chatId && !(await ownsConversation(app.db, scope, chatId))) return elsewhere();
       const jobId = idOf(/^\/jobs?\/(\d+)(?:\.json)?$/);
-      if (jobId && !(await ownsJob(app.db, scope, jobId))) return notFound();
+      if (jobId && !(await ownsJob(app.db, scope, jobId))) return elsewhere();
 
+      if (method === 'GET' && ownName && OPERATOR_PAGES.test(p)) return reply(req, res, { redirect: atAdmin });
       if (method === 'GET' && !scope.operator && OPERATOR_PAGES.test(p)) return reply(req, res, { redirect: leadId && /^\/lead\/\d+$/.test(p) ? `/lead/${leadId}/knowledge` : '/' });
 
       let form: Record<string, string> = {};

@@ -41,11 +41,15 @@ export async function headerCounts(app: App, sc: Scope) {
   if (sc.operator) return { waiting: { review: r?.review || 0, followups: r?.followups || 0, chats: r?.chats || 0 }, spend: { usd: Number(r?.usd) || 0, cap }, plan: null };
   // A customer: the conversations waiting for them, and this month's conversations against their stores' plans.
   const w = await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM conversations c WHERE ${messagingSql('c.channel')} AND ${storeIdIn(sc, 'c.store_id')} AND ${WAITING_SQL}`);
-  const stores = await app.db.query<{ id: number; config: any }>(`SELECT id, config FROM stores WHERE ${storesOf(sc)}`);
+  const stores = await app.db.query<{ id: number; config: any; name: string | null; domain: string; brand: any }>(`SELECT id, config, name, domain, brand FROM stores WHERE ${storesOf(sc)} ORDER BY id`);
   const n = await counted(app.db, stores.map((s) => s.id), { months: 1 });
   const usage = stores.map((s) => usageOf(planOf(s.config), n.get(s.id)));
   const plan = usage.length ? { used: usage.reduce((a, u) => a + u.thisMonth, 0), cap: usage.reduce((a, u) => a + u.cap, 0) } : null;
-  return { waiting: { chats: w?.n || 0 }, spend: { usd: 0, cap: 0 }, plan };
+  // The store the pages are about, in the header where Teder shows the account (docs/design-pro.md, "The two desks side by
+  // side"): its name, its address and its colour. A workspace's first; most have one.
+  const first = stores[0];
+  const store = first ? { id: first.id, name: String(first.brand?.name || first.name || first.domain), domain: first.domain, more: stores.length - 1 } : null;
+  return { waiting: { chats: w?.n || 0 }, spend: { usd: 0, cap: 0 }, plan, store };
 }
 
 /** stores.css: each store's own colour as --store, so pages need no inline style (the CSP forbids it). */

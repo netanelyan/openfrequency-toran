@@ -167,6 +167,24 @@ body::before { display: none; }
 }
 @media (max-width: 520px) { .top .logout { padding: 0; } }
 
+/* The store's pill (style.css .acctswitch), as Teder's account switcher in this look: a grey pill on a phone, a white
+   row with a hairline on a desk. */
+.acctswitch .pill { border-radius: 8px; background: var(--fill); }
+@media (min-width: 900px) {
+  .acctswitch .pill { min-height: 48px; border-radius: 10px; background: var(--nav-on); box-shadow: 0 0 0 1px var(--edge), 0 1px 0 rgba(26, 26, 26, 0.05); }
+  .side-mini .acctswitch .pill { border-radius: 8px; }
+}
+.acctswitch .nm b { font-weight: 700; }
+
+/* The accessibility panel's button on a phone, as Teder's: inside the end of the tab bar, which runs the full width and
+   keeps room for it, a round white button with a hairline, never floating over the page. */
+@media (max-width: 899px) {
+  body:has(.a11y-w:not([hidden])) .tabbar { inset-inline-end: 0; padding-inline-end: calc(12px + 48px + 4px); }
+  /* a11y.css lifts the button above the bar (.tabbar ~ .a11y-w), so these win by one more element. */
+  html body .tabbar ~ .a11y-w, html body:has(.actionbar) .tabbar ~ .a11y-w { bottom: calc((var(--tab) - 48px) / 2 + env(safe-area-inset-bottom)); }
+  .a11y-btn { background: var(--surface); box-shadow: 0 0 0 1px var(--edge); }
+}
+
 /* The tab bar: white, flush with the foot of the screen, a line above it; the chosen tab in the accent, no pill. */
 .tabbar {
   inset-inline: 0;

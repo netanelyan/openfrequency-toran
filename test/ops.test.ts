@@ -9,6 +9,7 @@ import { funnels, money, rate } from '../src/ops/funnel.ts';
 import { israelWeekdayHour } from '../src/core/clock.ts';
 import { customer, fakeMetaSends, INTERNAL_TOKEN, META_DEMO, testApp } from './helpers.ts';
 import { serve } from './serve.ts';
+import { accountsLinks } from '../src/web/accounts.ts';
 
 // The operator's dashboard (src/ops/, pages/ops.ts, docs/operator.md): who to write to today and in what order, what
 // each button records, the one-approach-one-reminder line, the demo link sent on the demo number inside its 24 hours,
@@ -123,14 +124,12 @@ test("every Teder demo not up yet, at its stage, with Teder's reason and a link 
     assert.equal(failed.target.href, `https://wa.me/972500000351?text=${encodeURIComponent(failed.message!)}`);
     assert.deepEqual(list.slice(1).map((d) => [d.message, d.target.href]), [[null, 'https://wa.me/972500000351'], [null, null], [null, 'https://wa.me/972500000351']], 'the others open the chat alone, when there is a number');
 
-    // In the dashboard's data, each links to its page in Teder: TEDER_URL, else Teder's address on our domain.
-    let d = await opsData(app);
-    assert.deepEqual(d.tederDemos.map((x) => x.leadUrl), ['4', '1', '2', '3'].map((id) => `https://teder.openfrequency.co.il/demos/${id}`));
-    app.env.TEDER_URL = 'https://teder.example/';
-    d = await opsData(app);
-    assert.equal(d.tederDemos[0].leadUrl, 'https://teder.example/demos/4');
+    // In the dashboard's data, each links to its page in Teder, under accounts' /admin/teder (docs/admin-split.md there).
+    const d = await opsData(app);
+    const admin = accountsLinks(app.env).admin;
+    assert.deepEqual(d.tederDemos.map((x) => x.leadUrl), ['4', '1', '2', '3'].map((id) => `${admin}/teder/demos/${id}`));
     const asked = d.stuck.find((s) => s.domain === 'asked.example')!;
-    assert.deepEqual([asked.why, asked.leadUrl, 'tederId' in asked], ['תדר לא הצליח לבנות את הדמו', 'https://teder.example/demos/7', false], "a Teder request links to its demo in Teder");
+    assert.deepEqual([asked.why, asked.leadUrl, 'tederId' in asked], ['תדר לא הצליח לבנות את הדמו', `${admin}/teder/demos/7`, false], "a Teder request links to its demo in Teder");
   } finally {
     await svc.close();
     await app.db.close();

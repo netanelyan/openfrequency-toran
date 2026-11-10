@@ -106,3 +106,47 @@ inset 0 -1px 0 rgba(0,0,0,.13)` (Polaris's bevel); floating `0 8px 16px -4px rgb
 Contrast AA for every text token on its surface, focus always visible, reduced motion and reduced transparency as in
 `style.css`, Increase Contrast and the accessibility panel's high contrast (`html.a-contrast`) still win over the pro
 tokens, and every phone target stays 44px.
+
+## The two desks side by side
+
+The owner, 2026-11-10: "Toran and teder dashboards should be consistent". Both desks follow these rules; a change to one
+of them changes the other the same way, and both repos keep this section the same.
+
+- **Who sees what.** Each product's own site shows the product, to everyone: a customer, and the operator too, who is in
+  their own workspace there as its owner (accounts' `OF_OPERATOR_WORKSPACE`, accounts' docs/admin-split.md). The
+  operator's pages (leads, demos, the review queue, every workspace, the server's settings, costs) are reached only from
+  accounts' `/admin`, under `/admin/toran` and `/admin/teder`, where a line at the top of every page leads back to the
+  admin dashboard. Nothing of the operator's is in a product's own nav, and no page there shows English internals,
+  tokens, costs or a model's tool calls unless developer mode is on.
+- **The nav.** Six sections, the same on a phone (the tab bar) and a desk (the side bar), in this order: היום, then the
+  product's own work, then תוצאות, then הגדרות.
+
+  | | 1 | 2 | 3 | 4 | 5 | 6 |
+  |---|---|---|---|---|---|---|
+  | Toran | היום | שיחות | מה הוא יודע | העוזר | תוצאות | הגדרות |
+  | Teder | היום | פוסטים | מקורות | חשבון | תוצאות | הגדרות |
+
+  Names are one or two plain words. A count of what waits is a red badge on its section. תוצאות has the same bars icon
+  in both.
+- **The header.** The mark and the product's name, then what the pages are about: Teder's account switcher, Toran's
+  store (its colour, name and address, nothing to open). On a phone that pill sits beside the mark, which gives up its
+  word for it; on a desk it is a row of its own under the mark, above the sections, with the side bar's toggle beside the
+  mark.
+- **The side bar's foot.** The month's meter across (a ring that fills, orange then red, and "used / of the plan": Toran's
+  conversations, Teder's suggestions), then signing out, then light or dark at its end. On a phone the same three sit in
+  the top bar. The accessibility button sits inside the end of the tab bar on a phone, at the corner on a desk.
+- **The page head.** `.head`: the title (22px, 24px on a desk), a 13px line under it, the main action at the end of the
+  title's row. Today's line is the day.
+- **Empty states.** `.empty`: an icon, one bold line that says what is not there yet, one plain line that says what will
+  come or what to do, and at most one button.
+- **Settings.** One column in the middle (760px), on a desk as on a phone; each part a panel, folded to a row on a phone
+  (`details.mfold`); the account and signing out near the end; developer mode behind seven taps on the version line,
+  for the operator only.
+- **Folds and summaries.** On a phone a page's parts fold to rows with their names (`fold()`); a small "more" line is a
+  `summary` in the accent colour with a chevron.
+- **Buttons.** One solid `.primary` per screen for the main action; the rest plain, ghost or danger, as in Components
+  above. A label says what happens, as a verb ("לשמור", "להמשיך"); Teder's older nouns ("שמירה") change to verbs as
+  their pages are touched.
+- **The app on a phone.** Each product's own site is the app a phone keeps: its manifest, its mark as the icon (Toran's
+  three dots on green, Teder's wave on purple). Its pages under accounts' `/admin` offer no manifest, so a saved icon is
+  never accounts' site under the product's name.
