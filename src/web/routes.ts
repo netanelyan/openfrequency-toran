@@ -30,16 +30,24 @@ import { latestNotification, subscribe, unsubscribe, vapid } from '../owners/pus
 
 /** The header's counts. `look`: the operator on a customer's screens (server.ts), counted as a customer over every customer's store. */
 export async function headerCounts(app: App, sc: Scope, { look = false }: { look?: boolean } = {}) {
-  const r = await app.db.one<{ review: number; followups: number; chats: number; usd: number }>(
+  const r = await app.db.one<{ review: number; followups: number; chats: number }>(
     `SELECT
        (SELECT COUNT(*)::int FROM stores WHERE status = 'page_ready' AND approved_at IS NULL AND ${storesOf(sc)} AND ${selling()}) AS review,
        (SELECT COUNT(*)::int FROM stores WHERE followup_due_at <= now() AND followup_sent_at IS NULL AND status IN ('sent','opened') AND ${storesOf(sc)} AND ${selling()}) AS followups,
-       (SELECT COUNT(*)::int FROM conversations c WHERE ${messagingSql('c.channel')} AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storeIdIn(sc, 'c.store_id')}) AS chats,
-       (SELECT COALESCE(SUM(CASE WHEN backend = 'claude-cli' THEN api_usd ELSE usd END), 0)::float FROM usage WHERE at >= date_trunc('month', now()) AND ${storeIdIn(sc, 'store_id')}) AS usd`,
+       (SELECT COUNT(*)::int FROM conversations c WHERE ${messagingSql('c.channel')} AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storeIdIn(sc, 'c.store_id')}) AS chats`,
   );
-  // The monthly cap is the whole server's: only the operator sees the ring measured against it.
-  const cap = sc.operator ? Number(app.env.TORAN_MONTHLY_CAP_USD) || 0 : 0;
-  if (sc.operator && !look) return { waiting: { review: r?.review || 0, followups: r?.followups || 0, chats: r?.chats || 0 }, spend: { usd: Number(r?.usd) || 0, cap }, plan: null };
+  if (sc.operator && !look) {
+    // The ring is TORAN_MONTHLY_CAP_USD's, and counts what it counts (agent/spend.ts, 2026-11-11): this Israel month's
+    // usage of the stores no customer pays for (leads, demos, our support) and of none, a claude-cli call at its API
+    // price. A customer's store is held to what its workspace pays instead, on the store's page.
+    const u = await app.db.one<{ usd: number }>(
+      `SELECT COALESCE(SUM(CASE WHEN u.backend = 'claude-cli' THEN u.api_usd ELSE u.usd END), 0)::float AS usd FROM usage u
+        WHERE u.at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Jerusalem') AT TIME ZONE 'Asia/Jerusalem')
+          AND NOT EXISTS (SELECT 1 FROM stores s WHERE s.id = u.store_id AND s.workspace_id IS NOT NULL)`,
+    );
+    const cap = Number(app.env.TORAN_MONTHLY_CAP_USD) || 0;
+    return { waiting: { review: r?.review || 0, followups: r?.followups || 0, chats: r?.chats || 0 }, spend: { usd: Number(u?.usd) || 0, cap }, plan: null };
+  }
   // A customer: the conversations waiting for them, and this month's conversations against their stores' plans. The
   // operator's `look`: every customer's store, never the leads (pages/customer.ts myStores).
   const theirs = sc.operator ? ' AND workspace_id IS NOT NULL' : '';

@@ -51,11 +51,14 @@ scripted test answers. Connect nothing before this is set.
 2. Add to `.env`:
    ```
    ANTHROPIC_API_KEY=<the key, it starts with sk-ant->
-   TORAN_MONTHLY_CAP_USD=100        # a hard monthly limit on API spend for the whole server
+   TORAN_MONTHLY_CAP_USD=100        # a hard monthly limit on API spend for leads, demos and our support store
    ```
-   The cap is a hard stop. Once the month's spend reaches it, Toran stops calling the model: every customer gets
-   "I'm checking" and every question goes to the store's owner, on every store, until the month ends. Set it well
-   above what you expect, and watch the ring on your dashboard. Leave it out for no cap.
+   The cap is a hard stop for the stores no customer pays for. Once their month's spend reaches it, Toran stops
+   calling the model for them: whoever writes gets "I'm checking" and the question goes to the owner, until the month
+   ends. Watch the ring on your dashboard: it counts the same spend. Leave it out for no cap. A customer's store is
+   never stopped by it (2026-11-11): each customer's workspace is held to what it pays instead, an alert to you at 30%
+   of its month's payment in model costs and a stop at 50% (src/agent/spend.ts, docs/costs.md), which you can lift
+   for the rest of the month on the store's page.
 3. Restart. Your Settings page in developer mode (tap the version line) shows `api` as the model.
 
 ## Step 1. Email (Resend): everything is built

@@ -257,12 +257,13 @@ export function layout(ctx: PageCtx, body: string): string {
   const spent = Number(s.usd) || 0;
   const ringOf = (used: number) => `<svg class="ring${used >= 90 ? ' bad' : used >= 70 ? ' warn' : ''}" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8"/><circle class="v" cx="10" cy="10" r="8" pathLength="100" stroke-dasharray="${used} 100"/></svg>`;
   const ring = ringOf(cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0);
-  // The operator reads the server's tokens; a customer reads their conversations against the plan, which is what they pay
+  // The operator reads the tokens of the stores no customer pays for, against TORAN_MONTHLY_CAP_USD (routes.ts
+  // headerCounts, since 2026-11-11); a customer reads their conversations against the plan, which is what they pay
   // for, from the first day: a workspace with no store yet reads 0, never the tokens (the owner, 2026-11-10, seeing Toran
   // as a customer does: "regular, just like a customer's").
   const p = ctx.operator ? null : ctx.plan || { used: 0, cap: 0 };
   const meter = !p
-    ? `<a class="spend" href="/settings#costs" title="טוקנים החודש: ${tokenNum(spent)}${cap ? ` מתוך ${tokenNum(cap)}` : ''}">${ring}<span class="lbl">טוקנים</span><span class="amt num ltr"><b>${tokenNum(spent)}</b>${cap ? `<span> / ${tokenNum(cap)}</span>` : ''}</span></a>`
+    ? `<a class="spend" href="/settings#costs" title="טוקנים החודש בלי החנויות של הלקוחות: ${tokenNum(spent)}${cap ? ` מתוך ${tokenNum(cap)}` : ''}">${ring}<span class="lbl">טוקנים</span><span class="amt num ltr"><b>${tokenNum(spent)}</b>${cap ? `<span> / ${tokenNum(cap)}</span>` : ''}</span></a>`
     : `<a class="spend" href="/plan" title="שיחות החודש: ${p.used.toLocaleString('en-US')}${p.cap ? ` מתוך ${p.cap.toLocaleString('en-US')} בחבילה` : ''}">${ringOf(p.cap ? Math.min(100, Math.round((p.used / p.cap) * 100)) : 0)}<span class="lbl">שיחות</span><span class="amt num ltr"><b>${p.used.toLocaleString('en-US')}</b>${p.cap ? `<span> / ${p.cap.toLocaleString('en-US')}</span>` : ''}</span></a>`;
   const flash = ctx.flash ? ` data-flash="${esc(ctx.flash)}"` : '';
   return `<!doctype html>

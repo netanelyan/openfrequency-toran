@@ -335,6 +335,13 @@ export function cutSummary(rules: string[], asked: string): string {
 /** What the customer wrote, after a handoff line's reason. */
 const wrote = (t: string) => (t.trim() ? ` הלקוח כתב: "${t.trim()}"` : '');
 
+/**
+ * The handoff line when a customer's store is past what its model may cost this month, or past the operator's own cap
+ * for it (agent/spend.ts): the owner reads that Toran passed the question on, never a cost, a cap or a share (the
+ * owner, 2026-11-11, on the 50% stop).
+ */
+export const passedOnSummary = (asked: string) => `תורן העביר אליכם את השאלה הזו כדי שתענו עליה בעצמכם.${wrote(asked)}`;
+
 // The app's own handoff lines (agent/loop.ts), in Hebrew, and the English ones kept before they were Hebrew, shown in
 // Hebrew wherever the owner or the operator reads them (the owner, 2026-11-09, on "the guard cut stock" still showing:
 // "still has the guard cut sock text"). Each is the reason, then what the customer wrote.

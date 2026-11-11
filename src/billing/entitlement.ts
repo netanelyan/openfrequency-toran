@@ -8,10 +8,13 @@ import { israelDate } from '../core/clock.ts';
 //
 //   GET {OF_ACCOUNTS_INTERNAL}/internal/entitlement?workspace=<id>&product=toran, bearer OF_INTERNAL_TOKEN
 //   -> { workspace, product: "toran", enabled, access: paid | comp | due | unpaid | cancelled | off, allowed, paidThrough, cancelAt,
-//        graceUntil } (test/fixtures/contracts/entitlement.json, accounts' contract)
+//        graceUntil, plan, monthlyIls } (test/fixtures/contracts/entitlement.json, accounts' contract)
 //
-// `allowed` is the only thing acted on. The answer is kept in the settings table (entitlement:<workspace>), so the
-// dashboard and the answer path read the same one and a restart keeps it:
+// `allowed` is the only thing acted on here. `monthlyIls` (since 2026-11-11: what a month of Toran costs the workspace
+// before VAT, in shekels, the plan's list price when it has no price of its own or is complimentary) is what the
+// model's cost is held to (agent/spend.ts); an answer without it, or with one not a positive number, is still an answer.
+// The answer is kept in the settings table (entitlement:<workspace>), so the dashboard and the answer path read the
+// same one and a restart keeps it:
 //
 //   - an answer under FRESH_MS (5 minutes) old is used as it is, nothing is asked, unless accounts said since that the
 //     workspace's access changed (POST /internal/entitlement/changed, billing/changed.ts: a payment recorded, comp, a
@@ -43,9 +46,15 @@ const MIN_TOKEN = 32;
 
 type Env = Record<string, string | undefined>;
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
-export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; plan?: AccountsPlan | null; checkedAt: string; changedAt?: string };
+export type Kept = { allowed: boolean; access: string | null; paidThrough: string | null; cancelAt: string | null; graceUntil?: string | null; plan?: AccountsPlan | null; monthlyIls?: number | null; checkedAt: string; changedAt?: string };
 /** The plan accounts sells the workspace (its contract's plan: { name: store | big, conversations }). */
 export type AccountsPlan = { name: 'store' | 'big'; conversations: number };
+
+/** What a month of Toran costs the workspace before VAT in an answer, in shekels, or null when there is none or it is not a positive number. */
+export function monthlyIlsOfAnswer(b: any): number | null {
+  const n = b?.monthlyIls;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= 1_000_000 ? n : null;
+}
 
 /**
  * The plan in an answer, or null when there is none or it is not in the contract's shape (the store's own setting
@@ -138,7 +147,7 @@ export function entitlementClient({ db, env = process.env, fetchImpl = fetch as 
       /* not JSON: handled below */
     }
     let next: Kept | null = null;
-    if (r.status === 200 && wellFormed(body, workspaceId)) next = { allowed: body.allowed, access: body.access ?? null, paidThrough: body.paidThrough ?? null, cancelAt: body.cancelAt ?? null, graceUntil: body.graceUntil ?? null, plan: planOfAnswer(body), checkedAt: new Date(t).toISOString() };
+    if (r.status === 200 && wellFormed(body, workspaceId)) next = { allowed: body.allowed, access: body.access ?? null, paidThrough: body.paidThrough ?? null, cancelAt: body.cancelAt ?? null, graceUntil: body.graceUntil ?? null, plan: planOfAnswer(body), monthlyIls: monthlyIlsOfAnswer(body), checkedAt: new Date(t).toISOString() };
     else if (r.status === 404 && body?.error === 'no_workspace') next = { allowed: false, access: 'off', paidThrough: null, cancelAt: null, checkedAt: new Date(t).toISOString() };
     if (!next) {
       log(`[entitlement] workspace ${workspaceId}: accounts answered ${r.status}${body?.error ? ` ${body.error}` : ''}, the last answer stands`);

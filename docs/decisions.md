@@ -1232,3 +1232,36 @@ connected channel's own card has "תורן עונה ב..." on or off (migration 
 the account's owner only, a second press to turn it off, audited and an event. A message on a channel switched off waits
 for the owner in the inbox with one note a day, as on a paused store (channels/store.ts). The whole store stops from
 Settings, "להפסיק את תורן בכל הערוצים", the same pause as before with plainer words.
+
+## 2026-11-11: a customer's store may cost us half of what it pays, with an alert at 30%
+
+The owner: "just make sure there is a cap where if ai costs of an account reach 30% of the payment of the customer, we
+get alerted. them on 50% it stops."
+
+**Decision** (src/agent/spend.ts, docs/costs.md, docs/operator.md section 6):
+- Per customer's workspace and Israel month: every usage row of its stores in dollars (a claude-cli call at its API
+  price), in shekels at `USD_ILS` (3.17 unless set, the Bank of Israel's rate of 2026-11-11), against `monthlyIls`
+  from accounts' entitlement answer (the plan's list price, 590 ₪ or 1,190 ₪, when accounts gives none). 30%: one
+  WhatsApp alert to us that month. 50%: no model call for the workspace's stores until the month ends; the customer
+  gets the honest "checking" line, the owner's handoff says "תורן העביר אליכם את השאלה הזו כדי שתענו עליה בעצמכם.",
+  and we get one alert.
+- The lift is ours, on the store's page (`/admin/toran/lead/<id>#cost`): the model back for the rest of the month, or
+  the stop again, each audited (`cost_lift`, `cost_stop`) with the month's numbers.
+- It replaces the plan's cap for customers' stores: $150 a month for a store paying 590 ₪ let the model cost about 80%
+  of it. The operator's own `config.capUsd` still stops its one store when it comes first.
+- `TORAN_MONTHLY_CAP_USD` counts and stops only the stores no customer pays for (leads, demos, our support store) and
+  our own number's usage, so a month of paying stores can neither stop them through it nor run it out for the demos.
+  The ring in the operator's header counts the same.
+
+**Not shown to the customer:** no cost, cap, share or percent, on any page or line: the owner reads that Toran passed
+the question on. The owner's assistant goes on answering the owner (its cost counts).
+
+**Alternatives:** keep the plan's cap per store (it was in dollars, blind to what the workspace pays and to a second
+store); a lower global cap over everything (one busy customer would stop all of them).
+
+**Tested** (test/costcap.test.ts): the month's sum over the workspace's stores only, claude-cli at its API price, not
+last month's; `monthlyIls` kept and the list price without it; the 30% alert once; the 50% stop with no model call,
+the calm handoff, one alert, the sibling store stopped and another workspace answering; the operator's own cap first;
+the lift and the stop again, audited, refused to a customer; the global cap over the stores in no workspace only; the
+operator's ring; the month rolling over.
+

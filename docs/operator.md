@@ -370,8 +370,9 @@ What keeps a customer's message from being lost or delayed without anyone knowin
   הזו..."), the operator hears of it, and it is listed on **the queue page**, `/admin/toran/queue` (Toran's `/queue`,
   the operator's only): what waits, how long the oldest customer message has waited, and the failed jobs of the last
   14 days, each with "להריץ שוב". `GET /internal/ops` carries the same counts as `jobs`.
-- **Alerts** (src/ops/alert.ts): a lost message, a customer message waiting over 5 minutes, a store at 80% or past its
-  cap, the cap over every store, a store spending over `TORAN_STORE_HOUR_ALERT_USD` ($5) in an hour, a store past
+- **Alerts** (src/ops/alert.ts): a lost message, a customer message waiting over 5 minutes, a customer's workspace whose
+  model cost reached 30% or 50% of what it pays that month, a store at 80% or past its own cap, our cap over the stores
+  no customer pays for, a store spending over `TORAN_STORE_HOUR_ALERT_USD` ($5) in an hour, a store past
   `TORAN_STORE_TURNS_PER_HOUR` (200) answers or `TORAN_NEW_SENDERS_PER_HOUR` (30) new email senders in an hour, and
   Teder's alerts, which Teder hands over (below). Each goes to the log (`journalctl -u toran | grep '\[alert\]'`), to
   `TORAN_ALERT_CMD` or `/usr/local/bin/of-alert` when it exists, and, with `TORAN_ALERT_WA` set, to the operator's own
@@ -401,9 +402,31 @@ What keeps a customer's message from being lost or delayed without anyone knowin
   Toran runs no command for it (Teder runs its own). The example both sides' tests read is
   `test/fixtures/ops-alert.json`, the same file in Teder: it is not one of accounts' contracts, since only Teder and
   Toran use it.
-- **Spend caps** (src/agent/spend.ts): each store's month against its plan's conversations, twice, at $0.25 each
-  ($150 for 300, $750 for 1,500; the operator's `stores.config.capUsd` replaces it), beside `TORAN_MONTHLY_CAP_USD`
-  over every store. Past the store's cap only that store hands off.
+- **What a customer's store may cost** (src/agent/spend.ts; the owner, 2026-11-11: "make sure there is a cap where if
+  ai costs of an account reach 30% of the payment of the customer, we get alerted. them on 50% it stops."). Each
+  customer's workspace, each Israel month: the usage of all its stores in dollars (a claude-cli call at its API
+  price), in shekels at `USD_ILS` (3.17 unless set; the Bank of Israel's rate on 2026-11-11 was 3.172), against what a
+  month of Toran costs it before VAT (accounts' entitlement answer, `monthlyIls`; the plan's list price, 590 ₪ or
+  1,190 ₪, when accounts gives none). For the 590 ₪ plan that is 177 ₪ ($55.84) at 30% and 295 ₪ ($93.06) at 50%.
+  - **30%:** you get one alert that month, `cost30:ws:<workspace>:<month>`: "המודל בחשבון 7 (<the store>) עלה החודש 31%
+    ממה שהלקוח משלם", with the month, the cost in shekels and dollars, and the share of what the customer pays.
+  - **50%:** no model call for any store of the workspace until the month ends. A customer's message gets the honest
+    "checking" line and goes to the owner, as past a cap; the owner's line in the inbox is "תורן העביר אליכם את השאלה
+    הזו כדי שתענו עליה בעצמכם." with what the customer wrote, and the owner never sees a cost, a cap or a share. Its
+    voice and the looks of its photos are not read either. You get one alert, `cost50:ws:<workspace>:<month>`: "תורן
+    עצר את המודל בחשבון 7 (<the store>) עד סוף החודש". The owner's assistant goes on answering the owner (its cost
+    still counts).
+  - **The lift:** on the store's page (`/admin/toran/lead/<id>#cost`, "החבילה של הלקוח"), the month's cost and share,
+    and past 50% the one button, "להחזיר את המודל עד סוף החודש": the model answers again in every store of the
+    workspace until the month ends, and nothing more is said that month. "לעצור שוב מעל 50%" takes it back. Each is
+    an audit row (`cost_lift`, `cost_stop`) with the workspace, the month, the cost and the share. The next month
+    starts with no lift.
+  - `stores.config.capUsd`, when you set one, still stops its one store when it comes first (on the paid API).
+- **Spend caps of the stores no customer pays for** (leads, demos, our support store): each store's month against its
+  plan's conversations, twice, at $0.25 each ($150; the operator's `stores.config.capUsd` replaces it), beside
+  `TORAN_MONTHLY_CAP_USD` over this month's usage of every store in no workspace and of none (our number's messages,
+  a receipt's check with no support store). Past a store's cap only that store hands off; past
+  `TORAN_MONTHLY_CAP_USD` all of them, and never a customer's store. The ring in your header counts the same spend.
 - **Retention** (src/jobs/retention.ts), once an Israel day, one `retention` event with its counts:
   - a store's customers' conversations, messages, files, customers' contact details, automatic messages' log and
     events: deleted 30 days after its service stopped (no channel on, its page taken down, or `markServiceStopped`
@@ -551,8 +574,9 @@ What the operator is told about customers' stores, and where (TORAN-READINESS.md
 
 - **The health table:** `GET /internal/ops` has `customers`, one row a customer's store (src/ops/health.ts): paid,
   `live` / `paused` / `never` (src/golive.ts), channels and their state, the month's conversations against the plan,
-  customers waiting over a day, the month's model spend against its cap, and the last alert. accounts' /admin shows it
-  once its contract and reader take it (test/contracts.test.ts records it as Toran's own until then).
+  customers waiting over a day, the month's model spend against its cap (`capUsd`: where the workspace's model stops,
+  half of what it pays at `USD_ILS`, or the store's own `config.capUsd` when lower), and the last alert. accounts'
+  /admin shows it once its contract and reader take it (test/contracts.test.ts records it as Toran's own until then).
 - **Alerts** (src/ops/alert.ts, each key at most once in its window): `waiting:<store>` in a store's first 14 days
   (src/owners/waiting.ts); `kapso_reconnect:<store>` and `kapso_gone:<store>` (Kapso's events);
   `zernio_gone:<store>:<channel>`; `kapso_credits` (Kapso refusing sends for lack of credit, from the worker);

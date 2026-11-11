@@ -1,5 +1,5 @@
 import type { App } from '../app.ts';
-import { storeCapUsd } from '../agent/spend.ts';
+import { customerCapUsd } from '../agent/spend.ts';
 import { storeAllowed } from '../billing/entitlement.ts';
 import { displayName } from '../ingest/brand.ts';
 import { liveState, type LiveState } from '../golive.ts';
@@ -8,8 +8,9 @@ import { WAITING_SQL } from '../web/inbox.ts';
 
 // One row a customer's store, for the operator (TORAN-READINESS.md P1-26), as Teder's /all has one a workspace: paid,
 // switched on, its channels and their state, the month's conversations against its plan, customers waiting more than a
-// day, the month's model spend against its cap, and the last alert about it. Part of GET /internal/ops (ops/api.ts),
-// shown on accounts' /admin.
+// day, the month's model spend against its cap (since 2026-11-11 the line where its workspace's model stops, half of
+// what it pays, or the operator's own capUsd when lower: agent/spend.ts), and the last alert about it. Part of GET
+// /internal/ops (ops/api.ts), shown on accounts' /admin.
 
 export type HealthRow = {
   storeId: number;
@@ -60,7 +61,7 @@ export async function customerHealth(app: App): Promise<HealthRow[]> {
       cap: u.cap,
       waitingOverDay: w.get(Number(s.id))?.n || 0,
       spendUsd: Math.round((sp.get(Number(s.id))?.usd || 0) * 100) / 100,
-      capUsd: storeCapUsd(app.env, s.config),
+      capUsd: Math.round((await customerCapUsd(app, Number(s.workspace_id), s.config)) * 100) / 100,
       lastAlert: a ? { at: new Date(a.at).toISOString(), title: a.title } : null,
     });
   }

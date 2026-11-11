@@ -45,10 +45,11 @@ export type DashReq = Req & { user: { id: number; name: string; role: string; em
 
 /**
  * The operator's alone (the superadmin outside view-as): the whole server's settings, adding stores, and selling to
- * them (a lead's page, its pitch and its outreach, the review queue, the follow-ups, the plan a store is on). A
- * customer's dashboard is pages/customer.ts; their own store's answers, policies, channels and chats stay theirs.
+ * them (a lead's page, its pitch and its outreach, the review queue, the follow-ups, the plan a store is on, the model
+ * back in a workspace past half of what it pays). A customer's dashboard is pages/customer.ts; their own store's
+ * answers, policies, channels and chats stay theirs.
  */
-const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add|review\/approve-all|ops\/.*|queue\/\d+\/again|lead\/\d+\/(build|approve|unapprove|takedown|sent|wa-send|teder-build|both-build|teder-send|both-send|followup-sent|skip|status|notes|sample|brand|plan|release))$/;
+const OPERATOR_ONLY = /^\/(settings\/(offer|discover|dev|channels)|leads\/add|review\/approve-all|ops\/.*|queue\/\d+\/again|lead\/\d+\/(build|approve|unapprove|takedown|sent|wa-send|teder-build|both-build|teder-send|both-send|followup-sent|skip|status|notes|sample|brand|plan|release|cost-lift))$/;
 /** The operator's pages. A customer who reaches one goes to their own: a store's page to what Toran knows about it. */
 const OPERATOR_PAGES = /^\/(leads|review|followups|brand|queue|job\/\d+|lead\/\d+(\/review)?)$/;
 /** A waiting page's poll (static/app.js): answered without the header's counts, which it never shows (PRA-FE-006). */

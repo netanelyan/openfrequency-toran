@@ -70,6 +70,7 @@ export async function fakeAccounts() {
   const answers = new Map<string, Canned>();
   const entitlements = new Map<number, 'unpaid' | 'gone' | 'down'>();
   const phones = new Map<number, string[]>();
+  const prices = new Map<number, number>();
   let calls = 0;
   let entitlementCalls = 0;
   const server = http.createServer((req, res) => {
@@ -88,7 +89,7 @@ export async function fakeAccounts() {
       if (e === 'gone') return out(404, { error: 'no_workspace' });
       if (e === 'down') return out(503, { error: 'down' });
       const allowed = e !== 'unpaid';
-      return out(200, { workspace: ws, product: url.searchParams.get('product'), enabled: true, access: allowed ? 'paid' : 'unpaid', allowed, paidThrough: allowed ? LATER : null, cancelAt: null });
+      return out(200, { workspace: ws, product: url.searchParams.get('product'), enabled: true, access: allowed ? 'paid' : 'unpaid', allowed, paidThrough: allowed ? LATER : null, cancelAt: null, ...(prices.has(ws) ? { monthlyIls: prices.get(ws) } : {}) });
     }
     // A workspace's verified WhatsApp numbers (the assistant's page), only for a workspace a test gave numbers to.
     if (url.pathname === '/internal/owner-phones' && phones.has(Number(url.searchParams.get('workspace')))) {
@@ -130,6 +131,10 @@ export async function fakeAccounts() {
     paid(workspaceId: number, state: 'unpaid' | 'gone' | 'down' | null) {
       if (state == null) entitlements.delete(workspaceId);
       else entitlements.set(workspaceId, state);
+    },
+    /** What a month of Toran costs a workspace before VAT, in shekels, as accounts says it from now on (monthlyIls, since 2026-11-11). */
+    price(workspaceId: number, monthlyIls: number) {
+      prices.set(workspaceId, monthlyIls);
     },
     /** The WhatsApp numbers accounts says a workspace verified, from now on. */
     ownerPhones(workspaceId: number, list: string[]) {
