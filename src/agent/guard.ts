@@ -55,6 +55,10 @@ const CURRENCY = new RegExp(`₪|ש"ח|ש״ח|${heWord('שקלים', 'שקל', '
 const MONEY_WORD = new RegExp(`${heWord('מחירים', 'מחיר', 'עולים', 'עולה', 'עלות', 'לשלם', 'משלמים', 'תשלום', 'בתוספת')}|\\b(price|prices|costs?|pay)\\b`, 'i');
 const PERCENT = /\d\s*%|%\s*\d|אחוז/;
 export const STOCK = new RegExp(`${heWord('במלאי', 'מלאי', 'אזלו', 'אזל', 'נגמרו', 'נגמר', 'זמינים', 'זמינה', 'זמין')}|\\b(in stock|out of stock|sold out|available)\\b`, 'i');
+// An offer to look ("כתבו לי מה ואבדוק מה יש במלאי", "I'll check if it's in stock") says nothing about the stock: the
+// stock word inside it is not a claim, and the rest of the sentence is still checked (the owner, 2026-11-11, on such an
+// offer cut from a reply to "היי": "why is it red?").
+const CHECKS_STOCK = /(?:^|[\s,(])[ושכ]?(?:אבדוק|לבדוק|נבדוק|בודקת|בודקים|בודק|אברר|לברר|נברר)\s+(?:\S+\s+){0,4}?\S*(?:מלאי|זמינ[א-ת]*)|\bcheck(?:ing)?\b(?:\s+\S+){0,4}?\s+(?:in stock|stock|available|availability)/gi;
 const LEFT_N = /(?:נשאר(?:ו|ה)?|נותר(?:ו|ה)?|רק)\s+\d+|\d+\s+(?:יחידות|פריטים|זוגות)\s+(?:אחרונ)|only\s+\d+\s+left/i;
 const DELIVERY = new RegExp(`${heWord('משלוחים', 'משלוח', 'אספקה', 'יגיעו', 'יגיע', 'תגיע', 'מגיעים', 'מגיעה', 'מגיע', 'שליח', 'איסוף')}|\\b(shipping|delivery|deliver|arrive|arrives)\\b`, 'i');
 const TIME = /\d+\s*(?:-\s*\d+\s*)?(?:ימים|ימי\s*עסקים|יום|שעות|שעה|business\s*days|days|hours)|מחר|השבוע|tomorrow/i;
@@ -260,7 +264,7 @@ export function violation(sentence: string, allow: Allow): string | null {
   }
   // No tool ever gives a quantity in stock, only in or out: "only 3 left" is invented, whatever number it uses.
   if (LEFT_N.test(s)) return 'stock';
-  if (STOCK.test(s) && !allow.stockKnown) return 'stock';
+  if (STOCK.test(s.replace(CHECKS_STOCK, ' ')) && !allow.stockKnown) return 'stock';
   if (DELIVERY.test(s) && TIME.test(s)) {
     if (bad.length || captured(TIME_OF, plain).some((n) => !allow.toolNumbers.has(n))) return 'delivery';
     if (RELATIVE.test(s) && !allow.relativeTimes) return 'delivery';

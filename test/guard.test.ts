@@ -50,6 +50,15 @@ test('stock words need stock data from a tool; superlatives never pass', () => {
   assert.equal(guardReply('כן, זה במלאי.', noStock).redactions[0]?.rule, 'stock');
   assert.equal(guardReply('כן, זה במלאי.', allow()).redactions.length, 0);
   assert.equal(guardReply('נשארו רק 2 יחידות אחרונות.', allow()).redactions[0]?.rule, 'stock');
+  // An offer to check is no claim (the owner, 2026-11-11: "why is it red?"); a claim beside it still is.
+  const hi = buildAllow({ toolTexts: [], customerTexts: ['היי'] });
+  const offer = 'היי, במה אפשר לעזור? אם מחפשים חולצה או מוצר מסוים, כתבו לי מה ואבדוק מה יש במלאי.';
+  assert.deepEqual(guardReply(offer, hi, { asked: 'היי' }).redactions, []);
+  assert.deepEqual(guardReply('רוצה שאבדוק אם המידה הזו זמינה?', hi).redactions, []);
+  assert.deepEqual(guardReply("Tell me which one and I'll check if it's in stock.", hi).redactions, []);
+  assert.equal(guardReply('אבדוק מה יש במלאי, ויש לנו במלאי חולצות.', hi).redactions[0]?.rule, 'stock');
+  assert.equal(guardReply('בדקתי, וזה במלאי.', hi).redactions[0]?.rule, 'stock');
+  assert.equal(guardReply('אבדוק, אבל זה זמין.', hi).redactions[0]?.rule, 'stock');
   const sup = guardReply('זה המחיר הכי טוב בארץ. רוצים?', allow());
   assert.equal(sup.redactions[0].rule, 'superlative');
   assert.equal(sup.text, 'רוצים?');
