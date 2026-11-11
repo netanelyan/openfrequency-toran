@@ -26,8 +26,10 @@ const handledUpto = `GREATEST(c.settled_upto, COALESCE((SELECT MAX(o.id) FROM me
 export const WAITING_SQL = `(EXISTS (SELECT 1 FROM messages h WHERE h.conversation_id = c.id AND h.handoff IS NOT NULL AND h.id > ${handledUpto})
   OR (COALESCE(c.agent_paused_until > now(), false) AND EXISTS (SELECT 1 FROM messages h WHERE h.conversation_id = c.id AND h.role = 'customer' AND h.automated IS NULL AND h.id > ${handledUpto})))`;
 
+// "טיפלתי בזה" (settled_upto) is the owner's too, never Toran's "ענה לבד" (the audit of 2026-11-12, P1-4): Today, the
+// results and the month's email count it with the owner's answers.
 export const STATE_SQL = `(CASE WHEN ${WAITING_SQL} THEN 'waiting'
-  WHEN EXISTS (SELECT 1 FROM messages o WHERE o.conversation_id = c.id AND o.role = 'owner') THEN 'fixed'
+  WHEN c.settled_upto > 0 OR EXISTS (SELECT 1 FROM messages o WHERE o.conversation_id = c.id AND o.role = 'owner') THEN 'fixed'
   ELSE 'alone' END)`;
 
 export const stateChip = (s: InboxState) => `<span class="chip ${STATE_HE[s][1]}">${STATE_HE[s][0]}</span>`;

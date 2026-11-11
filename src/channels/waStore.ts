@@ -9,7 +9,7 @@ import { accountState, debugToken, exchangeCode, lastingToken, phoneInfo, refres
 import { hold, PAUSE_HOURS } from './owner.ts';
 import { lineNumber, lineOf, oneNumber, withOne, type Line } from './lines.ts';
 import { isCompany, supportAccount } from '../company.ts';
-import { conversationOf, handOver, type Account } from './store.ts';
+import { conversationOf, heldForOwner, type Account } from './store.ts';
 import { openConversation, sentByUs } from './conversations.ts';
 import { alertNotDelivered } from '../ops/alert.ts';
 import { reminderNotDelivered } from '../billing/remind.ts';
@@ -372,12 +372,14 @@ async function tellOwner(app: App, accountId: number, kind: 'soon' | 'ended') {
 
 const HELD_NOTE = 'החיבור של הוואטסאפ לתורן הסתיים, אז תורן לא ענה. ההודעה מחכה לכם: אפשר לענות מהטלפון, ולחבר מחדש בהגדרות כדי שתורן יחזור לענות.';
 
-/** A customer wrote while the number needs connecting again: the message waits for the owner, with a note once a day. */
+/**
+ * A customer wrote while the number needs connecting again: the message waits for the owner, with a note while none is
+ * waiting there (store.ts heldForOwner: a message after "טיפלתי בזה" waits again, not only the next day).
+ */
 export async function heldForReconnect(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account): Promise<RouteResult> {
   const conv = await conversationOf(app, adapter, account, inbound);
   await hold(app, conv, inbound);
-  const noted = await app.db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'system' AND handoff->>'reason' = 'reconnect' AND at > now() - interval '1 day'", [conv]);
-  if (!noted) await handOver(app, account.store_id, conv, 'reconnect', 'the WhatsApp token ended', HELD_NOTE);
+  await heldForOwner(app, account.store_id, conv, 'reconnect', 'the WhatsApp token ended', HELD_NOTE);
   await event(app.db, account.store_id, 'held', { conversationId: conv, why: 'reconnect' });
   return { action: 'held', storeId: account.store_id };
 }

@@ -58,7 +58,7 @@ async function today(app: App, r: DashReq) {
 </div>
 ${addForm(r)}
 ${down.length ? `<section class="group mt24"><header><h2>ביקשו להוריד את העמוד</h2></header><div class="panel">${down.map((s) => leadRow(s, postButton(r.ctx, `/lead/${s.id}/takedown`, 'להוריד', { cls: 'btn sm danger', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' }))).join('')}</div><p class="small muted mt8 m0">מישהו לחץ על "להוריד את העמוד הזה". כשההודעה שלהם מגיעה בוואטסאפ, מורידים את העמוד מכאן.</p></section>` : ''}
-${hand.length ? `<section class="group mt24"><header><h2>העברות אליך</h2><a class="end small" href="/chats?filter=handoff">כל השיחות</a></header><div class="list">${hand.map((h) => `<a href="/chat/${h.id}"><span class="ico bad">${icon('hand')}</span><span class="t"><b>${esc(h.brand?.name || h.name || h.domain)}: ${esc(h.summary || 'תורן העביר שיחה')}</b><small>${esc(ago(h.last_at))}</small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div></section>` : ''}
+${hand.length ? `<section class="group mt24"><header><h2>העברות אליך</h2><a class="end small" href="/chats?filter=handoff">כל השיחות</a></header><div class="list">${hand.map((h) => `<a href="/chat/${h.id}"><span class="ico bad">${icon('hand')}</span><span class="t"><b>${esc(h.brand?.name || h.name || h.domain)}: ${esc(summaryHe(h.summary || '') || 'תורן העביר שיחה')}</b><small>${esc(ago(h.last_at))}</small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div></section>` : ''}
 ${installCard(r.ctx.install)}
 <section class="group mt24" id="ready"><header><h2>מוכנים לשליחה</h2></header>${ready.length ? `<div class="panel">${ready.map((s) => leadRow(s, `<a class="btn sm" href="/lead/${s.id}">${icon('send')}לשליחה</a>`)).join('')}</div>` : `<div class="empty">${icon('send')}<b>אין דפים שמחכים לשליחה</b>דף נכנס לכאן אחרי שמאשרים אותו.</div>`}</section>
 <section class="group"><header><h2>לידים חדשים שמתאימים</h2><a class="end small" href="/leads?status=new">כולם</a></header>${fresh.length ? `<div class="panel">${fresh.map((s) => leadRow(s, canIngest(s.platform) ? postButton(r.ctx, `/lead/${s.id}/build`, 'לבנות דף', { cls: 'btn sm' }) : '')).join('')}</div>` : `<div class="empty">${icon('leads')}<b>אין לידים חדשים</b>אפשר להריץ חיפוש בהגדרות.</div>`}</section>`;
@@ -153,15 +153,17 @@ const waMarkup = (html: string) => html.replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$
 export function sendFailedHe(e: any, ch: string): string {
   if (e instanceof GraphError && e.code === TOKEN_GONE) return BLOCKED_HE.reconnect;
   if (e?.name === 'TimeoutError' || e?.name === 'AbortError' || /fetch failed|network|ECONN|ETIMEDOUT|ENOTFOUND/i.test(String(e?.message || e))) return `לא הצלחנו להגיע ל${ch} כרגע, ולא נשלח כלום. התשובה נשארה כאן, ואפשר לנסות שוב בעוד רגע.`;
-  return `${ch} לא קיבל את ההודעה${e instanceof GraphError && e.code ? ` (קוד ${e.code})` : ''}. התשובה נשארה כאן. אפשר לנסות שוב בעוד רגע, ואם זה חוזר, לענות ללקוח ישירות או לכתוב לנו.`;
+  // The provider's code is for the log (the route writes it there), never the owner's screen (the audit of 2026-11-12, P1-14).
+  return `${ch} לא קיבל את ההודעה. התשובה נשארה כאן. אפשר לנסות שוב בעוד רגע, ואם זה חוזר, לענות ללקוח ישירות או לכתוב לנו.`;
 }
 
+// No setting of the server and no word of Meta's in these (the audit of 2026-11-12, P1-14 and P2-10).
 const BLOCKED_HE: Record<string, string> = {
-  window_closed: 'עברו יותר מ־24 שעות מההודעה האחרונה של הלקוח. בוואטסאפ אפשר לענות אחרי זה רק בתבנית שמטא אישרה, ולתורן עוד אין תבניות, אז מכאן אי אפשר לענות בשיחה הזו.',
+  window_closed: 'עברו יותר מ־24 שעות מההודעה האחרונה של הלקוח, ו־WhatsApp לא מאפשר לענות מכאן אחרי זה. אפשר לענות לו מהוואטסאפ בטלפון, או לחכות שיכתוב שוב.',
   suppressed: 'מייל לכתובת הזו חזר או סומן כספאם, אז לא שולחים אליה יותר.',
   no_files: 'בערוץ הזה אפשר לשלוח מכאן רק טקסט, בלי קבצים.',
   no_customer: 'הלקוח עוד לא כתב בשיחה הזו, אז אין למי לענות.',
-  channel_off: 'הערוץ של השיחה הזו כבוי בשרת (TORAN_CHANNELS), אז אי אפשר לשלוח ממנו.',
+  channel_off: 'מהערוץ הזה אי אפשר לענות מכאן כרגע. אפשר לענות ללקוח ישירות, או לכתוב לנו.',
   reconnect: 'החיבור של הוואטסאפ לתורן הסתיים, אז מכאן אי אפשר לשלוח. אפשר לענות ללקוח מהטלפון, ולחבר מחדש בהגדרות.',
 };
 
@@ -192,7 +194,10 @@ async function chat(app: App, r: DashReq, id: number) {
     const sep = d !== day ? `<div class="day"><span>${esc(d)}</span></div>` : '';
     if (sep) lastRole = '';
     day = d;
-    const writer = m.role === 'customer' ? customerName : m.role === 'agent' ? 'תורן' : m.role === 'owner' ? m.author || (op ? 'מכאן' : 'אתם') : '';
+    // An answer from the store's phone or app (an echo, its ext_id "echo:...") is the store's, written there: its author
+    // is where it was sent from, said under the bubble.
+    const echo = m.role === 'owner' && String(m.ext_id || '').startsWith('echo:');
+    const writer = m.role === 'customer' ? customerName : m.role === 'agent' ? 'תורן' : m.role === 'owner' ? (echo ? (op ? 'החנות' : 'אתם') : m.author || (op ? 'מכאן' : 'אתם')) : '';
     const label = writer && m.role !== lastRole ? `<div class="who-l ${m.role === 'customer' ? 'start' : 'end'}"><bdi>${esc(writer)}</bdi></div>` : '';
     lastRole = m.role;
     return sep + label + bubble(m);
@@ -205,7 +210,9 @@ async function chat(app: App, r: DashReq, id: number) {
       ...(op ? m.tools || [] : []).map((t: any) => `<span>${icon('search')} ${esc(t.name)} ${esc(JSON.stringify(t.input)).slice(0, 120)}</span>`),
       ...(m.guard || []).filter((g: any) => g.rule !== 'continuation').map((g: any) => `<span class="warn">${icon('alert')} נמחק לפני השליחה (${esc(RULE_HE[g.rule] || g.rule)}): "${esc(g.sentence)}"</span>`),
       ...(m.handoff ? [op ? `<span class="bad">${icon('hand')} הועבר אליך (${esc(REASON_HE[m.handoff.reason] || m.handoff.reason)}): ${esc(summaryHe(m.handoff.summary || ''))}</span>` : `<span class="bad">${icon('hand')} תורן העביר את זה אליכם${/[\u0590-\u05FF]/.test(summaryHe(m.handoff.summary || '')) ? `: ${esc(summaryHe(m.handoff.summary || ''))}` : ''}</span>`] : []),
-    ] : m.role === 'owner' ? [`<span>${icon('send')} נשלח מכאן</span>`]
+    ] : m.role === 'owner' ? [`<span>${icon('send')} ${String(m.ext_id || '').startsWith('echo:') ? `נשלח ${esc(m.author || 'מהטלפון')}` : 'נשלח מכאן'}</span>`]
+    // The line the site chat's visitor read while Toran does not answer there (channels/store.ts HELD_WEB).
+    : m.role === 'system' && m.auto === 'held' ? [`<span>${icon('send')} הלקוח קיבל את זה אוטומטית, כי תורן לא עונה בצ׳אט באתר כרגע</span>`]
     : m.role === 'customer' ? [
       // Why it was not answered is the operator's to read ("no-reply address", "dmarc=fail"); the owner reads plain words.
       ...(m.automated ? [`<span class="warn">${icon('alert')} הודעה אוטומטית${op ? ` (${esc(m.automated)})` : ''}, ותורן לא ענה עליה</span>`] : []),
@@ -214,7 +221,10 @@ async function chat(app: App, r: DashReq, id: number) {
   }
   const st = await replyState(app, id);
   const ch = CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel;
-  const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">${op ? 'ענית' : 'עניתם'} בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה ${op ? 'לך' : 'לכם'} כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm' })}</div>` : '';
+  // "להחזיר לתורן" with a message waiting: Toran answers from the customer's next message, and the waiting one stays the
+  // owner's (channels/store.ts heldForOwner), said before the second press (the audit of 2026-11-12, P0-3).
+  const resumeConfirm = c.state === 'waiting' ? 'תורן יענה מההודעה הבאה של הלקוח, וההודעה שמחכה עכשיו נשארת אצלכם בשיחות. לחצו שוב כדי להחזיר.' : null;
+  const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">${op ? 'ענית' : 'עניתם'} בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה ${op ? 'לך' : 'לכם'} כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm', confirm: resumeConfirm })}</div>` : '';
   const windowNote = st.windowEnds ? `אפשר לענות עד ${esc(stamp(st.windowEnds))}, ${st.windowHours && st.windowHours > 24 ? `${Math.round(st.windowHours / 24)} ימים` : '24 שעות'} מההודעה האחרונה של הלקוח. ` : '';
   // A question Toran handed over: the owner's answer can stay with Toran for next time ("מה שתענו הוא יזכור לפעם הבאה").
   const waiting = c.state === 'waiting';
@@ -393,7 +403,7 @@ export function homeRoutes(app: App): Route<DashReq>[] {
         const c = await app.db.one<{ channel: string }>('SELECT channel FROM conversations WHERE id = $1', [id]);
         throw new ActionError(sendFailedHe(e, CHANNEL_HE[c?.channel as keyof typeof CHANNEL_HE] || 'הערוץ'), 502);
       }
-      if (!d.ok) throw new ActionError(BLOCKED_HE[d.reason] || 'לא נשלח.');
+      if (!d.ok) throw new ActionError(BLOCKED_HE[d.reason] || 'התשובה לא נשלחה. אפשר לנסות שוב בעוד רגע.');
       // Kept for next time: the question as the owner left it, and their answer (the agent prefers it to the site's).
       const question = String(r.form.question || '').replace(/\s+/g, ' ').trim().slice(0, 300);
       if (r.form.learn === '1' && text && question.length >= 2) {
@@ -425,7 +435,8 @@ export function homeRoutes(app: App): Route<DashReq>[] {
     }],
     ['POST', /^\/chat\/(\d+)\/resume$/, async (r, m) => {
       await resumeAgent(app, Number(m[1]), r.user.name);
-      return { redirect: `/chat/${m[1]}`, message: 'תורן עונה שוב בשיחה הזו, מההודעה הבאה.' };
+      const waits = await app.db.one(`SELECT 1 FROM conversations c WHERE c.id = $1 AND ${WAITING_SQL}`, [Number(m[1])]);
+      return { redirect: `/chat/${m[1]}`, message: waits ? 'תורן יענה שוב בשיחה הזו מההודעה הבאה של הלקוח. ההודעה שמחכה עכשיו נשארת אצלכם בשיחות.' : 'תורן עונה שוב בשיחה הזו, מההודעה הבאה.' };
     }],
     ['POST', /^\/settings\/channels$/, async (r) => {
       const on = enabledChannels(app.env);

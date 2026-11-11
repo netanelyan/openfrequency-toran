@@ -116,6 +116,40 @@ export async function handOver(app: App, storeId: number, conversationId: number
   await notifyWaiting(app, storeId, conversationId).catch((e) => app.log(`[waiting] store ${storeId}: ${e?.message || e}`));
 }
 
+/** Everything in a conversation up to this message id is answered by the owner or marked handled (as web/inbox.ts reads it). */
+const HANDLED_UPTO = `GREATEST(c.settled_upto, COALESCE((SELECT MAX(o.id) FROM messages o WHERE o.conversation_id = c.id AND o.role = 'owner'), 0))`;
+
+/**
+ * A customer's message kept for the owner with no answer from Toran (the owner has the conversation, the store is not
+ * switched on or is paused, Toran is off on the channel, the number has to be connected again): a note for the owner,
+ * counted as a handoff, unless one is already waiting there that the owner has neither answered nor marked handled.
+ * The conversation waits until the owner does one of those, never only until a pause or a day runs out (the audit of
+ * 2026-11-12, P0-3 and P0-4: a customer's follow-up after the owner answered, or after "טיפלתי בזה" the same day, left
+ * every count and nobody was told). Either way the owner hears of the new message (owners/waiting.ts).
+ */
+export async function heldForOwner(app: App, storeId: number, conversationId: number, reason: string, summary: string, text: string): Promise<void> {
+  const open = await app.db.one(`SELECT 1 FROM conversations c WHERE c.id = $1 AND EXISTS (SELECT 1 FROM messages h WHERE h.conversation_id = c.id AND h.handoff IS NOT NULL AND h.id > ${HANDLED_UPTO})`, [conversationId]);
+  if (!open) return handOver(app, storeId, conversationId, reason, summary, text);
+  await notifyWaiting(app, storeId, conversationId).catch((e) => app.log(`[waiting] store ${storeId}: ${e?.message || e}`));
+}
+
+/**
+ * What a visitor on the store's own site chat reads, once a conversation, while Toran does not answer there (not switched
+ * on yet, paused, or off on the chat): the chat came up and took the message, so silence would read as a broken chat
+ * (the audit of 2026-11-12, P0-5: typing dots for 90 seconds, then nothing). No model call. In everyone's forms (agent/voice.ts
+ * neutral): the visitor's gender is not known. The other channels are the store's own apps, where the owner answers.
+ * Kept as a system line the visitor reads (channels/web.ts visitorLines), not as Toran's answer: the inbox row goes on
+ * showing what the customer wrote, and nothing counts it as answered.
+ */
+export const HELD_WEB = 'קיבלנו את ההודעה, ומישהו מהחנות יענה כאן. כדאי להשאיר טלפון או מייל, כדי שנוכל לחזור גם אם הדף נסגר.';
+
+async function heldReply(app: App, adapter: ChannelAdapter, inbound: Inbound, storeId: number, conversationId: number, storeName: string) {
+  if (adapter.channel !== 'web') return;
+  if (await app.db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND auto = 'held'", [conversationId])) return;
+  const d = await reply(app, adapter, inbound, HELD_WEB, storeId, conversationId, { who: 'agent', storeName });
+  await app.db.query("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'system', $2, 'אוטומטי', 'held', $3::jsonb)", [conversationId, HELD_WEB, J(d.ok ? d.ids : [])]);
+}
+
 export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account): Promise<RouteResult> {
   const { db } = app;
   const { tag } = LEDGER[adapter.channel];
@@ -150,26 +184,29 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
     return { action: 'opt_out', storeId: store.id, reply: line };
   }
   if (ch) await customerWrote(app, store.id, ch, inbound.from);
+  // The owner answered here a moment ago (owner.ts, 12 hours): the message is theirs, and stays waiting for them after
+  // the pause or "להחזיר לתורן" until they answer it or mark it handled (heldForOwner).
   if (await isPaused(app, conv)) {
     await hold(app, conv, inbound);
     await event(db, store.id, 'held', { conversationId: conv });
-    await notifyWaiting(app, store.id, conv).catch((e) => app.log(`[waiting] store ${store.id}: ${e?.message || e}`));
+    await heldForOwner(app, store.id, conv, 'held', 'the customer wrote again after the owner answered', 'הלקוח כתב שוב אחרי התשובה שלכם, ותורן לא עונה בשיחה הזו עכשיו. ההודעה מחכה לכם כאן.');
     return { action: 'held', storeId: store.id };
   }
-  // Not switched on yet, or paused by the owner (golive.ts): the message waits for the owner, and Toran says nothing.
-  // One note a conversation a day, so the inbox shows it as waiting and the owner is told once (owners/waiting.ts).
+  // Not switched on yet, or paused by the owner (golive.ts): the message waits for the owner (a note while none is
+  // waiting there, heldForOwner), and Toran says nothing. On the store's site chat the visitor is told once that the
+  // message reached the store (heldReply).
   if (!isLive(store)) {
     await hold(app, conv, inbound);
-    const noted = await db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'system' AND handoff->>'reason' = 'not_live' AND at > now() - interval '1 day'", [conv]);
-    if (!noted) await handOver(app, store.id, conv, 'not_live', 'Toran is not switched on in this store', liveState(store) === 'paused' ? 'תורן מושהה בחנות, אז ההודעה מחכה לך כאן.' : 'תורן עוד לא הופעל בחנות, אז ההודעה מחכה לך כאן.');
+    await heldForOwner(app, store.id, conv, 'not_live', 'Toran is not switched on in this store', liveState(store) === 'paused' ? 'תורן מושהה בחנות, אז ההודעה מחכה לכם כאן.' : 'תורן עוד לא הופעל בחנות, אז ההודעה מחכה לכם כאן.');
+    await heldReply(app, adapter, inbound, store.id, conv, storeName);
     return { action: 'not_live', storeId: store.id };
   }
   // Switched off on this channel alone by the owner, from the channel's own card (migration 076, web/pages/channelOff.ts):
   // the same wait as a paused store, the note saying it is this channel.
   if ((store.agent_off || []).includes(account.channel)) {
     await hold(app, conv, inbound);
-    const noted = await db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'system' AND handoff->>'reason' = 'channel_off' AND at > now() - interval '1 day'", [conv]);
-    if (!noted) await handOver(app, store.id, conv, 'channel_off', `Toran is switched off on ${account.channel} in this store`, 'כיביתם את תורן בערוץ הזה, אז ההודעה מחכה לך כאן.');
+    await heldForOwner(app, store.id, conv, 'channel_off', `Toran is switched off on ${account.channel} in this store`, 'כיביתם את תורן בערוץ הזה, אז ההודעה מחכה לכם כאן.');
+    await heldReply(app, adapter, inbound, store.id, conv, storeName);
     return { action: 'channel_off', storeId: store.id };
   }
   // An answer to the store's review request: a rating kept, or the customer's word on showing it (reviews.ts). Said

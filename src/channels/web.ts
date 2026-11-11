@@ -124,12 +124,15 @@ export async function siteOf(app: App, key: string): Promise<Site | null> {
 
 export type WebLine = { id: number; who: 'me' | 'store'; text: string; at: string };
 
-/** This visitor's conversation with the store, after a message id: what they wrote, and what Toran or the owner answered. */
+/**
+ * This visitor's conversation with the store, after a message id: what they wrote, what Toran or the owner answered, and
+ * the line that says the store got the message while Toran does not answer there (channels/store.ts HELD_WEB).
+ */
 export async function visitorLines(app: App, account: WebAccount, visitor: string, after = 0): Promise<WebLine[]> {
   if (!isVisitor(visitor)) return [];
   const rows = await app.db.query<{ id: number; role: string; text: string; at: string }>(
     `SELECT m.id, m.role, m.text, m.at FROM messages m JOIN conversations c ON c.id = m.conversation_id
-     WHERE c.account_id = $1 AND c.channel = 'web' AND c.peer = $2 AND m.id > $3 AND m.role IN ('customer', 'agent', 'owner') AND m.text <> ''
+     WHERE c.account_id = $1 AND c.channel = 'web' AND c.peer = $2 AND m.id > $3 AND (m.role IN ('customer', 'agent', 'owner') OR (m.role = 'system' AND m.auto = 'held')) AND m.text <> ''
      ORDER BY m.id LIMIT 60`,
     [account.id, visitor, Math.max(0, Math.floor(after) || 0)],
   );

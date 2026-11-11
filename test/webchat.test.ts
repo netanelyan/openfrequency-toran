@@ -5,6 +5,9 @@ import { counted, monthOf } from '../src/plans.ts';
 import { defaultDomains, siteOrigin } from '../src/channels/web.ts';
 import { ratingOf } from '../src/reviews.ts';
 import { customer } from './helpers.ts';
+import { HELD_WEB } from '../src/channels/store.ts';
+import { setLive } from '../src/golive.ts';
+import { WAITING_SQL } from '../src/web/inbox.ts';
 import { serve } from './serve.ts';
 
 // The chat on the store's own site (the owner, 2026-11-06, docs/todo.md), and the reviews Toran collects and shows
@@ -179,6 +182,47 @@ test('reviews: a rating answering the request is kept, the customer is asked onc
     // Hidden: off the site.
     await s.post(`/lead/${id}/reviews/${rid}`, { _csrf: await s.csrf('/settings'), do: 'hide' });
     assert.doesNotMatch(await (await s.get(`/w/${key}/reviews`)).text(), /הכל הגיע מהר/);
+  } finally {
+    await s.close();
+  }
+});
+
+// The audit of 2026-11-12, P0-5: while Toran is not switched on, is paused, or is off on the chat, the chat on the
+// store's site took the visitor's message and showed typing dots for 90 seconds, then nothing.
+test('while Toran does not answer on the site chat, the visitor reads once that the store got the message, with no model call, and the owner is told', async () => {
+  const { s, id, key } = await chatOn();
+  try {
+    await s.app.db.query("UPDATE channel_accounts SET meta = meta || '{\"first_seen_at\":\"2026-11-01T00:00:00Z\"}'::jsonb WHERE store_id = $1 AND channel = 'web'", [id]);
+    let calls = 0;
+    const inner = s.app.llm;
+    s.app.llm = { backend: inner.backend, turn: (req) => (calls++, inner.turn(req)) };
+    const states: [string, string, () => Promise<unknown>][] = [
+      ['not switched on', 'CCCCCCCCCCCCCCCCCCCCCC', () => s.app.db.query('UPDATE stores SET agent_live_at = NULL, agent_paused_at = NULL WHERE id = $1', [id])],
+      ['paused', 'DDDDDDDDDDDDDDDDDDDDDD', async () => (await setLive(s.app, id, true), setLive(s.app, id, false))],
+      ['off on the chat', 'EEEEEEEEEEEEEEEEEEEEEE', async () => (await setLive(s.app, id, true), s.app.db.query("UPDATE stores SET agent_off = '{web}' WHERE id = $1", [id]))],
+    ];
+    for (const [why, v, set] of states) {
+      await set();
+      assert.equal((await say(s, key, v, 'היי, אתם פתוחים היום?')).status, 200);
+      await drain(s.app, { kinds: ['web_inbound'] });
+      assert.deepEqual((await lines(s, key, v)).lines.map((l: any) => [l.who, l.text]), [['me', 'היי, אתם פתוחים היום?'], ['store', HELD_WEB]], why);
+      await say(s, key, v, 'יש מישהו?');
+      await drain(s.app, { kinds: ['web_inbound'] });
+      assert.deepEqual((await lines(s, key, v)).lines.map((l: any) => l.who), ['me', 'store', 'me'], `${why}: said once a conversation`);
+      const conv = (await s.app.db.one<{ id: number }>("SELECT id FROM conversations WHERE channel = 'web' AND peer = $1", [v]))!.id;
+      assert.ok(await s.app.db.one(`SELECT 1 FROM conversations c WHERE c.id = $1 AND ${WAITING_SQL}`, [conv]), `${why}: the conversation waits for the owner`);
+      assert.ok(await s.app.db.one("SELECT 1 FROM jobs WHERE kind = 'owner_waiting'"), `${why}: the owner is told`);
+    }
+    assert.equal(calls, 0, 'no model call');
+    // The owner's inbox row is what the customer wrote, not the line the chat said.
+    const today = await (await s.get('/chats?state=waiting')).text();
+    assert.match(today, /יש מישהו\?/);
+    // Answering again: no such line.
+    await s.app.db.query("UPDATE stores SET agent_off = '{}' WHERE id = $1", [id]);
+    await say(s, key, 'FFFFFFFFFFFFFFFFFFFFFF', 'יש ספל ירוק?');
+    await drain(s.app, { kinds: ['web_inbound'] });
+    assert.ok(calls > 0);
+    assert.ok(!(await lines(s, key, 'FFFFFFFFFFFFFFFFFFFFFF')).lines.some((l: any) => l.text === HELD_WEB));
   } finally {
     await s.close();
   }
