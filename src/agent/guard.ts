@@ -308,6 +308,14 @@ const REPLACE_COMPANY_EN = COMPANY_LINES.en;
 /** The honest line when nothing is left to say, for a store or for a company. */
 export const checkingLine = (english: boolean, company = false) => (company ? COMPANY_LINES : STORE_LINES)[english ? 'en' : 'he'].claim;
 
+/** A reply that already asks how to reach the customer (a phone, an email): the site chat's line below is not added. */
+export const ASKS_REACH = /טלפון|מייל|נייד|phone|e-?mail/i;
+/**
+ * On the site chat, after a handoff (loop.ts): a visitor may close the page before anyone answers, so they are asked how
+ * the store can reach them. In the store's address, as the honest lines are (styleReply).
+ */
+export const reachLine = (english: boolean, plural = false) => (english ? 'You can leave a phone number or an email here, so they can reach you even if this page is closed.' : `אפשר להשאיר כאן טלפון או מייל, כדי שיחזרו ${plural ? 'אליכם' : 'אליך'} גם אם הדף ייסגר.`);
+
 // Whether the customer's own message asked about what a cut sentence was about. Only then does the cut get its honest
 // line and the conversation go to the store: a sentence the model added unasked is dropped quietly (the owner,
 // 2026-11-09, on a "מה נשמע" answered with "על המלאי אני לא בטוח, אז העברתי את השאלה לנציג": "i did not ask anything

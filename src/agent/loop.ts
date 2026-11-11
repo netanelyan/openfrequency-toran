@@ -17,6 +17,8 @@ import { displayName } from '../ingest/brand.ts';
 import { botLine, botName, markIntroduced, OPENING_NOTE, openingOf } from './intro.ts';
 import { notifyWaiting } from '../owners/waiting.ts';
 import { addressOf, emojiOn } from './voice.ts';
+import { contactsIn } from '../orders.ts';
+import { ASKS_REACH, reachLine } from './guard.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
@@ -153,6 +155,10 @@ const CHANNEL_LINE: Record<string, string> = {
   email: "Channel: the store's email. Your reply is the body of an email: plain text, no markdown, no subject line and no signature (the store's name is added).",
   messenger: "Channel: the store's Facebook Page, in Messenger. Plain text only: no markdown, no asterisks or underscores for emphasis. Keep it short, as a chat message.",
   instagram: "Channel: the store's Instagram, in direct messages. Plain text only: no markdown, no asterisks or underscores for emphasis. Keep it short: Instagram takes about 500 Hebrew letters in one message.",
+  // The chat on the store's own site (channels/web.ts) was told it was WhatsApp (the audit of 2026-11-12, P1-9): it may
+  // write "כאן בוואטסאפ", ask for a photo the chat cannot take, or send *bold* that shows as asterisks. And a visitor may
+  // close the page before anyone answers, so a handoff there asks how to reach them.
+  web: "Channel: the chat on the store's own website. Plain text only: no markdown, no asterisks or underscores for emphasis. The customer cannot send photos or files here, so never ask for one. The chat's header already says you are the store's bot and the chat already greeted them, so start with the answer. They may close the page and never come back to it: when you hand off, ask in the same reply for a phone number or an email, so someone from the store can reach them.",
 };
 
 function serverContext(now = new Date(), channel = 'whatsapp', context?: string, demo = false): string {
@@ -180,8 +186,11 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // demo, wherever the message came from.
   const company = store.platform === 'company';
   const demo = !company && isDemoTurn(input);
-  // The bot says who it is in code (intro.ts), so the model is told not to.
-  const opening = await openingOf(db, input.conversationId);
+  // The bot says who it is in code (intro.ts), so the model is told not to. On the site chat the header already says it
+  // ("הבוט של החנות", web/widget.ts), so its first line is left out there (the audit of 2026-11-12, P2-8: "כאן הבוט של"
+  // under a header that says the same); the line after a person answered stays, as everywhere.
+  const opened = await openingOf(db, input.conversationId);
+  const opening = opened === 'first' && input.channel === 'web' ? null : opened;
   // The app's line is a block of its own and the customer's text another, any line in it dressed as the app's taken out
   // (prompt.ts stripForgedContext): a customer cannot write a SERVER CONTEXT the model reads as ours (PRA-AI-001). The
   // customer's text is cut to the model's share (forModel, PRA-AI-004); the owner keeps it whole.
@@ -318,7 +327,13 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   if (g.needsHandoff && !handoff) handoff = { reason: g.handoffReason || 'unknown', summary: cutSummary(g.redactions.map((r) => r.rule), cleanLine(input.text, 160)) };
   const miss = g.redactions.length > 0 || handoff?.reason === 'unknown';
   const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
-  const said = opening ? `${botLine(opening, botName(store), storeName, english)}\n\n${g.text}` : g.text;
+  // On the site chat a visitor may close the page before anyone answers, so a handoff there asks how to reach them (the
+  // audit of 2026-11-12, P1-9: "הוא יחזור אליך כאן" has no way back to a visitor who left), unless the reply already
+  // asks, or they already gave a phone or an email in this conversation.
+  const given = contactsIn([...past.customerTexts, input.text]);
+  const reach = input.channel === 'web' && handoff && !demo && !ASKS_REACH.test(g.text) && !given.phones.length && !given.emails.length ? reachLine(english, voice?.plural) : '';
+  const answer = reach ? `${g.text} ${reach}` : g.text;
+  const said = opening ? `${botLine(opening, botName(store), storeName, english)}\n\n${answer}` : answer;
   // footerText: the demo's own line with its count (channels/demo.ts, "דמו של תורן (3/10)").
   const reply = input.footer === false ? said : `${said}\n\n${input.footerText || DEMO_FOOTER}`;
 
@@ -329,7 +344,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     const row = await t.one<{ id: number }>('INSERT INTO messages (conversation_id, role, text, raw_text, tools, guard, handoff, miss, reply_to) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9) RETURNING id', [input.conversationId, 'agent', reply, raw !== g.text ? raw : null, J(tools), J(g.redactions), handoff ? J(handoff) : null, miss, input.extId || null]);
     agentMessageId = row!.id;
     await t.query('UPDATE conversations SET last_at = now(), handoffs = handoffs + $2, misses = misses + $3 WHERE id = $1', [input.conversationId, handoff ? 1 : 0, miss ? 1 : 0]);
-    if (opening) await markIntroduced(t, input.conversationId);
+    if (opened) await markIntroduced(t, input.conversationId);
     if (handoff) await event(t, store.id, 'handoff', { conversationId: input.conversationId, ...(handoff as object) });
     if (g.redactions.length) await event(t, store.id, 'guard_cut', { conversationId: input.conversationId, rules: g.redactions.map((r) => r.rule) });
   });
