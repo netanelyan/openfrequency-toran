@@ -12,8 +12,9 @@ import { accountsLinks, ADMIN } from '../web/accounts.ts';
 import { internalRefusal } from './internal.ts';
 import { markReminded, markSent, OpsError, sendNow } from './actions.ts';
 import { sendBoth, sendTeder } from './both.ts';
+import { bothFirst, bothReminder, tederColdFirst, tederReminder } from './messages.ts';
 import { outreachFilled, outreachLive, templateOf } from './outreach.ts';
-import { tederBuild, tederList, tederState, type TederLead } from './tederLeads.ts';
+import { tederBuild, tederList, tederMark, tederState, type TederLead } from './tederLeads.ts';
 
 // The shared lead dashboard's data (the owner, 2026-11-08: "make the shared lead dashboard be in the admin dashboard,
 // not in one of the products"). Accounts' /admin/leads shows one list for both products and one page a lead, and asks
@@ -29,11 +30,22 @@ import { tederBuild, tederList, tederState, type TederLead } from './tederLeads.
 // (ops/api.ts), which the dashboard already uses. Toran keeps the outreach and its rules (ops/outreach.ts, ops/both.ts):
 // what does not go is said in the operator's words, and nothing is marked then. Approving a Toran page stays a look at
 // it first, on Toran's own review page, which the lead links to.
+//
+// Each row says what can be built for it, so the list has a button to make a demo (the owner, 2026-11-11: "each leads
+// should have a button for generating a demo for teder/toran/both. the message that is suggested being sent to the
+// phone number on whatsapp should be according to that"). What the operator asks to make is kept (stores.demo_for,
+// migration 077), and the lead's page leads with that one's message: Toran's, Teder's, or the one with both. Each
+// message due is given as the store will read it, and "שלחתי" after one sent by hand marks the demo it was for.
 
 export type Where = 'new' | 'ready' | 'sent' | 'talking' | 'closed';
 export const WHERE: Where[] = ['new', 'ready', 'sent', 'talking', 'closed'];
 type DemoState = 'none' | 'building' | 'review' | 'ready' | 'failed' | 'removed';
 type Demo = { state: DemoState; pageUrl: string | null; sentAt: string | null; reminderSentAt: string | null; reminderDue: boolean; url: string | null; error: string | null };
+/** A lead's demos as the operator picks them: Toran's, Teder's, or both in one message. */
+type Product = 'both' | 'toran' | 'teder';
+const PRODUCTS: Product[] = ['both', 'toran', 'teder'];
+const productOf = (v: unknown): Product | null => (PRODUCTS.includes(v as Product) ? (v as Product) : null);
+type Stage = 'first' | 'reminder';
 
 const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
 const toranPage = (app: App, id: number) => `${accountsLinks(app.env).home}${ADMIN}/lead/${id}`;
@@ -58,6 +70,28 @@ function tederDemo(l: TederLead | null): Demo {
   return { state, pageUrl: d?.pageUrl || null, sentAt: l?.sentAt || null, reminderSentAt: l?.reminderSentAt || null, reminderDue: Boolean(l?.reminderDue), url: d?.reviewUrl || l?.leadUrl || null, error: d?.error || null };
 }
 
+/**
+ * Which of a demo's two messages is due: the first while its demo is up and waits to be sent, the one reminder once it
+ * is due; null for neither, and while there is no demo up (being built, under review, failed or removed).
+ */
+const toranStageOf = (s: any, d: Demo): Stage | null => (d.state !== 'ready' ? null : !s.sent_at ? 'first' : !s.followup_sent_at && d.reminderDue ? 'reminder' : null);
+const tederStageOf = (t: TederLead | null, d: Demo): Stage | null => (!t || d.state !== 'ready' ? null : t.stage === 'demo_ready' ? 'first' : t.reminderDue ? 'reminder' : null);
+
+/**
+ * What can be built for the store now: Toran's page (also again, once it is built), Teder's demo (none yet, or one
+ * that failed or was removed), and both at once while neither has one and nothing is being built.
+ */
+function buildOf(s: any, t: TederLead | null, tederOk: boolean, building: boolean) {
+  const toran = canIngest(s.platform) && !s.taken_down_at;
+  const teder = tederOk && (!t?.demo || ['removed', 'failed'].includes(t.demo.status));
+  return {
+    toran,
+    teder,
+    both: toran && teder && !s.page_built_at && !building && !t?.demo,
+    toranWhyNot: canIngest(s.platform) ? null : `תורן קורא כרגע רק חנויות ${INGESTIBLE_HE}.`,
+  };
+}
+
 /** Where the lead stands for both products together: what the list's tabs count. */
 function whereOf(s: any | null, t: TederLead | null, toran: Demo, teder: Demo): Where {
   if ((s && (s.status === 'skipped' || s.status === 'paid' || s.taken_down_at)) || (t && ['joined', 'irrelevant'].includes(t.stage))) return 'closed';
@@ -67,7 +101,7 @@ function whereOf(s: any | null, t: TederLead | null, toran: Demo, teder: Demo): 
   return 'new';
 }
 
-function rowOf(app: App, s: any, t: TederLead | null, building: boolean) {
+function rowOf(app: App, s: any, t: TederLead | null, building: boolean, tederOk: boolean) {
   const toran = toranDemo(app, s, building);
   const teder = tederDemo(t);
   return {
@@ -82,6 +116,8 @@ function rowOf(app: App, s: any, t: TederLead | null, building: boolean) {
     contact: { whatsapp: s.contact_whatsapp || null, email: s.contact_email || null, phone: s.contact_phone || null },
     toran,
     teder,
+    build: buildOf(s, t, tederOk, building),
+    chosen: productOf(s.demo_for),
     updatedAt: iso(s.updated_at) || new Date(now()).toISOString(),
   };
 }
@@ -100,6 +136,7 @@ const keyOf = (d: string) => String(d || '').toLowerCase().replace(/^www\./, '')
 export async function leadsList(app: App, { where = '', q = '' }: { where?: string; q?: string } = {}) {
   const stores = await app.db.query<any>(`SELECT * FROM stores WHERE ${LEADS_SQL} ORDER BY updated_at DESC NULLS LAST, score DESC LIMIT 1000`);
   const tl = await tederList(app);
+  const tederOk = !('error' in tl);
   const tLeads = 'error' in tl ? [] : tl.leads;
   const byToran = new Map(tLeads.filter((l) => l.toranId).map((l) => [String(l.toranId), l]));
   const byDomain = new Map(tLeads.map((l) => [keyOf(l.domain), l]));
@@ -108,7 +145,7 @@ export async function leadsList(app: App, { where = '', q = '' }: { where?: stri
   const rows = stores.map((s) => {
     const t = byToran.get(String(s.id)) || byDomain.get(keyOf(s.domain)) || null;
     if (t) used.add(t.id);
-    return rowOf(app, s, t, run.has(Number(s.id)));
+    return rowOf(app, s, t, run.has(Number(s.id)), tederOk);
   });
   const tederOnly = tLeads
     .filter((l) => !used.has(l.id))
@@ -122,7 +159,7 @@ export async function leadsList(app: App, { where = '', q = '' }: { where?: stri
   const wanted = (WHERE as string[]).includes(where) ? where : '';
   return {
     ok: true,
-    teder: { ok: !('error' in tl) },
+    teder: { ok: tederOk },
     counts: { all: rows.length + tederOnly.length, ...counts },
     leads: rows.filter((r) => (!wanted || r.where === wanted) && hit(r)).slice(0, 300),
     tederOnly: tederOnly.filter((r) => (!wanted || r.where === wanted) && hit(r)).slice(0, 100),
@@ -138,20 +175,36 @@ export async function leadOne(app: App, id: number) {
   const st = await tederState(app, s);
   const t = 'error' in st ? null : st.lead;
   const run = await building(app, [id]);
-  const row = rowOf(app, s, t, run.has(id));
+  const row = rowOf(app, s, t, run.has(id), !('error' in st));
   const name = row.name;
   const pitchable = Boolean(s.contact_whatsapp) && (await outreachLive(app));
-  const toranStage = row.toran.state === 'ready' && !s.sent_at ? 'first' : s.sent_at && !s.followup_sent_at && row.toran.reminderDue ? 'reminder' : null;
-  const tederStage = t?.stage === 'demo_ready' && row.teder.state === 'ready' ? 'first' : t?.reminderDue ? 'reminder' : null;
-  const options: ('both' | 'toran' | 'teder')[] = [];
-  if (pitchable && toranStage && tederStage && toranStage === tederStage) options.push('both');
-  if (pitchable && toranStage) options.push('toran');
-  if (pitchable && tederStage) options.push('teder');
+  const toranStage = toranStageOf(s, row.toran);
+  const tederStage = tederStageOf(t, row.teder);
+  // One message carries both demos only at the same stage: both first, or both reminders.
+  const stages: Record<Product, Stage | null> = { both: toranStage && toranStage === tederStage ? toranStage : null, toran: toranStage, teder: tederStage };
+  // From our number, each one due; the one the operator chose to make comes first when it can go, else both, as before.
+  const options = pitchable ? PRODUCTS.filter((p) => stages[p]) : [];
+  if (row.chosen && options.includes(row.chosen)) options.unshift(...options.splice(options.indexOf(row.chosen), 1));
   const stage = toranStage || tederStage || null;
   const waiting = s.sent_at && !s.followup_sent_at && !row.toran.reminderDue && s.followup_due_at && !s.taken_down_at ? iso(s.followup_due_at) : null;
-  const url = row.toran.pageUrl;
+  // Each message due, as the store will read it: from our number the approved template's words (its buttons open the
+  // demos), else the text the operator copies to send from their own WhatsApp, with each demo's link in it.
+  const toranUrl = row.toran.pageUrl || '';
+  const tederUrl = row.teder.pageUrl || '';
+  const copied: Record<Product, Record<Stage, () => string>> = {
+    toran: { first: () => firstMessage({ storeName: name, url: toranUrl }), reminder: () => reminderMessage({ storeName: name, url: toranUrl }) },
+    teder: { first: () => tederColdFirst({ storeName: name, url: tederUrl }), reminder: () => tederReminder({ storeName: name, url: tederUrl }) },
+    both: { first: () => bothFirst({ storeName: name, toranUrl, tederUrl }), reminder: () => bothReminder({ storeName: name, toranUrl, tederUrl }) },
+  };
+  const text = (p: Product) => {
+    const at = stages[p];
+    return !at ? null : pitchable ? outreachFilled(templateOf(p, at), [le(name)]) : copied[p][at]();
+  };
+  const texts = { bothText: text('both'), toranText: text('toran'), tederText: text('teder') };
+  // The chat or the mail it goes by, with no text in it: accounts writes in the message shown. A mail's subject is
+  // what we made for them, whichever demo it is.
   const target = contactTarget(s);
-  const copyText = !url ? null : !s.sent_at ? firstMessage({ storeName: name, url }) : !s.followup_sent_at ? reminderMessage({ storeName: name, url }) : null;
+  const href = target.kind === 'email' ? `mailto:${s.contact_email}?subject=${encodeURIComponent(`מה שהכנו ${le(name)}`)}` : target.href;
   const stats = s.page_built_at ? await pageStats(app, id) : null;
   return {
     ok: true,
@@ -163,21 +216,14 @@ export async function leadOne(app: App, id: number) {
       opens: Number(stats?.opens || 0),
       demoStartedAt: iso(s.demo_started_at),
       tederOk: !('error' in st),
-      build: {
-        toran: canIngest(s.platform) && !s.taken_down_at,
-        teder: !('error' in st) && (!t?.demo || ['removed', 'failed'].includes(t.demo.status)),
-        both: canIngest(s.platform) && !s.page_built_at && !s.taken_down_at && !('error' in st) && !t?.demo,
-        toranWhyNot: canIngest(s.platform) ? null : `תורן קורא כרגע רק חנויות ${INGESTIBLE_HE}.`,
-      },
       send: {
         stage,
         pitchable,
         options,
         main: options[0] || null,
         waitingUntil: waiting,
-        bothText: stage ? outreachFilled(templateOf('both', stage), [le(name)]) : null,
-        toranText: copyText,
-        copy: copyText && target.href ? { href: target.href, label: target.label } : null,
+        ...texts,
+        copy: Object.values(texts).some(Boolean) && href ? { href, label: target.label } : null,
       },
       links: { toranPage: row.toran.url, toranReview: s.page_built_at ? `${row.toran.url}/review` : null, tederLead: t?.leadUrl || null },
     },
@@ -188,7 +234,7 @@ const ACTIONS = ['build-toran', 'build-teder', 'build-both', 'send-both', 'send-
 type Action = (typeof ACTIONS)[number];
 
 /** One button of the lead's page: the operator's line when done, OpsError with the reason when not. */
-export async function leadAct(app: App, id: number, action: Action, b: { by?: unknown; notes?: unknown; reason?: unknown }): Promise<string> {
+export async function leadAct(app: App, id: number, action: Action, b: { by?: unknown; notes?: unknown; reason?: unknown; product?: unknown }): Promise<string> {
   const s = await app.db.one<any>(`SELECT * FROM stores WHERE id = $1 AND ${LEADS_SQL}`, [id]);
   if (!s) throw new OpsError('אין ליד כזה');
   const by = String(b.by || 'operator').slice(0, 120);
@@ -204,15 +250,24 @@ export async function leadAct(app: App, id: number, action: Action, b: { by?: un
     await audit(app.db, { actor: by, action: 'teder_build', storeId: s.id, detail: { from: 'admin' } });
     return out.message;
   };
+  // The demo the operator asked to make here, kept for the lead's message; asking for the other one too makes it both.
+  const choose = (p: 'toran' | 'teder') => app.db.query("UPDATE stores SET demo_for = CASE WHEN demo_for IS NULL OR demo_for = $2 THEN $2 ELSE 'both' END WHERE id = $1", [s.id, p]);
   switch (action) {
     case 'build-toran':
       await ingest();
+      // Reading a built page again is not a choice of Toran.
+      if (!s.page_built_at) await choose('toran');
       return s.page_built_at ? 'תורן קורא את האתר מחדש ובונה את הדף מחדש.' : 'תורן קורא את האתר ובונה את הדף. זה לוקח דקה או שתיים.';
-    case 'build-teder':
-      return `תדר: ${await teder()}`;
+    case 'build-teder': {
+      const msg = await teder();
+      await choose('teder');
+      return `תדר: ${msg}`;
+    }
     case 'build-both': {
       const msg = await teder();
+      await choose('teder');
       await ingest();
+      await choose('toran');
       return `בונים את שניהם: תורן קורא את האתר ובונה את הדף, ותדר: ${msg}`;
     }
     case 'send-toran':
@@ -222,13 +277,9 @@ export async function leadAct(app: App, id: number, action: Action, b: { by?: un
     case 'send-both':
       return sendBoth(app, s.id, by);
     case 'mark-sent':
-      await markSent(app, 'toran', String(s.id), by);
-      return 'סומן שנשלח. התזכורת האחת תחכה בעוד ארבעה ימים.';
+      return markByHand(app, s, 'first', productOf(b.product) || 'toran', by);
     case 'mark-reminded':
-      if (!s.sent_at) throw new OpsError('עוד לא נשלחה הודעה ראשונה.');
-      if (s.followup_due_at && new Date(s.followup_due_at).getTime() > now()) throw new OpsError(NOT_NOW_REMINDER);
-      await markReminded(app, 'toran', String(s.id), by);
-      return 'התזכורת סומנה. זו הייתה האחרונה.';
+      return markByHand(app, s, 'reminder', productOf(b.product) || 'toran', by);
     case 'notes':
       await app.db.query('UPDATE stores SET notes = $2, updated_at = now() WHERE id = $1', [s.id, String(b.notes ?? '').slice(0, 4000)]);
       return 'ההערות נשמרו.';
@@ -238,6 +289,40 @@ export async function leadAct(app: App, id: number, action: Action, b: { by?: un
       await audit(app.db, { actor: by, action: 'skip', storeId: s.id, detail: { from: 'admin' } });
       return 'דילגת על החנות. היא לא תופיע יותר ברשימה של מי לכתוב לו.';
   }
+}
+
+/**
+ * "שלחתי" after the operator sent the message from their own WhatsApp: the demo it was for (Toran's, Teder's, or
+ * both) marked as a send from our number marks it, the first message or the one reminder. Teder's is checked before
+ * anything is marked; when Teder does not take the mark after Toran's was made, the line says so.
+ */
+async function markByHand(app: App, s: any, stage: Stage, p: Product, by: string): Promise<string> {
+  if (p !== 'toran') {
+    const st = await tederState(app, s);
+    if ('error' in st) throw new OpsError(st.error);
+    if (tederStageOf(st.lead, tederDemo(st.lead)) !== stage) throw new OpsError(stage === 'first' ? 'לתדר אין עכשיו הודעה ראשונה לסמן לחנות הזו.' : 'עוד לא הזמן לתזכורת של תדר.');
+  }
+  if (p !== 'teder') {
+    if (stage === 'first') await markSent(app, 'toran', String(s.id), by);
+    else {
+      if (!s.sent_at) throw new OpsError('עוד לא נשלחה הודעה ראשונה.');
+      if (s.followup_due_at && new Date(s.followup_due_at).getTime() > now()) throw new OpsError(NOT_NOW_REMINDER);
+      await markReminded(app, 'toran', String(s.id), by);
+    }
+  }
+  const said = {
+    toran: { first: 'סומן שנשלח. התזכורת האחת תחכה בעוד ארבעה ימים.', reminder: 'התזכורת סומנה. זו הייתה האחרונה.' },
+    teder: { first: 'סומן שנשלח בתדר. התזכורת האחת תחכה בעוד ארבעה ימים.', reminder: 'התזכורת של תדר סומנה. זו הייתה האחרונה.' },
+    both: { first: 'סומן ששני הדמואים נשלחו. התזכורת האחת תחכה בעוד ארבעה ימים.', reminder: 'התזכורת לשניהם סומנה. זו הייתה האחרונה.' },
+  }[p][stage];
+  if (p === 'toran') return said;
+  const marked = await tederMark(app, s, stage, by);
+  if ('error' in marked) {
+    if (p === 'teder') throw new OpsError(marked.error);
+    return `${said} תדר לא סימן את זה אצלו (${marked.error}), אז כדאי לסמן ב/leads של תדר.`;
+  }
+  await audit(app.db, { actor: by, action: 'teder_marked', storeId: s.id, detail: { stage, from: 'admin' } });
+  return said;
 }
 
 export function leadsAdminRoutes(app: App): Route<Req>[] {

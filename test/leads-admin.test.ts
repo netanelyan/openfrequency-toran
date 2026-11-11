@@ -94,3 +94,106 @@ test("a lead's buttons: notes saved, a store skipped leaves the list's open stag
     await s.close();
   }
 });
+
+/** Teder for one store: what it has of it (nothing at first), that lead on its list, a demo built on asking, each mark kept. */
+async function tederFor(domain: string, toranId: () => number) {
+  const answer = (p: string) => CONTRACT.routes.find((r: any) => r.path === p).answers[0].body;
+  const state: { lead: any; built: number; marked: any[] } = { lead: null, built: 0, marked: [] };
+  const srv = createServer(async (req, res) => {
+    let raw = '';
+    for await (const c of req) raw += c;
+    const p = new URL(req.url || '/', 'http://teder').pathname;
+    const out = (status: number, b: unknown) => {
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(b));
+    };
+    if (p === '/internal/leads/state') return out(200, { ok: true, lead: state.lead });
+    if (p === '/internal/leads/list') return out(200, { ok: true, leads: state.lead ? [{ ...state.lead, toranId: String(toranId()), domain, name: null }] : [] });
+    if (p === '/internal/leads/demo') {
+      state.built++;
+      state.lead = answer('/internal/leads/demo').lead;
+      return out(200, answer('/internal/leads/demo'));
+    }
+    if (p === '/internal/leads/mark') {
+      state.marked.push(JSON.parse(raw));
+      return out(200, answer('/internal/leads/mark'));
+    }
+    return out(404, { error: 'not_found' });
+  });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+  return { state, ready: answer('/internal/leads/state').lead, base: `http://127.0.0.1:${(srv.address() as AddressInfo).port}`, close: () => new Promise((r) => srv.close(r)) };
+}
+
+test("a demo made from the list (the owner, 2026-11-11): each row says what can be built; the choice is kept and leads the message; each message as the store reads it; \"שלחתי\" marks the demo it was for", async () => {
+  const s = await serve();
+  let id = 0;
+  const teder = await tederFor('pick.example', () => id);
+  s.app.env.TEDER_SITE_INTERNAL = teder.base;
+  const auth = { authorization: `Bearer ${INTERNAL_TOKEN}` };
+  const get = (p: string) => fetch(`${s.base}${p}`, { headers: auth }).then((r) => r.json());
+  const post = (p: string, body: unknown) => fetch(`${s.base}${p}`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async (r) => ({ status: r.status, json: await r.json() }));
+  const row = async () => (await get('/internal/leads')).leads.find((x: any) => x.id === id);
+  const chosen = async () => (await s.app.db.one<{ demo_for: string | null }>('SELECT demo_for FROM stores WHERE id = $1', [id]))!.demo_for;
+  try {
+    id = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified, contact_whatsapp) VALUES ('pick.example', 'https://pick.example/', 'pick', 'shopify', 'seed', 'pick-c1', 60, true, '972500000403') RETURNING id"))!.id;
+    // Nothing yet: either one, or both at once.
+    assert.deepEqual([(await row()).build, (await row()).chosen], [{ toran: true, teder: true, both: true, toranWhyNot: null }, null]);
+
+    // Teder's alone, then Toran's too: the choice becomes both.
+    assert.equal((await post(`/internal/leads/${id}/build-teder`, { by: 'Admin' })).status, 200);
+    assert.equal(teder.state.built, 1);
+    assert.deepEqual([(await row()).chosen, (await row()).build.teder, (await row()).build.both], ['teder', false, false], 'Teder is being built: no second one');
+    assert.equal((await post(`/internal/leads/${id}/build-toran`, { by: 'Admin' })).status, 200);
+    assert.equal(await chosen(), 'both');
+    // Reading Toran's built page again is not a choice.
+    await s.app.db.query("UPDATE stores SET demo_for = 'teder', page_built_at = now() WHERE id = $1", [id]);
+    assert.equal((await post(`/internal/leads/${id}/build-toran`, { by: 'Admin' })).status, 200);
+    assert.equal(await chosen(), 'teder');
+
+    // Toran's page waits for the operator's look: no message for it, nothing to copy.
+    let one = (await get(`/internal/leads/${id}`)).lead;
+    assert.deepEqual([one.send.toranText, one.send.bothText, one.send.copy], [null, null, null]);
+
+    // Both up, our number not connected: each message to copy, with its demo's link in it.
+    await s.app.db.query('UPDATE stores SET approved_at = now() WHERE id = $1', [id]);
+    teder.state.lead = teder.ready;
+    one = (await get(`/internal/leads/${id}`)).lead;
+    const toranUrl = one.toran.pageUrl;
+    const tederUrl = teder.ready.demo.pageUrl;
+    assert.deepEqual([one.send.pitchable, one.send.options], [false, []]);
+    assert.ok(one.send.toranText.includes(toranUrl) && !one.send.toranText.includes(tederUrl), "Toran's: its page only");
+    assert.ok(one.send.tederText.includes(tederUrl) && !one.send.tederText.includes(toranUrl), "Teder's: its demo only");
+    assert.match(one.send.tederText, /מצגת אחת לדוגמה/);
+    assert.ok(one.send.bothText.includes(toranUrl) && one.send.bothText.includes(tederUrl), 'both: both links');
+    assert.equal(one.send.copy.href, 'https://wa.me/972500000403', 'the chat, the message written in by accounts');
+
+    // From our number: the chosen one is the main way, and the texts are the templates' words.
+    s.app.env.META_OUTREACH_PHONE_ID = '1234567890';
+    one = (await get(`/internal/leads/${id}`)).lead;
+    assert.deepEqual([one.send.options, one.send.main], [['teder', 'both', 'toran'], 'teder']);
+    assert.match(one.send.tederText, /בכפתור כאן למטה/);
+    await s.app.db.query('UPDATE stores SET demo_for = NULL WHERE id = $1', [id]);
+    assert.equal((await get(`/internal/leads/${id}`)).lead.send.main, 'both', 'nothing chosen: both, as before');
+    delete s.app.env.META_OUTREACH_PHONE_ID;
+
+    // Sent by hand: Teder's alone marks Teder, and Toran stays to send.
+    const t1 = await post(`/internal/leads/${id}/mark-sent`, { by: 'Admin', product: 'teder' });
+    assert.deepEqual(t1, { status: 200, json: { ok: true, message: 'סומן שנשלח בתדר. התזכורת האחת תחכה בעוד ארבעה ימים.' } });
+    assert.deepEqual(teder.state.marked.map((m) => m.stage), ['first']);
+    assert.equal((await s.app.db.one<{ sent_at: string | null }>('SELECT sent_at FROM stores WHERE id = $1', [id]))!.sent_at, null);
+    // Teder's went already: refused, nothing marked.
+    teder.state.lead = { ...teder.ready, stage: 'sent', sentAt: new Date().toISOString() };
+    const again = await post(`/internal/leads/${id}/mark-sent`, { by: 'Admin', product: 'teder' });
+    assert.deepEqual([again.status, again.json.error], [400, 'לתדר אין עכשיו הודעה ראשונה לסמן לחנות הזו.']);
+    assert.equal(teder.state.marked.length, 1);
+    // Both in one message: Toran's lead and Teder's lead marked.
+    teder.state.lead = teder.ready;
+    const both = await post(`/internal/leads/${id}/mark-sent`, { by: 'Admin', product: 'both' });
+    assert.equal(both.status, 200, JSON.stringify(both.json));
+    assert.ok((await s.app.db.one<{ sent_at: string | null }>('SELECT sent_at FROM stores WHERE id = $1', [id]))!.sent_at, "Toran's lead marked sent");
+    assert.deepEqual(teder.state.marked.map((m) => m.stage), ['first', 'first']);
+  } finally {
+    await teder.close();
+    await s.close();
+  }
+});
