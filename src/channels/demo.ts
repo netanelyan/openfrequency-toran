@@ -18,6 +18,8 @@ import { ownerLine } from '../owners/line.ts';
 import { supportAccount } from '../company.ts';
 import { conversationOf, storeChannel } from './store.ts';
 import { botLine, botName, markIntroduced } from '../agent/intro.ts';
+import { alertOperator } from '../ops/alert.ts';
+import { displayName } from '../ingest/brand.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
@@ -261,7 +263,7 @@ async function pageMessage(app: App, adapter: ChannelAdapter, inbound: Inbound):
   const down = text.startsWith(PAGE_DOWN);
   if (!down && !text.startsWith(PAGE_ABOUT)) return null;
   const slug = PAGE_LINK.exec(text)?.[1];
-  const store = slug ? await app.db.one<{ id: number }>('SELECT id FROM stores WHERE slug = $1', [slug]) : null;
+  const store = slug ? await app.db.one<{ id: number; name: string | null; domain: string; brand: any; brand_override: any }>('SELECT id, name, domain, brand, brand_override FROM stores WHERE slug = $1', [slug]) : null;
   if (!store) return null;
   const conv = await conversationFor(app.db, store.id, 'whatsapp', inbound.from);
   await hold(app, conv, inbound);
@@ -270,6 +272,11 @@ async function pageMessage(app: App, adapter: ChannelAdapter, inbound: Inbound):
   await app.db.query('UPDATE conversations SET handoffs = handoffs + 1, last_at = now() WHERE id = $1', [conv]);
   if (down) await app.db.query('UPDATE stores SET takedown_asked_at = COALESCE(takedown_asked_at, now()), updated_at = now() WHERE id = $1', [store.id]);
   await event(app.db, store.id, down ? 'takedown_message' : 'contact_message', { conversationId: conv });
+  // "קיבלנו את ההודעה, ונחזור אליכם כאן." and nobody heard of it until the operator opened the store's chat (the audit of
+  // 2026-11-12, P1-22): the operator is told now, inside WhatsApp's 24 hours to answer it.
+  const name = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
+  const said = `"${cleanLine(text, 300)}".`;
+  await alertOperator(app, `${down ? 'takedown' : 'contact'}:${store.id}`, down ? `ביקשו להוריד את העמוד של ${name}` : `כתבו לנו מהעמוד של ${name}`, down ? `${said} ענינו שנוריד את העמוד. מורידים אותו בדף של החנות.` : `${said} ענינו שנחזור אליהם בוואטסאפ. עונים מהשיחה של החנות, עד 24 שעות מההודעה.`, { storeId: store.id, everyMinutes: 60 }).catch((e) => app.log(`[demo] the operator alert failed: ${e?.message || e}`));
   const line = down ? msg.takedown : msg.contact;
   await reply(app, adapter, inbound, line, store.id, conv);
   return { action: down ? 'takedown' : 'contact', storeId: store.id, reply: line };

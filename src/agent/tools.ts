@@ -101,7 +101,7 @@ export const COMPANY_TOOLS: ToolDef[] = [
   },
   {
     name: 'handoff',
-    description: 'Hand the conversation to a person at the company. Use it whenever: you do not have the answer from a tool; the person asks about their own account, a bill, an invoice, a cancellation or a problem; asks for a discount or anything outside what is written; wants a demo or to join; is upset or asks for a person.',
+    description: 'Hand the conversation to a person at the company. Use it whenever: you do not have the answer from a tool; the person asks about their own account, a bill, an invoice, a cancellation or a problem; asks for a discount or anything outside what is written; wants to join and the tools do not say how; is upset or asks for a person. Not for a demo: that is asked for on the website.',
     input_schema: {
       type: 'object',
       properties: {
