@@ -8,7 +8,7 @@ import { toranOnSale } from '../ops/signupSwitch.ts';
 import { PLANS, type PlanKey } from '../plans.ts';
 import { accountsLinks } from '../web/accounts.ts';
 import { LOGOS } from './logos.ts';
-import { pitchUrl } from '../outreach.ts';
+import { le, lePrefix, pitchUrl } from '../outreach.ts';
 import { shortTitle, type SampleChat } from './build.ts';
 import { autoApprove, isPublic, pitchGaps, type Gap } from './ready.ts';
 
@@ -104,9 +104,6 @@ const thumb = (src: string) => (/(^https:\/\/cdn\.shopify\.com\/|\/cdn\/shop\/)/
 
 const initialOf = (name: string | null) => (String(name || '').trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase();
 
-/** The prefix of outreach.le: "ל" before a Hebrew name, "ל־" before any other. */
-const le = (name: string) => (/^[א-ת]/.test(name) ? 'ל' : 'ל־');
-
 const digits = (s: unknown) => String(s || '').replace(/\D/g, '');
 
 export function waLink(env: Record<string, string | undefined>, code: string, name: string): string | null {
@@ -161,13 +158,15 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
   const ph = (label: string) => `<mark class="ph" dir="rtl">${esc(label)}</mark>`;
   const nameText = d.name || d.store.domain;
   const name = d.name ? `<bdi>${esc(d.name)}</bdi>` : ph('[שם החנות]');
-  const leName = d.name ? `${le(d.name)}<span class="hl">${name}</span>` : `ל${name}`;
+  // outreach.ts le, the 2026-11-05 rule: "בשביל" before a name that opens with ה, never "להחנות של דנה" (the audit of
+  // 2026-11-12, P1-23, in the H1, the title and the link's card).
+  const leName = d.name ? `${lePrefix(d.name)}<span class="hl">${name}</span>` : `ל${name}`;
   const demo = waLink(env, d.store.demo_code, nameText);
   const of = ofWhatsapp(env);
   const url = pitchUrl(env, d.store.slug);
   // Both messages end with the page's link: on the demo number (when it is also ours) the router knows the store by it.
-  const ofLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`${PAGE_ABOUT} ${le(nameText)}${nameText}: ${url}`)}` : null;
-  const downLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`${PAGE_DOWN} ${le(nameText)}${nameText}? ${url}`)}` : null;
+  const ofLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`${PAGE_ABOUT} ${le(nameText)}: ${url}`)}` : null;
+  const downLink = of ? `https://wa.me/${of}?text=${encodeURIComponent(`${PAGE_DOWN} ${le(nameText)}? ${url}`)}` : null;
   const n = d.counts.products;
   const initial = (cls = 'initial') => `<span class="${cls}" aria-hidden="true">${esc(initialOf(d.name))}</span>`;
   const currency = d.store.config?.currency || 'ILS';
@@ -211,7 +210,7 @@ export function pitchPage(d: PitchData, { env, owner = false, preview = false }:
 
   // What the link shows where the owner sends it (WhatsApp, email): the page's own title and line over Toran's card.
   // Absolute addresses need PUBLIC_BASE_URL; without it the page goes out with no card.
-  const title = `בנינו ${le(nameText)}${nameText} תורן שעונה ללקוחות שלכם`;
+  const title = `בנינו ${le(nameText)} תורן שעונה ללקוחות שלכם`;
   const base = String(env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
 
   return `<!doctype html>
@@ -312,10 +311,12 @@ ${a11yWidget()}
 // looks up (orders.ts), their marks, and for anything else an honest "write to us, we check first". It promised once
 // to connect payments, calendars, CRM and ERP and to develop anything that does not exist, for free; neither the
 // contract nor the site says so, so it no longer does (TORAN-READINESS.md P0-6, 2026-11-08).
+// The heading says what the section is, not a slogan in two fragments, and the orders are offered only where Toran
+// reads them (orders.ts ORDER_PLATFORMS: not Cashcow; the audit of 2026-11-12, P2-30).
 const STORE_PLATFORMS = ['Shopify', 'WooCommerce', 'Wix'];
 const linksSec = `<section class="links" aria-labelledby="links-h">
-    <h2 id="links-h">מותאם לחנות שלכם. החיבור לחנות עלינו.</h2>
-    <p class="links-lede">תורן מתחבר לחנות שלכם ב־Shopify, ב־WooCommerce, ב־Wix או ב־Cashcow, וקורא משם את המוצרים, המחירים, המלאי והמדיניות. כשמחברים גם את ההזמנות, הוא עונה ללקוח על הסטטוס של ההזמנה שלו. החיבור לחנות כלול במחיר.</p>
+    <h2 id="links-h">תורן מתחבר לחנות שלכם</h2>
+    <p class="links-lede">הוא קורא את החנות ב־Shopify, ב־WooCommerce, ב־Wix או ב־Cashcow: המוצרים, המחירים, המלאי והמדיניות. ב־Shopify, ב־WooCommerce וב־Wix אפשר לחבר גם את ההזמנות, ואז הוא עונה ללקוח איפה ההזמנה שלו. החיבור לחנות כלול במחיר.</p>
     <ul class="logos" aria-label="הפלטפורמות שתורן מתחבר אליהן">
       ${LOGOS.filter((l) => STORE_PLATFORMS.includes(l.name)).map((l) => `<li title="${l.name}"><svg viewBox="0 0 24 24" role="img" aria-label="${l.name}"><path fill="${l.color}" d="${l.path}"/></svg></li>`).join('')}
       <li class="word" title="Cashcow"><span>Cashcow</span></li>

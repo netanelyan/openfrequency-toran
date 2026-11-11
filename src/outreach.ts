@@ -25,7 +25,9 @@ export function pitchUrl(env: Record<string, string | undefined>, slug: string):
 // Before a name that opens with ה, "בשביל ": the ה may be the article ("החנות של דנה", where Hebrew says "לחנות", and
 // "ל" + the name gave "להחנות") or the name's own letter ("הדס", "הום סטייל"), and nothing in the name tells them
 // apart; "בשביל" reads right either way (the owner, 2026-11-05).
-export const le = (name: string) => (/^ה/.test(name) ? `בשביל ${name}` : `${/^[א-ת]/.test(name) ? 'ל' : 'ל־'}${name}`);
+export const le = (name: string) => `${lePrefix(name)}${name}`;
+/** le's prefix alone, for a name set in markup of its own (the pitch page's highlighted name): "בשביל ", "ל" or "ל־". */
+export const lePrefix = (name: string) => (/^ה/.test(name) ? 'בשביל ' : /^[א-ת]/.test(name) ? 'ל' : 'ל־');
 
 export function firstMessage(o: { storeName: string; url: string }): string {
   return `היי, כאן OpenFrequency. בנינו ${le(o.storeName)} תורן שעונה ללקוחות שלכם על מחירים ומלאי, לפי מה שכתוב באתר שלכם. אפשר לנסות אותו עכשיו מהטלפון.

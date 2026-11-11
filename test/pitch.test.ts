@@ -138,6 +138,16 @@ test('the hero says only what was really read: the product count in any size, an
   assert.match(all, /OpenFrequency<\/span>, אשדוד/);
 });
 
+test('a name that opens with ה takes "בשביל", never "להחנות", in the H1, the title, the link\'s card and the messages to us (outreach.ts le)', () => {
+  const html = pitchPage(fake({}, 'החנות של דנה'), { env: ENV });
+  assert.doesNotMatch(html, /להחנות/);
+  assert.match(html, /<h1>בנינו בשביל <span class="hl"><bdi>החנות של דנה<\/bdi><\/span> תורן שעונה ללקוחות שלכם<\/h1>/);
+  assert.match(html, /<title>בנינו בשביל החנות של דנה תורן שעונה ללקוחות שלכם<\/title>/);
+  assert.match(html, /<meta property="og:title" content="בנינו בשביל החנות של דנה תורן שעונה ללקוחות שלכם">/);
+  assert.match(decodeURIComponent(html), /לגבי העמוד שהכנתם בשביל החנות של דנה: https:\/\/toran\.example\/s\/shop-abcd/);
+  assert.match(pitchPage(fake(), { env: ENV }), /<title>בנינו לכלי חרס של נורית תורן/, 'a Hebrew name as before');
+});
+
 test("the strip under the hero shows the store's own products, loops without a gap, and is left out with too few", () => {
   const item = (i: number) => ({ title: `מוצר ${i}`, image: `https://cdn.shopify.com/s/files/p${i}.jpg?v=1`, price_min: 10 * i });
   const page = (n: number) => pitchPage(fake({ shelf: Array.from({ length: n }, (_, i) => item(i + 1)) }), { env: ENV });
@@ -259,9 +269,11 @@ test('on sale, the pitch page shows the plans with "להצטרף" to accounts\' 
 
 test('every pitch page says what Toran connects to (the store platforms it reads), and promises nothing it does not do', async () => {
   const html = pitchPage(fake(), { env: ENV });
-  assert.match(html, /<h2 id="links-h">מותאם לחנות שלכם\. החיבור לחנות עלינו\.<\/h2>/);
+  assert.match(html, /<h2 id="links-h">תורן מתחבר לחנות שלכם<\/h2>/);
   for (const name of ['Shopify', 'WooCommerce', 'Wix']) assert.match(html, new RegExp(`aria-label="${name}"`));
   assert.match(html, /Cashcow/);
+  // The orders only where Toran reads them (orders.ts ORDER_PLATFORMS): not Cashcow (the audit of 2026-11-12, P2-30).
+  assert.match(html, /ב־Shopify, ב־WooCommerce וב־Wix אפשר לחבר גם את ההזמנות/);
   for (const name of ['PayPal', 'Stripe', 'Google Calendar', 'Telegram']) assert.doesNotMatch(html, new RegExp(`aria-label="${name}"`), `no ${name}: Toran does not connect to it`);
   // TORAN-READINESS.md P0-6: no free connections to every system, no free development, no WhatsApp the owner never gets.
   assert.doesNotMatch(html, /חברת פיתוח|ה־CRM וה־ERP|כל מערכת שיש לה API|וכל חיבור נוסף שתרצו|מפתחים אותו|מגיעה אליכם בוואטסאפ/);
