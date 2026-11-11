@@ -20,10 +20,14 @@ export const STEPS: Record<OrderPlatform, string[]> = {
   // The owner, 2026-11-09: "make everything easy for the user. he also doesnt know anything about tech". The English
   // words left here are the buttons' own names in each platform, which the owner has to find; everything around them
   // is plain, and a ready message sends the same steps to whoever runs the store's site.
+  // Walked through on the owner's store on 2026-11-11: dev.shopify.com alone opens the developer docs, the dashboard is
+  // under /dashboard, "Create app" opens one form (no "Start from Dev Dashboard" choice), its button asks to release
+  // the first version, Install app is in the app's ⋮ menu in the list, and after the install Shopify opens the app's
+  // placeholder page (example.com's).
   shopify: [
-    'נכנסים ל-dev.shopify.com עם החשבון של החנות. לוחצים Create app ואז Start from Dev Dashboard, ונותנים לאפליקציה שם, למשל תורן.',
-    'בדף Versions יוצרים גרסה, מסמנים רק את read_orders (קריאה של הזמנות), ולוחצים Release.',
-    'לוחצים Install app ומתקינים את האפליקציה על החנות.',
+    'נכנסים ל-dev.shopify.com/dashboard עם החשבון של החנות, ולוחצים Create app.',
+    'נותנים לאפליקציה שם, למשל תורן, ובשדה Scopes כותבים read_orders (קריאה של הזמנות). לוחצים Create app ואז Release.',
+    'ברשימה של Apps, בתפריט ⋮ שליד האפליקציה, לוחצים Install app, בוחרים את החנות ולוחצים Install. אם נפתח אחרי זה דף ריק, סוגרים אותו.',
     'ב-Settings של האפליקציה יש שני קודים, Client ID ו-Client secret. מעתיקים ומדביקים אותם כאן.',
   ],
   woocommerce: [
