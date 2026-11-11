@@ -167,3 +167,25 @@ test('a workspace with no store yet: every customer page says the store is being
     await s.close();
   }
 });
+
+// The audit of 2026-11-12, P0-2: "העוזר" in the menu filtered on our funnel's statuses, and a store added from /start
+// stays 'page_ready', so every self-serve store read "העוזר נפתח לחנות שתורן כבר עונה בה".
+test('the assistant in the menu opens the store\'s own assistant whatever the store\'s place in our funnel; with no store, the way to add it', async () => {
+  const { s, a } = await shop();
+  try {
+    await s.app.db.query("UPDATE stores SET status = 'page_ready' WHERE id = $1", [a]);
+    const r = await s.get('/assistant');
+    assert.equal(r.status, 303);
+    assert.equal(r.headers.get('location'), `/lead/${a}/assistant`);
+    const page = await (await s.get(`/lead/${a}/assistant`)).text();
+    assert.match(page, /<h1>העוזר<\/h1>/, 'the section\'s name on top, as Teder\'s');
+    assert.doesNotMatch(page, /העוזר נפתח לחנות/);
+    s.as(s.accounts.session(customer(6)).cookie);
+    const none = await (await s.get('/assistant')).text();
+    assert.match(none, /העוזר נפתח אחרי שמוסיפים את החנות/);
+    assert.match(none, /<a class="btn" href="\/start">/);
+    assert.doesNotMatch(none, /מהעמוד של כל חנות/, 'nothing of the operator\'s lead page');
+  } finally {
+    await s.close();
+  }
+});

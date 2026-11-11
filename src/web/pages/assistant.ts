@@ -37,10 +37,12 @@ async function page(app: App, r: DashReq, id: number) {
   const waiting = pending && !r.ctx.readOnly
     ? `<div class="pending row"><p class="m0">${icon('clock')}מחכה לאישור שלכם: ${esc(pending.summary)}</p><div class="row">${say('כן', 'כן', 'btn primary sm')}${say('לא', 'לא')}</div></div>`
     : '';
+  // One main button: while an action waits for "כן", that is it, and sending something else is the plain one (the
+  // audit of 2026-11-12, P1-11).
   const form = r.ctx.readOnly
     ? '<p class="muted m0">במצב צפייה אי אפשר לכתוב לעוזר.</p>'
     : `<div class="row starters">${STARTERS.map((q) => say(q, q)).join('')}</div>
-<form method="post" action="/lead/${id}/assistant" class="mt12">${csrfField(r.ctx)}<textarea name="text" rows="2" dir="auto" required maxlength="2000" class="wide" aria-label="ההודעה לעוזר" placeholder="מה תרצו לדעת על החנות?"></textarea><div class="row mt8"><button class="btn primary sm" type="submit">${icon('send')}לשלוח</button></div></form>`;
+<form method="post" action="/lead/${id}/assistant" class="mt12">${csrfField(r.ctx)}<textarea name="text" rows="2" dir="auto" required maxlength="2000" class="wide" aria-label="ההודעה לעוזר" placeholder="מה תרצו לדעת על החנות?"></textarea><div class="row mt8"><button class="btn${waiting ? '' : ' primary'} sm" type="submit">${icon('send')}לשלוח</button></div></form>`;
   // Where the owner writes to their assistant on WhatsApp (the owner, 2026-11-09: "the personal assistant should be the
   // number of the business, and the owner messages it personally"): the store's own number once it is connected here
   // (owners/storeLine.ts answers there), and meanwhile our number (the owner line), which keeps working anyway. The
@@ -57,12 +59,12 @@ async function page(app: App, r: DashReq, id: number) {
   const linked = !s.workspace_id
     ? 'החנות הזאת עוד לא שייכת לחשבון של לקוח, אז אין לה מספרים מחוברים.'
     : owners === null
-      ? 'את המספרים המחוברים לא הצלחתי לבדוק כרגע.'
+      ? 'את המספרים המחוברים לא הצלחנו לבדוק כרגע.'
       : personal.length
-        ? `זה עובד ממספר שחיברתם בחשבון ב-OpenFrequency. מחוברים עכשיו: ${personal.map((o) => `<bdi dir="ltr" class="ltr">${esc(localPhone(o.phone))}</bdi>`).join(', ')}.`
+        ? `זה עובד ממספר שחיברתם בחשבון ב־OpenFrequency. מחוברים עכשיו: ${personal.map((o) => `<bdi dir="ltr" class="ltr">${esc(localPhone(o.phone))}</bdi>`).join(', ')}.`
         : owners.length
           ? 'בחשבון מחובר רק המספר של העסק עצמו, וממנו אי אפשר לכתוב לעצמו. צריך לחבר גם את הטלפון האישי.'
-          : 'זה עובד ממספר שחיברתם בחשבון ב-OpenFrequency, ועוד לא חיברתם מספר.';
+          : 'זה עובד ממספר שחיברתם בחשבון ב־OpenFrequency, ועוד לא חיברתם מספר.';
   const home = esc(accountsLinks(app.env).home);
   const act = r.ctx.readOnly || !s.workspace_id
     ? ''
@@ -74,7 +76,9 @@ async function page(app: App, r: DashReq, id: number) {
 <div class="mt8"><p class="small muted m0">${linked}</p></div>
 ${act}
 </section>`;
-  const body = `<div class="head"><div class="row">${storeBadge({ id: s.id, name, domain: s.domain })}<h1 class="title">העוזר של ${esc(name)}</h1></div><p class="sub">תורן עונה לכם על החנות מתוך השיחות, השאלות שמחכות לכם והמוצרים באתר. את ההזמנות והעגלות של החנות הוא עוד לא רואה.</p></div>
+  // The section's own name on top, as Teder's sections and Today open, and the store in the line under it (the audit of
+  // 2026-11-12, P2-3).
+  const body = `<div class="head"><h1>העוזר</h1><p class="sub">תורן עונה לכם על ${esc(name)} מתוך השיחות, השאלות שמחכות לכם והמוצרים באתר. את ההזמנות והעגלות של החנות הוא עוד לא רואה.</p></div>
 <section class="panel assistant"><div class="chat">${chat}</div>${waiting}<span id="end"></span>${form}</section>
 ${wa}`;
   return layout({ ...r.ctx, title: `העוזר של ${name}`, active: 'assistant' }, body);
@@ -82,14 +86,20 @@ ${wa}`;
 
 export function assistantRoutes(app: App): Route<DashReq>[] {
   return [
-    // The menu's way in: the one store a customer has goes straight to its assistant; more than one, a list.
+    // The menu's way in: the one store a customer has goes straight to its assistant; more than one, a list. A store
+    // owner's store is theirs whatever its place in our funnel: a store added from /start stays 'page_ready' (the audit of
+    // 2026-11-12, P0-2: every self-serve store read "העוזר נפתח לחנות שתורן כבר עונה בה"). The operator's own list
+    // keeps to the stores that are past the demo.
     ['GET', /^\/assistant$/, async (r) => {
-      const stores = await app.db.query<any>(`SELECT id, name, domain, brand, brand_override FROM stores WHERE ${storesOf(r.scope)} AND status IN ('pilot', 'paid', 'demo_started') ORDER BY updated_at DESC LIMIT 50`);
+      const stores = await app.db.query<any>(`SELECT id, name, domain, brand, brand_override FROM stores WHERE ${storesOf(r.scope)}${r.ctx.operator ? " AND status IN ('pilot', 'paid', 'demo_started')" : r.scope.operator ? ' AND workspace_id IS NOT NULL' : ''} ORDER BY updated_at DESC LIMIT 50`);
       if (stores.length === 1) return { redirect: `/lead/${stores[0].id}/assistant` };
+      const start = !r.scope.operator && !r.ctx.readOnly && Number(r.scope.workspaceId) > 0;
       const list = stores.length
         ? `<div class="list">${stores.map((s) => `<a href="/lead/${s.id}/assistant">${storeBadge({ id: s.id, name: displayName(s.brand_override?.name, s.brand?.name, s.name), domain: s.domain })}<span class="t"><b>${esc(displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain)}</b><small class="ltr">${esc(s.domain)}</small></span></a>`).join('')}</div>`
-        : '<p class="muted">העוזר נפתח לחנות שתורן כבר עונה בה. אפשר לפתוח אותו גם מהעמוד של כל חנות, תחת "העוזר".</p>';
-      return { html: layout({ ...r.ctx, title: 'העוזר', active: 'assistant' }, `<div class="head"><h1 class="title">העוזר</h1></div>${list}`) };
+        : r.ctx.operator
+          ? '<p class="muted">העוזר נפתח לחנות שתורן כבר עונה בה. אפשר לפתוח אותו גם מהעמוד של כל חנות, תחת "העוזר".</p>'
+          : `<div class="empty">${icon('spark')}<b>העוזר נפתח אחרי שמוסיפים את החנות</b>שואלים אותו מה קרה היום, אילו שאלות מחכות לכם ומה אזל מהמלאי, והוא עונה מתוך השיחות והאתר.${start ? `<p class="row mt12 m0"><a class="btn" href="/start">${icon('plus')}להוסיף את החנות</a></p>` : ''}</div>`;
+      return { html: layout({ ...r.ctx, title: 'העוזר', active: 'assistant' }, `<div class="head"><h1>העוזר</h1></div>${list}`) };
     }],
     ['GET', /^\/lead\/(\d+)\/assistant$/, async (r, m) => {
       const html = await page(app, r, Number(m[1]));
