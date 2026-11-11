@@ -21,7 +21,7 @@ import { alertOperator } from '../ops/alert.ts';
 import { interruptedSends } from '../auto/send.ts';
 import { handleTederEvent, handleTederReady } from '../owners/events.ts';
 import { deliverRequested, deliverTeder } from '../ops/actions.ts';
-import { handToTeder } from '../channels/request.ts';
+import { handToTeder, unbuildableRequests } from '../channels/request.ts';
 import { checkAccount, checkToken, deliveryStatus, ownerEcho } from '../channels/waStore.ts';
 import { checkKapsoAccount, isKapsoAccount } from '../channels/kapso.ts';
 import { refreshInstagram, REFRESH_DAYS, socialEcho } from '../channels/socialStore.ts';
@@ -74,7 +74,8 @@ import { takeOrderKey } from '../domainProof.ts';
 // Scheduled each minute: a rescrape for every store with a built page that is not
 // skipped and was last ingested over 20 hours ago, each at its own offset of up to six hours so the stores' re-scrapes
 // do not all start in the same minute; expired WhatsApp bindings cleaned up; the link to each demo asked for on the
-// website whose page is now ready, Toran's or Teder's, sent on the demo number; the automatic messages' readings and
+// website whose page is now ready, Toran's or Teder's, sent on the demo number, and the word that it cannot be built to
+// a number whose site Toran cannot read (channels/request.ts); the automatic messages' readings and
 // sends, and any left "sending" by a restart marked as not sent; the operator told when a customer's message has waited
 // in the queue over five minutes; and once a day the retention pass (jobs/retention.ts) and, with
 // TORAN_SUPPORT_EXPORT_URL set, our support's re-read of the website, which also runs soon after each start
@@ -280,9 +281,10 @@ export async function schedule(app: App) {
     await app.db.query('DELETE FROM pay_waits WHERE expires_at < now()'); // a payment's wait for its receipt (channels/pay.ts)
   });
   // A demo asked for on the website whose page is ready: its link, on the demo number (ops/actions.ts). Teder's are
-  // read from Teder only while one waits.
+  // read from Teder only while one waits. One whose site Toran cannot read: the number is told so (channels/request.ts).
   await step(app, 'requested', () => deliverRequested(app));
   await step(app, 'teder', () => deliverTeder(app));
+  await step(app, 'unbuildable', () => unbuildableRequests(app));
   await step(app, 'whatsapp', async () => {
     // A store's own WhatsApp number waiting at Meta: read again every ten minutes, so it turns on by itself.
     const pending = await app.db.query<{ id: number }>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp' AND kind IN ('meta', 'kapso') AND status = 'pending' AND COALESCE((meta->>'checked_at')::timestamptz, 'epoch') < now() - interval '10 minutes'");

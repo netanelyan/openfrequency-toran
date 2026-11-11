@@ -8,6 +8,7 @@ import { drain } from '../src/jobs/worker.ts';
 import { deliverRequested, deliverTeder } from '../src/ops/actions.ts';
 import { queue, stuckRequests } from '../src/ops/queue.ts';
 import { syncTeder } from '../src/ops/sources.ts';
+import { cannotBuild, unbuildableRequests } from '../src/channels/request.ts';
 import { fakeMetaSends, INTERNAL_TOKEN, META_DEMO, testApp } from './helpers.ts';
 
 // A demo asked for on the website counts only once the person writes to the demo number with its code
@@ -80,6 +81,62 @@ test("the owner's phone may ask again, and a store Toran already has keeps its p
 });
 
 // ---- Teder's demos
+
+// The 2026-11-12 audit (P1-22): a demo asked for on the website for a site Toran cannot read was answered "אנחנו בונים
+// עכשיו דמו" and then nothing ever came.
+test("a site Toran cannot build a demo from: the number that asked is told so once, within the 23 hours, never while the site is still read", async () => {
+  const { app } = await withRequests();
+  try {
+    const NO = 'לא הצלחנו לבנות דמו מהאתר new-shop.co.il. כרגע תורן קורא חנויות ב־Shopify, WooCommerce, Wix ו־Cashcow. אם החנות בנויה על משהו אחר, כתבו לנו כאן ונבדוק.';
+    assert.equal(cannotBuild('new-shop.co.il'), NO);
+    assert.equal((await handleInbound(app, msg(P1, 'REQ-AAAAA1'))).action, 'requested');
+    const before = app.wa.outbox!.length;
+    assert.equal(await unbuildableRequests(app), 0, 'still being read: nothing yet');
+    // The fictional internet has no new-shop.co.il: the add fails.
+    await drain(app, { kinds: ['add_store'] });
+    assert.equal((await app.db.one<any>("SELECT status FROM jobs WHERE dedupe_key = 'add:new-shop.co.il'")).status, 'failed');
+    assert.equal(await unbuildableRequests(app), 1);
+    assert.deepEqual(app.wa.outbox!.slice(before).map((o) => [o.to, o.text]), [[P1, NO]]);
+    assert.equal(await unbuildableRequests(app), 0, 'once');
+    assert.equal(app.wa.outbox!.length, before + 1);
+    assert.ok(await app.db.one("SELECT 1 FROM events WHERE kind = 'demo_unbuildable' AND data->>'code' = 'REQ-AAAAA1'"));
+
+    // A store added for the request on a platform Toran does not read (its add ends with no reading): told too.
+    assert.equal((await handleInbound(app, msg(P2, 'REQ-BBBBB2'))).action, 'requested');
+    await app.db.query("INSERT INTO stores (domain, url, name, source, platform) VALUES ('second-shop.co.il', 'https://second-shop.co.il/', 'חנות שנייה', 'manual', 'konimbo')");
+    await app.db.query("UPDATE jobs SET status = 'done', done_at = now(), result = '{\"ingested\":false}'::jsonb WHERE dedupe_key = 'add:second-shop.co.il'");
+    assert.equal(await unbuildableRequests(app), 1);
+    assert.match(app.wa.outbox!.at(-1)!.text, /^לא הצלחנו לבנות דמו מהאתר second-shop\.co\.il\./);
+  } finally {
+    await app.db.close();
+  }
+});
+
+test("a store Toran already has on a platform it does not read is told at once, not promised a link; past the 23 hours, or with our number not connected, nothing goes by itself", async () => {
+  const { app } = await withRequests();
+  try {
+    await app.db.query("INSERT INTO stores (domain, url, name, source, platform) VALUES ('third-shop.co.il', 'https://third-shop.co.il/', 'חנות שלישית', 'manual', 'konimbo')");
+    const r = await handleInbound(app, msg(P1, 'REQ-CCCCC3'));
+    assert.equal(r.reply, cannotBuild('third-shop.co.il'), 'the answer to the code itself');
+    assert.ok((await app.db.one<any>("SELECT delivered_at FROM demo_requests WHERE code = 'REQ-CCCCC3'")).delivered_at, 'marked told');
+    assert.equal(await unbuildableRequests(app), 0, 'not said twice');
+
+    // A failed add, its number's window closed: left on the operator's list (ops/queue.ts), nothing sent by itself.
+    await handleInbound(app, msg(P2, 'REQ-AAAAA1'));
+    await drain(app, { kinds: ['add_store'] });
+    await app.db.query("UPDATE demo_requests SET claimed_at = now() - interval '25 hours' WHERE code = 'REQ-AAAAA1'");
+    const before = app.wa.outbox!.length;
+    assert.equal(await unbuildableRequests(app), 0);
+    // Inside the window but our number not connected (the simulator in production): it waits, unmarked.
+    await app.db.query("UPDATE demo_requests SET claimed_at = now() - interval '1 hour' WHERE code = 'REQ-AAAAA1'");
+    app.env.TORAN_ENV = 'prod';
+    assert.equal(await unbuildableRequests(app), 0);
+    assert.equal(app.wa.outbox!.length, before);
+    assert.equal((await app.db.one<any>("SELECT delivered_at FROM demo_requests WHERE code = 'REQ-AAAAA1'")).delivered_at, null);
+  } finally {
+    await app.db.close();
+  }
+});
 
 test('one demo of each product per number: Toran then Teder from one phone, a second Teder refused in its own words, the owner exempt', async () => {
   const { app, jobs } = await withRequests();

@@ -1,9 +1,12 @@
 import type { App } from '../app.ts';
+import { prefixed } from '../core/hebrew.ts';
 import { isIsraeliMobile } from '../core/urls.ts';
 import { event } from '../db/log.ts';
+import { canIngest, INGESTIBLE_HE } from '../ingest/catalogue.ts';
 import { enqueue } from '../jobs/queue.ts';
 import { tederLead } from '../ops/sources.ts';
 import type { RouteResult } from './demo.ts';
+import { demoLine } from './lines.ts';
 import { reply } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 
@@ -13,7 +16,9 @@ import type { ChannelAdapter, Inbound } from './types.ts';
 // the request is a row in demo_requests and nothing is fetched or built.
 //
 //   Toran  the store is added for that number (the worker's add_store), and its page's link goes to it once ready
-//          (ops/actions.ts deliverRequested)
+//          (ops/actions.ts deliverRequested). A site Toran cannot build a demo from (no store found there, a platform
+//          it does not read, a reading that failed) is said to the number instead, once (unbuildableRequests): before
+//          2026-11-12 the number was told "אנחנו בונים עכשיו דמו" and then heard nothing (that day's audit, P1-22)
 //   Teder  the request is handed to Teder (its POST /internal/lead, the worker's teder_lead job, tried again while
 //          Teder does not answer), which builds the store's demo, one per store; its link goes to the number once
 //          Teder has it up (ops/actions.ts deliverTeder)
@@ -25,6 +30,9 @@ export const REQ_RE = /\bREQ-([A-Z0-9]{6})\b/i;
 
 export type Product = 'toran' | 'teder';
 export const PRODUCT_HE: Record<Product, string> = { toran: 'תורן', teder: 'תדר' };
+
+/** The word to a number whose Toran demo cannot be built from its site: what Toran reads, and the way to us. */
+export const cannotBuild = (domain: string) => `לא הצלחנו לבנות דמו מהאתר ${domain}. כרגע תורן קורא חנויות ${prefixed('ב', INGESTIBLE_HE)}. אם החנות בנויה על משהו אחר, כתבו לנו כאן ונבדוק.`;
 
 const msg = {
   requested: (product: Product, domain: string) => `קיבלנו, תודה. אנחנו בונים עכשיו דמו של ${PRODUCT_HE[product]} ל־${domain}, ונשלח לכם לכאן את הלינק כשהוא מוכן.`,
@@ -68,7 +76,7 @@ export async function claimRequest(app: App, adapter: ChannelAdapter, inbound: I
     await event(db, null, 'demo_requested', { code, domain: req.domain, product });
     return say(msg.requested(product, req.domain), 'requested');
   }
-  const store = await db.one<{ id: number }>('SELECT id FROM stores WHERE domain = $1', [req.domain]);
+  const store = await db.one<{ id: number; platform: string | null; page_built_at: string | null }>('SELECT id, platform, page_built_at FROM stores WHERE domain = $1', [req.domain]);
   if (store) {
     // Toran has the store already: it keeps its page, and this is the number to send it to.
     await db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [store.id, phone]);
@@ -77,7 +85,69 @@ export async function claimRequest(app: App, adapter: ChannelAdapter, inbound: I
     await enqueue(db, 'add_store', { url: req.url, by: 'website', whatsapp: phone }, { dedupeKey: `add:${req.domain}`, maxAttempts: 1 });
   }
   await event(db, store?.id ?? null, 'demo_requested', { code, domain: req.domain, product });
+  // A store Toran has, on a platform it does not read and with no page: no demo is coming, so that is the answer now,
+  // said once (unbuildableRequests does not say it again), never a promise of a link.
+  if (store && !store.page_built_at && !canIngest(store.platform)) {
+    await db.query('UPDATE demo_requests SET delivered_at = now() WHERE id = $1', [req.id]);
+    await event(db, store.id, 'demo_unbuildable', { code, domain: req.domain, why: 'platform', at: 'claim' });
+    return say(cannotBuild(req.domain), 'requested', store.id);
+  }
   return say(msg.requested(product, req.domain), 'requested', store?.id ?? null);
+}
+
+/** A Toran request's demo is coming (null), or why it cannot be: no store found, a platform Toran does not read, a failed reading. */
+async function whyNoDemo(app: App, r: { domain: string; claimed_at: string }): Promise<'platform' | 'failed' | null> {
+  const store = await app.db.one<{ id: number; platform: string | null }>('SELECT id, platform FROM stores WHERE domain = $1', [r.domain]);
+  if (store && !canIngest(store.platform)) return 'platform';
+  // The jobs that build it: the add from this request (add_store, `add:<domain>`), and a reading of the store's site
+  // (ingest or rescrape, `ingest:<id>`), each one that ran for this request or still runs. An older failure is not this
+  // request's.
+  const keys = [`add:${r.domain}`, ...(store ? [`ingest:${store.id}`] : [])];
+  const jobs = await app.db.query<{ kind: string; status: string; result: any }>(
+    "SELECT kind, status, result FROM jobs WHERE dedupe_key = ANY($1::text[]) AND (status IN ('queued', 'running') OR created_at >= $2 OR done_at >= $2) ORDER BY id DESC",
+    [keys, r.claimed_at],
+  );
+  if (!jobs.length || jobs.some((j) => j.status === 'queued' || j.status === 'running')) return null;
+  if (jobs[0].status === 'failed') return 'failed';
+  if (jobs[0].kind === 'add_store' && jobs[0].result?.ingested === false) return 'platform';
+  return null;
+}
+
+/**
+ * A Toran demo asked for on the website whose site Toran cannot build one from: the number that asked is told so, once,
+ * on the demo number, as its link would have gone (ops/actions.ts deliverRequested): inside the 23 hours after it wrote
+ * (Meta's window), and only while our number is connected (demoLine). delivered_at, the column a Teder request's link
+ * uses (a Toran link is the store's sent_at), marks it told: set before the send, given back if the send did not go,
+ * so the next minute's pass tries again. The worker's schedule runs this each minute, so the word goes within a minute
+ * of the build's end. A request still building, or one whose store waits for the operator, is left alone.
+ */
+export async function unbuildableRequests(app: App): Promise<number> {
+  const open = await app.db.query<{ id: number; code: string; phone: string; claimed_at: string; domain: string }>(
+    `SELECT r.id, r.code, r.phone, r.claimed_at, r.domain FROM demo_requests r
+      WHERE r.product = 'toran' AND r.phone IS NOT NULL AND r.delivered_at IS NULL AND r.claimed_at > now() - interval '23 hours'
+        AND NOT EXISTS (SELECT 1 FROM stores s WHERE s.domain = r.domain AND s.page_built_at IS NOT NULL)
+      ORDER BY r.claimed_at LIMIT 50`,
+  );
+  if (!open.length) return 0;
+  const line = await demoLine(app);
+  if (!line.live) return 0;
+  let n = 0;
+  for (const r of open) {
+    const why = await whyNoDemo(app, r);
+    if (!why) continue;
+    if (!(await app.db.one('UPDATE demo_requests SET delivered_at = now() WHERE id = $1 AND delivered_at IS NULL RETURNING id', [r.id]))) continue;
+    try {
+      const out = await reply(app, line.wa, { from: r.phone, text: '', id: `req-${r.code}`, at: new Date(r.claimed_at).getTime(), channel: 'whatsapp' }, cannotBuild(r.domain), null, null);
+      if (!out.ok) throw new Error(out.reason);
+    } catch (e: any) {
+      await app.db.query('UPDATE demo_requests SET delivered_at = NULL WHERE id = $1', [r.id]);
+      app.log(`[request] the word that ${r.domain} cannot be built did not go to ${r.code}: ${e?.message || e}`);
+      continue;
+    }
+    await event(app.db, null, 'demo_unbuildable', { code: r.code, domain: r.domain, why });
+    n++;
+  }
+  return n;
 }
 
 /**
