@@ -12,15 +12,16 @@ import { underBase } from '../src/web/server.ts';
 const ADMIN = { 'x-of-admin-prefix': '/admin/toran' };
 
 /** A request as node:http sends it, so the Host header can be any name (fetch keeps Host to itself). */
-function raw(port: number, path: string, headers: Record<string, string>): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
+function raw(port: number, path: string, headers: Record<string, string>, form?: Record<string, string>): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path, method: 'GET', headers }, (res) => {
+    const sent = form ? new URLSearchParams(form).toString() : null;
+    const req = http.request({ host: '127.0.0.1', port, path, method: sent === null ? 'GET' : 'POST', headers: sent === null ? headers : { ...headers, 'content-type': 'application/x-www-form-urlencoded' } }, (res) => {
       let b = '';
       res.on('data', (c) => (b += c));
       res.on('end', () => resolve({ status: res.statusCode || 0, headers: res.headers, body: b }));
     });
     req.on('error', reject);
-    req.end();
+    req.end(sent ?? undefined);
   });
 }
 
@@ -80,7 +81,7 @@ test("on Toran's own name the operator sees the product: every customer's store 
     const server = http.createServer(createHandler(s.app, { port }));
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const p2 = (server.address() as any).port;
-    const at = (path: string, session: { cookie: string }) => raw(p2, path, { host: 'toran.test', cookie: session.cookie.replace('of_session', '__Secure-of_session'), 'x-forwarded-proto': 'https' });
+    const at = (path: string, session: { cookie: string }, form?: Record<string, string>) => raw(p2, path, { host: 'toran.test', cookie: session.cookie.replace('of_session', '__Secure-of_session'), 'x-forwarded-proto': 'https' }, form);
     const nav = (html: string) => /<nav class="nav" aria-label="ראשי">([^]*?)<\/nav>/.exec(html)![1];
     try {
       // No workspace: what the operator had, a customer's store among them, on the customer's screens.
@@ -98,6 +99,24 @@ test("on Toran's own name the operator sees the product: every customer's store 
       assert.doesNotMatch(settings.body, /TORAN_MONTHLY_CAP_USD|ANTHROPIC_API_KEY|חיפוש לידים/);
       const knows = await at(`/lead/${s.seeded.storeId}/knowledge`, op);
       assert.equal(knows.status, 200, "a customer's store opens, as its owner's page");
+      // Its Instagram connects from its page, as its owner would (the owner, 2026-11-11, on a store's Instagram page with
+      // no button: "where exactly is the button for connection?").
+      Object.assign(s.app.env, { TORAN_DM_PROVIDER: 'zernio', ZERNIO_API_KEY: 'sk_zernio_test_key', ZERNIO_WEBHOOK_SECRET: 'zernio-webhook-secret-0123456789', PUBLIC_BASE_URL: 'https://toran.test', TORAN_CHANNELS: 'whatsapp,email,messenger,instagram' });
+      s.app.graph = (async (input: any, init: any = {}) => {
+        const u = new URL(String(input));
+        const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } });
+        if (u.pathname === '/api/v1/profiles') return init.method === 'POST' ? json({ profile: { _id: 'a'.repeat(24) } }, 201) : json({ profiles: [] });
+        if (u.pathname === '/api/v1/connect/instagram') return json({ authUrl: 'https://zernio.com/connect/welcome/instagram?t=abc' });
+        return json({ error: 'no route' }, 404);
+      }) as typeof fetch;
+      const ig = await at(`/lead/${s.seeded.storeId}/instagram`, op);
+      assert.equal(ig.status, 200);
+      assert.match(ig.body, new RegExp(`action="/lead/${s.seeded.storeId}/instagram/connect"`), 'the button');
+      assert.doesNotMatch(ig.body, /מחברת החנות מהדשבורד שלה/);
+      const csrf = /name="_csrf" value="([^"]+)"/.exec(ig.body)![1];
+      const go = await at(`/lead/${s.seeded.storeId}/instagram/connect`, op, { _csrf: csrf });
+      assert.equal(go.status, 303);
+      assert.equal(go.headers.location, 'https://zernio.com/connect/welcome/instagram?t=abc', "to Zernio's connect, and back to Toran's own name");
       // The operator's pages are on /admin.
       const toOp = await at('/leads?x=1', op);
       assert.equal(toOp.status, 303);

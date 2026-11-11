@@ -241,7 +241,7 @@ async function sampleReview(app: App, r: DashReq, s: Store): Promise<string> {
   const chat = (pitch?.sample_chat || []).filter((m) => m && (m.role === 'customer' || m.role === 'agent') && m.text);
   if (chat.length < 2) return '';
   const ok = await app.db.one<{ at: string }>("SELECT at FROM events WHERE store_id = $1 AND kind = 'answers_ok' ORDER BY id DESC LIMIT 1", [s.id]);
-  const may = !r.ctx.readOnly && !r.scope.operator;
+  const may = !r.ctx.readOnly && !r.ctx.operator;
   const bubbles = chat.map((m) => `<div class="b ${m.role === 'agent' ? 'agent' : 'customer'}">${esc(m.text)}</div>`).join('');
   const foot = ok
     ? `<p class="small muted mt12 m0">${icon('check')} אישרתם שככה תורן עונה, ${esc(shortDate(ok.at))}. אם משהו השתנה, מתקנים בתשובות שלכם.</p>`
@@ -397,7 +397,7 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
       <p class="small muted mt12 m0">כשאין לו תשובה, הוא אומר ללקוח שהוא לא בטוח ושהעביר את השאלה לנציג, במקום לנחש, והשאלה מגיעה אליכם ל<a href="/chats?state=waiting">שיחות</a>.</p>
     </section>
     ${await sampleReview(app, r, s)}
-    ${r.scope.operator ? '' : tryCard(app, s, true)}
+    ${r.ctx.operator ? '' : tryCard(app, s, true)}
     <section class="panel" id="bot-name"><header><h2>השם של הבוט</h2></header>
       <p class="small muted m0">ככה הוא פותח כל שיחה, כדי שהלקוח ידע שעונה לו בוט: <q>${esc(botLine('first', botName(s), s.name))}</q>. כשאתם עונים בעצמכם, הלקוח מקבל לפני ההודעה שלכם: <q>${esc(personLine(s.name))}</q></p>
       ${ro ? '' : `<form class="mt12" method="post" action="/lead/${id}/bot-name">${csrfField(r.ctx)}<label class="f">השם<small>עד ${NAME_MAX} תווים. משאירים ריק, והוא פשוט הבוט של ${esc(s.name)}.</small><input type="text" name="agent_name" value="${esc(s.agent_name || '')}" maxlength="${NAME_MAX}" dir="auto"></label><div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div></form>`}
@@ -563,9 +563,10 @@ export { today as customerToday };
 
 export function customerRoutes(app: App): Route<DashReq>[] {
   return [
-    // The owner read how Toran answers and said it is good (sampleReview; setup's review step). Not view-as, not the operator.
+    // The owner read how Toran answers and said it is good (sampleReview; setup's review step). Not view-as, not the
+    // operator's own pages; the operator on a customer's screens (server.ts `look`) says it as the store's owner would.
     ['POST', /^\/lead\/(\d+)\/answers-ok$/, async (r, m) => {
-      if (r.scope.operator) throw new ActionError('את זה מאשר בעל החנות.', 403);
+      if (r.ctx.operator) throw new ActionError('את זה מאשר בעל החנות.', 403);
       const id = Number(m[1]);
       await app.db.query("INSERT INTO events (store_id, kind, data) VALUES ($1, 'answers_ok', $2::jsonb)", [id, J({ by: r.user.name })]);
       await audit(app.db, { actor: r.user.name, action: 'answers_ok', storeId: id });

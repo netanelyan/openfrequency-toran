@@ -105,7 +105,7 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
 
   const button = ro
     ? '<p class="muted mt12 m0">במצב צפייה אי אפשר לחבר.</p>'
-    : r.scope.operator && !operatorConnects(app, r, s)
+    : r.ctx.operator && !operatorConnects(app, r, s)
       ? `<p class="muted mt12 m0">${!isCompany(s) ? 'את זה מחברת החנות מהדשבורד שלה, עם החשבון שמנהל את הדף או את האינסטגרם.' : viaAdminReq(r.req) ? 'כדי לחבר מכאן, OF_ACCOUNTS_URL ו־PUBLIC_BASE_URL צריכים להיות באותו דומיין.' : 'את החנות שלנו מחברים מ־/admin באתר של החשבונות.'}</p>`
       : ready
         ? `<form class="mt16" method="post" action="/lead/${id}/${channel}/connect">${csrfField(r.ctx)}<button class="btn primary" type="submit">${icon('chat')}לחבר ${esc(WHAT[channel])}</button></form>`
@@ -141,7 +141,9 @@ ${state}`;
 
 /**
  * Our company store's Page and Instagram are ours: the operator connects them, from /admin, where the cookie can be
- * set for the domain Toran's own name shares (socialStore.ts adminCookieDomain). Every other store connects its own.
+ * set for the domain Toran's own name shares (socialStore.ts adminCookieDomain). Every other store connects its own,
+ * and so does the operator on Toran's own name, who sees a customer's screens there (server.ts `look`) and connects as
+ * the store's owner would (2026-11-11, the owner on a store's Instagram page: "where exactly is the button for connection?").
  */
 // Through Zernio no cookie is needed (Zernio's own API says whose the account is), so /admin is enough.
 const operatorConnects = (app: App, r: DashReq, s: { platform?: string | null }) => isCompany(s) && viaAdminReq(r.req) && (dmProvider(app.env) === 'zernio' || Boolean(adminCookieDomain(app.env)));
@@ -163,7 +165,7 @@ export function socialRoutes(app: App): Route<DashReq>[] {
       const id = Number(m[1]);
       const channel = channelOf(app, m[2]);
       let domain: string | null = null;
-      if (r.scope.operator) {
+      if (r.ctx.operator) {
         const s = await app.db.one<{ platform: string | null }>('SELECT platform FROM stores WHERE id = $1', [id]);
         if (!s || !operatorConnects(app, r, s)) throw new ActionError('את זה מחברת החנות מהדשבורד שלה.', 403);
         domain = adminCookieDomain(app.env);
