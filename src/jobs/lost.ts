@@ -19,14 +19,17 @@ import type { Job } from './queue.ts';
 //
 // and either way the operator hears of it, once for each job. The failed job stays on the operator's queue page, where
 // it can be run again (web/pages/queue.ts): a second run is safe, a message already written is a duplicate there.
+//
+// `stuck`: the job ran past its deadline (worker.ts runOne) and was stopped after one try, so the owner's note says it
+// was not answered in time, not that several tries failed.
 
-export async function lostMessage(app: App, job: Job, error: string): Promise<{ kept: 'conversation' | 'event'; conversationId?: number }> {
+export async function lostMessage(app: App, job: Job, error: string, { stuck = false }: { stuck?: boolean } = {}): Promise<{ kept: 'conversation' | 'event'; conversationId?: number }> {
   const inbound = { ...(job.payload || {}), ...(job.kind === 'mail_inbound' ? { channel: 'email' } : {}) } as Inbound;
   const echo = job.kind === 'wa_echo' || job.kind === 'dm_echo';
   const channel = (inbound.channel || 'whatsapp') as Channel;
   const account = !echo && inbound.account && inbound.from ? (await accountFor(app, channel, String(inbound.account))) || (channel === 'email' ? await receivingAccount(app, String(inbound.account)) : null) : null;
   const what = echo ? 'an owner\'s own message to a customer' : `a customer's ${channel} message`;
-  await alertOperator(app, `lost:${job.id}`, `הודעה שתורן לא הצליח לטפל בה (${job.kind})`, `עבודה ${job.id}, ${what}${inbound.from ? ` מ-${inbound.from}` : ''}, נכשלה ${job.attempts} פעמים: ${cleanLine(error, 300)}. אפשר להריץ אותה שוב מדף התור.`, { everyMinutes: 7 * 24 * 60, storeId: account?.store_id ?? null });
+  await alertOperator(app, `lost:${job.id}`, `הודעה שתורן לא הצליח לטפל בה (${job.kind})`, `עבודה ${job.id}, ${what}${inbound.from ? ` מ-${inbound.from}` : ''}, ${stuck ? 'נתקעה ונעצרה' : `נכשלה ${job.attempts} פעמים`}: ${cleanLine(error, 300)}. אפשר להריץ אותה שוב מדף התור.`, { everyMinutes: 7 * 24 * 60, storeId: account?.store_id ?? null });
   if (!account) {
     await event(app.db, null, 'message_lost', { job: job.id, kind: job.kind, error: cleanLine(error, 200) });
     return { kept: 'event' };
@@ -44,8 +47,8 @@ export async function lostMessage(app: App, job: Job, error: string): Promise<{ 
   // The owner reads these notes on the dashboard, which speaks to them in the plural everywhere (the 2026-11-12 audit
   // found "מחכה לך" here beside "מחכות לכם" on the same screen).
   const text = answer
-    ? 'תורן כתב תשובה להודעה הזו, אבל היא לא הגיעה ללקוח גם אחרי כמה ניסיונות. כדאי לענות לו בעצמכם.'
-    : 'תורן לא הצליח לענות להודעה הזו גם אחרי כמה ניסיונות, אז היא מחכה לכם.';
-  await handOver(app, account.store_id, conv, 'failed', `job ${job.id} (${job.kind}) failed ${job.attempts} times: ${cleanLine(error, 160)}`, text);
+    ? `תורן כתב תשובה להודעה הזו, אבל היא לא הגיעה ללקוח ${stuck ? 'בזמן' : 'גם אחרי כמה ניסיונות'}. כדאי לענות לו בעצמכם.`
+    : stuck ? 'תורן לא הצליח לענות להודעה הזו בזמן, אז היא מחכה לכם.' : 'תורן לא הצליח לענות להודעה הזו גם אחרי כמה ניסיונות, אז היא מחכה לכם.';
+  await handOver(app, account.store_id, conv, 'failed', stuck ? `job ${job.id} (${job.kind}) ran past its deadline: ${cleanLine(error, 160)}` : `job ${job.id} (${job.kind}) failed ${job.attempts} times: ${cleanLine(error, 160)}`, text);
   return { kept: 'conversation', conversationId: conv };
 }

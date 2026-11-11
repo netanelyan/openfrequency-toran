@@ -116,6 +116,7 @@ from `releases/`, the old checkout's files at the top of `/opt/toran` (everythin
    | `TORAN_ASSISTANT_WA`, `TWILIO_TEMPLATES` | the owner line and its approved templates (see below) |
    | `OF_ASSISTANT_SECRET`, `TEDER_INTERNAL` | Teder on the owner line: the same secret in Teder's `.env` |
    | `TORAN_ALERT_WA` | optional: your own WhatsApp number, for the alerts ("Alerts on your WhatsApp" below) |
+   | `TORAN_QUICK_LOOPS`, `TORAN_LONG_JOB_MINUTES`, `TORAN_QUICK_JOB_MINUTES`, `TORAN_JOB_MINUTES` | optional, the worker (src/jobs/worker.ts): the loop for the short jobs someone waits on (1), and how long a job may run before it is failed and the operator told: 40 minutes for reading a site or its photos, 5 for the short jobs, 10 for the rest. Leave them unset |
    | `BRAVE_API_KEY` | optional, for discovery by search |
 
 3. **Start the database.** Postgres with pgvector, on 127.0.0.1:5433 (`TORAN_DB_PORT` changes it), with its memory

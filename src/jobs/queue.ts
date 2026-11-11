@@ -11,7 +11,8 @@ import { type Db, J } from '../db/index.ts';
 //              same account is running: the two are answered in order, and no loop sits
 //              waiting on the other's conversation
 //   done/fail  a failed job is retried with backoff (1, 4, 9 minutes...) up to its
-//              max_attempts, then kept as failed with its error for the dashboard
+//              max_attempts, then kept as failed with its error for the dashboard; one past its
+//              deadline (worker.ts) is failed at once, not retried
 //   release    a job put back as it was, its attempt not counted (a shutdown, a busy conversation)
 //   progress   a line the dashboard shows while the job runs ("reading the products: 250")
 //
@@ -77,9 +78,13 @@ export async function done(db: Db, id: number, result: unknown = null) {
   await db.query("UPDATE jobs SET status = 'done', done_at = now(), result = $2::jsonb, progress = NULL, locked_by = NULL WHERE id = $1", [id, J(result)]);
 }
 
-/** A failed attempt: queued again with backoff while attempts remain. True when this was the last one. */
-export async function fail(db: Db, job: Job, error: string): Promise<boolean> {
-  const retry = job.attempts < job.max_attempts;
+/**
+ * A failed attempt: queued again with backoff while attempts remain. True when this was the last one. `final` ends it
+ * now, attempts left or not: a job that ran past its deadline (worker.ts runOne) may still be working in the
+ * background, and a second run beside it would do its work twice.
+ */
+export async function fail(db: Db, job: Job, error: string, { final = false }: { final?: boolean } = {}): Promise<boolean> {
+  const retry = !final && job.attempts < job.max_attempts;
   await db.query(
     `UPDATE jobs SET status = $2, last_error = $3, locked_at = NULL, locked_by = NULL, run_at = now() + ($4 || ' minutes')::interval, done_at = CASE WHEN $2 = 'failed' THEN now() ELSE NULL END WHERE id = $1`,
     [job.id, retry ? 'queued' : 'failed', error.slice(0, 1000), String(job.attempts * job.attempts)],
