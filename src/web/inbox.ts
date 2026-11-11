@@ -1,4 +1,5 @@
 import { CHANNEL_HE } from '../channels/config.ts';
+import { summaryHe } from '../agent/guard.ts';
 import type { Why } from '../channels/customers.ts';
 import { esc, icon, listTime, stamp } from './ui.ts';
 
@@ -38,7 +39,8 @@ const maskPhone = (p: string | null) => (p ? `+${p.slice(0, 5)}•••${p.slic
  */
 export const maskPeer = (channel: string, p: string | null, name?: string | null) => {
   if (channel === 'messenger' || channel === 'instagram') return String(name || '').slice(0, 60);
-  if (!p) return '';
+  // A visitor on the site chat is a random id of their browser, not a phone: "לקוח", as for no number at all.
+  if (!p || channel === 'web') return '';
   if (channel !== 'email') return maskPhone(p);
   const [user, domain] = p.split('@');
   return `${user.slice(0, 2)}•••@${domain || ''}`;
@@ -76,9 +78,11 @@ type RowOf = { id: number; channel: string; account_id: number | null; state: In
  * and where it stands. `current` marks the conversation open beside the list; `qs` keeps the list's filters on the link.
  */
 export function conversationRow(c: RowOf, { current = false, qs = '' }: { current?: boolean; qs?: string } = {}) {
-  const handed = c.state === 'waiting' && !!c.summary && HEBREW.test(c.summary);
+  // The handoff line in Hebrew, an old English one too ("the guard cut stock: מה נשמע", the owner's Today, 2026-11-11).
+  const summary = c.summary ? summaryHe(c.summary) : '';
+  const handed = c.state === 'waiting' && !!summary && HEBREW.test(summary);
   // One line of plain words: WhatsApp's own _italic_, *bold* and ~strike~ marks come off.
-  const text = String((handed ? c.summary : c.last_text || c.last_q) || '').replace(/(^|\s)([_*~])([^_*~\n]+)\2(?=\s|$)/g, '$1$3').replace(/\s+/g, ' ').trim().slice(0, 160);
+  const text = String((handed ? summary : c.last_text || c.last_q) || '').replace(/(^|\s)([_*~])([^_*~\n]+)\2(?=\s|$)/g, '$1$3').replace(/\s+/g, ' ').trim().slice(0, 160);
   const who = handed ? 'תורן העביר' : WHO_HE[c.last_role || ''];
   const demo = c.channel === 'whatsapp' && !c.account_id ? '<span class="chip ghost">דמו</span>' : '';
   const subject = c.channel === 'email' && c.subject ? `<span class="ib-subj">${esc(c.subject.slice(0, 90))}</span>` : '';
