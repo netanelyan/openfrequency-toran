@@ -46,7 +46,9 @@ const YES = /^\s*(?:כן|כן,?\s*בטח|בטח|ברור|אפשר|בשמחה|ס�
 const NO = /^\s*(?:לא|לא,?\s*תודה|עדיף שלא|בלי|no)\s*[.!]*\s*$/i;
 
 export const askLine = (store: string) => `תודה על הביקורת! אפשר להציג אותה באתר של ${store} עם השם הפרטי שלכם? אפשר לענות כן או לא.`;
-const thanksYes = 'תודה! הביקורת תופיע באתר אחרי שהחנות תעבור עליה.';
+// The store's site shows a review only once the owner approves it (step 4 above), so the customer is told it may, not
+// that it will (the audit of 2026-11-12, P2-8: "הביקורת תופיע באתר").
+const thanksYes = 'סגור, תודה. אם החנות תאשר אותה, הביקורת תופיע באתר שלה.';
 const thanksNo = 'בסדר, היא תישאר רק אצל החנות. תודה שכתבתם!';
 
 /**

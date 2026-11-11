@@ -162,7 +162,7 @@ test('reviews: a rating answering the request is kept, the customer is asked onc
     await say(s, key, V1, 'כן');
     await drain(s.app, { kinds: ['web_inbound'] });
     got = await lines(s, key, V1);
-    assert.equal(got.lines.at(-1).text, 'תודה! הביקורת תופיע באתר אחרי שהחנות תעבור עליה.');
+    assert.equal(got.lines.at(-1).text, 'סגור, תודה. אם החנות תאשר אותה, הביקורת תופיע באתר שלה.', 'it shows only once the owner approves it');
     row = await s.app.db.one<any>('SELECT step, publish FROM reviews WHERE id = $1', [rid]);
     assert.deepEqual({ ...row }, { step: 'done', publish: 'yes' });
     assert.doesNotMatch(await (await s.get(`/w/${key}/reviews`)).text(), /הכל הגיע מהר/, 'the owner has not approved it yet');
