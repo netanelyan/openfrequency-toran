@@ -48,7 +48,7 @@ test('the waiting digest goes through accounts as toran conversation_waiting wit
     assert.equal(r.sent, 1);
     assert.equal(n.asked.length, 1);
     assert.deepEqual({ ...n.asked[0], text: undefined, subject: undefined }, { workspace: 7, product: 'toran', kind: 'conversation_waiting', link: `https://toran.openfrequency.co.il/chat/${conv}`, text: undefined, subject: undefined });
-    assert.match(n.asked[0].subject, /לקוח מחכה לתשובה שלכם בכלי חרס/);
+    assert.match(n.asked[0].subject, /לקוח של כלי חרס מחכה לתשובה שלכם/);
     assert.match(n.asked[0].text, /שואלת על איסוף/);
 
     // Told: not again. A new waiting conversation over accounts' day limit: accounts' 429 stands, no other mail.

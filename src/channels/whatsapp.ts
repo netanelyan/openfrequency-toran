@@ -118,7 +118,7 @@ export function simProvider(): WaProvider {
       return { id: `sim-out-${Date.now()}-${n++}`, usd: 0 };
     },
     async push(to, msg) {
-      outbox.push({ to, text: msg.text || '', inReplyTo: '', at: Date.now(), ...(msg.from ? { from: msg.from } : {}), ...(msg.mediaUrl ? { mediaUrl: msg.mediaUrl } : {}), ...(msg.template ? { template: msg.template.name, vars: msg.template.vars } : {}) });
+      outbox.push({ to, text: msg.text || '', inReplyTo: '', at: Date.now(), ...(msg.from ? { from: msg.from } : {}), ...(msg.mediaUrl ? { mediaUrl: msg.mediaUrl } : {}), ...(msg.template ? { template: msg.template.name, vars: msg.template.vars, ...(msg.template.url ? { url: msg.template.url } : {}) } : {}) });
       return { id: `sim-out-${Date.now()}-${n++}`, usd: 0 };
     },
     ack: () => ({ type: 'application/json; charset=utf-8', body: '{"ok":true}' }),

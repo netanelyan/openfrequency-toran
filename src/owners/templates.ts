@@ -53,6 +53,49 @@ export const TEMPLATES: Record<string, Template> = {
 };
 
 /**
+ * Toran's own, to a store owner's number about their own store (owners/notify.ts waitingToOwners; the audit of
+ * 2026-11-12, P1-6: the owner heard of a waiting customer by email only, at most three a day). Written here for the
+ * owner to submit in WhatsApp Manager; not submitted. Until Meta approves it and its name is in META_TEMPLATES, an
+ * owner hears on WhatsApp only inside the 24 hours after they last wrote to our number (a plain message then). Its URL
+ * button opens the conversation: {{1}} of the button is the path after Toran's address (chat/123).
+ */
+export type UrlButton = { text: string; base: string; example: string };
+export const TORAN_TEMPLATES: Record<string, Template & { url?: UrlButton }> = {
+  toran_customer_waiting: {
+    name: 'toran_customer_waiting',
+    body: 'לקוח של {{1}} מחכה לתשובה שלכם.\nהוא כתב: "{{2}}"\n\nעונים לו מהשיחה בתורן, בכפתור למטה.',
+    example: ['כלי חרס של נורית', 'אפשר לאסוף מהסטודיו בשבת?'],
+    url: { text: 'לשיחה', base: 'https://toran.openfrequency.co.il/', example: 'chat/123' },
+  },
+};
+
+/** The submission sheet for Toran's own (docs/whatsapp-templates.md, before the owner line's). */
+export function toranTemplatesDoc(): string {
+  return Object.values(TORAN_TEMPLATES).map((t) => [
+    `### ${t.name}`,
+    '',
+    '| | |',
+    '|---|---|',
+    `| Name | ${t.name} |`,
+    '| Category | Utility |',
+    '| Language | Hebrew (he) |',
+    '| Header | none |',
+    `| Footer | ${FOOTER} |`,
+    `| Variables (sample) | ${t.example.map((e, i) => `{{${i + 1}}} = ${e}`).join('; ')} |`,
+    ...(t.url ? [`| Button | URL, "${t.url.text}", dynamic: ${t.url.base}{{1}} (sample: ${t.url.example}) |`] : []),
+    '',
+    'The body, exactly:',
+    '',
+    '```',
+    t.body,
+    '```',
+    '',
+    `As the owner reads it: ${filled(t, t.example).replace(/\n+/g, ' / ')}`,
+    '',
+  ].join('\n')).join('\n');
+}
+
+/**
  * What a template is sent by, on the provider the owner line is on: on Meta's Cloud API (channels/lines.ts) its own
  * name, once META_TEMPLATES lists it as approved ("teder_posts_ready,teder_post_reminder,..."); on Twilio its SID.
  */

@@ -14,6 +14,9 @@ after the person last wrote to us. Four sets:
   2026-11-08: the first message to a lead and its one reminder, from `src/ops/outreach.ts`. Approved
   on 2026-11-08, with the combined openfrequency_pitch two; toran_launch, Toran's opening to its waitlist, is not
   submitted yet: see their section.
+- **A customer waits, `toran_customer_waiting`**: to a store owner's own number, when a customer of their store waits
+  for their answer, from `src/owners/notify.ts`. **Not submitted yet**: written 2026-11-12 for the owner to submit; see
+  its section.
 
 This file is written from `src/ops/alert.ts`, `src/billing/remind.ts`, `src/ops/outreach.ts` and
 `src/owners/templates.ts`. Change the
@@ -340,6 +343,46 @@ curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templat
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
   --data '{"name":"toran_launch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"להצטרף לתורן","url":"https://openfrequency.co.il/{{1}}","example":["https://openfrequency.co.il/toran"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
+
+## A customer waits (to the store's owner)
+
+The audit of 2026-11-12 (P1-6): a store owner heard of a customer waiting for them by email only, at most three of
+that kind a day (accounts' limit), and by a browser notification where they turned one on. Now the waiting digest
+(`src/owners/waiting.ts`) also writes to each of the workspace's WhatsApp numbers that accounts verified and that agreed
+to hear from Toran (the owner line's consent: "הפסק" stops it, "התחל" starts it again), under the owner line's rules
+(`src/owners/notify.ts`): at most 8 messages a number in 24 hours, never between 22:00 and 07:00 (the digest waits
+for the morning), and each start of a wait once. Inside the 24 hours after the owner last wrote to our number it goes
+as a plain message. After them WhatsApp takes only an approved template, this one.
+
+**To do in WhatsApp Manager** (Message templates, Create template, on the WhatsApp account that holds our number, the
+one the owner line sends from): category **Utility** (it is about the owner's own store, which they connected, and
+sells nothing), name `toran_customer_waiting`, language Hebrew, no header, the footer below, the body below exactly with
+its two sample values, and one button of the type **Visit website**, dynamic, with the text and address below. Once
+Meta approves it, add its name to `META_TEMPLATES` in Toran's `.env` (beside any already there) and restart Toran;
+until then nothing is tried outside the 24 hours, and the owner still gets the email and the notification.
+
+### toran_customer_waiting
+
+| | |
+|---|---|
+| Name | toran_customer_waiting |
+| Category | Utility |
+| Language | Hebrew (he) |
+| Header | none |
+| Footer | העוזר הדיגיטלי של OpenFrequency · להפסקה כתבו הפסק |
+| Variables (sample) | {{1}} = כלי חרס של נורית; {{2}} = אפשר לאסוף מהסטודיו בשבת? |
+| Button | URL, "לשיחה", dynamic: https://toran.openfrequency.co.il/{{1}} (sample: chat/123) |
+
+The body, exactly:
+
+```
+לקוח של {{1}} מחכה לתשובה שלכם.
+הוא כתב: "{{2}}"
+
+עונים לו מהשיחה בתורן, בכפתור למטה.
+```
+
+As the owner reads it: לקוח של כלי חרס של נורית מחכה לתשובה שלכם. / הוא כתב: "אפשר לאסוף מהסטודיו בשבת?" / עונים לו מהשיחה בתורן, בכפתור למטה. / העוזר הדיגיטלי של OpenFrequency · להפסקה כתבו הפסק
 
 ## The owner line (not sent since 2026-11-02)
 

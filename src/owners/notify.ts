@@ -4,8 +4,9 @@ import { J } from '../db/index.ts';
 import { event, usage } from '../db/log.ts';
 import type { Part } from '../channels/send.ts';
 import type { WaOut } from '../channels/whatsapp.ts';
-import { mayNotify, type Owner } from './identity.ts';
-import { filled, templateRef, TEMPLATES } from './templates.ts';
+import { mayNotify, ownersOf, type Owner } from './identity.ts';
+import { filled, templateRef, TEMPLATES, TORAN_TEMPLATES } from './templates.ts';
+import { cleanLine } from '../core/hebrew.ts';
 import { ownerWa } from '../channels/lines.ts';
 import type { PostId } from './teder.ts';
 
@@ -25,9 +26,10 @@ import type { PostId } from './teder.ts';
 //
 // A rule that cannot be checked (accounts or Teder did not answer) stops the message: the caller retries later.
 //
-// OFF since 2026-11-02 (the owner: "managing teder through whatsapp, only through the dashboard"): every message this
-// file would start is about the owner's Teder account, and Teder is managed on its own dashboard now, so nothing is
-// started at all. owners/events.ts ends Teder's events before they get here; pushToOwner refuses too, sending nothing.
+// Teder's are OFF since 2026-11-02 (the owner: "managing teder through whatsapp, only through the dashboard"): Teder is
+// managed on its own dashboard now. owners/events.ts ends Teder's events before they get here; pushToOwner refuses
+// them too, sending nothing. The one message started now is Toran's, about the owner's own store: a customer waiting
+// for them (waitingToOwners, below; the audit of 2026-11-12, P1-6).
 
 /** Teder's news on the owner's WhatsApp, the only thing Toran ever started to an owner: off. */
 export const TEDER_ON_WHATSAPP = false;
@@ -45,8 +47,10 @@ export type Push = {
   eventId: string | null;
   workspaceId: number;
   session: Part[]; // inside the window
-  template: { name: string; vars: string[] } | null; // outside it
+  template: { name: string; vars: string[]; url?: string } | null; // outside it (url: the end of its URL button's address)
   list?: { items: { id: PostId; hook: string }[]; source: string }; // the posts it shows, numbered from 1
+  /** Whose news it is: Teder's (off, TEDER_ON_WHATSAPP) unless said; Toran's, about the owner's own store. */
+  product?: 'teder' | 'toran';
 };
 export type Outcome = 'sent' | 'skipped' | 'failed';
 
@@ -76,7 +80,8 @@ async function record(app: App, p: Push, phone: string, status: Outcome | 'defer
 
 /** One message (in parts) Toran starts to one owner, under every rule above. */
 export async function pushToOwner(app: App, owner: Owner, p: Push): Promise<Outcome> {
-  if (!TEDER_ON_WHATSAPP) return 'skipped';
+  const product = p.product || 'teder';
+  if (product === 'teder' && !TEDER_ON_WHATSAPP) return 'skipped';
   const phone = owner.phone;
   if (p.eventId && (await app.db.one("SELECT 1 FROM owner_notifications WHERE event_id = $1 AND phone = $2 AND status = 'sent'", [p.eventId, phone]))) return 'sent';
   const row = await rememberOwner(app, owner);
@@ -85,7 +90,7 @@ export async function pushToOwner(app: App, owner: Owner, p: Push): Promise<Outc
     return 'skipped' as const;
   };
   if (owner.workspace.id !== p.workspaceId || owner.workspace.disabled) return skip('not_this_workspace');
-  if (!owner.products.includes('teder')) return skip('no_teder');
+  if (!owner.products.includes(product)) return skip(`no_${product}`);
   if (!mayNotify(owner, row.opted_out_at)) return skip(owner.optIn ? 'opted_out' : 'no_opt_in');
   const today = await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM owner_notifications WHERE phone = $1 AND status = 'sent' AND at > now() - interval '24 hours'", [phone]);
   if ((today?.n || 0) >= PUSHES_PER_DAY) return skip('rate_limited');
@@ -106,10 +111,10 @@ export async function pushToOwner(app: App, owner: Owner, p: Push): Promise<Outc
     }
   } else {
     mode = 'template';
-    const t = p.template ? TEMPLATES[p.template.name] : null;
+    const t = p.template ? TEMPLATES[p.template.name] || TORAN_TEMPLATES[p.template.name] : null;
     const sid = t ? templateRef(app.env, wa.kind, t.name) : null;
     if (!t || !p.template || !sid) return skip('no_template');
-    messages = [{ template: { name: t.name, sid, vars: p.template.vars } }];
+    messages = [{ template: { name: t.name, sid, vars: p.template.vars, ...(p.template.url ? { url: p.template.url } : {}) } }];
   }
 
   const ids: string[] = [];
@@ -126,7 +131,33 @@ export async function pushToOwner(app: App, owner: Owner, p: Push): Promise<Outc
   }
   await app.db.query('UPDATE owner_numbers SET disclosed_at = COALESCE(disclosed_at, now()) WHERE phone = $1', [phone]);
   if (p.list) await keepList(app, phone, p.workspaceId, p.list.items, p.list.source);
-  const t = mode === 'template' ? TEMPLATES[p.template!.name] : null;
+  const t = mode === 'template' ? TEMPLATES[p.template!.name] || TORAN_TEMPLATES[p.template!.name] : null;
   await record(app, p, phone, 'sent', { mode, template: t?.name ?? null, detail: { ids, ...(t ? { text: filled(t, p.template!.vars) } : { parts: p.session.length }) } });
   return 'sent';
+}
+
+type WaitingConv = { id: number; summary: string | null; last_q: string | null; upto?: number | null };
+
+/**
+ * A customer waits for the store's owner (owners/waiting.ts's digest): the same word on WhatsApp, to each number of the
+ * workspace accounts verified that agreed to hear from Toran, under every rule of pushToOwner (consent, at most
+ * PUSHES_PER_DAY, the window). Inside the 24 hours after the owner last wrote to our number it is a plain message; after
+ * them, only the template toran_customer_waiting once Meta approved it and META_TEMPLATES lists it (owners/templates.ts;
+ * the audit of 2026-11-12, P1-6). Each start of a wait (a handoff) goes to a number once (eventId).
+ */
+export async function waitingToOwners(app: App, workspaceId: number, w: { storeId: number; storeName: string; list: WaitingConv[]; base: string }): Promise<Outcome[]> {
+  if (!w.list.length) return [];
+  const owners = await ownersOf(app, workspaceId);
+  if (!owners?.length) return [];
+  const first = w.list[0];
+  const one = w.list.length === 1;
+  const path = one ? `chat/${first.id}` : 'chats?state=waiting';
+  const said = cleanLine(first.last_q || (first.summary && /[֐-׿]/.test(first.summary) ? first.summary : '') || 'הודעה בלי טקסט', 200);
+  const text = one
+    ? `לקוח של ${w.storeName} מחכה לתשובה שלכם.\nהוא כתב: "${said}"\n\nעונים לו מהשיחה בתורן: ${w.base}/${path}`
+    : `${w.list.length} לקוחות של ${w.storeName} מחכים לתשובה שלכם.\nהאחרון כתב: "${said}"\n\nכל השיחות שמחכות: ${w.base}/${path}`;
+  const eventId = `waiting:${w.storeId}:${w.list.map((c) => `${c.id}.${c.upto ?? 0}`).join(',')}`.slice(0, 300);
+  const out: Outcome[] = [];
+  for (const o of owners) out.push(await pushToOwner(app, o, { product: 'toran', kind: 'conversation_waiting', eventId, workspaceId, session: [{ text }], template: { name: 'toran_customer_waiting', vars: [cleanLine(w.storeName, 60) || '-', said], url: path } }));
+  return out;
 }

@@ -4,7 +4,8 @@
 import { writeFileSync } from 'node:fs';
 import { alertTemplateDoc } from '../src/ops/alert.ts';
 import { REMIND_HOLD_MINUTES, REMIND_WEEK_DAYS, REMIND_WEEK_MAX, reminderTemplateDoc } from '../src/billing/remind.ts';
-import { templatesDoc } from '../src/owners/templates.ts';
+import { templatesDoc, toranTemplatesDoc } from '../src/owners/templates.ts';
+import { PUSHES_PER_DAY } from '../src/owners/notify.ts';
 import { DAILY_DEFAULT, OUTREACH_TEMPLATES, outreachTemplateDoc } from '../src/ops/outreach.ts';
 const head = `# WhatsApp templates
 
@@ -22,6 +23,9 @@ after the person last wrote to us. Four sets:
   2026-11-08: the first message to a lead and its one reminder, from \`src/ops/outreach.ts\`. Approved
   on 2026-11-08, with the combined openfrequency_pitch two; toran_launch, Toran's opening to its waitlist, is not
   submitted yet: see their section.
+- **A customer waits, \`toran_customer_waiting\`**: to a store owner's own number, when a customer of their store waits
+  for their answer, from \`src/owners/notify.ts\`. **Not submitted yet**: written 2026-11-12 for the owner to submit; see
+  its section.
 
 This file is written from \`src/ops/alert.ts\`, \`src/billing/remind.ts\`, \`src/ops/outreach.ts\` and
 \`src/owners/templates.ts\`. Change the
@@ -105,6 +109,24 @@ all four were APPROVED the same day. The combined two, the same way later that d
 with the quick reply after them).
 
 ${outreachTemplateDoc()}
+## A customer waits (to the store's owner)
+
+The audit of 2026-11-12 (P1-6): a store owner heard of a customer waiting for them by email only, at most three of
+that kind a day (accounts' limit), and by a browser notification where they turned one on. Now the waiting digest
+(\`src/owners/waiting.ts\`) also writes to each of the workspace's WhatsApp numbers that accounts verified and that agreed
+to hear from Toran (the owner line's consent: "הפסק" stops it, "התחל" starts it again), under the owner line's rules
+(\`src/owners/notify.ts\`): at most ${PUSHES_PER_DAY} messages a number in 24 hours, never between 22:00 and 07:00 (the digest waits
+for the morning), and each start of a wait once. Inside the 24 hours after the owner last wrote to our number it goes
+as a plain message. After them WhatsApp takes only an approved template, this one.
+
+**To do in WhatsApp Manager** (Message templates, Create template, on the WhatsApp account that holds our number, the
+one the owner line sends from): category **Utility** (it is about the owner's own store, which they connected, and
+sells nothing), name \`toran_customer_waiting\`, language Hebrew, no header, the footer below, the body below exactly with
+its two sample values, and one button of the type **Visit website**, dynamic, with the text and address below. Once
+Meta approves it, add its name to \`META_TEMPLATES\` in Toran's \`.env\` (beside any already there) and restart Toran;
+until then nothing is tried outside the 24 hours, and the owner still gets the email and the notification.
+
+${toranTemplatesDoc()}
 ## The owner line (not sent since 2026-11-02)
 
 **Not sent since 2026-11-02.** The owner decided: "managing teder through whatsapp, only through the dashboard".
