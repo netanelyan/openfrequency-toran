@@ -41,9 +41,11 @@ export async function lostMessage(app: App, job: Job, error: string): Promise<{ 
   const conv = await conversationOf(app, { ...adapter, profile: undefined }, account, inbound);
   const answer = inbound.id ? await app.db.one<{ id: number }>("SELECT id FROM messages WHERE reply_to = $1 AND role = 'agent'", [inbound.id]) : null;
   await hold(app, conv, inbound);
+  // The owner reads these notes on the dashboard, which speaks to them in the plural everywhere (the 2026-11-12 audit
+  // found "מחכה לך" here beside "מחכות לכם" on the same screen).
   const text = answer
-    ? 'תורן כתב תשובה להודעה הזו, אבל היא לא הגיעה ללקוח גם אחרי כמה ניסיונות. כדאי לענות לו בעצמך.'
-    : 'תורן לא הצליח לענות להודעה הזו גם אחרי כמה ניסיונות, אז היא מחכה לך.';
+    ? 'תורן כתב תשובה להודעה הזו, אבל היא לא הגיעה ללקוח גם אחרי כמה ניסיונות. כדאי לענות לו בעצמכם.'
+    : 'תורן לא הצליח לענות להודעה הזו גם אחרי כמה ניסיונות, אז היא מחכה לכם.';
   await handOver(app, account.store_id, conv, 'failed', `job ${job.id} (${job.kind}) failed ${job.attempts} times: ${cleanLine(error, 160)}`, text);
   return { kept: 'conversation', conversationId: conv };
 }
