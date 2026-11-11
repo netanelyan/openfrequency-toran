@@ -42,6 +42,44 @@ ${o.url}
 
 זו ההודעה האחרונה שלנו בנושא.`;
 
+// The messages of the shared lead dashboard (ops/leadsAdmin.ts) that the operator copies and sends from their own
+// WhatsApp when our number cannot (the owner, 2026-11-11: "the message that is suggested being sent to the phone number
+// on whatsapp should be according to that", the demo chosen: Toran, Teder or both). Toran's own are outreach.ts's
+// firstMessage and reminderMessage. These are the same approach in its two places, with each demo's link in the text,
+// where the message from our number has a button.
+
+/**
+ * The first message for Teder's demo alone, to a store that did not ask for one: Teder's own (openfrequency-teder
+ * src/leads/messages.js TEDER_COLD_FIRST) word for word, without the slideshow's topic, which Toran is not told.
+ */
+export const tederColdFirst = (o: { storeName: string; url: string }) =>
+  `היי, כאן OpenFrequency. בנינו את תדר, שמכין לחנויות אונליין מצגות בעברית לטיקטוק ולאינסטגרם. הוא קורא את האתר של החנות, וכותב ומעצב מצגות על נושאים מהתחום שלה. כל מצגת מחכה לאישור שלכם לפני שהיא עולה.
+
+הכנו ${le(o.storeName)} מצגת אחת לדוגמה, כדי שתראו איך זה ייראה אצלכם:
+${o.url}
+
+אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. אם לא, אפשר לענות "לא" ולא נכתוב שוב.`;
+
+/** The first message with both demos: the words of the template openfrequency_pitch (ops/outreach.ts), the two links in place of its buttons. */
+export const bothFirst = (o: { storeName: string; toranUrl: string; tederUrl: string }) =>
+  `היי, כאן OpenFrequency. הכנו ${le(o.storeName)} שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם.
+
+את תורן אפשר לנסות עכשיו מהטלפון:
+${o.toranUrl}
+
+והמצגת כאן:
+${o.tederUrl}
+
+אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. אם לא, אפשר לענות "לא" ולא נכתוב שוב.`;
+
+/** The one reminder for both demos. */
+export const bothReminder = (o: { storeName: string; toranUrl: string; tederUrl: string }) =>
+  `היי, יצא לכם להציץ במה שהכנו ${le(o.storeName)}?
+תורן: ${o.toranUrl}
+המצגת של תדר: ${o.tederUrl}
+
+זו ההודעה האחרונה שלנו בנושא.`;
+
 /**
  * To a store that already has Toran, not outreach: its WhatsApp has to be connected again (channels/waStore.ts),
  * before its token ends (`ends`) or after it ended (no `ends`).
