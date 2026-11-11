@@ -89,7 +89,7 @@
           ]
         },
         {
-          "case": "the superadmin outside view-as, in the workspace OF_OPERATOR_WORKSPACE names (docs/admin-split.md): as its owner sees it; without the setting, or for a product it lacks, the operator's answer with a null workspace and every product",
+          "case": "the superadmin outside view-as, in the workspace OF_OPERATOR_WORKSPACE names (docs/admin-split.md): as its owner sees it, with the product asked about even when its switch is off; without the setting, or when the workspace is closed, the operator's answer with a null workspace and every product",
           "status": 200,
           "body": {
             "user": {
