@@ -2,6 +2,7 @@ import type { App } from '../../app.ts';
 import { reviewsPanel, webChatPanel } from './webchat.ts';
 import { cartLine, cartReport, moneyHe, monthNow } from '../../auto/report.ts';
 import { now } from '../../core/clock.ts';
+import { prefixed } from '../../core/hebrew.ts';
 import { audit } from '../../db/log.ts';
 import { J } from '../../db/index.ts';
 import { enqueue } from '../../jobs/queue.ts';
@@ -22,7 +23,7 @@ import { storeConnectReady } from '../../channels/kapso.ts';
 import { dmConnectReady } from '../../channels/zernio.ts';
 import { socialAccountOf, socialLine } from './social.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
-import { mailCard } from './mailSetup.ts';
+import { mailCard, mailState } from './mailSetup.ts';
 import { IN_HE, offChannels } from './channelOff.ts';
 import { orderAccessOf } from '../../orders.ts';
 import { ordersOn, ordersPanel } from './orders.ts';
@@ -77,22 +78,26 @@ async function webChatState(app: App, storeId: number): Promise<'on' | 'waiting'
 // accounts are connected to the bot. whatsapp, instagram, messanger, mail, website"): connected, waiting (Meta's
 // approval, the chat not yet on the site), stopped (the connection ended or Meta stopped it), switched off by the
 // owner on its card, not connected, or not open here yet.
-type ConnState = 'on' | 'wait' | 'bad' | 'paused' | 'off' | 'soon';
+type ConnState = 'on' | 'wait' | 'half' | 'bad' | 'paused' | 'off' | 'soon';
 type ChannelRow = { ch: AnyChannel | 'web'; on: boolean; text: string; state: ConnState };
 
 async function channelsOf(app: App, s: Store): Promise<ChannelRow[]> {
-  const accounts = await app.db.query<{ channel: string; external_id: string }>("SELECT channel, external_id FROM channel_accounts WHERE store_id = $1 AND status = 'active'", [s.id]);
-  const has = (ch: string) => accounts.find((a) => a.channel === ch);
   const code = enabledChannels(app.env);
   const states = await channelStates(app.db);
   const wa = await waAccountOf(app, s.id);
-  const mail = has('email');
+  // Email is connected once the store's mail comes through (mailSetup.ts's last step), not when its address is made: a
+  // card half way says so (the owner's Settings, 2026-11-11, said "מחובר" beside the email card's "באמצע").
+  const mail = code.has('email') && app.mail ? await mailState(app, s.id) : null;
   const web = await webChatState(app, s.id);
   const waState: ConnState = wa?.status === 'active' ? 'on' : wa?.status === 'pending' ? 'wait' : wa?.status === 'reconnect' || wa?.status === 'error' ? 'bad' : storeConnectReady(app.env) ? 'off' : 'soon';
   const rows: ChannelRow[] = [
     { ch: 'whatsapp', on: wa?.status === 'active', state: waState, text: waLine(wa && wa.status !== 'off' ? wa : null, s, storeConnectReady(app.env)) },
     // The address on our domain is the email card's business (pages/mailSetup.ts), not this line's.
-    { ch: 'email', on: Boolean(mail), state: mail ? 'on' : code.has('email') && app.mail ? 'off' : 'soon', text: mail ? 'מחובר. <a href="/settings#email">למייל</a>' : code.has('email') && app.mail ? '<a href="/settings#email">לחבר את המייל</a>' : 'בקרוב' },
+    mail?.step === 'done'
+      ? { ch: 'email', on: true, state: 'on', text: `מחובר${mail.from ? `, <bdi>${esc(mail.from)}</bdi>` : ''}. תורן עונה בו.` }
+      : mail?.on
+        ? { ch: 'email', on: false, state: 'half', text: 'החיבור באמצע. <a href="/settings#email">להמשיך</a>' }
+        : { ch: 'email', on: false, state: mail ? 'off' : 'soon', text: mail ? '<a href="/settings#email">לחבר את המייל</a>' : 'בקרוב' },
     ...(await Promise.all((['instagram', 'messenger'] as const).map(async (ch) => {
       const a = await socialAccountOf(app, s.id, ch);
       const state: ConnState = a?.status === 'active' ? 'on' : a?.status === 'error' ? 'bad' : dmConnectReady(app.env, ch) ? 'off' : 'soon';
@@ -106,7 +111,7 @@ async function channelsOf(app: App, s: Store): Promise<ChannelRow[]> {
 }
 
 const CONN_ICON: Record<string, string> = { whatsapp: 'phone', email: 'mail', messenger: 'bolt', instagram: 'camera', web: 'chat' };
-const CONN_CHIP: Record<ConnState, [string, string]> = { on: ['ok', 'מחובר'], wait: ['', 'מחכה'], bad: ['bad', 'צריך לחבר שוב'], paused: ['warn', 'תורן לא עונה כאן'], off: ['muted', 'לא מחובר'], soon: ['muted', 'בקרוב'] };
+const CONN_CHIP: Record<ConnState, [string, string]> = { on: ['ok', 'מחובר'], wait: ['', 'מחכה'], half: ['sig', 'באמצע'], bad: ['bad', 'צריך לחבר שוב'], paused: ['warn', 'תורן לא עונה כאן'], off: ['muted', 'לא מחובר'], soon: ['muted', 'בקרוב'] };
 const CONN_NAME: Record<string, string> = { whatsapp: 'וואטסאפ', email: 'מייל', instagram: 'אינסטגרם', messenger: 'מסנג׳ר', web: 'צ׳אט באתר' };
 
 /**
@@ -228,7 +233,7 @@ async function livePanel(app: App, r: DashReq, s: Store): Promise<string> {
   const button = !may ? '' : state === 'live'
     ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('x')}להפסיק את תורן בכל הערוצים`, { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי לעצור. עד שמפעילים שוב, תורן לא עונה לאף לקוח.' })
     : postButton(r.ctx, `/lead/${s.id}/live`, `${icon('check')}${state === 'paused' ? 'להפעיל שוב' : 'להפעיל את תורן'}`, { cls: 'btn sm primary', fields: { on: '1' }, confirm: 'לחצו שוב כדי להפעיל' });
-  return `<section class="panel" id="golive"><header><h2>תורן ב${esc(s.name)}</h2>${chip}</header><p class="m0">${text}</p>${button ? `<div class="row mt12">${button}</div>` : ''}</section>`;
+  return `<section class="panel" id="golive"><header><h2>תורן ${prefixed('ב', esc(s.name))}</h2>${chip}</header><p class="m0">${text}</p>${button ? `<div class="row mt12">${button}</div>` : ''}</section>`;
 }
 
 /**
@@ -399,7 +404,7 @@ ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את הא
     ${await sampleReview(app, r, s)}
     ${r.ctx.operator ? '' : tryCard(app, s, true)}
     <section class="panel" id="bot-name"><header><h2>השם של הבוט</h2></header>
-      <p class="small muted m0">ככה הוא פותח כל שיחה, כדי שהלקוח ידע שעונה לו בוט: <q>${esc(botLine('first', botName(s), s.name))}</q>. כשאתם עונים בעצמכם, הלקוח מקבל לפני ההודעה שלכם: <q>${esc(personLine(s.name))}</q></p>
+      <p class="small muted m0">ככה הוא פותח כל שיחה, כדי שהלקוח ידע שעונה לו בוט: <q>${esc(botLine('first', botName(s), s.name))}</q> כשאתם עונים בעצמכם, הלקוח מקבל לפני ההודעה שלכם: <q>${esc(personLine(s.name))}</q></p>
       ${ro ? '' : `<form class="mt12" method="post" action="/lead/${id}/bot-name">${csrfField(r.ctx)}<label class="f">השם<small>עד ${NAME_MAX} תווים. משאירים ריק, והוא פשוט הבוט של ${esc(s.name)}.</small><input type="text" name="agent_name" value="${esc(s.agent_name || '')}" maxlength="${NAME_MAX}" dir="auto"></label><div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div></form>`}
     </section>
     <section class="panel" id="answers"><header><h2>התשובות שלכם</h2><span class="end small muted">${mine.length}</span></header>

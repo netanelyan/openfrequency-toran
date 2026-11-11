@@ -82,11 +82,15 @@
 
   // A link as the visitor reads it: the site and the page, short, never "javascript:" (only http and https are found).
   var LINK = /https?:\/\/[^\s<>"'׳״]+/g;
+  // A page of the store's own site reads as its name, from its address ("/products/מיסטרי-בוקס-ילדים": "מיסטרי בוקס
+  // ילדים"), not as the site's long address cut short across lines (the owner's store, 2026-11-11).
   function shortLink(u) {
     try {
       var x = new URL(u);
       var path = x.pathname;
       try { path = decodeURIComponent(path); } catch (e) { /* as it is */ }
+      var page = path.replace(/\/+$/, '').split('/').pop().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (own(u) && /[^\d\s]/.test(page)) return page.length > 40 ? page.slice(0, 38) + '…' : page;
       var s = x.hostname.replace(/^www\./, '') + path.replace(/\/$/, '');
       return s.length > 42 ? s.slice(0, 40) + '…' : s;
     } catch (e) {
@@ -104,8 +108,8 @@
       if (m.index > at) p.appendChild(document.createTextNode(text.slice(at, m.index)));
       var a = document.createElement('a');
       a.href = url;
-      a.dir = 'ltr';
       a.textContent = shortLink(url);
+      a.dir = /[א-ת]/.test(a.textContent) ? 'auto' : 'ltr';
       a.rel = 'noopener';
       a.target = own(url) ? '_top' : '_blank';
       p.appendChild(a);

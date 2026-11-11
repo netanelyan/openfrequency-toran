@@ -89,6 +89,10 @@ test('Gmail: the address typed once, the steps with the address to copy, Gmail\'
     assert.match(page, /הוספת כתובת להעברה/);
     assert.match(page, new RegExp(`data-wait-mail="/lead/${id}/mail/state\\.json" data-v="forward"`));
     assert.deepEqual(await (await s.get(`/lead/${id}/mail/state.json`)).json(), { v: 'forward' });
+    // What is connected to Toran says the same: half way, not connected (the owner's Settings, 2026-11-11).
+    const row = (html: string) => /<li class="conn conn-\w+"><span class="conn-ic chn-email"[^]*?<\/li>/.exec(html)![0];
+    assert.match(row(page), /conn-half[^]*החיבור באמצע[^]*chip sig">באמצע</);
+    assert.doesNotMatch(row(page), /מחובר/);
 
     // Gmail's confirmation arrives at the address: held, never answered, and shown on the card.
     const link = 'https://mail-settings.google.com/mail/vf-%5BANGjdJ8x%5D-abc123';
@@ -113,6 +117,7 @@ test('Gmail: the address typed once, the steps with the address to copy, Gmail\'
     assert.match(page, /role="switch" aria-checked="true"[^]*תורן עונה במייל/);
     assert.match(page, /<details class="more mt16"><summary>עוד אפשרויות<\/summary>[^]*לענות מכתובת של החנות \(בשביל מי שמנהל לכם את האתר\)/);
     assert.deepEqual(await (await s.get(`/lead/${id}/mail/state.json`)).json(), { v: 'done' });
+    assert.match(row(page), /conn-on[^]*מחובר, <bdi>nurit\.shop@gmail\.com<\/bdi>\. תורן עונה בו\./);
 
     // Starting again forgets the provider and "done", and keeps the address.
     await s.post(`/lead/${id}/mail/setup`, { _csrf: token, do: 'change' });

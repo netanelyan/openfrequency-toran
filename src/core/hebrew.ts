@@ -114,3 +114,6 @@ export function estimateTokens(text: string): number {
   const he = (s.match(/[֐-׿]/g) || []).length;
   return Math.ceil(he / 2.2 + (s.length - he) / 3.6);
 }
+
+/** A one-letter prefix (ב, ל, מ, ש, ה, ו, כ) on a name: straight onto a Hebrew one, with a maqaf before anything else ("ב־My Store"). */
+export const prefixed = (prefix: string, name: string) => (/^[א-ת]/.test(name.trim()) ? `${prefix}${name}` : `${prefix}־${name}`);

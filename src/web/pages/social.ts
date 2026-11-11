@@ -1,5 +1,6 @@
 import type { App } from '../../app.ts';
 import { displayName } from '../../ingest/brand.ts';
+import { prefixed } from '../../core/hebrew.ts';
 import { enabledChannels } from '../../channels/config.ts';
 import { type Social } from '../../channels/social.ts';
 import { disconnectZernio, dmConnectReady, dmProvider, finishZernioConnect, startZernioConnect, ZernioError } from '../../channels/zernio.ts';
@@ -90,7 +91,7 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
   const ch = CHANNEL_NAME[channel];
 
   const banner = q.get('connected') === '1' && a?.status === 'active'
-    ? `<div class="banner info">${icon('check')}<div><b>מחובר</b><p>תורן עונה מעכשיו ללקוחות שכותבים ל${esc(a.name || ch)}.</p></div></div>`
+    ? `<div class="banner info">${icon('check')}<div><b>מחובר</b><p>תורן עונה מעכשיו ללקוחות שכותבים ${prefixed('ל', esc(a.name || ch))}.</p></div></div>`
     : q.get('error') ? `<div class="banner bad">${icon('alert')}<div><b>החיבור לא הצליח</b><p>${esc(ERRORS[q.get('error')!] || ERRORS.meta)}</p></div></div>` : '';
 
   const pick = channel === 'messenger' && q.get('pick') && !ro ? await pagesToPick(app, id, q.get('pick')!, r.user.id) : null;
