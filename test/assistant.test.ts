@@ -194,3 +194,12 @@ test('what waits for "כן" is said by code word for word; a kept answer holds o
     await app.db.close();
   }
 });
+
+test('Toran is spelled תורן in the assistant\'s answer, whatever the model wrote (the owner, 2026-11-11: "טורן ענה")', async () => {
+  const { app, storeId } = await setup(() => say('טורן ענה על כל ההודעות לבד.'));
+  try {
+    assert.equal(await ask(app, { storeId, text: 'מה קרה היום?', via: 'dashboard', author: 'o' }), 'תורן ענה על כל ההודעות לבד.');
+  } finally {
+    await app.db.close();
+  }
+});
