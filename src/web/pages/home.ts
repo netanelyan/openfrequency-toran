@@ -16,7 +16,7 @@ import { ownerReply, PAUSE_HOURS, replyState, resumeAgent } from '../../channels
 import { GraphError, TOKEN_GONE } from '../../channels/meta.ts';
 import { questionOf } from '../../assistant/index.ts';
 import { forgetStorePrompt } from '../../agent/loop.ts';
-import { avatar, CHANNEL_ICON, channelTag, conversationRow, filesHtml, maskPeer, peerLabel, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, whyHe, type InboxState } from '../inbox.ts';
+import { avatar, channelLogo, channelTag, conversationRow, filesHtml, maskPeer, peerLabel, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, whyHe, type InboxState } from '../inbox.ts';
 import { checkUpload, fileOf, MAX_BYTES } from '../../channels/files.ts';
 import { apartCustomer, candidates, otherConversations, sameCustomer } from '../../channels/customers.ts';
 import { customerSettings, customerToday } from './customer.ts';
@@ -117,7 +117,7 @@ async function inboxPane(app: App, r: DashReq, current = 0) {
   const n = (x: number) => `<span class="n num">${x}</span>`;
   const tab = (f: string, label: string) => `<a href="${link({ filter: f, state: '' })}"${cur(filter === f && !state)}>${label}${f ? '' : n(counts.all)}</a>`;
   const stTab = (st: InboxState) => `<a href="${link({ state: st, filter: '' })}"${cur(state === st)}${st === 'waiting' && counts.waiting ? ' class="hot"' : ''}>${STATE_HE[st][0]}${n(counts[st])}</a>`;
-  const chTab = (ch: string, label: string) => `<a href="${link({ channel: ch })}"${cur(channel === ch)}>${ch ? icon(CHANNEL_ICON[ch] || 'chat') : ''}${label}</a>`;
+  const chTab = (ch: string, label: string) => `<a href="${link({ channel: ch })}"${cur(channel === ch)}>${ch ? channelLogo(ch, { label: false }) : ''}${label}</a>`;
   const hidden = Object.entries({ ...keep, q: '' }).filter(([, v]) => v).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join('');
   const paused = (c: any) => c.agent_paused_until && new Date(c.agent_paused_until).getTime() > now();
   const noteOf = (c: any) => (op ? [c.handoffs ? `${c.handoffs} העברות` : '', c.misses ? `${c.misses} פספוסים` : '', paused(c) ? 'אצלך' : ''].filter(Boolean).join(' · ') : '') || null;
@@ -246,7 +246,7 @@ async function chat(app: App, r: DashReq, id: number) {
     ...(op ? [`<span class="chip">${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}</span>`] : []),
   ];
   const thread = `<section class="ib-read thread" aria-labelledby="th-name">
-<header class="th-head"><a class="th-back" href="${esc(pane.back)}" aria-label="חזרה לשיחות">${icon('chev')}</a>${avatar(`${c.channel}:${c.peer || c.id}`, c.meta?.name, c.channel, 'av lg')}
+<header class="th-head"><a class="th-back" href="${esc(pane.back)}" aria-label="חזרה לשיחות">${icon('chev')}</a>${avatar(`${c.channel}:${c.peer || c.id}`, c.meta?.name, c.channel, { cls: 'av lg', label: false })}
 <div class="th-who"><h1 class="title" id="th-name"><bdi>${esc(customerName)}</bdi></h1><p class="th-facts">${facts.join('')}</p></div>
 <div class="end">${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}<span>מה הוא יודע</span></a>`}</div></header>
 ${subject}

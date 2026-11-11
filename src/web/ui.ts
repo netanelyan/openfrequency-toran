@@ -65,6 +65,22 @@ export const usd = (n: unknown, digits = 2) => `<span class="num ltr">$${(Number
 
 export const icon = (name: string, cls = 'i') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
+/**
+ * Each channel's own logo, in its own colours, for the inbox (the owner, 2026-11-11: "make the toran inbox look a bit
+ * more like an inbox, maybe mark every type of channel with its logo"): WhatsApp's green bubble and handset, Messenger's
+ * bubble and bolt, Instagram's camera on its gradient, an envelope for mail and a speech bubble for the chat on the
+ * store's site. Simple glyphs drawn here, on the icons' 24-unit square, filled rather than stroked, so a logo reads at
+ * 16px. The site chat is the ink of the chat itself (static/chat.css, #2c2c30): its bubble takes the colour and its dots
+ * the fill the stylesheet gives .chl-web, so it turns over in dark. inbox.ts channelLogo draws them.
+ */
+const CHANNEL_SYMBOLS = `<linearGradient id="chg-ms" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#0a7cff"/><stop offset=".6" stop-color="#a033ff"/><stop offset="1" stop-color="#ff5c87"/></linearGradient>
+<radialGradient id="chg-ig" cx=".28" cy="1.04" r="1.25"><stop offset="0" stop-color="#ffd86b"/><stop offset=".22" stop-color="#ff8a3d"/><stop offset=".48" stop-color="#ec3a6a"/><stop offset=".74" stop-color="#b52fa3"/><stop offset="1" stop-color="#5a4fdb"/></radialGradient>
+<symbol id="ch-whatsapp" viewBox="0 0 24 24"><path fill="#25d366" d="M12 2.2a9.8 9.8 0 0 0-8.5 14.7L2.2 21.8l5.1-1.3A9.8 9.8 0 1 0 12 2.2z"/><path fill="#fff" transform="translate(5.76 5.76) scale(.52)" d="M5 4h3.5l1.8 4.5-2.3 1.4a11 11 0 0 0 6.1 6.1l1.4-2.3L20 15.5V19a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/></symbol>
+<symbol id="ch-messenger" viewBox="0 0 24 24"><path fill="url(#chg-ms)" d="M12 2.3c-5.4 0-9.7 4-9.7 9.4 0 2.8 1.2 5.3 3.2 7v3.4l3.2-1.8c1 .3 2.1.5 3.3.5 5.4 0 9.7-4 9.7-9.3S17.4 2.3 12 2.3z"/><path fill="#fff" d="M6.6 14.3l3.7-5 2.9 2.3 4.2-2.2-4.2 4.8-2.9-2.3z"/></symbol>
+<symbol id="ch-instagram" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#chg-ig)"/><rect x="6.2" y="6.2" width="11.6" height="11.6" rx="3.4" fill="none" stroke="#fff" stroke-width="1.7"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="#fff" stroke-width="1.7"/><circle cx="15.3" cy="8.7" r=".95" fill="#fff"/></symbol>
+<symbol id="ch-email" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5.5" fill="#2f7de1"/><rect x="5.8" y="7.3" width="12.4" height="9.4" rx="1.6" fill="#fff"/><path d="M6.5 8.3l5.5 4.2 5.5-4.2" fill="none" stroke="#2f7de1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="ch-web" viewBox="0 0 24 24"><path fill="currentColor" d="M5 3.5h14A2.5 2.5 0 0 1 21.5 6v9a2.5 2.5 0 0 1-2.5 2.5h-7.4l-3.9 3.3a.6.6 0 0 1-1-.5v-2.8H5A2.5 2.5 0 0 1 2.5 15V6A2.5 2.5 0 0 1 5 3.5z"/><circle cx="8" cy="10.5" r="1.3"/><circle cx="12" cy="10.5" r="1.3"/><circle cx="16" cy="10.5" r="1.3"/></symbol>`;
+
 // The icons, drawn on a 24-unit square and each centred in it, so an icon beside a label sits on the label's middle
 // (the owner, 2026-11-09: "some buttons are not centered", on "✦ לעוזר": the spark spanned 3 to 17 and sat 2 units
 // high, the label looking low beside it; the book reached 23 and sat 1 low). Both are moved to the centre.
@@ -107,6 +123,7 @@ const SPRITE = `<svg class="sr" width="0" height="0" aria-hidden="true"><defs>
 <symbol id="i-addsq" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
 <symbol id="i-get" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19.5h14"/></symbol>
 <symbol id="i-install" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8.5 20.5h7M12 7.5v6M9.5 11l2.5 2.5 2.5-2.5"/></symbol>
+${CHANNEL_SYMBOLS}
 </defs></svg>`;
 
 // The operator's sections, the same in the tab bar (phone) and the sidebar (desk).

@@ -51,20 +51,39 @@ const HEBREW = /[\u0590-\u05FF]/;
 /** The customer's name as the inbox shows it: Meta's name for them, else their phone or address partly hidden. */
 export const peerLabel = (channel: string, peer: string | null | undefined, name?: string | null) => maskPeer(channel, peer ?? null, name) || 'לקוח';
 
-/** Each channel's small mark, on the avatar's corner and beside the channel's name. */
-export const CHANNEL_ICON: Record<string, string> = { whatsapp: 'phone', email: 'mail', messenger: 'bolt', instagram: 'camera' };
-export const channelTag = (channel: string) => `<span class="chn chn-${esc(channel)}">${icon(CHANNEL_ICON[channel] || 'chat')}<span class="chip">${esc(CHANNEL_HE[channel as keyof typeof CHANNEL_HE] || channel)}</span></span>`;
+const LOGOS = new Set(['whatsapp', 'instagram', 'messenger', 'email', 'web']);
+const channelName = (channel: string) => CHANNEL_HE[channel as keyof typeof CHANNEL_HE] || channel;
+
+/**
+ * A channel's own logo, in its colours (ui.ts CHANNEL_SYMBOLS; the owner, 2026-11-11: "mark every type of channel with
+ * its logo"). Where it stands alone, on a row's avatar, it is a picture named in Hebrew, for a screen reader and as the
+ * pointer's tooltip; beside the channel's name (`label: false`) it is decoration.
+ */
+export function channelLogo(channel: string, { label = true }: { label?: boolean } = {}) {
+  // A channel with no logo of its own (none the inbox lists today) is a grey speech bubble.
+  const known = LOGOS.has(channel);
+  const use = `<use href="#ch-${known ? channel : 'web'}"/>`;
+  const cls = `chl chl-${known ? channel : 'other'}`;
+  if (!label) return `<svg class="${cls}" aria-hidden="true">${use}</svg>`;
+  const name = esc(channelName(channel));
+  return `<svg class="${cls}" role="img" aria-label="${name}"><title>${name}</title>${use}</svg>`;
+}
+
+/** The channel's name in the facts over an open conversation, beside the avatar that carries its logo. */
+export const channelTag = (channel: string) => `<span class="chip">${esc(channelName(channel))}</span>`;
 
 /**
  * A customer's avatar: the first letter of the name Meta gave, or a person when all there is is a number or an
  * address, in one of six calm colours picked from the customer (the CSP forbids an inline colour), with the channel's
- * mark on its corner.
+ * logo on its corner, as a messaging app marks where a message came from. In a list row the logo is the row's only word
+ * for the channel, so it is named; over an open conversation the channel's name is beside it (`label: false`).
  */
-export function avatar(seed: string, name: string | null | undefined, channel: string, cls = 'av') {
+export function avatar(seed: string, name: string | null | undefined, channel: string, { cls = 'av', label = true }: { cls?: string; label?: boolean } = {}) {
   let h = 0;
   for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const letter = name ? String(name).trim().match(/\p{L}/u)?.[0] : null;
-  return `<span class="${cls} av-${h % 6}" aria-hidden="true">${letter ? esc(letter.toUpperCase()) : icon('user')}<span class="av-ch chn-${esc(channel)}">${icon(CHANNEL_ICON[channel] || 'chat')}</span></span>`;
+  const face = letter ? `<span aria-hidden="true">${esc(letter.toUpperCase())}</span>` : icon('user');
+  return `<span class="${cls} av-${h % 6}"${label ? '' : ' aria-hidden="true"'}>${face}<span class="av-ch">${channelLogo(channel, { label })}</span></span>`;
 }
 
 const WHO_HE: Record<string, string> = { agent: 'תורן', owner: 'אתם' };
@@ -72,10 +91,14 @@ const WHO_HE: Record<string, string> = { agent: 'תורן', owner: 'אתם' };
 type RowOf = { id: number; channel: string; account_id: number | null; state: InboxState; last_at: string; last_q?: string | null; last_text?: string | null; last_role?: string | null; summary?: string | null; subject?: string | null; store?: string | null; note?: string | null; peer?: string | null; peer_name?: string | null };
 
 /**
- * One conversation in the inbox, as a mail client lists it: the customer's avatar, name and when; an email's subject;
- * the last message and who wrote it (while it waits, what Toran handed over, when that line is in Hebrew: the model
- * writes it for the owner, not always in their language); the channel, a demo tag for a chat on our shared demo number,
- * and where it stands. `current` marks the conversation open beside the list; `qs` keeps the list's filters on the link.
+ * One conversation in the inbox, as a messaging app lists it (the owner, 2026-11-11: "make the toran inbox look a bit
+ * more like an inbox"): the customer's avatar with the channel's logo on it, their name and when; an email's subject;
+ * one line of the last message and who wrote it (while it waits, what Toran handed over, when that line is in Hebrew:
+ * the model writes it for the owner, not always in their language) with where it stands at its end; and, only when
+ * there is one, a demo tag for a chat on our shared demo number, the store among several, the operator's note. A
+ * conversation waiting for the owner is the unread one: bold, with a dot at its edge, and its "מחכה לכם" said to a
+ * screen reader only, so on a phone the line of what Toran handed over keeps the row's width. `current` marks the
+ * conversation open beside the list; `qs` keeps the list's filters on the link.
  */
 export function conversationRow(c: RowOf, { current = false, qs = '' }: { current?: boolean; qs?: string } = {}) {
   // The handoff line in Hebrew, an old English one too ("the guard cut stock: מה נשמע", the owner's Today, 2026-11-11).
@@ -86,10 +109,12 @@ export function conversationRow(c: RowOf, { current = false, qs = '' }: { curren
   const who = handed ? 'תורן העביר' : WHO_HE[c.last_role || ''];
   const demo = c.channel === 'whatsapp' && !c.account_id ? '<span class="chip ghost">דמו</span>' : '';
   const subject = c.channel === 'email' && c.subject ? `<span class="ib-subj">${esc(c.subject.slice(0, 90))}</span>` : '';
+  const meta = `${demo}${c.store ? `<span class="chip ghost">${esc(c.store)}</span>` : ''}${c.note ? `<span class="chip ghost">${esc(c.note)}</span>` : ''}`;
+  const state = c.state === 'waiting' ? `<span class="sr">${STATE_HE.waiting[0]}</span>` : stateChip(c.state);
   return `<a class="ib-row${c.state === 'waiting' ? ' is-waiting' : ''}" href="/chat/${Number(c.id)}${qs}"${current ? ' aria-current="page"' : ''}>${avatar(`${c.channel}:${c.peer || c.id}`, c.peer_name, c.channel)}<span class="ib-main">`
     + `<span class="ib-top"><b class="ib-name"><bdi>${esc(peerLabel(c.channel, c.peer, c.peer_name))}</bdi></b><time class="ib-at" datetime="${esc(new Date(c.last_at).toISOString())}" title="${esc(stamp(c.last_at))}">${esc(listTime(c.last_at))}</time></span>`
-    + `${subject}<span class="ib-snip">${who ? `<span class="ib-who">${esc(who)}:</span> ` : ''}${esc(text || 'שיחה')}</span>`
-    + `<span class="ib-meta">${channelTag(c.channel)}${demo}${stateChip(c.state)}${c.store ? `<span class="chip ghost">${esc(c.store)}</span>` : ''}${c.note ? `<span class="chip ghost">${esc(c.note)}</span>` : ''}</span>`
+    + `${subject}<span class="ib-line"><span class="ib-snip">${who ? `<span class="ib-who">${esc(who)}:</span> ` : ''}${esc(text || 'שיחה')}</span>${state}</span>`
+    + (meta ? `<span class="ib-meta">${meta}</span>` : '')
     + '</span></a>';
 }
 

@@ -348,7 +348,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-fill
 .chip.bad { background: var(--bad-bg); }
 .chip.sig { background: var(--accent-soft); color: var(--accent); }
 .meta .chip:is(.ok, .warn, .bad, .sig)::before, .meta .chip:is(.ok, .warn, .bad, .sig) + .chip::before { content: none; }
-.ib-meta .chip:is(.bad, .ok, .sig), .th-facts .chip:is(.bad, .ok, .sig) { padding: 2px 8px; border-radius: 6px; }
+.th-facts .chip:is(.bad, .ok, .sig) { padding: 2px 8px; border-radius: 6px; }
+/* In an inbox row, answered alone or by the owner is a quiet word in its colour, not a badge. */
+.ib-line > .chip:is(.ok, .sig) { padding: 0; background: none; font-weight: 500; }
 .badge { border-radius: 9px; }
 
 /* Filters (.tabs) and the inbox's segments: plain rows, the chosen one on a grey fill, no outline. */
@@ -398,6 +400,8 @@ details.panel > summary { min-height: 28px; }
 .ib-tools { padding: 12px; }
 a.ib-row:hover { background: var(--sub); }
 a.ib-row[aria-current='page'] { background: var(--accent-soft); }
+/* The channel's logo on the avatar sits on a hairline, as everything here does, not a shadow. */
+.av-ch { box-shadow: 0 0 0 1px var(--edge); }
 .th-who h1.title { font: 700 17px/1.3 var(--display); }
 .cmp-box { border-radius: 10px; box-shadow: inset 0 0 0 1px var(--field-edge); }
 .cmp-box:focus-within { box-shadow: inset 0 0 0 1px var(--accent-fill), 0 0 0 1px var(--accent-fill); }

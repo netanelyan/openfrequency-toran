@@ -17,7 +17,7 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, dayHe, esc, fold, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
 import { installCard, installPanel } from '../install.ts';
 import { storesOf, type Scope } from '../workspace.ts';
-import { conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
+import { channelLogo, conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { storeConnectReady } from '../../channels/kapso.ts';
 import { dmConnectReady } from '../../channels/zernio.ts';
@@ -110,17 +110,17 @@ async function channelsOf(app: App, s: Store): Promise<ChannelRow[]> {
   return rows.map((x) => (x.on && off.includes(x.ch) ? { ...x, state: 'paused' as const } : x));
 }
 
-const CONN_ICON: Record<string, string> = { whatsapp: 'phone', email: 'mail', messenger: 'bolt', instagram: 'camera', web: 'chat' };
 const CONN_CHIP: Record<ConnState, [string, string]> = { on: ['ok', 'מחובר'], wait: ['', 'מחכה'], half: ['sig', 'באמצע'], bad: ['bad', 'צריך לחבר שוב'], paused: ['warn', 'תורן לא עונה כאן'], off: ['muted', 'לא מחובר'], soon: ['muted', 'בקרוב'] };
 const CONN_NAME: Record<string, string> = { whatsapp: 'וואטסאפ', email: 'מייל', instagram: 'אינסטגרם', messenger: 'מסנג׳ר', web: 'צ׳אט באתר' };
 
 /**
- * What is connected to Toran, one row a channel: its mark, its name and what is connected (the number, the page, the
- * address, the site), a chip that says where it stands, and the line with its one link or button.
+ * What is connected to Toran, one row a channel: its logo (the inbox's, inbox.ts channelLogo), its name and what is
+ * connected (the number, the page, the address, the site), a chip that says where it stands, and the line with its one
+ * link or button.
  */
 const channelList = (rows: ChannelRow[]) => `<ul class="conns">${rows.map((c) => {
   const [cls, label] = CONN_CHIP[c.state];
-  return `<li class="conn conn-${c.state}"><span class="conn-ic chn-${esc(c.ch)}" aria-hidden="true">${icon(CONN_ICON[c.ch] || 'chat')}</span><div class="conn-t"><b>${esc(CONN_NAME[c.ch] || CHANNEL_HE[c.ch])}</b><span class="small">${c.text}</span></div><span class="chip ${cls}">${label}</span></li>`;
+  return `<li class="conn conn-${c.state}"><span class="conn-ic chn-${esc(c.ch)}" aria-hidden="true">${channelLogo(c.ch, { label: false })}</span><div class="conn-t"><b>${esc(CONN_NAME[c.ch] || CHANNEL_HE[c.ch])}</b><span class="small">${c.text}</span></div><span class="chip ${cls}">${label}</span></li>`;
 }).join('')}</ul>`;
 
 /** The first two weeks, while they last: the date they end. */

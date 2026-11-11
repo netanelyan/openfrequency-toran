@@ -260,8 +260,10 @@ test('the inbox over HTTP: connect the store\'s email, mail arrives through the 
     const conv = (await s.app.db.one<any>("SELECT id FROM conversations WHERE channel = 'email'")).id;
 
     const list = await (await s.get('/chats')).text();
-    assert.match(list, /<span class="chip">מייל<\/span>/);
-    assert.match(list, /<span class="chip">וואטסאפ<\/span>/);
+    // Each row's channel is its logo, named in Hebrew (inbox.ts channelLogo).
+    const row = new RegExp(`<a class="ib-row[^"]*" href="/chat/${conv}"[^>]*>(.*?)</a>`, 's').exec(list)![1];
+    assert.ok(row.includes('<svg class="chl chl-email" role="img" aria-label="מייל"><title>מייל</title><use href="#ch-email"/></svg>'), 'the email row carries the email logo');
+    assert.match(list, /<svg class="chl chl-whatsapp" role="img" aria-label="וואטסאפ"><title>וואטסאפ<\/title>/);
     assert.match(await (await s.get('/chats?channel=email')).text(), new RegExp(`/chat/${conv}[?"]`));
     const page = await (await s.get(`/chat/${conv}`)).text();
     assert.match(page, /לענות ללקוח/);
