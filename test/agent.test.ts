@@ -151,7 +151,8 @@ test('a fact with no number that the tools never said is cut and handed off; TOR
   assert.equal(off.redactions[0].rule, 'claim');
   assert.equal(off.redactions[0].claim, 'free');
   assert.equal(off.redactions[0].borderline, true);
-  assert.match(off.reply, /^על זה אני לא בטוח, אז העברתי את השאלה לנציג מהחנות/);
+  // A turn with no channel is a demo (loop.ts isDemoTurn): its honest line says what a real customer would get.
+  assert.match(off.reply, /^על זה אני לא בטוח\. אצל לקוח אמיתי השאלה הייתה עוברת עכשיו אליכם/);
   assert.equal(off.handoff?.reason, 'unknown');
   assert.equal(asked.length, 0, 'off by default: no second call');
 
@@ -202,7 +203,8 @@ test('a model that fails or loops still answers the customer honestly, and hands
   const conv = await conversationFor(app.db, id, 'cli', null);
   const o = await runTurn(app, { storeId: id, conversationId: conv, text: 'ספל?' });
   assert.equal(o.rounds, 8); // MAX_ROUNDS: a look at the photos is a round of its own
-  assert.match(o.reply, /לא בטוח, אז העברתי את השאלה לנציג/);
+  // No answer at all, in a demo (no channel): it could not answer now, and with a real customer the owner would get it.
+  assert.match(o.reply, /^כרגע אני לא מצליח לענות\. אצל לקוח אמיתי ההודעה הייתה עוברת עכשיו אליכם/);
   assert.equal(o.handoff?.reason, 'unknown');
   await app.db.close();
 });

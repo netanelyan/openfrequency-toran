@@ -404,7 +404,8 @@ const israelDay = (iso: string) => new Intl.DateTimeFormat('he-IL', { timeZone: 
 // one conversation the question goes to the store.
 async function orderStatus(c: ToolContext, input: any): Promise<ToolOutcome> {
   const order = String(input.order_number || '').trim().slice(0, 30);
-  if (c.demo !== false) return { ok: true, content: `DEMO: this demo is not connected to the store's orders, so order ${order} cannot be looked up.\nRule: say that in the live version order status is answered here automatically, and call handoff with reason "order" so the store can check it.` };
+  // Nothing in a demo goes to the store (prompt.ts DEMO_NOTE): it says what a live store does, never that someone checks.
+  if (c.demo !== false) return { ok: true, content: `DEMO: this demo is not connected to the store's orders, so order ${order} cannot be looked up.\nRule: say in one short sentence that once the store connects its orders, Toran tells a customer here where their order is, and that with a real customer this would now go to the store. Never say that someone will check it or get back to them here. Then call handoff with reason "order", as a live conversation would.` };
   const toStore = (why: string): ToolOutcome => ({ ok: true, content: `${why}\nRule: tell the customer you are passing it to the store, who will answer here, and call handoff with reason "order".` });
   const access = await orderAccessOf(c.db, c.storeId);
   if (!access) return toStore(`The store's orders are not connected here, so order ${order} cannot be looked up.`);
@@ -470,9 +471,12 @@ export async function runTool(c: ToolContext, name: string, input: any): Promise
       case 'handoff': {
         const reason = String(input?.reason || 'other');
         const summary = String(input?.summary || '').slice(0, 300);
+        // In a demo nobody sees it (loop.ts tells no one): what would happen with a real customer, never a reply to wait for.
         const content = c.company
           ? 'Handed off: someone at the company sees this conversation now.\nRule: tell the person in one short sentence that someone from us will get back to them here. No promises about what we will decide or when.'
-          : 'Handed off: the store owner sees this conversation now.\nRule: tell the customer in one short sentence that someone from the store will get back to them here. No promises about what the store will decide or when.';
+          : c.demo !== false
+            ? 'Handed off, in a demo: nothing goes to anyone from here, and nobody will reply in this conversation.\nRule: tell them in one short sentence that with a real customer this question would now go to them, the store, who answer it ("אצל לקוח אמיתי השאלה הייתה עוברת עכשיו אליכם, ואתם עונים לו."). Never say that someone will get back to them here.'
+            : 'Handed off: the store owner sees this conversation now.\nRule: tell the customer in one short sentence that someone from the store will get back to them here. No promises about what the store will decide or when.';
         return { ok: true, content, handoff: { reason, summary } };
       }
       default:

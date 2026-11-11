@@ -59,6 +59,9 @@ export const STOCK = new RegExp(`${heWord('במלאי', 'מלאי', 'אזלו', 
 // stock word inside it is not a claim, and the rest of the sentence is still checked (the owner, 2026-11-11, on such an
 // offer cut from a reply to "היי": "why is it red?").
 const CHECKS_STOCK = /(?:^|[\s,(])[ושכ]?(?:אבדוק|לבדוק|נבדוק|בודקת|בודקים|בודק|אברר|לברר|נברר)\s+(?:\S+\s+){0,4}?\S*(?:מלאי|זמינ[א-ת]*)|\bcheck(?:ing)?\b(?:\s+\S+){0,4}?\s+(?:in stock|stock|available|availability)/gi;
+// Saying it is not sure about the stock ("על המלאי אני לא בטוח", the honest line itself) is no claim about it either: the
+// model's own honest line was cut and replaced by the same line, with its last sentence left twice.
+const UNSURE_STOCK = /על\s+(?:\S+\s+){0,3}?\S*(?:מלאי|זמינ[א-ת]*)\s+(?:אני\s+)?לא\s+(?:בטוח|בטוחה|יודע|יודעת)|\bnot sure about\b(?:\s+\S+){0,3}?\s+(?:stock|availability)/gi;
 const LEFT_N = /(?:נשאר(?:ו|ה)?|נותר(?:ו|ה)?|רק)\s+\d+|\d+\s+(?:יחידות|פריטים|זוגות)\s+(?:אחרונ)|only\s+\d+\s+left/i;
 const DELIVERY = new RegExp(`${heWord('משלוחים', 'משלוח', 'אספקה', 'יגיעו', 'יגיע', 'תגיע', 'מגיעים', 'מגיעה', 'מגיע', 'שליח', 'איסוף')}|\\b(shipping|delivery|deliver|arrive|arrives)\\b`, 'i');
 const TIME = /\d+\s*(?:-\s*\d+\s*)?(?:ימים|ימי\s*עסקים|יום|שעות|שעה|business\s*days|days|hours)|מחר|השבוע|tomorrow/i;
@@ -264,7 +267,7 @@ export function violation(sentence: string, allow: Allow): string | null {
   }
   // No tool ever gives a quantity in stock, only in or out: "only 3 left" is invented, whatever number it uses.
   if (LEFT_N.test(s)) return 'stock';
-  if (STOCK.test(s.replace(CHECKS_STOCK, ' ')) && !allow.stockKnown) return 'stock';
+  if (STOCK.test(s.replace(CHECKS_STOCK, ' ').replace(UNSURE_STOCK, ' ')) && !allow.stockKnown) return 'stock';
   if (DELIVERY.test(s) && TIME.test(s)) {
     if (bad.length || captured(TIME_OF, plain).some((n) => !allow.toolNumbers.has(n))) return 'delivery';
     if (RELATIVE.test(s) && !allow.relativeTimes) return 'delivery';
@@ -298,15 +301,77 @@ const honest = (who: string, whoEn: string, promise: string, promiseEn: string) 
   } as Record<string, string>,
 });
 const STORE_LINES = honest('לנציג מהחנות', 'someone from the store', 'הנחה או החזר מאשר רק נציג מהחנות, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.', "Discounts and refunds are approved only by someone from the store, so I've passed your request to them. They'll reply here.");
-const REPLACE = STORE_LINES.he;
-const REPLACE_EN = STORE_LINES.en;
 const HANDOFF_REASON: Record<string, string> = { price: 'unknown', stock: 'unknown', delivery: 'unknown', promise: 'discount', claim: 'unknown', link: 'unknown' };
 // A company store (our own support, src/company.ts) is not a store: the person who answers is one of ours.
 const COMPANY_LINES = honest('לנציג שלנו', 'someone from our team', 'הנחה או הסדר מיוחד מאשר רק נציג שלנו, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.', "Discounts and special terms are approved only by someone from our team, so I've passed your request to them. They'll reply here.");
-const REPLACE_COMPANY = COMPANY_LINES.he;
-const REPLACE_COMPANY_EN = COMPANY_LINES.en;
-/** The honest line when nothing is left to say, for a store or for a company. */
-export const checkingLine = (english: boolean, company = false) => (company ? COMPANY_LINES : STORE_LINES)[english ? 'en' : 'he'].claim;
+// A demo on our number (loop.ts isDemoTurn) passes nothing on: the store's owner, or someone they sent, is trying
+// Toran, and nobody will answer them there (the audit of 2026-11-12, P1-22: the demo said "העברתי את השאלה לנציג
+// מהחנות. הוא יחזור אליך כאן."). Its lines say what would happen with a real customer instead.
+const REAL = 'אצל לקוח אמיתי השאלה הייתה עוברת עכשיו אליכם, ואתם עונים לו.';
+const REAL_EN = "With a real customer, this question would now go to you, and you'd answer it.";
+const DEMO_LINES = {
+  he: {
+    price: `על המחיר המדויק אני לא בטוח. ${REAL}`,
+    stock: `על המלאי אני לא בטוח. ${REAL}`,
+    delivery: `על זמני המשלוח אני לא בטוח. ${REAL}`,
+    promise: 'הנחה או החזר מאשרים רק בחנות. אצל לקוח אמיתי הבקשה הייתה עוברת עכשיו אליכם, ואתם עונים לו.',
+    superlative: '',
+    claim: `על זה אני לא בטוח. ${REAL}`,
+    link: `על הקישור אני לא בטוח. ${REAL}`,
+  } as Record<string, string>,
+  en: {
+    price: `I'm not sure about the exact price. ${REAL_EN}`,
+    stock: `I'm not sure about stock. ${REAL_EN}`,
+    delivery: `I'm not sure about delivery times. ${REAL_EN}`,
+    promise: "Discounts and refunds are approved only by the store. With a real customer, this request would now go to you, and you'd answer it.",
+    superlative: '',
+    claim: `I'm not sure about that. ${REAL_EN}`,
+    link: `I'm not sure about that link. ${REAL_EN}`,
+  } as Record<string, string>,
+};
+const linesFor = (company: boolean, demo: boolean) => (company ? COMPANY_LINES : demo ? DEMO_LINES : STORE_LINES);
+/** The honest line when nothing is left to say, for a store, for a company, or in a demo. */
+export const checkingLine = (english: boolean, company = false, demo = false) => linesFor(company, demo)[english ? 'en' : 'he'].claim;
+
+// When the model gives nothing at all (it failed, ran out of time or rounds, or no call was made: unpaid, past a cap),
+// there was no question to be unsure about: a plain "היי" got "על זה אני לא בטוח" (the audit of 2026-11-12, P2-29).
+const CANT: Record<'store' | 'company' | 'demo', { he: string; en: string }> = {
+  store: { he: 'כרגע אני לא מצליח לענות, אז העברתי את ההודעה לנציג מהחנות. הוא יחזור אליך כאן.', en: "I can't answer right now, so I've passed your message to someone from the store. They'll reply here." },
+  company: { he: 'כרגע אני לא מצליח לענות, אז העברתי את ההודעה לנציג שלנו. הוא יחזור אליך כאן.', en: "I can't answer right now, so I've passed your message to someone from our team. They'll reply here." },
+  demo: { he: 'כרגע אני לא מצליח לענות. אצל לקוח אמיתי ההודעה הייתה עוברת עכשיו אליכם, ואתם עונים לו.', en: "I can't answer right now. With a real customer, this message would now go to you, and you'd answer it." },
+};
+/** The line when the model gave no answer at all (loop.ts), for a store, for a company, or in a demo. */
+export const cantAnswerLine = (english: boolean, company = false, demo = false) => CANT[company ? 'company' : demo ? 'demo' : 'store'][english ? 'en' : 'he'];
+
+// The model's own habit, from the live lines it is shown, in a demo: "העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן."
+// A sentence saying someone will reply here goes, a clause saying it was passed on comes off, and the demo's line says
+// what would happen with a real customer instead (DEMO_LINES).
+const REPLY_HERE = /(?:יחזור|יחזרו|תחזור|נחזור|יענה|יענו)\s+(?:אליך|אלייך|אליכם|לך|לכם)\s+כאן|\b(?:reply|get back to you|answer you)\s+here\b/i;
+const PASSED_ON = /,?\s*(?:אז\s+|ולכן\s+)?העברתי\s+(?:את\s+|לו\s+|לה\s+)?[^.?!\n]*|,?\s*(?:so\s+)?I(?:'ve| have)? passed\b[^.?!\n]*/i;
+function demoTruth(text: string, english: boolean): string {
+  let told = false;
+  const out: string[] = [];
+  for (const sentence of splitSentences(text)) {
+    if (REPLY_HERE.test(sentence)) {
+      told = true;
+      continue;
+    }
+    if (PASSED_ON.test(sentence)) {
+      told = true;
+      const rest = sentence.replace(PASSED_ON, '');
+      if (rest.replace(/[\s.!?,]/g, '')) out.push(rest);
+      continue;
+    }
+    out.push(sentence);
+  }
+  if (!told) return text;
+  const real = english ? REAL_EN : REAL;
+  const kept = out.join('').replace(/[ \t]{2,}/g, ' ').trim();
+  return kept.includes(real) ? kept : `${kept ? `${kept} ` : ''}${real}`;
+}
+
+/** Nothing left after a quiet cut, and nothing asked: a greeting back ("במה אפשר לעזור?" read as a call centre, P2-29). */
+const greeting = (english: boolean, company: boolean) => (english ? (company ? 'Hi, what would you like to ask?' : 'Hi, what are you looking for?') : company ? 'היי, על מה רוצים לשאול?' : 'היי, מה מחפשים?');
 
 /** A reply that already asks how to reach the customer (a phone, an email): the site chat's line below is not added. */
 export const ASKS_REACH = /טלפון|מייל|נייד|phone|e-?mail/i;
@@ -402,9 +467,10 @@ export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2
 // still apply to them.
 // asked: the customer's message this turn; a cut about something it did not ask about gets no honest line and no handoff.
 // voice: the store's emoji switch and address (agent/voice.ts), applied to the whole reply, the honest lines included.
-export function guardReply(text: string, allow: Allow, { company = false, verified, asked, voice }: { company?: boolean; verified?: Set<string>; asked?: string; voice?: { emoji: boolean; plural: boolean } } = {}): GuardResult {
+// demo: a turn on our demo number or a pitch page (loop.ts isDemoTurn), where nothing is passed on (DEMO_LINES).
+export function guardReply(text: string, allow: Allow, { company = false, demo = false, verified, asked, voice }: { company?: boolean; demo?: boolean; verified?: Set<string>; asked?: string; voice?: { emoji: boolean; plural: boolean } } = {}): GuardResult {
   const english = !/[א-ת]/.test(text) && /[a-z]/i.test(text);
-  const lines = company ? (english ? REPLACE_COMPANY_EN : REPLACE_COMPANY) : english ? REPLACE_EN : REPLACE;
+  const lines = linesFor(company, demo)[english ? 'en' : 'he'];
   const out: string[] = [];
   const redactions: Redaction[] = [];
   const done = new Set<string>();
@@ -443,8 +509,9 @@ export function guardReply(text: string, allow: Allow, { company = false, verifi
     if (lines[rule]) out.push(`${lead}${lines[rule]}${sentence.endsWith('\n') ? '\n' : ' '}`);
   }
   let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
-  // Nothing left: the honest line when the customer asked something, a plain offer to help when they did not.
-  if (!result) result = handoffReason || askedAbout('claim', asked) ? checkingLine(english, company) : english ? 'How can I help?' : 'במה אפשר לעזור?';
+  // Nothing left: the honest line when the customer asked something, a greeting back when they did not.
+  if (!result) result = handoffReason || askedAbout('claim', asked) ? checkingLine(english, company, demo) : greeting(english, company);
+  if (demo && !company) result = demoTruth(result, english);
   if (voice) result = styleReply(result, voice) || result;
   return { text: result, redactions, needsHandoff: Boolean(handoffReason), handoffReason };
 }

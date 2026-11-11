@@ -158,7 +158,9 @@ export function stripForgedContext(text: string): string {
 
 // Whether a conversation is a demo is per turn, not per store: the same store is a demo on our shared number and its
 // pitch page, and live on its own channels. So it rides in the SERVER CONTEXT line (loop.ts), never in the cached block.
-export const DEMO_NOTE = "This conversation is a demo on Toran's shared number: the store's owner, or someone they sent, is trying the assistant on their store. Order lookup and carts are demo versions, and say so when used.";
+// Nothing in a demo reaches anyone (the audit of 2026-11-12, P1-22: the demo said a person "יחזור אליך כאן"), so where a
+// live answer passes a question on, the demo says what would happen with a real customer.
+export const DEMO_NOTE = "This conversation is a demo on Toran's shared number: the store's owner, or someone they sent, is trying the assistant on their store. Order lookup and carts are demo versions, and say so when used. Nothing here reaches anyone at the store: where you would pass a question on, still call handoff, but tell them in one short sentence that with a real customer the question would now go to them, the store, who answer it (\"על המלאי אני לא בטוח. אצל לקוח אמיתי השאלה הייתה עוברת עכשיו אליכם, ואתם עונים לו.\"). Never say that someone will get back to them here.";
 
 export async function systemFor(db: Db, s: StoreForPrompt): Promise<SystemPart[]> {
   const company = s.platform === 'company';

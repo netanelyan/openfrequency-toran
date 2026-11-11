@@ -171,9 +171,9 @@ test('a cut the customer did not ask about goes quietly: a greeting never gets "
   const asked = guardReply('כן, יש במלאי.', buildAllow({ toolTexts: [], customerTexts: ['יש לכם ספל ירוק?'] }), { asked: 'יש לכם ספל ירוק?' });
   assert.match(asked.text, /על המלאי אני לא בטוח/);
   assert.equal(asked.needsHandoff, true);
-  // Nothing left after a quiet cut: an offer to help, not a handoff.
+  // Nothing left after a quiet cut: a greeting back, not a handoff.
   const empty = guardReply('יש לנו הכול במלאי.', noStock, { asked: 'היי!' });
-  assert.equal(empty.text, 'במה אפשר לעזור?');
+  assert.equal(empty.text, 'היי, מה מחפשים?');
   assert.equal(empty.needsHandoff, false);
   // No message known (other callers): as before.
   assert.equal(guardReply(reply, noStock).needsHandoff, true);
