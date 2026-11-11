@@ -19,9 +19,6 @@ const REFUSALS = {
   // meanwhile (server.ts), and the button is accounts' checklist with the way to pay.
   new: { title: 'תורן נפתח כשהתשלום מגיע', h: 'תורן נפתח כשהתשלום מגיע', text: 'בינתיים אפשר להוסיף את החנות, ותורן קורא את האתר שלה. החיבור לערוצים ותשובות ללקוחות נפתחים כשהתשלום נרשם אצלנו. איך משלמים, ומה עוד נשאר, כתוב בדף ההקמה בחשבון.', link: 'לדף ההקמה' },
   unpaid: { title: 'התשלום לא פעיל', h: 'התשלום על תורן לא פעיל', text: 'עד שהתשלום מוסדר בחשבון שלכם, תורן לא עונה ללקוחות בעצמו: מה שהם כותבים נשמר בשיחות, ואתם רואים אותו שם. הידע וההגדרות של החנות נשמרים כמו שהם.', link: 'להסדרת התשלום' },
-  // The superadmin on Toran's own name with no workspace of their own there (docs/admin-split.md in accounts): the
-  // product shows a workspace as its owner sees it, and the operator's pages are on accounts' /admin.
-  operator: { title: 'לוח הניהול', h: 'הניהול של תורן נמצא בלוח הניהול', text: 'כאן רואים את תורן כמו שבעל חנות רואה אותו, בחשבון של OpenFrequency. החשבון הזה עוד לא הוגדר, או שתורן לא פתוח בו. הלידים, הבדיקה והמעקב נמצאים בלוח הניהול.', link: 'ללוח הניהול' },
   unchecked: { title: 'אי אפשר לבדוק את התשלום',h: 'אי אפשר לבדוק את התשלום כרגע', text: 'לא הצלחנו לבדוק את מצב התשלום על תורן, ולכן לא נכנסים עד שזה מסתדר. אפשר לנסות שוב בעוד כמה דקות. אם זה נמשך, כתבו לנו.', link: 'לנסות שוב' },
 } as const;
 

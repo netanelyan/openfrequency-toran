@@ -286,18 +286,14 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       // Toran's own name shows the product, to the operator too (the owner, 2026-11-10: "Make teder and toran of
       // natikyan153@gmail.com regular, just like a customer's. Everything else, leads etc should be in other places. The
       // admin dashboard is for that. Toran and teder should stay toran and teder, even for admins"; accounts'
-      // docs/admin-split.md). accounts puts the superadmin in their own workspace here (OF_OPERATOR_WORKSPACE), as its
-      // owner, so every page below is a customer's. Without one (scope.operator) there is nothing of the product to
-      // show: Today is a short page pointing to /admin, and any other address, an operator page from an old bookmark,
-      // an email or a WhatsApp alert, goes to the same page under /admin/toran. On a laptop (no PUBLIC_HOST) the
-      // operator still sees everything here, for development and the tests.
+      // docs/admin-split.md). The operator there (`look`) keeps what they had, every customer's store and chat, on a
+      // customer's screens: the customer's nav, Today and Settings, nothing of the operator's (2026-11-11: "i wanted to
+      // have the same data but just see it like a customer"). The operator's pages, an old bookmark, an email or a
+      // WhatsApp alert, go to the same page under /admin/toran. On a laptop (no PUBLIC_HOST) the operator still sees
+      // everything here, for development and the tests.
       const ownName = !viaAdmin && Boolean(session.user.superadmin) && !session.viewAs && Boolean(publicHost) && host === publicHost && Boolean(adminOrigin);
+      const look = ownName && scope.operator;
       const atAdmin = `${adminOrigin}${ADMIN}${p === '/' ? '/' : p}${url.search}`;
-      if (ownName && scope.operator) {
-        if (method === 'GET' && p === '/') return send(req, res, 200, refusalPage('operator', `${adminOrigin}${ADMIN}/`), 'text/html; charset=utf-8');
-        if (method === 'GET') return reply(req, res, { redirect: atAdmin });
-        return ajax ? json(409, { ok: false, message: 'הניהול של תורן נמצא בלוח הניהול.', redirect: atAdmin }) : send(req, res, 409, errorPage(409, 'הניהול של תורן נמצא בלוח הניהול.', atAdmin), 'text/html; charset=utf-8');
-      }
       // ---- the paywall (billing/entitlement.ts, PRA-SEC-002): a customer whose workspace has not paid for Toran gets the
       // pay page, and posts nothing. The operator, the operator viewing as the customer, and the operator in their own
       // workspace (above) are never asked about.
@@ -337,7 +333,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       const flash = jar.tn_flash || null;
       if (flash) setCookies.push('tn_flash=; Path=/; Max-Age=0; SameSite=Strict');
       const viewAs = session.viewAs ? { name: String(session.workspace?.name || session.workspace?.slug || ''), admin: links.admin } : null;
-      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator, readOnly: scope.readOnly, viewAs, logout: links.logout, pay, payHref: links.setup, install: viaAdmin ? null : installOf(String(req.headers['user-agent'] || ''), jar), admin: viaAdmin ? links.admin : null, ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope)) };
+      const ctx: PageCtx = { title: '', csrf, side: jar.tn_side === 'mini' ? 'mini' : null, v: V, flash, dev: jar.tn_dev === '1' && scope.operator, user, operator: scope.operator && !look, readOnly: scope.readOnly, viewAs, logout: links.logout, pay, payHref: links.setup, install: viaAdmin ? null : installOf(String(req.headers['user-agent'] || ''), jar), admin: viaAdmin ? links.admin : null, ...(JOB_POLL.test(p) ? {} : await headerCounts(app, scope, { look })) };
       const back = () => refererPath(req.headers.referer, viaAdmin ? adminOrigin : `http://${host}`, viaAdmin) || '/';
       const notFound = () => (method === 'GET' ? send(req, res, 404, notFoundPage({ ...ctx, title: 'לא נמצא' }), 'text/html; charset=utf-8') : ajax ? json(404, { ok: false, message: 'לא נמצא' }) : send(req, res, 404, errorPage(404, 'מה שחיפשתם לא נמצא כאן. אולי הקישור ישן.', back()), 'text/html; charset=utf-8'));
 

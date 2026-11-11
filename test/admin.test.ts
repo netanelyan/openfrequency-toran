@@ -67,9 +67,10 @@ test("the operator's dashboard under /admin/toran: pages, links and redirects un
   }
 });
 
-test("on Toran's own name the operator sees the product: their own workspace as its owner, operator addresses sent to /admin, and without a workspace a page pointing there", async () => {
+test("on Toran's own name the operator sees the product: every customer's store on a customer's screens, or their own workspace as its owner, and operator addresses sent to /admin", async () => {
   // The owner, 2026-11-10: "Make teder and toran of natikyan153@gmail.com regular, just like a customer's. Everything
-  // else, leads etc should be in other places. The admin dashboard is for that" (accounts' docs/admin-split.md).
+  // else, leads etc should be in other places. The admin dashboard is for that" (accounts' docs/admin-split.md), and
+  // 2026-11-11: "i wanted to have the same data but just see it like a customer".
   const s = await serve();
   const port = Number(new URL(s.base).port);
   Object.assign(s.app.env, { PUBLIC_HOST: 'toran.test' });
@@ -80,23 +81,38 @@ test("on Toran's own name the operator sees the product: their own workspace as 
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const p2 = (server.address() as any).port;
     const at = (path: string, session: { cookie: string }) => raw(p2, path, { host: 'toran.test', cookie: session.cookie.replace('of_session', '__Secure-of_session'), 'x-forwarded-proto': 'https' });
+    const nav = (html: string) => /<nav class="nav" aria-label="ראשי">([^]*?)<\/nav>/.exec(html)![1];
     try {
-      // No workspace of their own: Today is a short page to /admin, any other address the same page under /admin/toran.
+      // No workspace: what the operator had, a customer's store among them, on the customer's screens.
+      await s.app.db.query('UPDATE stores SET workspace_id = 5 WHERE id = $1', [s.seeded.storeId]);
       const op = s.login();
+      const cust = await at('/', s.accounts.session(customer(5)));
+      const home = await at('/', op);
+      assert.equal(home.status, 200);
+      assert.doesNotMatch(home.body, /data-refusal/);
+      assert.equal(nav(home.body), nav(cust.body), "the same nav as a customer's");
+      assert.doesNotMatch(home.body, /href="\/(leads|review|followups)"|טוקנים|מוכנים לשליחה/);
+      const settings = await at('/settings', op);
+      assert.equal(settings.status, 200);
+      assert.equal(nav(settings.body), nav((await at('/settings', s.accounts.session(customer(5)))).body));
+      assert.doesNotMatch(settings.body, /TORAN_MONTHLY_CAP_USD|ANTHROPIC_API_KEY|חיפוש לידים/);
+      const knows = await at(`/lead/${s.seeded.storeId}/knowledge`, op);
+      assert.equal(knows.status, 200, "a customer's store opens, as its owner's page");
+      // The operator's pages are on /admin.
       const toOp = await at('/leads?x=1', op);
       assert.equal(toOp.status, 303);
       assert.equal(toOp.headers.location, 'https://accounts.test/admin/toran/leads?x=1');
-      const home = await at('/', op);
-      assert.equal(home.status, 200);
-      assert.match(home.body, /data-refusal="operator"/);
-      assert.match(home.body, /<a class="btn primary" href="https:\/\/accounts\.test\/admin\/toran\/">ללוח הניהול<\/a>/);
+      for (const path of ['/review', '/followups', '/queue', `/lead/${s.seeded.storeId}`]) {
+        const r = await at(path, op);
+        assert.equal(r.status, 303, path);
+        assert.equal(r.headers.location, `https://accounts.test/admin/toran${path}`, path);
+      }
+      await s.app.db.query('UPDATE stores SET workspace_id = NULL WHERE id = $1', [s.seeded.storeId]);
 
       // In their own workspace: the customer's Today and nav, nothing of the operator's.
       const mine = s.accounts.session(operatorAt(5));
       const today = await at('/', mine);
       assert.equal(today.status, 200, 'the product, as its owner sees it');
-      const cust = await at('/', s.accounts.session(customer(5)));
-      const nav = (html: string) => /<nav class="nav" aria-label="ראשי">([^]*?)<\/nav>/.exec(html)![1];
       assert.equal(nav(today.body), nav(cust.body), 'the same nav as the workspace\'s customer');
       assert.doesNotMatch(today.body, /href="\/(leads|review|followups)"|טוקנים/);
       // An operator page, or a store outside the workspace (a lead, our support store's chat in an alert), goes to /admin.

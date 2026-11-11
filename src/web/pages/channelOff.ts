@@ -71,7 +71,7 @@ export function channelOffRoutes(app: App): Route<DashReq>[] {
       const off = r.form.on !== '1';
       await setChannelOff(app, id, channel, off, r.user.name);
       const he = CHANNEL_HE[channel];
-      return { redirect: r.scope.operator ? `/lead/${id}#channels` : BACK[channel](id), message: off ? `תורן לא עונה עכשיו ב${he}. הודעות שם מחכות לכם בשיחות.` : `תורן עונה שוב ב${he}.` };
+      return { redirect: r.ctx.operator ? `/lead/${id}#channels` : BACK[channel](id), message: off ? `תורן לא עונה עכשיו ב${he}. הודעות שם מחכות לכם בשיחות.` : `תורן עונה שוב ב${he}.` };
     }],
   ];
 }

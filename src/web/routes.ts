@@ -28,7 +28,8 @@ import { latestNotification, subscribe, unsubscribe, vapid } from '../owners/pus
 // The dashboard's routes: GET pages and POST actions, all behind the session, in one table. Every list reads through
 // the session's scope (workspace.ts); a route about one store, chat or job is checked in server.ts before it runs.
 
-export async function headerCounts(app: App, sc: Scope) {
+/** The header's counts. `look`: the operator on a customer's screens (server.ts), counted as a customer over every customer's store. */
+export async function headerCounts(app: App, sc: Scope, { look = false }: { look?: boolean } = {}) {
   const r = await app.db.one<{ review: number; followups: number; chats: number; usd: number }>(
     `SELECT
        (SELECT COUNT(*)::int FROM stores WHERE status = 'page_ready' AND approved_at IS NULL AND ${storesOf(sc)} AND ${selling()}) AS review,
@@ -38,10 +39,12 @@ export async function headerCounts(app: App, sc: Scope) {
   );
   // The monthly cap is the whole server's: only the operator sees the ring measured against it.
   const cap = sc.operator ? Number(app.env.TORAN_MONTHLY_CAP_USD) || 0 : 0;
-  if (sc.operator) return { waiting: { review: r?.review || 0, followups: r?.followups || 0, chats: r?.chats || 0 }, spend: { usd: Number(r?.usd) || 0, cap }, plan: null };
-  // A customer: the conversations waiting for them, and this month's conversations against their stores' plans.
-  const w = await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM conversations c WHERE ${messagingSql('c.channel')} AND ${storeIdIn(sc, 'c.store_id')} AND ${WAITING_SQL}`);
-  const stores = await app.db.query<{ id: number; config: any; name: string | null; domain: string; brand: any }>(`SELECT id, config, name, domain, brand FROM stores WHERE ${storesOf(sc)} ORDER BY id`);
+  if (sc.operator && !look) return { waiting: { review: r?.review || 0, followups: r?.followups || 0, chats: r?.chats || 0 }, spend: { usd: Number(r?.usd) || 0, cap }, plan: null };
+  // A customer: the conversations waiting for them, and this month's conversations against their stores' plans. The
+  // operator's `look`: every customer's store, never the leads (pages/customer.ts myStores).
+  const theirs = sc.operator ? ' AND workspace_id IS NOT NULL' : '';
+  const w = await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM conversations c WHERE ${messagingSql('c.channel')} AND c.store_id IN (SELECT id FROM stores WHERE ${storesOf(sc)}${theirs}) AND ${WAITING_SQL}`);
+  const stores = await app.db.query<{ id: number; config: any; name: string | null; domain: string; brand: any }>(`SELECT id, config, name, domain, brand FROM stores WHERE ${storesOf(sc)}${theirs} ORDER BY id`);
   const n = await counted(app.db, stores.map((s) => s.id), { months: 1 });
   const usage = stores.map((s) => usageOf(planOf(s.config), n.get(s.id)));
   const plan = usage.length ? { used: usage.reduce((a, u) => a + u.thisMonth, 0), cap: usage.reduce((a, u) => a + u.cap, 0) } : null;

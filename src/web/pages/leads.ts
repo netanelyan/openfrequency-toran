@@ -284,7 +284,7 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
         await app.db.query("UPDATE channel_accounts SET status = 'off' WHERE store_id = $1 AND channel = 'email'", [s.id]);
       }
       await audit(app.db, { actor: r.user.name, action: r.form.on === '1' ? 'email_connect' : 'email_disconnect', storeId: s.id, detail: { address } });
-      return { redirect: r.scope.operator ? `/lead/${s.id}#channels` : '/settings#email', message: r.form.on === '1' ? `המייל מחובר. מעבירים אליו את המייל של החנות: ${address}` : 'המייל נותק. תורן לא עונה יותר על מיילים לכתובת הזו.' };
+      return { redirect: r.ctx.operator ? `/lead/${s.id}#channels` : '/settings#email', message: r.form.on === '1' ? `המייל מחובר. מעבירים אליו את המייל של החנות: ${address}` : 'המייל נותק. תורן לא עונה יותר על מיילים לכתובת הזו.' };
     }],
     ['POST', /^\/lead\/(\d+)\/build$/, async (r, m) => {
       const s = await store(m[1]);

@@ -85,7 +85,7 @@ ${ro ? '' : `<div class="row mt12">${on && inboxOn ? '' : postButton(r.ctx, `/le
 }
 
 export function mailDomainRoutes(app: App): Route<DashReq>[] {
-  const back = (r: DashReq, id: number) => (r.scope.operator ? `/lead/${id}#channels` : '/settings#email');
+  const back = (r: DashReq, id: number) => (r.ctx.operator ? `/lead/${id}#channels` : '/settings#email');
   const ready = async (id: number) => {
     if (!enabledChannels(app.env).has('email') || !app.mail) throw new ActionError('המייל עוד כבוי בשרת (TORAN_CHANNELS).');
     const a = await app.db.one<{ external_id: string }>("SELECT external_id FROM channel_accounts WHERE store_id = $1 AND channel = 'email' AND status = 'active' ORDER BY id DESC LIMIT 1", [id]);

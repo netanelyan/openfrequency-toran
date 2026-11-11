@@ -317,7 +317,7 @@ export function mailSetupRoutes(app: App): Route<DashReq>[] {
   const ready = () => {
     if (!enabledChannels(app.env).has('email') || !app.mail) throw new ActionError('המייל עוד כבוי בשרת (TORAN_CHANNELS).');
   };
-  const back = (r: DashReq, id: number) => (r.scope.operator ? `/lead/${id}#channels` : '/settings#email');
+  const back = (r: DashReq, id: number) => (r.ctx.operator ? `/lead/${id}#channels` : '/settings#email');
   return [
     // Where the card stands, for the card waiting on Gmail's code: it loads itself again when this changes.
     ['GET', /^\/lead\/(\d+)\/mail\/state\.json$/, async (_r, m) => ({ json: { v: (await mailState(app, Number(m[1]))).step }, headers: { 'cache-control': 'no-store' } })],

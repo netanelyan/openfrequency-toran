@@ -31,7 +31,7 @@ import { REASON_HE, summaryHe } from '../../agent/guard.ts';
 
 async function today(app: App, r: DashReq) {
   // A customer's Today is what openfrequency.co.il sells them (pages/customer.ts); this one is the operator's.
-  if (!r.scope.operator) return customerToday(app, r);
+  if (!r.ctx.operator) return customerToday(app, r);
   // What there is to sell is leads only: a customer's own store (workspace.ts selling) is not one of them.
   const w = `${storesOf(r.scope)} AND ${selling()}`;
   const c = await app.db.one<any>(`SELECT
@@ -72,7 +72,7 @@ ${installCard(r.ctx.install)}
  */
 async function inboxPane(app: App, r: DashReq, current = 0) {
   const sp = r.url.searchParams;
-  const op = r.scope.operator;
+  const op = r.ctx.operator;
   const filter = op && ['handoff', 'miss'].includes(sp.get('filter') || '') ? sp.get('filter')! : '';
   const storeId = Number(sp.get('store') || 0);
   // The chat on the store's site (channels/web.ts) is a tab only where one of the stores here has it on.
@@ -140,7 +140,7 @@ async function inboxPane(app: App, r: DashReq, current = 0) {
 async function chats(app: App, r: DashReq) {
   const pane = await inboxPane(app, r);
   const where = pane.shown.length > 1 ? `ב${pane.shown.map((ch) => CHANNEL_HE[ch]).join(', ב')}` : 'בוואטסאפ';
-  const sub = r.scope.operator ? 'כל השיחות, מכל הערוצים, עם ההעברות והפספוסים של כל אחת.' : `מה שלקוחות כותבים ${where} מגיע לכאן. ליד כל שיחה רואים מה קרה איתה: תורן ענה לבד, היא מחכה לכם, או שעניתם בה בעצמכם.`;
+  const sub = r.ctx.operator ? 'כל השיחות, מכל הערוצים, עם ההעברות והפספוסים של כל אחת.' : `מה שלקוחות כותבים ${where} מגיע לכאן. ליד כל שיחה רואים מה קרה איתה: תורן ענה לבד, היא מחכה לכם, או שעניתם בה בעצמכם.`;
   const body = `<div class="head ib-head"><h1>שיחות</h1><p class="sub">${sub}</p></div>
 <div class="inbox">${pane.html}<section class="ib-read ib-blank" aria-hidden="true">${icon('chat')}<b>בוחרים שיחה מהרשימה</b><span>היא נפתחת כאן, עם התשובה ללקוח מתחתיה.</span></section></div>`;
   return layout({ ...r.ctx, title: 'שיחות', active: 'chats', wide: true }, body);
@@ -179,7 +179,7 @@ async function chat(app: App, r: DashReq, id: number) {
   const c = await app.db.one<any>(`SELECT c.*, ${STATE_SQL} AS state, s.name, s.domain, s.brand, s.id AS sid FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.id = $1`, [id]);
   if (!c) return null;
   // The operator reads the agent's workings (its tool calls, the cost); a customer reads the conversation and where it stands.
-  const op = r.scope.operator;
+  const op = r.ctx.operator;
   const msgs = await app.db.query<any>('SELECT * FROM messages WHERE conversation_id = $1 ORDER BY id', [id]);
   const cost = await app.db.one<any>('SELECT COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE conversation_id = $1', [id]);
   const markup = (t: string) => (c.channel === 'whatsapp' ? waMarkup(esc(t)) : esc(t));
@@ -302,7 +302,7 @@ ${done.length ? `<section class="group mt24"><header><h2>כבר קיבלו תז�
 }
 
 async function settings(app: App, r: DashReq) {
-  if (!r.scope.operator) return customerSettings(app, r);
+  if (!r.ctx.operator) return customerSettings(app, r);
   const costs = await app.db.query<any>(`SELECT s.id, s.name, s.domain, s.brand,
       COALESCE(SUM(u.api_usd) FILTER (WHERE u.kind = 'llm'), 0)::float AS llm_api, COALESCE(SUM(u.usd) FILTER (WHERE u.kind = 'llm'), 0)::float AS llm_paid,
       COALESCE(SUM(u.usd) FILTER (WHERE u.kind = 'bsp'), 0)::float AS bsp, COALESCE(SUM(u.units) FILTER (WHERE u.kind = 'bsp'), 0)::int AS msgs,
