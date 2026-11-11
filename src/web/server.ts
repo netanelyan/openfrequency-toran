@@ -10,7 +10,9 @@ import { clientIp, cookies, csrfFor, csrfOk, isHttps, sessionSecret } from './au
 import { accountsClient, accountsLinks, ADMIN, operatorFrom, refusal, sessionIdFrom, type AccountsClient, type Session } from './accounts.ts';
 import { ownsConversation, ownsJob, ownsStore, scopeOf, type Scope } from './workspace.ts';
 import type { PageCtx } from './ui.ts';
-import { errorPage, notFoundPage, refusalPage } from './pages/basic.ts';
+import { errorPage, notFoundPage, refusalPage, type PayFacts } from './pages/basic.ts';
+import { setupStoreOf, storeState } from '../setup.ts';
+import { DISCONNECT_DAYS, SERVICE_KEEP_DAYS } from '../jobs/retention.ts';
 import { dashboardRoutes, headerCounts, storesCss } from './routes.ts';
 import { publicRoutes } from './public.ts';
 import { demoArt } from './demoArt.ts';
@@ -149,6 +151,34 @@ const readBody = async (req: IncomingMessage, limit = 300_000) => (await readByt
 
 /** The one form that may carry a file: the owner's answer in a conversation, with room for one file and its text. */
 const UPLOAD = /^\/chat\/\d+\/reply$/;
+
+// Before paying, what does not answer customers stays open (TORAN-READINESS.md P0-8, P1-23): adding the store and
+// proving its site by every way the page offers (the tag, the email code, the store's key: the audit of 2026-11-12, P0-1,
+// found the code and the key refused with the pay page, whose button led back to them), its reading's progress, what
+// Toran knows, the inbox to read and to answer from (an unpaid store's messages reach the owner as handoffs,
+// agent/loop.ts; the owner's own answer, "טיפלתי בזה" and "להחזיר לתורן" cost no model call, and the shopper was told
+// someone from the store will answer), the export of the conversations for the 30 days they are kept after the plan
+// stops (the website's /toran and the contract promise it; jobs/retention.ts deletes them after that), the WhatsApp
+// guide before the store exists, and the pages' own colours and polls. Connecting a channel and every other change wait
+// for the payment, as Teder's do.
+const OPEN_UNPAID_GET = /^\/(start|knowledge|lead\/\d+\/knowledge|chats|chat\/\d+(\/file\/\d+)?|whatsapp|waiting\.json|notifications\/latest\.json|static\/stores\.css|export\/conversations\.csv)$/;
+const OPEN_UNPAID_POST = /^\/(start(\/verify(\/(email|code|key))?)?|chat\/\d+\/(reply|settle|resume))$/;
+
+/**
+ * What the pay page says beyond its words (pages/basic.ts refusalPage): whether the workspace has a store, how reading
+ * its site went, and for a store that stopped paying, when its channels are disconnected and its conversations deleted
+ * (jobs/retention.ts: DISCONNECT_DAYS and SERVICE_KEEP_DAYS after the stop).
+ */
+async function payPageFacts(app: App, wsId: number): Promise<PayFacts> {
+  const store = await app.db.one<{ id: number; stopped: string | null }>("SELECT id, (SELECT MIN(service_stopped_at) FROM stores WHERE workspace_id = $1 AND service_stopped_why = 'plan') AS stopped FROM stores WHERE workspace_id = $1 ORDER BY id LIMIT 1", [wsId]);
+  if (!store) return { store: false };
+  const st = storeState(await setupStoreOf(app, wsId));
+  const reading = st.status === 'working' ? 'working' : st.status === 'attention' && !st.verify ? st.detail : null;
+  const stop = store.stopped ? new Date(store.stopped).getTime() : null;
+  const later = (days: number) => (stop != null && stop + days * 86_400_000 > Date.now() ? new Date(stop + days * 86_400_000).toISOString() : null);
+  const leaving = (await app.db.query<{ channel: string }>("SELECT DISTINCT channel FROM channel_accounts WHERE store_id IN (SELECT id FROM stores WHERE workspace_id = $1) AND kind IN ('kapso', 'zernio') AND status <> 'off'", [wsId])).map((x) => x.channel);
+  return { store: true, reading, disconnect: leaving.length ? later(DISCONNECT_DAYS) : null, channels: leaving, erase: later(SERVICE_KEEP_DAYS) };
+}
 
 const flashCookie = (msg: string) => `tn_flash=${encodeURIComponent(String(msg).slice(0, 200))}; Path=/; Max-Age=20; SameSite=Strict`;
 
@@ -301,7 +331,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       let pay: PayReminder | null = null;
       if (!scope.operator && !session.viewAs && session.workspace && !session.user.superadmin) {
         const wsId = session.workspace.id;
-        // "בדקו שוב" on the pay page: accounts is asked afresh now, as when it says the access changed (as Teder's
+        // "לבדוק שוב" on the pay page: accounts is asked afresh now, as when it says the access changed (as Teder's
         // POST /paywall/check), then the page it came from.
         if (method === 'POST' && p === '/paywall/check') {
           // Before the paywall, so its own checks: another site's form is refused, and so is a form without this session's token.
@@ -314,18 +344,16 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
         }
         const ent = await entitlementOf(app).check(wsId);
         pay = payReminder(ent);
-        // Before paying, what does not answer customers stays open (TORAN-READINESS.md P0-8, P1-23): adding the store and
-        // proving its site (/start, two model calls for its sample chat, once, for a domain the customer proved), its
-        // reading's progress, what Toran knows, and the inbox to read (an unpaid store's messages reach the owner as
-        // handoffs, agent/loop.ts). Connecting a channel, answering and every other change wait for the payment.
-        const openUnpaid = ent.known && (method === 'GET' ? /^\/(start|knowledge|lead\/\d+\/knowledge|chats|chat\/\d+(\/file\/\d+)?)$/.test(p) || JOB_POLL.test(p) : /^\/start(\/verify)?$/.test(p));
+        const openUnpaid = ent.known && (method === 'GET' ? OPEN_UNPAID_GET.test(p) || JOB_POLL.test(p) : OPEN_UNPAID_POST.test(p));
         if (!ent.allowed && !openUnpaid) {
-          const fresh = !(await app.db.one('SELECT 1 FROM stores WHERE workspace_id = $1 LIMIT 1', [wsId]));
-          const kind = !ent.known ? 'unchecked' : fresh ? 'new' : 'unpaid';
+          // A workspace that never paid is a new customer, store or no store (the audit of 2026-11-12, P1-10: seconds after
+          // the proof a new customer read the page for one who stopped paying); one whose paid days ended stopped
+          // (accounts gives paidThrough whenever a payment was ever recorded, src/accounts/entitlement.js).
+          const kind = !ent.known ? 'unchecked' : !ent.paidThrough ? 'new' : 'unpaid';
           const status = kind === 'unchecked' ? 503 : 402;
           if (method !== 'GET' && ajax) return json(status, { ok: false, message: kind === 'unchecked' ? 'אי אפשר לבדוק את התשלום כרגע, אז שום דבר לא נשמר.' : 'התשלום על תורן עוד לא רשום, אז שום דבר לא נשמר.' });
-          const href = kind === 'new' ? links.setup : kind === 'unpaid' ? links.home : `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}`;
-          return send(req, res, status, refusalPage(kind, href, kind === 'unchecked' ? null : csrfFor(basis, secret)), 'text/html; charset=utf-8');
+          const href = kind === 'unchecked' ? `${secure ? 'https' : 'http'}://${host}${method === 'GET' ? req.url || '/' : '/'}` : links.setup;
+          return send(req, res, status, refusalPage(kind, href, kind === 'unchecked' ? null : csrfFor(basis, secret), kind === 'unchecked' ? null : { ...(await payPageFacts(app, wsId)), logout: links.logout }), 'text/html; charset=utf-8');
         }
       }
       const user = { id: session.user.id, name: String(session.user.name || session.user.email), role: session.role, email: session.user.email };

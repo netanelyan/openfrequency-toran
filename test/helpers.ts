@@ -68,7 +68,7 @@ type Canned = Record<string, unknown> | { status: number; body: unknown };
  */
 export async function fakeAccounts() {
   const answers = new Map<string, Canned>();
-  const entitlements = new Map<number, 'unpaid' | 'gone' | 'down'>();
+  const entitlements = new Map<number, 'unpaid' | 'lapsed' | 'gone' | 'down'>();
   const phones = new Map<number, string[]>();
   let calls = 0;
   let entitlementCalls = 0;
@@ -87,8 +87,10 @@ export async function fakeAccounts() {
       const e = entitlements.get(ws);
       if (e === 'gone') return out(404, { error: 'no_workspace' });
       if (e === 'down') return out(503, { error: 'down' });
-      const allowed = e !== 'unpaid';
-      return out(200, { workspace: ws, product: url.searchParams.get('product'), enabled: true, access: allowed ? 'paid' : 'unpaid', allowed, paidThrough: allowed ? LATER : null, cancelAt: null });
+      // 'unpaid' never paid (no paidThrough); 'lapsed' paid once, and its paid days and grace are over (accounts keeps
+      // paidThrough then, src/accounts/entitlement.js).
+      const allowed = e !== 'unpaid' && e !== 'lapsed';
+      return out(200, { workspace: ws, product: url.searchParams.get('product'), enabled: true, access: allowed ? 'paid' : 'unpaid', allowed, paidThrough: allowed ? LATER : e === 'lapsed' ? EARLIER : null, cancelAt: null });
     }
     // A workspace's verified WhatsApp numbers (the assistant's page), only for a workspace a test gave numbers to.
     if (url.pathname === '/internal/owner-phones' && phones.has(Number(url.searchParams.get('workspace')))) {
@@ -126,8 +128,8 @@ export async function fakeAccounts() {
       if (answer == null) answers.delete(sid);
       else answers.set(sid, answer);
     },
-    /** What accounts says of a workspace's Toran from now on: paid (null, the default), unpaid, gone (404) or down (503). */
-    paid(workspaceId: number, state: 'unpaid' | 'gone' | 'down' | null) {
+    /** What accounts says of a workspace's Toran from now on: paid (null, the default), unpaid (never paid), lapsed (stopped paying), gone (404) or down (503). */
+    paid(workspaceId: number, state: 'unpaid' | 'lapsed' | 'gone' | 'down' | null) {
       if (state == null) entitlements.delete(workspaceId);
       else entitlements.set(workspaceId, state);
     },
@@ -140,6 +142,7 @@ export async function fakeAccounts() {
 }
 
 const LATER ='2099-01-01T00:00:00.000Z';
+const EARLIER = '2026-01-31T21:59:59.999Z';
 
 /** A customer of one workspace, as /internal/session describes them. */
 export const customer = (workspaceId: number, { products = ['toran'] }: { products?: string[] } = {}) => ({

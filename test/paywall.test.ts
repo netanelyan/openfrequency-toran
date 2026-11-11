@@ -8,6 +8,8 @@ import { conversationFor, runTurn } from '../src/agent/loop.ts';
 import { entitlementClient, FRESH_MS, planAccess, refreshWorkspaces, STALE_MS, storeAllowed } from '../src/billing/entitlement.ts';
 import { customer, INTERNAL_TOKEN, viewingAs } from './helpers.ts';
 import { serve } from './serve.ts';
+import { simEmail } from '../src/channels/email.ts';
+import { turnOn } from '../src/channels/web.ts';
 
 // The paywall (src/billing/entitlement.ts, PRA-SEC-002 and PRA-BE-007): accounts says whether a workspace has paid for
 // Toran; one that has not sees the pay page, and its customers' messages get no model call.
@@ -20,13 +22,13 @@ test('a workspace that has not paid sees the pay page and posts nothing; the ope
     s.as(s.accounts.session(customer(1)).cookie);
     assert.equal((await s.get('/')).status, 200, 'paid: the dashboard');
     const token = await s.csrf(`/lead/${a}/knowledge`);
-    s.accounts.paid(1, 'unpaid');
+    s.accounts.paid(1, 'lapsed');
     await s.app.db.query("DELETE FROM settings WHERE key = 'entitlement:1'"); // as if the kept answer were 5 minutes old
     const page = await s.get('/');
     assert.equal(page.status, 402);
     const html = await page.text();
     assert.match(html, /data-refusal="unpaid"/);
-    assert.match(html, /href="https:\/\/accounts\.test"/, 'to the account, where payment is');
+    assert.match(html, /href="https:\/\/accounts\.test\/setup">איך משלמים</, 'to the checklist, where the way to pay is, as the pay banner');
     assert.equal((await s.post(`/lead/${a}/faq`, { _csrf: token, question: 'q?', answer: 'a' })).status, 402);
     assert.equal((await s.app.db.one<any>('SELECT COUNT(*)::int AS n FROM faqs WHERE store_id = $1 AND answer IS NOT NULL', [a])).n, 0);
     s.as(s.accounts.session(viewingAs(1)).cookie);
@@ -222,15 +224,113 @@ test('before paying: a new workspace gets the new-customer page with the checkli
     assert.match(decodeURIComponent(String(again.headers.get('set-cookie'))), /התשלום נרשם/);
     assert.equal((await s.get('/settings')).status, 200, 'paid: open at once, not after five minutes');
 
-    // A store of an unpaid workspace: its conversations stay readable, as the pay page says.
+    // A store of a workspace that never paid: still a new customer, told what Toran read (the audit of 2026-11-12,
+    // P1-10: it read the page for one who stopped paying), with the way to what Toran knows.
     const a = s.seeded.storeId;
     await s.app.db.query('UPDATE stores SET workspace_id = 9 WHERE id = $1', [a]);
     s.accounts.paid(9, 'unpaid');
+    await s.app.db.query("DELETE FROM settings WHERE key = 'entitlement:9'");
+    const waiting = await (await s.get('/')).text();
+    assert.match(waiting, /data-refusal="new"/);
+    assert.match(waiting, /<h1>תורן מחכה לתשלום<\/h1>/);
+    assert.match(waiting, /href="\/knowledge"/);
+    assert.doesNotMatch(waiting, /התשלום על תורן לא פעיל/);
+    // One that stopped paying: its conversations stay readable, as the pay page says.
+    s.accounts.paid(9, 'lapsed');
     await s.app.db.query("DELETE FROM settings WHERE key = 'entitlement:9'");
     const unpaid = await s.get('/');
     assert.equal(unpaid.status, 402);
     assert.match(await unpaid.text(), /data-refusal="unpaid"[^]*href="\/chats"/);
     assert.equal((await s.get('/chats')).status, 200);
+  } finally {
+    await s.close();
+  }
+});
+
+// The audit of 2026-11-12, P0-1: before paying, the verify page's main card (the email code, or the store's key) got
+// the pay page, whose button led back to it; only the tag went through.
+test('before paying, every way /start offers to prove the site goes through: the email code, the store key and the tag', async () => {
+  const s = await serve();
+  try {
+    const mail = simEmail();
+    s.app.mail = mail;
+    s.accounts.paid(41, 'unpaid');
+    s.as(s.accounts.session(customer(41)).cookie);
+    const token = await s.csrf('/start');
+    assert.ok(token, '/start is open before paying');
+    await s.post('/start', { _csrf: token, url: 'tavlinim-ba-shuk.example' });
+    const sent = await s.post('/start/verify/email', { _csrf: token, to: '0' }, { 'x-tn-ajax': '1' });
+    assert.equal(sent.status, 200, 'the code is sent');
+    assert.match((await sent.json()).message, /שלחנו קוד/);
+    const code = /: (\d{6})$/.exec(String(mail.outbox!.at(-1)!.subject))![1];
+    const key = await s.post('/start/verify/key', { _csrf: token, token: 'shpat_nope' }, { 'x-tn-ajax': '1' });
+    assert.notEqual(key.status, 402, 'the key is checked, not refused for the payment');
+    await s.app.db.query("UPDATE audit SET at = now() - interval '1 minute' WHERE action = 'verify_domain'");
+    const tag = await s.post('/start/verify', { _csrf: token }, { 'x-tn-ajax': '1' });
+    assert.notEqual(tag.status, 402, 'the tag is looked for');
+    const yes = await s.post('/start/verify/code', { _csrf: token, code });
+    assert.equal(yes.status, 303);
+    assert.equal(yes.headers.get('location'), '/', 'proven: the store is added while unpaid');
+    assert.equal((await s.app.db.one<any>("SELECT workspace_id FROM stores WHERE domain = 'tavlinim-ba-shuk.example'"))?.workspace_id, 41);
+  } finally {
+    await s.close();
+  }
+});
+
+// The audit of 2026-11-12, P1-10 and the website's promise (/toran, the contract: "את השיחות אנחנו שומרים עוד 30 יום,
+// כדי שתוכלו לייצא אותן"): a store that stopped paying answers its waiting customers itself, and takes its conversations.
+test('a store that stopped paying: the owner answers, marks handled and gives back to Toran; exports the conversations; the pages keep their colours and polls', async () => {
+  const s = await serve();
+  try {
+    const a = s.seeded.storeId;
+    await s.app.db.query('UPDATE stores SET workspace_id = 42 WHERE id = $1', [a]);
+    const web = (await turnOn(s.app, a, 'test'))!;
+    const visitor = 'Abcdefghijklmnopqrstu1';
+    const conv = await conversationFor(s.app.db, a, 'web', visitor);
+    await s.app.db.query('UPDATE conversations SET account_id = $2 WHERE id = $1', [conv, web.id]);
+    await s.app.db.query("INSERT INTO messages (conversation_id, role, text, ext_id) VALUES ($1, 'customer', 'אתם פתוחים היום?', 'web:t:1')", [conv]);
+    s.as(s.accounts.session(customer(42)).cookie);
+    const token = await s.csrf(`/chat/${conv}`);
+    assert.ok(token);
+    s.accounts.paid(42, 'lapsed');
+    await s.app.db.query("DELETE FROM settings WHERE key = 'entitlement:42'");
+    assert.equal((await s.get('/')).status, 402);
+    const reply = await s.post(`/chat/${conv}/reply`, { _csrf: token, text: 'כן, עד 18:00' }, { 'x-tn-ajax': '1' });
+    assert.equal(reply.status, 200, 'the owner answers while unpaid: no model call');
+    assert.equal((await s.app.db.one<any>("SELECT COUNT(*)::int AS n FROM messages WHERE conversation_id = $1 AND role = 'owner'", [conv]))!.n, 1);
+    assert.equal((await s.post(`/chat/${conv}/resume`, { _csrf: token }, { 'x-tn-ajax': '1' })).status, 200);
+    assert.equal((await s.post(`/chat/${conv}/settle`, { _csrf: token }, { 'x-tn-ajax': '1' })).status, 200);
+    const csv = await s.get('/export/conversations.csv');
+    assert.equal(csv.status, 200, 'the export stays open for the 30 days the conversations are kept');
+    assert.match(await csv.text(), /אתם פתוחים היום\?/);
+    const css = await s.get('/static/stores.css');
+    assert.equal(css.status, 200);
+    assert.match(String(css.headers.get('content-type')), /^text\/css/);
+    assert.equal((await s.get('/waiting.json')).status, 200);
+    // Connecting a channel still waits for the payment.
+    assert.equal((await s.post(`/lead/${a}/whatsapp/disconnect`, { _csrf: token })).status, 402);
+  } finally {
+    await s.close();
+  }
+});
+
+test('the stopped store\'s pay page says when its Zernio channels are disconnected and its conversations deleted, from the day it stopped', async () => {
+  const s = await serve();
+  try {
+    const a = s.seeded.storeId;
+    await s.app.db.query('UPDATE stores SET workspace_id = 43 WHERE id = $1', [a]);
+    await s.app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, name, status, meta) VALUES ($1, 'whatsapp', 'zernio', 'z-acc-43', 'WA', 'active', '{}'::jsonb), ($1, 'instagram', 'zernio', 'z-ig-43', 'IG', 'active', '{}'::jsonb)", [a]);
+    s.as(s.accounts.session(customer(43)).cookie);
+    s.accounts.paid(43, 'lapsed');
+    await s.app.db.query("DELETE FROM settings WHERE key = 'entitlement:43'");
+    await s.get('/'); // the answer marks the stop (billing/entitlement.ts planAccess)
+    const stop = Date.now() - 86_400_000;
+    await s.app.db.query('UPDATE stores SET service_stopped_at = $2 WHERE id = $1', [a, new Date(stop).toISOString()]);
+    const day = (t: number) => new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'long' }).format(new Date(t));
+    const html = await (await s.get('/')).text();
+    assert.ok(html.includes(`אם התשלום לא יגיע עד ${day(stop + 3 * 86_400_000)}, ננתק מתורן את הוואטסאפ והאינסטגרם של החנות, ויהיה צריך לחבר אותם שוב.`), 'three days after the stop (jobs/retention.ts DISCONNECT_DAYS)');
+    assert.ok(html.includes(`אם הוא לא יגיע עד ${day(stop + 30 * 86_400_000)}, נמחק את השיחות. עד אז אפשר <a href="/export/conversations.csv">להוריד אותן</a>.`), 'thirty days after it (SERVICE_KEEP_DAYS)');
+    assert.doesNotMatch(html, /הידע וההגדרות של החנות נשמרים/);
   } finally {
     await s.close();
   }
