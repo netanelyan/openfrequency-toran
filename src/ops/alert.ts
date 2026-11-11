@@ -89,6 +89,12 @@ export const alertNumber = (env: Record<string, string | undefined>): string | n
 
 type Run = typeof execFile;
 
+/**
+ * "תורן: " before a title of Toran's, once: many titles already start with it (owners/waiting.ts, ops/watch.ts,
+ * channels/zernio.ts), and the phone and the command read "תורן: תורן: ..." (the audit of 2026-11-12, P2-28).
+ */
+export const withName = (title: string) => (/^\s*תורן\s*:/.test(title) ? title.trim() : `תורן: ${title}`);
+
 export async function alertOperator(
   app: App,
   key: string,
@@ -114,7 +120,7 @@ export async function alertOperator(
   await Promise.all([
     from === 'toran' ? command(app, title, body, run) : null,
     // Without the record its repeats could not be held back, so it does not go to the phone.
-    kept ? toPhone(app, key, from === 'toran' ? `תורן: ${title}` : title, body) : alertNumber(app.env) ? app.log('[alert] !!! WhatsApp NOT SENT: the alert could not be recorded, so its repeats could not be held back') : null,
+    kept ? toPhone(app, key, from === 'toran' ? withName(title) : title, body) : alertNumber(app.env) ? app.log('[alert] !!! WhatsApp NOT SENT: the alert could not be recorded, so its repeats could not be held back') : null,
   ]);
   return true;
 }
@@ -123,7 +129,7 @@ async function command(app: App, title: string, body: string, run: Run): Promise
   const cmd = String(app.env.TORAN_ALERT_CMD || '').trim() || (existsSync(DEFAULT_CMD) ? DEFAULT_CMD : '');
   if (!cmd || app.env.TORAN_ALERT_CMD === 'off') return;
   await new Promise<void>((resolve) => {
-    run(cmd, [`תורן: ${cleanLine(title, 120)}`, cleanLine(body, 1000)], { timeout: 10_000 }, (err) => {
+    run(cmd, [withName(cleanLine(title, 120)), cleanLine(body, 1000)], { timeout: 10_000 }, (err) => {
       if (err) app.log(`[alert] ${cmd} failed: ${err.message}`);
       resolve();
     });

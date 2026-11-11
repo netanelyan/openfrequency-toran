@@ -387,3 +387,17 @@ test("the example is Teder's own: test/fixtures/ops-alert.json is byte-identical
   t.diagnostic(`byte-identical to ${theirs}`);
   assert.ok(readdirSync(path.join(ROOT, 'test', 'fixtures', 'contracts')).every((f) => f !== 'ops-alert.json'), "not among accounts' contracts");
 });
+
+test('a title that already says "תורן:" is not given it twice, on the phone or in the command (the audit of 2026-11-12, P2-28)', async () => {
+  const { app, meta } = await alertApp({ TORAN_ALERT_WA: '050-000-0493' });
+  const cmd = fakeCommand();
+  try {
+    assert.equal(await alert.alertOperator(app, 'waiting:7', 'תורן: לקוח מחכה בכלי חרס של נורית', 'בשבועיים הראשונים שלה.', { run: cmd.run }), true);
+    const [t] = meta.calls[0].body.template.components[0].parameters.map((x: any) => x.text);
+    assert.equal(t, 'תורן: לקוח מחכה בכלי חרס של נורית');
+    assert.equal(cmd.runs[0][1], 'תורן: לקוח מחכה בכלי חרס של נורית');
+    assert.equal(alert.withName('הודעות מחכות בתור'), 'תורן: הודעות מחכות בתור', 'the others as before');
+  } finally {
+    await app.db.close();
+  }
+});
