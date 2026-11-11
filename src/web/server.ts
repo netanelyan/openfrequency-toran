@@ -280,7 +280,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
         return send(req, res, status, refusalPage(kind, href), 'text/html; charset=utf-8');
       }
       const session = who.body as Session;
-      const scope = scopeOf(session);
+      let scope = scopeOf(session);
       // /admin/toran is the operator's alone.
       if (viaAdmin && !scope.operator) return send(req, res, 404, errorPage(404, 'אין דף כזה.'), 'text/html; charset=utf-8');
       // Toran's own name shows the product, to the operator too (the owner, 2026-11-10: "Make teder and toran of
@@ -293,6 +293,7 @@ export function createHandler(app: App, { port, accounts = accountsClient({ env:
       // everything here, for development and the tests.
       const ownName = !viaAdmin && Boolean(session.user.superadmin) && !session.viewAs && Boolean(publicHost) && host === publicHost && Boolean(adminOrigin);
       const look = ownName && scope.operator;
+      if (look) scope = { ...scope, customers: true };
       const atAdmin = `${adminOrigin}${ADMIN}${p === '/' ? '/' : p}${url.search}`;
       // ---- the paywall (billing/entitlement.ts, PRA-SEC-002): a customer whose workspace has not paid for Toran gets the
       // pay page, and posts nothing. The operator, the operator viewing as the customer, and the operator in their own

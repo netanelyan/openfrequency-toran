@@ -4,6 +4,7 @@ import http from 'node:http';
 import { customer, INTERNAL_TOKEN, operatorAt } from './helpers.ts';
 import { serve } from './serve.ts';
 import { underBase } from '../src/web/server.ts';
+import { storesOf } from '../src/web/workspace.ts';
 
 // The operator's Toran dashboard lives on accounts' /admin (docs/operator.md): accounts proxies /admin/toran/... here
 // with X-OF-Admin-Prefix, and Toran answers under that prefix, for the operator only. On Toran's own name the operator
@@ -127,6 +128,13 @@ test("on Toran's own name the operator sees the product: every customer's store 
         assert.equal(r.headers.location, `https://accounts.test/admin/toran${path}`, path);
       }
       await s.app.db.query('UPDATE stores SET workspace_id = NULL WHERE id = $1', [s.seeded.storeId]);
+      // A store in no workspace (a lead, our company store) is not on a customer's screens: its pages go to /admin, and
+      // no list or count has it (the owner's inbox, 2026-11-11, listed our support chat beside a badge of one).
+      const lead = await at(`/lead/${s.seeded.storeId}/knowledge`, op);
+      assert.equal(lead.status, 303);
+      assert.equal(lead.headers.location, `https://accounts.test/admin/toran/lead/${s.seeded.storeId}/knowledge`);
+      assert.equal(storesOf({ workspaceId: null, operator: true, readOnly: false, customers: true }, 's'), 's.workspace_id IS NOT NULL');
+      assert.equal(storesOf({ workspaceId: null, operator: true, readOnly: false }), 'TRUE', "the operator's own pages still have every store");
 
       // In their own workspace: the customer's Today and nav, nothing of the operator's.
       const mine = s.accounts.session(operatorAt(5));

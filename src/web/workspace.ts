@@ -19,6 +19,12 @@ export type Scope = {
   operator: boolean;
   /** View-as: every POST is refused. */
   readOnly: boolean;
+  /**
+   * The operator on a customer's screens, on Toran's own name (server.ts `look`): every customer's store, never our
+   * company store or a lead, so each list, count and page agrees with the badge (the owner's inbox, 2026-11-11, listed our
+   * support chat as waiting beside a badge of one).
+   */
+  customers?: boolean;
 };
 
 export function scopeOf(s: Session): Scope {
@@ -30,7 +36,7 @@ export function scopeOf(s: Session): Scope {
 }
 
 /** A condition on stores (alias optional): TRUE for the operator, the workspace's stores for anyone else. */
-export const storesOf = (sc: Scope, alias = '') => (sc.workspaceId == null ? 'TRUE' : `${alias ? `${alias}.` : ''}workspace_id = ${Number(sc.workspaceId)}`);
+export const storesOf = (sc: Scope, alias = '') => (sc.workspaceId == null ? (sc.customers ? `${alias ? `${alias}.` : ''}workspace_id IS NOT NULL` : 'TRUE') : `${alias ? `${alias}.` : ''}workspace_id = ${Number(sc.workspaceId)}`);
 
 /**
  * A condition on stores: a lead the operator is selling to, so no workspace's. The review queue, the pages ready to
@@ -40,7 +46,7 @@ export const storesOf = (sc: Scope, alias = '') => (sc.workspaceId == null ? 'TR
 export const selling = (alias = '') => `${alias ? `${alias}.` : ''}workspace_id IS NULL`;
 
 /** A condition on a row that carries a store id (conversations, usage, events): its store is the scope's. */
-export const storeIdIn = (sc: Scope, column: string) => (sc.workspaceId == null ? 'TRUE' : `${column} IN (SELECT id FROM stores WHERE workspace_id = ${Number(sc.workspaceId)})`);
+export const storeIdIn = (sc: Scope, column: string) => (sc.workspaceId == null ? (sc.customers ? `${column} IN (SELECT id FROM stores WHERE workspace_id IS NOT NULL)` : 'TRUE') : `${column} IN (SELECT id FROM stores WHERE workspace_id = ${Number(sc.workspaceId)})`);
 
 /** May this scope see this store? */
 export async function ownsStore(db: Db, sc: Scope, storeId: number): Promise<boolean> {
@@ -58,9 +64,9 @@ export async function ownsConversation(db: Db, sc: Scope, conversationId: number
  * own store being added from /start, before there is a store (add_store with its workspaceId).
  */
 export async function ownsJob(db: Db, sc: Scope, jobId: number): Promise<boolean> {
-  if (sc.workspaceId == null) return true;
+  if (sc.workspaceId == null && !sc.customers) return true;
   const j = await db.one<{ payload: any; result: any }>('SELECT payload, result FROM jobs WHERE id = $1', [jobId]);
-  if (sc.workspaceId > 0 && Number(j?.payload?.workspaceId) === sc.workspaceId) return true;
+  if (sc.workspaceId != null && sc.workspaceId > 0 && Number(j?.payload?.workspaceId) === sc.workspaceId) return true;
   const storeId = Number(j?.payload?.storeId || j?.result?.storeId || 0);
   return Boolean(storeId) && ownsStore(db, sc, storeId);
 }
