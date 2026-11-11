@@ -247,7 +247,7 @@ async function step(app: App, name: string, fn: () => Promise<unknown>): Promise
   const since = running.get(name);
   if (since != null) {
     const minutes = (Date.now() - since) / 60_000;
-    if (minutes > STEP_ALERT_MINUTES) await alertOperator(app, `schedule_stuck:${name}`, `שלב בתזמון של תורן תקוע (${name})`, `השלב ${name} של התזמון רץ כבר ${Math.round(minutes)} דקות. שאר השלבים ממשיכים לרוץ כל דקה, והוא לא יתחיל שוב עד שייגמר. כדאי להסתכל ביומן של תורן.`, { everyMinutes: 60 }).catch(() => {});
+    if (minutes > STEP_ALERT_MINUTES) await alertOperator(app, `schedule_stuck:${name}`, `שלב בתזמון תקוע (${name})`, `השלב ${name} של התזמון רץ כבר ${Math.round(minutes)} דקות. שאר השלבים ממשיכים לרוץ כל דקה, והוא לא יתחיל שוב עד שייגמר. כדאי להסתכל ביומן של תורן.`, { everyMinutes: 60 }).catch(() => {});
     return;
   }
   running.set(name, Date.now());
