@@ -1,19 +1,25 @@
 import type { Db } from '../db/index.ts';
 import { summaryHe } from '../agent/guard.ts';
+import { CHANNEL_HE } from '../channels/config.ts';
 
 // What the owner's assistant can read about a store: Toran's own records, never the store's orders or carts (it has
 // no access to them yet). Every function takes the store's id and reads only its rows; each returns plain lines the
 // model quotes from, with the numbers in them, so the assistant's numbers are always these.
 
-const CHANNEL_HE: Record<string, string> = { whatsapp: 'וואטסאפ', email: 'מייל', instagram: 'אינסטגרם', messenger: 'מסנג׳ר' };
-export const channelHe = (c: string) => CHANNEL_HE[c] || c;
+// The channels' Hebrew names are the inbox's (channels/config.ts), the site chat's among them: its own list here had
+// none for it, and the owner read "לקוח בweb" (the audit of 2026-11-12, P1-24).
+export const channelHe = (c: string) => CHANNEL_HE[c as keyof typeof CHANNEL_HE] || c;
 // Conversations that are not customers: the pitch page's sample chat, evaluations, the command line.
 const NOT_CUSTOMERS = `('pitch', 'eval', 'cli')`;
 
-/** A customer, as the owner is shown them: the channel and a part of the address, never all of it. */
+/**
+ * A customer, as the owner is shown them: the channel and a part of their phone or address, never all of it. A site
+ * chat visitor's id is a random one of their browser, and Messenger's and Instagram's are Meta's: digits that mean
+ * nothing to the owner ("לקוח בweb (…4821)"), so those are the channel alone.
+ */
 export function who(channel: string, peer: string | null): string {
   const p = String(peer || '');
-  const tail = channel === 'email' ? (p.includes('@') ? `${p.slice(0, 2)}…@${p.split('@')[1]}` : '') : p.replace(/\D/g, '').slice(-4);
+  const tail = channel === 'email' ? (p.includes('@') ? `${p.slice(0, 2)}…@${p.split('@')[1]}` : '') : channel === 'whatsapp' ? p.replace(/\D/g, '').slice(-4) : '';
   return `לקוח ב${channelHe(channel)}${tail ? ` (${channel === 'email' ? tail : `…${tail}`})` : ''}`;
 }
 
