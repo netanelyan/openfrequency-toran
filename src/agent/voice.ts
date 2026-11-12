@@ -4,7 +4,7 @@ import type { Db } from '../db/index.ts';
 import { J } from '../db/index.ts';
 import { audit, usage } from '../db/log.ts';
 import { cleanLine, hebrewRatio } from '../core/hebrew.ts';
-import { agentModel } from './llm/index.ts';
+import { agentModel, OWNER_EFFORT, OWNER_MAX_TOKENS } from './llm/index.ts';
 import { capFor } from './spend.ts';
 import { firstObject } from '../channels/payCheck.ts';
 
@@ -188,7 +188,7 @@ export async function learnVoice(app: App, storeId: number, { force = false }: {
   if (!force && store.config?.voice?.hash === hash && profileOf(store.config)) return 'same';
   if (await capFor(app, store)) return 'cap';
   try {
-    const res = await app.llm.turn({ system: [{ text: VOICE_PROMPT }], messages: [{ role: 'user', content: `THE STORE'S COPY:\n${copy}` }], tools: [], model: agentModel(app.env), maxTokens: 1200, effort: 'low', tag: `voice store ${storeId}`, timeoutMs: 60_000, maxRetries: 1 });
+    const res = await app.llm.turn({ system: [{ text: VOICE_PROMPT }], messages: [{ role: 'user', content: `THE STORE'S COPY:\n${copy}` }], tools: [], model: agentModel(app.env), maxTokens: OWNER_MAX_TOKENS, effort: OWNER_EFFORT, tag: `voice store ${storeId}`, timeoutMs: 60_000, maxRetries: 1 });
     await usage(app.db, { storeId, conversationId: null, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag: 'voice' });
     const text = res.content.map((b) => (b.type === 'text' ? String((b as { text: string }).text) : '')).join('\n');
     const profile = readProfile(firstObject(text), copy);

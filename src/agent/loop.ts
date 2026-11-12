@@ -8,17 +8,16 @@ import { asPhoto, imageBlock } from './images.ts';
 import { fileOf } from '../channels/files.ts';
 import { DEMO_NOTE, stripForgedContext, systemFor, type StoreForPrompt } from './prompt.ts';
 import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
-import { buildAllow, checkingLine, cutSummary, guardReply, summaryHe, type Redaction } from './guard.ts';
+import { ASKS_REACH, buildAllow, cantAnswerLine, cutSummary, guardReply, passedOnSummary, reachLine, summaryHe, type Redaction } from './guard.ts';
 import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
 import { openConversation } from '../channels/conversations.ts';
-import { capFor, watchHour } from './spend.ts';
+import { capFor, STOP_SHARE, watchHour } from './spend.ts';
 import { storeAllowed } from '../billing/entitlement.ts';
 import { displayName } from '../ingest/brand.ts';
 import { botLine, botName, markIntroduced, OPENING_NOTE, openingOf } from './intro.ts';
 import { notifyWaiting } from '../owners/waiting.ts';
 import { addressOf, emojiOn } from './voice.ts';
 import { contactsIn } from '../orders.ts';
-import { ASKS_REACH, cantAnswerLine, reachLine } from './guard.ts';
 
 // One agent loop for every store: only the store's config and knowledge pack change.
 // Rebuilt from tiyul-plus's 2,000-line route as one small module.
@@ -45,20 +44,22 @@ import { ASKS_REACH, cantAnswerLine, reachLine } from './guard.ts';
 // the customer gets the honest "checking" line and the owner a handoff. What reaches the
 // model is cut to MAX_TEXT characters, the new message and each one replayed (an email can
 // be a book); the customer's message is kept whole for the owner. Before the first call, the
-// caps on spend (agent/spend.ts): past the store's, or everyone's, no call is made.
+// caps on spend (agent/spend.ts): past half of what a customer's workspace pays this month, past a store's own cap, or
+// past ours over the stores no customer pays for, no call is made.
 //
 // SIGHT AND THOUGHT (the owner, 2026-11-09, on a red kit offered for a yellow shirt: "make the AI have a way to watch
 // pictures, and make him smarter, make him reason ... even if ai costs double"). The model thinks at
-// TORAN_AGENT_EFFORT (medium unless set), with room for it (AGENT_MAX_TOKENS). It sees the photos the customer sent
-// with this message (photos, up to MAX_PHOTOS), and a product's photo when it calls view_product_images: those come
-// back as image blocks inside the tool's result. Only this turn carries them; the record keeps the text.
+// TORAN_AGENT_EFFORT (high unless set, since 2026-11-11: docs/models.md), with room for it (AGENT_MAX_TOKENS). It
+// sees the photos the customer sent with this message (photos, up to MAX_PHOTOS), and a product's photo when it calls
+// view_product_images: those come back as image blocks inside the tool's result. Only this turn carries them; the
+// record keeps the text.
 
 const MAX_ROUNDS = 8; // a look at the photos is a round of its own: search, look, maybe a second search and look, answer
 const HISTORY = 16; // messages replayed: 8 exchanges is a long WhatsApp chat
 export const DEMO_FOOTER = '_דמו של תורן_';
 export const TURN_DEADLINE_MS = 60_000;
 export const MODEL_TIMEOUT_MS = 40_000;
-/** One call's output, its thinking included: medium effort thinks before it answers, and a cut-off turn is a lost answer. */
+/** One call's output, its thinking included: the agent thinks before it answers, and a cut-off turn is a lost answer. */
 export const AGENT_MAX_TOKENS = 8000;
 /** The customer's photos one message shows the model; the rest are the owner's to see. */
 export const MAX_PHOTOS = 4;
@@ -99,7 +100,7 @@ function serialized<T>(key: number, fn: () => Promise<T>): Promise<T> {
 const systemCache = new Map<string, { key: string; parts: Awaited<ReturnType<typeof systemFor>> }>();
 
 async function loadStore(db: Db, id: number) {
-  const s = await db.one<StoreForPrompt & { url: string; updated_at: string; ingested_at: string | null; agent_name: string | null }>('SELECT id, platform, name, domain, url, brand, brand_override, config, contact_email, contact_phone, contact_whatsapp, updated_at, ingested_at, agent_name FROM stores WHERE id = $1', [id]);
+  const s = await db.one<StoreForPrompt & { url: string; updated_at: string; ingested_at: string | null; agent_name: string | null; workspace_id: number | null }>('SELECT id, platform, name, domain, url, brand, brand_override, config, contact_email, contact_phone, contact_whatsapp, updated_at, ingested_at, agent_name, workspace_id FROM stores WHERE id = $1', [id]);
   if (!s) throw new Error(`no store ${id}`);
   return s;
 }
@@ -234,17 +235,18 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // ---- the paywall (billing/entitlement.ts, PRA-BE-007): a store whose workspace accounts says has not paid for Toran
   // is answered as past a cap, with no model call, and the owner gets the message as a handoff.
   const unpaid = !(await storeAllowed(app, store.id));
-  // The caps on paid API spend (agent/spend.ts): the store's own, from its plan, and everyone's (TORAN_MONTHLY_CAP_USD).
-  // Past either, no model call is made; the customer gets the honest "checking" line and the owner a handoff. The
-  // subscription (claude-cli) costs nothing per call and is not capped.
+  // The caps (agent/spend.ts): a customer's store stops at half of what its workspace pays this month (the owner,
+  // 2026-11-11), or at the operator's own cap for it; any other store at its own cap or ours (TORAN_MONTHLY_CAP_USD), on
+  // the paid API. Past one, no model call is made; the customer gets the honest "checking" line and the owner a
+  // handoff, which on a customer's store says only that Toran passed the question on.
   const cap = unpaid ? null : await capFor(app, store);
   const capped = unpaid || Boolean(cap);
   if (unpaid) {
     handoff = { reason: 'other', summary: summaryHe(`Toran is not paid for in this store's workspace: ${cleanLine(input.text, 120)}`) };
     app.log(`[agent] store ${store.id}: its workspace has not paid for Toran; handed off without a model call`);
   } else if (cap) {
-    handoff = { reason: 'other', summary: summaryHe(`the ${cap.by === 'store' ? "store's" : 'monthly'} spend cap ($${cap.cap}) is reached: ${cleanLine(input.text, 120)}`) };
-    app.log(`[agent] ${cap.by} cap $${cap.cap} reached ($${cap.spent.toFixed(2)}); store ${store.id} handed off without a model call`);
+    handoff = { reason: 'other', summary: cap.customer ? passedOnSummary(cleanLine(input.text, 120)) : summaryHe(`the ${cap.by === 'store' ? "store's" : 'monthly'} spend cap ($${cap.cap}) is reached: ${cleanLine(input.text, 120)}`) };
+    app.log(`[agent] ${cap.by === 'share' ? `the workspace's ${Math.round(STOP_SHARE * 100)}% line` : `${cap.by} cap`} $${cap.cap.toFixed(2)} reached ($${cap.spent.toFixed(2)}); store ${store.id} handed off without a model call`);
   }
   const deadline = Number(app.env.TORAN_TURN_DEADLINE_MS) || TURN_DEADLINE_MS;
   try {

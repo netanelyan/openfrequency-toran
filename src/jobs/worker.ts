@@ -30,6 +30,7 @@ import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } from '../auto/jobs.ts';
 import { checkTemplates, templateStatus } from '../auto/templates.ts';
 import { waitingDigest } from '../owners/waiting.ts';
+import { pausedNotice } from '../owners/paused.ts';
 import { learnVoice } from '../agent/voice.ts';
 import { takeOrderKey } from '../domainProof.ts';
 
@@ -192,6 +193,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return rereadCompany(app);
     case 'owner_waiting':
       return waitingDigest(app, Number(p.storeId));
+    case 'owner_paused':
+      return pausedNotice(app, Number(p.workspace), String(p.month || ''));
     case 'looks':
       return await readLooks(app, Number(p.storeId));
     case 'ingest':
@@ -334,8 +337,10 @@ export const BEAT_MS = 60_000;
  * The short jobs someone is waiting on, on a loop of their own (startWorker), so no ingest stands in front of them: the
  * owners' email about a waiting customer, Zernio's echoes of the owner's own answers and its connections, Meta's
  * delivery reports, a number waiting at Meta, a webhook of a store's orders (it only records), and Teder's requests.
+ * The owners' notice of a paused month (owner_paused, owners/paused.ts) is one email too: a reading of a site never
+ * holds it, as it never holds the waiting customer's.
  */
-export const QUICK_KINDS = ['owner_waiting', 'zernio_echo', 'zernio_account', 'wa_status', 'wa_check', 'auto_hook', 'teder_lead', 'teder_event', 'teder_ready'];
+export const QUICK_KINDS = ['owner_waiting', 'owner_paused', 'zernio_echo', 'zernio_account', 'wa_status', 'wa_check', 'auto_hook', 'teder_lead', 'teder_event', 'teder_ready'];
 /** The jobs that read a whole site or catalogue, or many photos: minutes, sometimes tens of them. */
 export const LONG_KINDS = ['add_store', 'ingest', 'rescrape', 'looks', 'discover', 'company_reread'];
 

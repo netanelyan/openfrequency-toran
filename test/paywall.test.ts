@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createHandler } from '../src/web/server.ts';
 import { conversationFor, runTurn } from '../src/agent/loop.ts';
-import { entitlementClient, FRESH_MS, planAccess, refreshWorkspaces, STALE_MS, storeAllowed } from '../src/billing/entitlement.ts';
+import { entitlementClient, FRESH_MS, lastKnown, planAccess, refreshWorkspaces, STALE_MS, storeAllowed } from '../src/billing/entitlement.ts';
 import { customer, INTERNAL_TOKEN, viewingAs } from './helpers.ts';
 import { serve } from './serve.ts';
 import { simEmail } from '../src/channels/email.ts';
@@ -151,6 +151,8 @@ test("every answer accounts' entitlement contract gives is believed, 'due' (the 
       const v = await c.check(ws);
       assert.equal(v.source, 'fresh', `${body.access}: taken as an answer, not as accounts being down`);
       assert.equal(v.allowed, body.allowed, `${body.access}: allowed as accounts said`);
+      // What a month costs the workspace (monthlyIls, since 2026-11-11) is kept with the answer, for the model's cost rule (agent/spend.ts).
+      assert.equal((await lastKnown(s.app.db, ws))?.monthlyIls ?? null, typeof body.monthlyIls === 'number' && body.monthlyIls > 0 ? body.monthlyIls : null, `${body.access}: its monthlyIls kept`);
     }
   } finally {
     await s.close();

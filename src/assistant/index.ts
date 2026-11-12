@@ -1,7 +1,7 @@
 import type { App } from '../app.ts';
 import { J } from '../db/index.ts';
 import { audit, event, usage as recordUsage } from '../db/log.ts';
-import { agentModel } from '../agent/llm/index.ts';
+import { agentModel, OWNER_EFFORT, OWNER_MAX_TOKENS } from '../agent/llm/index.ts';
 import { type Block, type Msg, type ToolDef, type ToolUseBlock, isText, isToolUse } from '../agent/llm/types.ts';
 import { runTool } from '../agent/tools.ts';
 import { displayName } from '../ingest/brand.ts';
@@ -434,7 +434,7 @@ export async function askOwner(app: App, input: AssistantInput): Promise<Assista
   let reply = '';
   let retried = false;
   for (let round = 0; round < MAX_ROUNDS + 1; round++) {
-    const res = await app.llm.turn({ system: sys, messages, tools: toolset, model: agentModel(app.env), maxTokens: 1200, effort: 'low', tag: store ? `assistant store ${store.id}` : `assistant workspace ${input.workspaceId}` });
+    const res = await app.llm.turn({ system: sys, messages, tools: toolset, model: agentModel(app.env), maxTokens: OWNER_MAX_TOKENS, effort: OWNER_EFFORT, tag: store ? `assistant store ${store.id}` : `assistant workspace ${input.workspaceId}` });
     await recordUsage(db, { storeId: store?.id ?? null, conversationId: null, kind: 'llm', backend: res.backend, model: res.model, inTokens: res.usage.input_tokens, cacheRead: res.usage.cache_read_input_tokens, cacheWrite: res.usage.cache_creation_input_tokens, outTokens: res.usage.output_tokens, usd: res.usd, apiUsd: res.apiUsd, tag: 'assistant' });
     const calls = res.content.filter(isToolUse) as ToolUseBlock[];
     if (!calls.length) {

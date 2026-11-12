@@ -94,7 +94,7 @@ test('"בא לי איזה חולצה צהובה יפה": search, look at the clo
   const o = await runTurn(app, { storeId: id, conversationId: conv, text: 'בא לי איזה חולצה צהובה יפה' });
 
   // It thinks harder than before, with room for it, and has the tool to look.
-  assert.equal(seen[0].req.effort, 'medium');
+  assert.equal(seen[0].req.effort, 'high', 'high since 2026-11-11 (docs/models.md)');
   assert.ok(seen[0].req.maxTokens >= 4000);
   assert.ok(seen[0].req.tools.some((t) => t.name === 'view_product_images'));
 
@@ -244,10 +244,10 @@ test('which files the agent is shown, and what it is told of the rest', () => {
   assert.match(line, /attached 3 more file\(s\): order\.pdf \(a PDF\), huge\.png \(an image\), x\.png \(an image\)\. You cannot open them/);
 });
 
-test('the effort is medium unless TORAN_AGENT_EFFORT says otherwise; a Shopify photo is asked for small; the CLI is told it cannot see', () => {
-  assert.equal(agentEffort({}), 'medium');
-  assert.equal(agentEffort({ TORAN_AGENT_EFFORT: 'HIGH' }), 'high');
-  assert.equal(agentEffort({ TORAN_AGENT_EFFORT: 'max' }), 'medium');
+test('the effort is high unless TORAN_AGENT_EFFORT says otherwise; a Shopify photo is asked for small; the CLI is told it cannot see', () => {
+  assert.equal(agentEffort({}), 'high');
+  assert.equal(agentEffort({ TORAN_AGENT_EFFORT: 'MEDIUM' }), 'medium');
+  assert.equal(agentEffort({ TORAN_AGENT_EFFORT: 'max' }), 'high');
   assert.equal(sizedUrl('https://cdn.shopify.com/s/files/1/a.png?v=1'), 'https://cdn.shopify.com/s/files/1/a.png?v=1&width=640');
   assert.equal(sizedUrl('https://shop.example/cdn/shop/files/a.jpg', 320), 'https://shop.example/cdn/shop/files/a.jpg?width=320');
   assert.equal(sizedUrl('https://woo.example/wp-content/a.jpg'), 'https://woo.example/wp-content/a.jpg');

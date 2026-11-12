@@ -4,9 +4,10 @@ import { call } from './identity.ts';
 // Toran's emails to a workspace's people go through accounts (POST /internal/notify, accounts docs/contracts/notify.json;
 // TORAN-READINESS.md P1-9), as Teder's do: accounts knows who is in the workspace and what each chose on
 // /notifications, sends from its address, and holds the limit (three of one kind a day). Toran's kinds are two:
-// conversation_waiting (owners/waiting.ts) and monthly (owners/reports.ts). The link must be https on openfrequency.co.il.
+// conversation_waiting (owners/waiting.ts) and monthly (owners/reports.ts), and the notice ai_paused (owners/paused.ts),
+// which every owner gets whatever they chose. The link must be https on openfrequency.co.il.
 
-export type ToranKind = 'conversation_waiting' | 'monthly';
+export type ToranKind = 'conversation_waiting' | 'monthly' | 'ai_paused';
 export type Notified = { ok: true; sent: number } | { ok: false; status: number; why: string; reachable: boolean };
 
 export async function notifyOwners(app: App, workspace: number, kind: ToranKind, subject: string, text: string, link: string): Promise<Notified> {

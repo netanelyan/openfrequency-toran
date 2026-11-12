@@ -70,6 +70,10 @@ export async function fakeAccounts() {
   const answers = new Map<string, Canned>();
   const entitlements = new Map<number, 'unpaid' | 'lapsed' | 'gone' | 'down'>();
   const phones = new Map<number, string[]>();
+  const prices = new Map<number, number>();
+  // Product emails (POST /internal/notify), answered only once a test asks for it: until then a 404, as before.
+  const notified: any[] = [];
+  let notifyOn = false;
   let calls = 0;
   let entitlementCalls = 0;
   const server = http.createServer((req, res) => {
@@ -90,7 +94,17 @@ export async function fakeAccounts() {
       // 'unpaid' never paid (no paidThrough); 'lapsed' paid once, and its paid days and grace are over (accounts keeps
       // paidThrough then, src/accounts/entitlement.js).
       const allowed = e !== 'unpaid' && e !== 'lapsed';
-      return out(200, { workspace: ws, product: url.searchParams.get('product'), enabled: true, access: allowed ? 'paid' : 'unpaid', allowed, paidThrough: allowed ? LATER : e === 'lapsed' ? EARLIER : null, cancelAt: null });
+      return out(200, { workspace: ws, product: url.searchParams.get('product'), enabled: true, access: allowed ? 'paid' : 'unpaid', allowed, paidThrough: allowed ? LATER : e === 'lapsed' ? EARLIER : null, cancelAt: null, ...(prices.has(ws) ? { monthlyIls: prices.get(ws) } : {}) });
+    }
+    if (url.pathname === '/internal/notify' && notifyOn && req.method === 'POST') {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        if (req.headers.authorization !== `Bearer ${INTERNAL_TOKEN}`) return out(401, { error: 'bad_token' });
+        notified.push(JSON.parse(raw || '{}'));
+        out(202, { ok: true, sent: 1 });
+      });
+      return;
     }
     // A workspace's verified WhatsApp numbers (the assistant's page), only for a workspace a test gave numbers to.
     if (url.pathname === '/internal/owner-phones' && phones.has(Number(url.searchParams.get('workspace')))) {
@@ -132,6 +146,15 @@ export async function fakeAccounts() {
     paid(workspaceId: number, state: 'unpaid' | 'lapsed' | 'gone' | 'down' | null) {
       if (state == null) entitlements.delete(workspaceId);
       else entitlements.set(workspaceId, state);
+    },
+    /** From now on accounts takes product emails (POST /internal/notify, 202), and keeps each one in `notified`. */
+    notifyOn() {
+      notifyOn = true;
+    },
+    notified,
+    /** What a month of Toran costs a workspace before VAT, in shekels, as accounts says it from now on (monthlyIls, since 2026-11-11). */
+    price(workspaceId: number, monthlyIls: number) {
+      prices.set(workspaceId, monthlyIls);
     },
     /** The WhatsApp numbers accounts says a workspace verified, from now on. */
     ownerPhones(workspaceId: number, list: string[]) {

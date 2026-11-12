@@ -24,7 +24,7 @@
           "link": "https://teder.openfrequency.co.il/review"
         }
       },
-      "notes": "kind: posts_waiting, weekly, monthly, connect_needed or publish_failed. html is optional and never used.",
+      "notes": "kind: Teder sends posts_waiting, weekly, monthly, connect_needed or publish_failed, Toran conversation_waiting or monthly: each a choice of each person, on /notifications. Since 2026-11-11 either may also send the notice ai_paused (very unusual use beyond the plan paused new work until the next month, as the website's terms promise to tell): a notice goes to every owner of the workspace whatever they chose, to no member, is never offered on /notifications, and its footer says why it came. html is optional and never used.",
       "answers": [
         {
           "case": "sent (sent is 0 when nobody wants this kind)",
@@ -32,6 +32,14 @@
           "body": {
             "ok": true,
             "sent": 1
+          }
+        },
+        {
+          "case": "a notice (ai_paused): to every owner, whatever they chose, and to no member",
+          "status": 202,
+          "body": {
+            "ok": true,
+            "sent": 2
           }
         },
         {

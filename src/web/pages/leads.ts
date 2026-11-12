@@ -24,6 +24,7 @@ import { outreachFilled, outreachLive, templateOf } from '../../ops/outreach.ts'
 import { OpsError, sendNow } from '../../ops/actions.ts';
 import { sendBoth, sendTeder } from '../../ops/both.ts';
 import { tederBuild, tederState } from '../../ops/tederLeads.ts';
+import { monthHe, percent, setLift, shareOf, shekels, stopped, type Share } from '../../agent/spend.ts';
 
 /** Teder's stages for a lead, as its /leads names them (openfrequency-teder src/web/leads.js STAGE_HE). */
 const TEDER_STAGE_HE: Record<string, string> = { new: 'חדש', demo_ready: 'דמו מוכן', sent: 'נשלח', opened: 'פתחו', replied: 'ענו', joined: 'הצטרפו', irrelevant: 'לא רלוונטי' };
@@ -103,6 +104,8 @@ async function leadPage(app: App, r: DashReq, id: number) {
   const automatedMail = mailAccount ? await app.db.query<any>("SELECT c.id, c.meta->>'subject' AS subject, m.at FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.account_id = $1 AND m.automated IS NOT NULL ORDER BY m.id DESC LIMIT 3", [mailAccount.id]) : [];
   const events = await app.db.query<any>("SELECT kind, at, data FROM events WHERE store_id = $1 AND kind NOT IN ('scroll', 'wa_in', 'wa_out', 'mail_in', 'mail_out', 'fb_in', 'fb_out', 'ig_in', 'ig_out') ORDER BY at DESC LIMIT 25", [id]);
   const cost = await app.db.one<any>("SELECT COALESCE(SUM(usd), 0)::float AS usd, COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(in_tokens + cache_read + cache_write), 0)::int AS tin, COALESCE(SUM(out_tokens), 0)::int AS tout FROM usage WHERE store_id = $1", [id]);
+  // A customer's store: its workspace's month against what it pays (agent/spend.ts), with the operator's lift.
+  const share = s.workspace_id ? await shareOf(app, Number(s.workspace_id), s.config) : null;
   const job = await app.db.one<any>("SELECT id, status, progress, last_error FROM jobs WHERE dedupe_key = $1 ORDER BY id DESC LIMIT 1", [`ingest:${id}`]);
   // Messenger and Instagram, where their code is on (TORAN_CHANNELS).
   let social = '';
@@ -225,12 +228,32 @@ ${waBanner(await waAccountOf(app, id), id)}
     ${s.workspace_id ? `<section class="panel" id="plan"><header><h2>החבילה של הלקוח</h2></header>
       <form class="row" method="post" action="/lead/${id}/plan">${csrfField(r.ctx)}<select name="plan" aria-label="חבילה">${(Object.keys(PLANS) as PlanKey[]).map((k) => `<option value="${k}"${planOf(s.config) === k ? ' selected' : ''}>${esc(PLANS[k].he)}, עד ${PLANS[k].conversations.toLocaleString('en-US')} שיחות</option>`).join('')}</select><button class="btn sm" type="submit">לשמור</button></form>
       <p class="small muted mt8 m0">הלקוח רואה את החבילה ואת השיחות של החודש בעמוד "החבילה". המחיר והחשבוניות נשארים ב-accounts.</p>
+      ${share ? costPanel(r, id, share) : ''}
       <div class="row mt12">${postButton(r.ctx, `/lead/${id}/release`, 'לשחרר את האתר מהחשבון', { cls: 'btn sm danger', confirm: 'לשחרר? החנות חוזרת להיות ליד שלנו, והחשבון של הלקוח לא רואה אותה יותר. מי שיוכיח שהאתר שלו יוכל להוסיף אותה.' })}</div>
     </section>` : ''}
     <section class="panel"><header><h2>מה קרה</h2></header><ol class="trace">${events.map((e) => `<li class="ok"><b>${esc(EVENT_HE[e.kind] || e.kind)}</b> <span class="d">${esc(stamp(e.at))}</span></li>`).join('') || '<li>עוד כלום</li>'}</ol></section>
   </div>
 </div>${ready ? '' : ''}`;
   return layout({ ...r.ctx, title: name, active: 'lead' }, body);
+}
+
+/**
+ * What the model cost the customer's workspace this month against what it pays (agent/spend.ts; the owner,
+ * 2026-11-11: an alert at 30%, a stop at 50%), and the one control: past 50%, the model back for the rest of the month;
+ * once back, the stop again. The operator's alone: a customer never sees a cost or a share.
+ */
+function costPanel(r: DashReq, id: number, s: Share): string {
+  const line = `ב${monthHe(s.month)} המודל עלה ${shekels(Math.round(s.ils * 100) / 100)} ($${s.usd.toFixed(2)}) בחנויות של החשבון, ${percent(s.share)} מ-${shekels(s.base)} שהלקוח משלם על החודש לפני מע״מ.`;
+  const state = stopped(s)
+    ? `<p class="m0 mt8"><b>תורן עצר את המודל בחנויות של החשבון עד סוף החודש.</b> השאלות של הלקוחות עוברות לבעלים, והם לא רואים סכום או אחוז.</p>
+      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/cost-lift`, 'להחזיר את המודל עד סוף החודש', { cls: 'btn sm primary', fields: { on: '1' }, confirm: 'להחזיר את המודל לחנויות של החשבון עד סוף החודש? העלות תמשיך לעלות, ותורן לא יעצור שוב החודש.' })}</div>`
+    : s.lifted
+      ? `<p class="m0 mt8">המודל עונה שוב בחנויות של החשבון עד סוף החודש, מאז ${esc(stamp(s.lifted.at))}.</p>
+      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/cost-lift`, 'לעצור שוב מעל 50%', { cls: 'btn sm', fields: { on: '0' } })}</div>`
+      : '';
+  return `<h3 class="small mt16" id="cost">המודל החודש</h3>
+      <p class="m0">${esc(line)}</p>${state}
+      <p class="small muted mt8 m0">ב-30% נשלחת אליך התראה. ב-50% תורן עוצר את המודל בחנויות של החשבון עד סוף החודש.</p>`;
 }
 
 const EVENT_HE: Record<string, string> = { lead_found: 'נמצא', ingest: 'האתר נקרא', page_built: 'הדף נבנה', approved: 'אושר', sent: 'נשלח', followup_sent: 'נשלחה תזכורת', page_open: 'הדף נפתח', demo_click: 'לחצו על הדמו', demo_bound: 'הדמו התחיל', handoff: 'העברה אליך', guard_cut: 'משפט נמחק לפני השליחה', takedown_click: 'לחצו על "להוריד את העמוד הזה"', owner_reply: 'ענית ללקוח', held: 'הודעה חיכתה לך, ותורן לא ענה', mail_automated: 'הגיע מייל אוטומטי', mail_blocked: 'מייל לא נשלח', wa_blocked: 'הודעה לא נשלחה', taken_down: 'העמוד הוסר', rescrape: 'רענון יומי', status: 'שינוי סטטוס', skipped: 'דילגת' };
@@ -404,6 +427,15 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
       await app.db.query('DELETE FROM domain_claims WHERE domain = $1', [s.domain]);
       await audit(app.db, { actor: r.user.name, action: 'release_domain', storeId: s.id, detail: { from, domain: s.domain } });
       return { message: 'האתר שוחרר מהחשבון.' };
+    }],
+    // The model back for the rest of the month in a workspace past half of what it pays, or the stop again (agent/spend.ts
+    // setLift, audited as cost_lift and cost_stop with the month's numbers). The operator's, from the store's page.
+    ['POST', /^\/lead\/(\d+)\/cost-lift$/, async (r, m) => {
+      const s = await store(m[1]);
+      if (s.workspace_id == null) throw new ActionError('החנות הזו לא שייכת לחשבון של לקוח, אז אין בה עצירה של 50%.');
+      const on = r.form.on !== '0';
+      await setLift(app, Number(s.workspace_id), on, { actor: r.user.name, storeId: s.id });
+      return { redirect: `/lead/${s.id}#cost`, message: on ? 'המודל עונה שוב בחנויות של החשבון עד סוף החודש.' : 'מעל 50% ממה שהלקוח משלם, תורן עוצר שוב את המודל עד סוף החודש.' };
     }],
     ['POST', /^\/lead\/(\d+)\/skip$/, async (r, m) => {
       const s = await store(m[1]);

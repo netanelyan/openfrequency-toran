@@ -1232,3 +1232,65 @@ connected channel's own card has "תורן עונה ב..." on or off (migration 
 the account's owner only, a second press to turn it off, audited and an event. A message on a channel switched off waits
 for the owner in the inbox with one note a day, as on a paused store (channels/store.ts). The whole store stops from
 Settings, "להפסיק את תורן בכל הערוצים", the same pause as before with plainer words.
+
+## 2026-11-11: a customer's store may cost us half of what it pays, with an alert at 30%
+
+The owner: "just make sure there is a cap where if ai costs of an account reach 30% of the payment of the customer, we
+get alerted. them on 50% it stops."
+
+**Decision** (src/agent/spend.ts, docs/costs.md, docs/operator.md section 6):
+- Per customer's workspace and Israel month: every usage row of its stores in dollars (a claude-cli call at its API
+  price), in shekels at `USD_ILS` (3.17 unless set, the Bank of Israel's rate of 2026-11-11), against `monthlyIls`
+  from accounts' entitlement answer (the plan's list price, 590 ₪ or 1,190 ₪, when accounts gives none). 30%: one
+  WhatsApp alert to us that month. 50%: no model call for the workspace's stores until the month ends; the customer
+  gets the honest "checking" line, the owner's handoff says "תורן העביר אליכם את השאלה הזו כדי שתענו עליה בעצמכם.",
+  and we get one alert.
+- The owner is told once, as the website's terms promise ("אם זה קורה, אנחנו מודיעים לכם"): one email through
+  accounts (as `conversation_waiting`) and a line at the top of Today while it lasts (src/owners/paused.ts).
+- The lift is ours, on the store's page (`/admin/toran/lead/<id>#cost`): the model back for the rest of the month, or
+  the stop again, each audited (`cost_lift`, `cost_stop`) with the month's numbers; it takes the owner's line away.
+- It replaces the plan's cap for customers' stores: $150 a month for a store paying 590 ₪ let the model cost about 80%
+  of it. The operator's own `config.capUsd` still stops its one store when it comes first.
+- `TORAN_MONTHLY_CAP_USD` counts and stops only the stores no customer pays for (leads, demos, our support store) and
+  our own number's usage, so a month of paying stores can neither stop them through it nor run it out for the demos.
+  The ring in the operator's header counts the same.
+
+**Not shown to the customer:** no cost, cap, share or percent, on any page or line: the owner reads that Toran passed
+the question on. The owner's assistant goes on answering the owner (its cost counts).
+
+**Alternatives:** keep the plan's cap per store (it was in dollars, blind to what the workspace pays and to a second
+store); a lower global cap over everything (one busy customer would stop all of them).
+
+**Tested** (test/costcap.test.ts): the month's sum over the workspace's stores only, claude-cli at its API price, not
+last month's; `monthlyIls` kept and the list price without it; the 30% alert once; the 50% stop with no model call,
+the calm handoff, one alert, the sibling store stopped and another workspace answering; the owner's one email and
+the line on Today; the operator's own cap first;
+the lift and the stop again, audited, refused to a customer; the global cap over the stores in no workspace only; the
+operator's ring; the month rolling over.
+
+## 2026-11-11: the agent thinks at high effort, on Sonnet 5.5
+
+The owner: "also make sure toran and teder ai are smart ... even if toran costs 1.5x themselves."
+
+**Decision:** Sonnet 5.5 at high effort for the customers' answers (`AGENT_MODEL`, `AGENT_EFFORT` in
+src/agent/llm/index.ts; production sets `TORAN_MODEL_AGENT=claude-sonnet-5-5` already, and leaves
+`TORAN_AGENT_EFFORT` unset). The owner's assistant and the store's voice at medium with 4,000 tokens out. The receipt
+check, the photos' looks and the guard's second opinion stay at low.
+
+**Why** (docs/models.md, twelve shoppers' conversations on the fictional store, four runs on the subscription): at
+medium, 4 of 55 questions went to the owner without a lookup (one a product page answers); at high, 1 of 44, the same
+facts as Opus, for 1.1 to 1.2 times the cost and 1.1 seconds more an answer. xhigh came out at 1.5 times, the limit
+itself, and Opus 5.5 at 2 to 2.5 times with a longer wait.
+
+**Found on the way:** the CLI backend recorded only the last of the two requests it can make for one answer, so its
+`api_usd` left the thinking out (about 200 tokens an answer at high). It counts what production would pay now
+(`usageOf`, src/agent/llm/cli.ts). Three misses that are not the model's are written down in docs/models.md for their
+own change: the claim check cutting "כולל חיפה" from a right shipping answer, a doubled line after a discount is cut,
+and `get_policy` finding nothing for an English question.
+
+**Alternatives:** Opus 5.5 at low effort (the same facts here, twice the cost); xhigh, which asked for a photo of a
+broken item more often but came out at the owner's 1.5 times itself: one setting away (`TORAN_AGENT_EFFORT=xhigh`) if
+production's own `usage` rows leave room.
+
+**Tested** (test/models.test.ts, test/vision.test.ts): the defaults and their settings; the CLI's two requests counted
+as one with all its thinking, never more than its own total.

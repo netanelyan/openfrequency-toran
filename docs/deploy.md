@@ -104,7 +104,8 @@ from `releases/`, the old checkout's files at the top of `/opt/toran` (everythin
    | `TORAN_ENV` | `prod` |
    | `DATABASE_URL` | `postgres://toran:<the password>@127.0.0.1:5433/toran` (step 3) |
    | `ANTHROPIC_API_KEY` | the agent |
-   | `TORAN_MONTHLY_CAP_USD` | a ceiling on API spend |
+   | `TORAN_MONTHLY_CAP_USD` | a ceiling on API spend for the stores no customer pays for (leads, demos, our support store) and our own number; a customer's store is held to half of what its workspace pays instead (`src/agent/spend.ts`, docs/costs.md) |
+   | `USD_ILS` | optional: shekels to the dollar for that rule, 3.17 when unset (the Bank of Israel's rate on 2026-11-11) |
    | `PUBLIC_HOST` | `toran.openfrequency.co.il`, the dashboard's name |
    | `PUBLIC_BASE_URL` | `https://toran.openfrequency.co.il`: the pitch pages and the webhooks can share the name |
    | `SESSION_SECRET` | 32+ random characters (signs the CSRF tokens) |
