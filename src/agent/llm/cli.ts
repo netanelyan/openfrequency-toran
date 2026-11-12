@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import os from 'node:os';
 import path from 'node:path';
 import { costUsd } from './cost.ts';
-import { type Block, type Llm, LlmError, type Msg, type ToolResultBlock, type TurnReq, type TurnRes, isText, resultText } from './types.ts';
+import { type Block, type Llm, LlmError, type Msg, type ToolResultBlock, type TurnReq, type TurnRes, type Usage, isText, resultText } from './types.ts';
 
 // The development backend: the Claude Code CLI, headless, on the owner's subscription.
 // Ported from Teder's llm/cli.js, extended for tool use.
@@ -23,7 +23,13 @@ import { type Block, type Llm, LlmError, type Msg, type ToolResultBlock, type Tu
 // variables of a Claude Code session this may run inside are dropped too.
 //
 // TOKENS. The usage the CLI reports is recorded at API prices as apiUsd (what
-// production would pay), with usd 0.
+// production would pay), with usd 0 (usageOf). With a JSON schema and thinking, the CLI
+// can answer in two requests (the model thinks and answers, then the JSON is written) and
+// sums them in `usage`, while `iterations` keeps the last one only. Production makes one
+// request a round, so one pass over the conversation is counted (the last request's
+// input) and the output with the thinking of the requests before it. The last request
+// alone, as counted until 2026-11-11, left out about 200 thinking tokens of every answer
+// at high effort (docs/models.md).
 //
 // A usage limit waits for the reset the CLI names (or half an hour) and asks again,
 // never the API instead.
@@ -183,8 +189,7 @@ export function cliClient({ env = process.env, run = spawnRun, timeoutMs = Numbe
           continue;
         }
         const model = Object.keys(res.modelUsage || {})[0] || req.model;
-        const last = (res.usage?.iterations || []).at(-1) || res.usage || {};
-        const usage = { input_tokens: last.input_tokens || 0, output_tokens: last.output_tokens || 0, cache_read_input_tokens: last.cache_read_input_tokens || 0, cache_creation_input_tokens: last.cache_creation_input_tokens || 0, cache_write_1h: last.cache_creation?.ephemeral_1h_input_tokens ?? 0, cache_write_5m: last.cache_creation?.ephemeral_5m_input_tokens ?? 0 };
+        const usage = usageOf(res);
         const content: Block[] = calls.length ? calls.map((c: any) => ({ type: 'tool_use', id: `cli_${Date.now().toString(36)}_${idSeq++}`, name: c.name, input: c.input && typeof c.input === 'object' ? c.input : {} })) : [{ type: 'text', text: reply }];
         return { content, stopReason: calls.length ? 'tool_use' : 'end_turn', usage, model, backend: 'claude-cli', usd: 0, apiUsd: costUsd(usage, model) };
       }
@@ -193,3 +198,24 @@ export function cliClient({ env = process.env, run = spawnRun, timeoutMs = Numbe
 }
 
 export const textOf = (blocks: Block[]) => blocks.filter(isText).map((b) => b.text).join('\n').trim();
+
+/**
+ * One answer's tokens as production would be billed for them, from the CLI's result: the last request's input (one
+ * pass over the conversation), and its output with the thinking of the requests before it, never more than the CLI's
+ * own total. A single request is its own total (its output holds its thinking).
+ */
+export function usageOf(res: any): Usage {
+  const top = res?.usage || {};
+  const last = (top.iterations || []).at(-1) || top;
+  const own = Number(last.output_tokens) || 0;
+  const all = Number(top.output_tokens) || 0;
+  const thinking = Number(top.output_tokens_details?.thinking_tokens) || 0;
+  return {
+    input_tokens: last.input_tokens || 0,
+    output_tokens: all > own ? Math.min(all, own + thinking) : own,
+    cache_read_input_tokens: last.cache_read_input_tokens || 0,
+    cache_creation_input_tokens: last.cache_creation_input_tokens || 0,
+    cache_write_1h: last.cache_creation?.ephemeral_1h_input_tokens ?? 0,
+    cache_write_5m: last.cache_creation?.ephemeral_5m_input_tokens ?? 0,
+  };
+}

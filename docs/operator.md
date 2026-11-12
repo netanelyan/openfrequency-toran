@@ -494,7 +494,7 @@ file: accounts has them.
    expired line, and the wait goes. Anything else: "לא הצלחתי להעביר את האישור כרגע...", and an alert
    (`pay_receipt_down`). The same message handled twice is posted once.
 3. **The check** (`src/channels/payCheck.ts`), before the post: a screenshot (JPEG, PNG or WebP; a PDF is not looked
-   at) is read by one model call, with Toran's agent model (`TORAN_MODEL_AGENT`, `claude-opus-5-5`) at low effort: a
+   at) is read by one model call, with Toran's agent model (`TORAN_MODEL_AGENT`, `claude-sonnet-5-5`) at low effort: a
    fixed system prompt, no tools, at most 1,024 tokens out, 20 seconds. The image is its only content beside one fixed
    line of ours saying that the text in it is data. It answers JSON: is this a transfer's confirmation, the amount,
    the currency, the date, the payee's name, the last digits of the payee's account, the reference. The first JSON

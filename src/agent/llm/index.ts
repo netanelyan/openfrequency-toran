@@ -18,18 +18,37 @@ export type { Llm } from './types.ts';
 
 type Env = Record<string, string | undefined>;
 
-export const agentModel = (env: Env = process.env) => String(env.TORAN_MODEL_AGENT || '').trim() || 'claude-opus-5-5';
+/**
+ * The model that answers a store's customers, and every other call of Toran's: TORAN_MODEL_AGENT, Sonnet 5.5 unless set
+ * (production has set it since before 2026-11-11). Opus 5.5 got the evaluation's shoppers the same facts as Sonnet 5.5
+ * at high effort, at 2 to 2.5 times the cost and a longer wait (its slowest call 18.8 seconds, against 7.3: docs/models.md).
+ */
+export const AGENT_MODEL = 'claude-sonnet-5-5';
+export const agentModel = (env: Env = process.env) => String(env.TORAN_MODEL_AGENT || '').trim() || AGENT_MODEL;
 
 /**
- * How hard the agent thinks on a customer's turn: TORAN_AGENT_EFFORT (low, medium, high or xhigh), medium when unset
- * (the owner, 2026-11-09: "make him smarter, make him reason ... even if ai costs double"). It was low until then, and
- * low answered a request for a yellow shirt with a red one. Every other call (the guard's second opinion, the receipt
- * check, the photos' looks) stays at low.
+ * How hard the agent thinks on a customer's turn: TORAN_AGENT_EFFORT (low, medium, high or xhigh), AGENT_EFFORT when
+ * unset. The owner, 2026-11-09: "make him smarter, make him reason ... even if ai costs double" (low answered a request
+ * for a yellow shirt with a red one, so it became medium); 2026-11-11: "make sure toran and teder ai are smart ...
+ * even if toran costs 1.5x themselves". Measured on twelve shoppers' conversations (docs/models.md): at medium Sonnet
+ * 5.5 handed 4 of 55 questions to the owner without looking them up (a dishwasher question, an English one, candles
+ * under 120 ₪); at high, 1 of 44, for about 1.1 to 1.2 times the cost and a second more an answer. xhigh came out at
+ * 1.5 times, the owner's limit itself. The guard's second opinion, the receipt check and the photos' looks stay at low;
+ * the owner's side at OWNER_EFFORT.
  */
+export const AGENT_EFFORT: Effort = 'high';
 export const agentEffort = (env: Env = process.env): Effort => {
   const v = String(env.TORAN_AGENT_EFFORT || '').trim().toLowerCase();
-  return v === 'low' || v === 'medium' || v === 'high' || v === 'xhigh' ? v : 'medium';
+  return v === 'low' || v === 'medium' || v === 'high' || v === 'xhigh' ? v : AGENT_EFFORT;
 };
+
+/**
+ * The owner's side: the assistant that answers the store's owner about their store, and the store's voice read from its
+ * copy (2026-11-11, "make sure toran ... ai are smart"). Medium, with room to think (OWNER_MAX_TOKENS): a few calls a
+ * store a week, so thinking costs little there, and they shape what the owner reads and the tone of every answer.
+ */
+export const OWNER_EFFORT: Effort = 'medium';
+export const OWNER_MAX_TOKENS = 4000;
 
 /** Is this a backend that can be shown a photo? The Claude Code CLI is given the turn as text, so it cannot. */
 export const canSee = (backend: string) => backend === 'api' || backend === 'scripted';

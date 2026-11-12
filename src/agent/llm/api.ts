@@ -18,7 +18,7 @@ import { type Block, type Llm, LlmError, type TurnReq, type TurnRes } from './ty
 // Longer TTLs come first, as the API requires. Opus 5.5 caches from 512 tokens.
 //
 // Thinking cannot be turned off on Opus 5.5 or Sonnet 5.5; effort is the dial (the agent's turn: TORAN_AGENT_EFFORT,
-// medium unless set; every other call low). Haiku 4.5 and Sonnet 4.5 take no effort, so none is sent to them. Photos
+// high unless set since 2026-11-11; the owner's assistant and the store's voice medium; every other call low). Haiku 4.5 and Sonnet 4.5 take no effort, so none is sent to them. Photos
 // (image blocks, in a message or inside a tool's result) go as the loop built them. The
 // server-side refusal fallback ('default') is on, so a safety decline is re-run on the
 // fallback model instead of ending the turn; a final refusal is handed off by the loop.

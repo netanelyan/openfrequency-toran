@@ -48,16 +48,17 @@ import { addressOf, emojiOn } from './voice.ts';
 //
 // SIGHT AND THOUGHT (the owner, 2026-11-09, on a red kit offered for a yellow shirt: "make the AI have a way to watch
 // pictures, and make him smarter, make him reason ... even if ai costs double"). The model thinks at
-// TORAN_AGENT_EFFORT (medium unless set), with room for it (AGENT_MAX_TOKENS). It sees the photos the customer sent
-// with this message (photos, up to MAX_PHOTOS), and a product's photo when it calls view_product_images: those come
-// back as image blocks inside the tool's result. Only this turn carries them; the record keeps the text.
+// TORAN_AGENT_EFFORT (high unless set, since 2026-11-11: docs/models.md), with room for it (AGENT_MAX_TOKENS). It
+// sees the photos the customer sent with this message (photos, up to MAX_PHOTOS), and a product's photo when it calls
+// view_product_images: those come back as image blocks inside the tool's result. Only this turn carries them; the
+// record keeps the text.
 
 const MAX_ROUNDS = 8; // a look at the photos is a round of its own: search, look, maybe a second search and look, answer
 const HISTORY = 16; // messages replayed: 8 exchanges is a long WhatsApp chat
 export const DEMO_FOOTER = '_דמו של תורן_';
 export const TURN_DEADLINE_MS = 60_000;
 export const MODEL_TIMEOUT_MS = 40_000;
-/** One call's output, its thinking included: medium effort thinks before it answers, and a cut-off turn is a lost answer. */
+/** One call's output, its thinking included: the agent thinks before it answers, and a cut-off turn is a lost answer. */
 export const AGENT_MAX_TOKENS = 8000;
 /** The customer's photos one message shows the model; the rest are the owner's to see. */
 export const MAX_PHOTOS = 4;
