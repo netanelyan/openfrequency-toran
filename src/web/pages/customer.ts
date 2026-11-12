@@ -311,7 +311,7 @@ async function pushPanel(app: App, r: DashReq): Promise<string> {
   return `<section class="panel" id="push"><header><h2>התראות</h2><span class="end">${n ? `<span class="chip ok">${n === 1 ? 'מכשיר אחד' : `${n} מכשירים`}</span>` : '<span class="chip ghost">כבוי</span>'}</span></header>
   <p class="small m0">כשלקוח מחכה לתשובה שלכם, מגיעה התראה לטלפון או למחשב מיד, בלי לחכות למייל.</p>
   <p class="small muted mt8 m0">באייפון ההתראות עובדות רק כשפותחים את תורן מהאייקון במסך הבית. <a href="#install">איך מוסיפים את האייקון</a></p>
-  <form class="mt12" method="post" action="/push/subscribe" data-ajax="reload" data-push="${esc(key)}">${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm primary" type="button" data-push-enable>${icon('spark')}להפעיל התראות במכשיר הזה</button></form>
+  <form class="mt12" method="post" action="/push/subscribe" data-ajax="reload" data-push="${esc(key)}">${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm" type="button" data-push-enable>${icon('spark')}להפעיל התראות במכשיר הזה</button></form>
   <form class="mt12" method="post" action="/push/unsubscribe" data-ajax="reload" data-push-off hidden>${csrfField(r.ctx)}<input type="hidden" name="endpoint" value=""><button class="btn sm ghost" type="button" data-push-disable>לכבות התראות במכשיר הזה</button></form>
 </section>`;
 }
