@@ -21,7 +21,7 @@ import { later, markLost, markReminded, markReplied, markSent, OpsError, reopen,
 import { sendBoth, sendTeder } from './both.ts';
 import { bothFirst, bothReminder, tederColdFirst, tederReminder } from './messages.ts';
 import { liveTemplate, outreachFilled, outreachLive, pitchVars, templateOf } from './outreach.ts';
-import { tederBuild, tederDemoAct, tederList, tederMark, tederMove, tederState, type TederDemoAct, type TederLead, type TederMove } from './tederLeads.ts';
+import { tederBuild, tederDemoAct, tederList, tederMark, tederMove, tederState, type TederDemo, type TederDemoAct, type TederLead, type TederMove } from './tederLeads.ts';
 import { LOST_REASONS } from './messages.ts';
 
 // The shared lead dashboard's data (the owner, 2026-11-08: "make the shared lead dashboard be in the admin dashboard,
@@ -79,10 +79,18 @@ function toranDemo(app: App, s: any, building: boolean): Demo {
   };
 }
 
+/**
+ * A Teder demo still marked new or building with nothing building it: a restart cut its build off (Teder builds only
+ * when asked, one build a demo, and says whether one runs: `building`). It is a failed one, built again from the lead's
+ * page (Teder's build starts a cut-off one again), never "being built" for good, which would hold its message forever.
+ */
+const cutOff = (d: TederDemo | null | undefined) => Boolean(d && ['new', 'building'].includes(d.status) && !d.building);
+const CUT_OFF_HE = 'הבנייה של הדמו נעצרה באמצע. אפשר לבנות אותו שוב.';
+
 function tederDemo(l: TederLead | null): Demo {
   const d = l?.demo;
-  const state: DemoState = !d ? 'none' : d.status === 'removed' ? 'removed' : d.status === 'failed' ? 'failed' : d.pageUrl ? 'ready' : d.building || ['new', 'building'].includes(d.status) ? 'building' : 'review';
-  return { state, pageUrl: d?.pageUrl || null, sentAt: l?.sentAt || null, reminderSentAt: l?.reminderSentAt || null, reminderDue: Boolean(l?.reminderDue), error: d?.error || null, idea: state === 'removed' ? null : d?.topic || null };
+  const state: DemoState = !d ? 'none' : d.status === 'removed' ? 'removed' : d.status === 'failed' || cutOff(d) ? 'failed' : d.pageUrl ? 'ready' : d.building ? 'building' : 'review';
+  return { state, pageUrl: d?.pageUrl || null, sentAt: l?.sentAt || null, reminderSentAt: l?.reminderSentAt || null, reminderDue: Boolean(l?.reminderDue), error: cutOff(d) ? CUT_OFF_HE : d?.error || null, idea: state === 'removed' ? null : d?.topic || null };
 }
 
 /**
@@ -102,7 +110,7 @@ type Go = { can: boolean; makes: ('toran' | 'teder')[] };
  */
 function buildOf(s: any, t: TederLead | null, tederOk: boolean, building: boolean) {
   const toran = canIngest(s.platform) && !s.taken_down_at;
-  const teder = tederOk && (!t?.demo || ['removed', 'failed'].includes(t.demo.status));
+  const teder = tederOk && (!t?.demo || ['removed', 'failed'].includes(t.demo.status) || cutOff(t.demo));
   const makes = { toran: toran && !s.page_built_at && !building, teder };
   const go = (p: Product): Go => {
     const can = !s.taken_down_at && (p === 'teder' || toran) && (p === 'toran' || tederOk);
@@ -305,8 +313,11 @@ export async function leadOne(app: App, id: number) {
   const row = rowOf(app, s, t, run.has(id), !('error' in st), (await stockOf(app, [id])).get(id));
   const name = row.name;
   const pitchable = Boolean(s.contact_whatsapp) && (await outreachLive(app));
-  const toranStage = toranStageOf(s, row.toran);
-  const tederStage = tederStageOf(t, row.teder);
+  // No message is due while a demo of the lead is being built (the owner, 2026-11-12: "Lead page shouldnt let me send a
+  // message while a demo is being built"): it would carry a page about to change, or go without the one coming.
+  const busy = run.has(id) || row.teder.state === 'building';
+  const toranStage = busy ? null : toranStageOf(s, row.toran);
+  const tederStage = busy ? null : tederStageOf(t, row.teder);
   // One message carries both demos only at the same stage: both first, or both reminders.
   const stages: Record<Product, Stage | null> = { both: toranStage && toranStage === tederStage ? toranStage : null, toran: toranStage, teder: tederStage };
   // From our number, each one due; the one the operator chose to make comes first when it can go, else both, as before.
@@ -458,6 +469,14 @@ async function goOn(app: App, s: any, p: Product, by: string, ingest: () => Prom
   return pending.length ? { message: `ממשיכים ${what}. ${pending.join(', ו')}.`, ready: false } : { message: `ממשיכים ${what}. ההודעה מוכנה לשליחה.`, ready: true };
 }
 
+/** A message from the lead's page waits while a demo of the lead is being built, as leadOne offers none then. */
+async function notWhileBuilding(app: App, s: any) {
+  const toran = (await building(app, [s.id])).has(s.id);
+  const st = toran ? null : await tederState(app, s);
+  const teder = Boolean(st && !('error' in st) && tederDemo(st.lead).state === 'building');
+  if (toran || teder) throw new OpsError(`${toran ? 'הדף של תורן' : 'הדמו של תדר'} עוד נבנה. אפשר יהיה לשלוח כשהוא מוכן.`);
+}
+
 /** One button of the lead's page: the operator's line when done, OpsError with the reason when not. */
 type Body = { by?: unknown; notes?: unknown; reason?: unknown; product?: unknown; name?: unknown; color?: unknown; days?: unknown };
 
@@ -508,10 +527,13 @@ export async function leadDo(app: App, id: number, action: Action, b: Body): Pro
       return said(`בונים את שניהם: תורן קורא את האתר ובונה את הדף, ותדר: ${msg}`);
     }
     case 'send-toran':
+      await notWhileBuilding(app, s);
       return said(await sendNow(app, 'toran', String(s.id), by));
     case 'send-teder':
+      await notWhileBuilding(app, s);
       return said(await sendTeder(app, s.id, by));
     case 'send-both':
+      await notWhileBuilding(app, s);
       return said(await sendBoth(app, s.id, by));
     case 'mark-sent':
       return said(await markByHand(app, s, 'first', productOf(b.product) || 'toran', by));

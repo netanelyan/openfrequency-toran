@@ -916,6 +916,19 @@ a.ib-row.is-waiting::before { content: ''; position: absolute; inset-inline-star
 .ib-none { display: grid; justify-items: center; gap: 4px; padding: 48px 24px; text-align: center; color: var(--ink-3); font-size: 13px; }
 .ib-none > svg.i { width: 30px; height: 30px; margin-bottom: 6px; stroke-width: 1.5; }
 .ib-none b { color: var(--ink); font-size: 15px; font-weight: 600; }
+/* The archive (inbox.ts ARCHIVED_SQL): its row at the head of the list, where a messaging app keeps its archived
+   chats, with its icon where a row has its avatar; over the archive's own list, the way back. */
+a.ib-arch { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 16px; border-bottom: 1px solid var(--line); color: var(--ink-2); font-size: 14px; font-weight: 500; transition: background-color 0.12s ease; }
+a.ib-arch:hover { text-decoration: none; background: var(--inset); }
+a.ib-arch > svg.i { flex: none; width: 20px; height: 20px; margin-inline: 12px; color: var(--ink-3); }
+a.ib-arch .t { flex: 1; min-width: 0; }
+a.ib-arch .n { font-size: 12px; color: var(--ink-3); }
+.ib-up { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.ib-up > a { flex: none; display: grid; place-items: center; width: 36px; height: 36px; margin-block: -4px; margin-inline-start: -8px; border-radius: 50%; color: var(--accent-p); }
+.ib-up > a:hover { background: var(--fill); }
+.ib-up > a svg.i { transform: rotate(-90deg); width: 20px; height: 20px; }
+.ib-up b { display: block; font-size: 15px; font-weight: 700; }
+.ib-up small { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.45; color: var(--ink-3); }
 
 /* A channel's logo (inbox.ts channelLogo), drawn in ui.ts's sprite in its own colours. The site chat's bubble is the
    chat's own ink, turned over in dark. */

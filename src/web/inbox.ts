@@ -34,6 +34,18 @@ export const STATE_SQL = `(CASE WHEN ${WAITING_SQL} THEN 'waiting'
 
 export const stateChip = (s: InboxState) => `<span class="chip ${STATE_HE[s][1]}">${STATE_HE[s][0]}</span>`;
 
+// The archive (the owner, 2026-11-12: "Add an options to archive chats, and archive them automatically 5 days after
+// inactivity"; migration 079). A conversation is in it when the owner put it there and nothing was written in it since,
+// or when nothing was written in it for five days (counted again from when the owner took it out) and it waits for
+// no one. A new message brings it back by itself: archived_at is older than last_at then. Toran answers in an archived
+// conversation as in any other; only the lists leave it out.
+export const ARCHIVE_DAYS = 5;
+const BY_HAND = '(c.archived_at IS NOT NULL AND c.archived_at >= c.last_at)';
+const SILENT = `(GREATEST(c.last_at, COALESCE(c.unarchived_at, c.last_at)) < now() - interval '${ARCHIVE_DAYS} days')`;
+/** In the archive, given whether it waits for the owner (a query that has its state already reads it once). */
+export const archivedSql = (waiting = WAITING_SQL) => `(${BY_HAND} OR (${SILENT} AND NOT ${waiting}))`;
+export const ARCHIVED_SQL = archivedSql();
+
 const maskPhone = (p: string | null) => (p ? `+${p.slice(0, 5)}•••${p.slice(-3)}` : '');
 /**
  * The customer, as the inbox shows them: a phone or an address, partly hidden. On Messenger and Instagram the id is
@@ -90,14 +102,15 @@ export function avatar(seed: string, name: string | null | undefined, channel: s
 
 const WHO_HE: Record<string, string> = { agent: 'תורן', owner: 'אתם' };
 
-type RowOf = { id: number; channel: string; account_id: number | null; state: InboxState; last_at: string; last_q?: string | null; last_text?: string | null; last_role?: string | null; summary?: string | null; subject?: string | null; store?: string | null; note?: string | null; peer?: string | null; peer_name?: string | null };
+type RowOf = { id: number; channel: string; account_id: number | null; state: InboxState; archived?: boolean | null; last_at: string; last_q?: string | null; last_text?: string | null; last_role?: string | null; summary?: string | null; subject?: string | null; store?: string | null; note?: string | null; peer?: string | null; peer_name?: string | null };
 
 /**
  * One conversation in the inbox, as a messaging app lists it (the owner, 2026-11-11: "make the toran inbox look a bit
  * more like an inbox"): the customer's avatar with the channel's logo on it, their name and when; an email's subject;
  * one line of the last message and who wrote it (while it waits, what Toran handed over, when that line is in Hebrew:
  * the model writes it for the owner, not always in their language) with where it stands at its end; and, only when
- * there is one, a demo tag for a chat on our shared demo number, the store among several, the operator's note. A
+ * there is one, a demo tag for a chat on our shared demo number, the store among several, the operator's note, and
+ * "בארכיון" in a search's results, which have the archive's conversations too. A
  * conversation waiting for the owner is the unread one: bold, with a dot at its edge, and its "מחכה לכם" said to a
  * screen reader only, so on a phone the line of what Toran handed over keeps the row's width. `current` marks the
  * conversation open beside the list; `qs` keeps the list's filters on the link.
@@ -111,7 +124,7 @@ export function conversationRow(c: RowOf, { current = false, qs = '' }: { curren
   const who = handed ? 'תורן העביר' : WHO_HE[c.last_role || ''];
   const demo = c.channel === 'whatsapp' && !c.account_id ? '<span class="chip ghost">דמו</span>' : '';
   const subject = c.channel === 'email' && c.subject ? `<span class="ib-subj">${esc(c.subject.slice(0, 90))}</span>` : '';
-  const meta = `${demo}${c.store ? `<span class="chip ghost">${esc(c.store)}</span>` : ''}${c.note ? `<span class="chip ghost">${esc(c.note)}</span>` : ''}`;
+  const meta = `${c.archived ? '<span class="chip ghost">בארכיון</span>' : ''}${demo}${c.store ? `<span class="chip ghost">${esc(c.store)}</span>` : ''}${c.note ? `<span class="chip ghost">${esc(c.note)}</span>` : ''}`;
   const state = c.state === 'waiting' ? `<span class="sr">${STATE_HE.waiting[0]}</span>` : stateChip(c.state);
   return `<a class="ib-row${c.state === 'waiting' ? ' is-waiting' : ''}" href="/chat/${Number(c.id)}${qs}"${current ? ' aria-current="page"' : ''}>${avatar(`${c.channel}:${c.peer || c.id}`, c.peer_name, c.channel)}<span class="ib-main">`
     + `<span class="ib-top"><b class="ib-name"><bdi>${esc(peerLabel(c.channel, c.peer, c.peer_name))}</bdi></b><time class="ib-at" datetime="${esc(new Date(c.last_at).toISOString())}" title="${esc(stamp(c.last_at))}">${esc(listTime(c.last_at))}</time></span>`

@@ -398,7 +398,7 @@ details.panel > summary { min-height: 28px; }
 .chat .b.agent { background: color-mix(in srgb, var(--accent-fill) 11%, var(--solid)); }
 .ib-search input[type='search'] { min-height: 36px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--field); font-size: 14px; }
 .ib-tools { padding: 12px; }
-a.ib-row:hover { background: var(--sub); }
+a.ib-row:hover, a.ib-arch:hover { background: var(--sub); }
 a.ib-row[aria-current='page'] { background: var(--accent-soft); }
 /* The channel's logo on the avatar sits on a hairline, as everything here does, not a shadow. */
 .av-ch { box-shadow: 0 0 0 1px var(--edge); }

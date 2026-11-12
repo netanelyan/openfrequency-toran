@@ -277,7 +277,8 @@ test('a bare "לא" after they started talking to us is not the way out; "הסר
   try {
     assert.equal((await outreach.sendPitch(app, pitch())).sent, true);
     const store = (await app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug) VALUES ('x.example', 'https://x.example/', 'x', 'shopify', 'seed', 'x-1') RETURNING id"))!.id;
-    await app.db.query("INSERT INTO conversations (store_id, channel, peer, started_at) VALUES ($1, 'whatsapp', $2, now() + interval '1 minute')", [store, PHONE]);
+    const c = (await app.db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer, started_at) VALUES ($1, 'whatsapp', $2, now() + interval '1 minute') RETURNING id", [store, PHONE]))!.id;
+    await app.db.query("INSERT INTO messages (conversation_id, role, text, at) VALUES ($1, 'customer', 'DEMO-X1', now() + interval '1 minute')", [c]);
     assert.notEqual((await write('לא')).action, 'outreach_stop', 'an answer in the conversation');
     assert.equal((await write('הסר')).action, 'outreach_stop');
   } finally {
@@ -474,6 +475,29 @@ test('a pitch from our number is in our own inbox, in the conversation its answe
     app.env.META_OUTREACH_PHONE_ID = app.env.META_DEMO_PHONE_ID;
     assert.equal((await outreach.sendPitch(app, pitch({ phone: '972500000558' }))).sent, true);
     assert.equal(await app.db.one("SELECT 1 FROM conversations WHERE peer = '972500000558'"), null);
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+// The pitch kept in our support's conversation (keepPitch) opened that conversation at once, and a "לא מעוניין" to it
+// read as an answer in a conversation already going (the trace of 2026-11-12): what counts is that they wrote to us.
+test('a "לא מעוניין" to a pitch kept in our inbox is the way out; once they wrote to us, a bare "לא" is an answer', async () => {
+  const { app } = await pitchApp();
+  let n = 0;
+  const write = (from: string, text: string) => handleInbound(app, { channel: 'whatsapp', from, text, id: `wamid.in-${n++}`, at: NOON, account: META_DEMO.META_DEMO_PHONE_ID, to: '972500000900' });
+  try {
+    await app.db.query("INSERT INTO stores (domain, url, name, platform, source, slug, status) VALUES ('openfrequency.example', 'https://openfrequency.example/', 'OpenFrequency', 'company', 'manual', 'of-c1', 'company')");
+    app.env.TORAN_SUPPORT_STORE = 'openfrequency.example';
+    assert.equal((await outreach.sendPitch(app, pitch())).sent, true);
+    assert.ok(await app.db.one('SELECT 1 FROM conversations WHERE peer = $1', [PHONE]), 'the pitch is in our inbox');
+    assert.equal((await write(PHONE, 'לא מעוניין')).action, 'outreach_stop');
+    // Another, who wrote to us first: their "לא" answers what we said.
+    assert.equal((await outreach.sendPitch(app, pitch({ phone: OTHER }))).sent, true);
+    await write(OTHER, 'מה זה בדיוק?');
+    assert.notEqual((await write(OTHER, 'לא')).action, 'outreach_stop');
+    assert.equal(await outreach.stoppedNumber(app, OTHER), false);
   } finally {
     setNow(null);
     await app.db.close();

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { ROOT } from '../src/core/paths.ts';
 import { INTERNAL_TOKEN } from './helpers.ts';
 import { serve } from './serve.ts';
+import { enqueue } from '../src/jobs/queue.ts';
 import { readSocial, SOCIAL_UNREAD } from '../src/leads/social.ts';
 
 // The shared lead dashboard's data, for accounts' /admin/leads (the owner, 2026-11-08: "make the shared lead dashboard
@@ -168,6 +169,7 @@ test("a demo made from the list (the owner, 2026-11-11): each row says what can 
     assert.equal(await chosen(), 'teder');
 
     // Toran's page waits for the operator's look: no message for it, nothing to copy.
+    await s.app.db.query("UPDATE jobs SET status = 'done' WHERE kind = 'ingest'");
     let one = (await get(`/internal/leads/${id}`)).lead;
     assert.deepEqual([one.send.toranText, one.send.bothText, one.send.copy], [null, null, null]);
 
@@ -191,6 +193,25 @@ test("a demo made from the list (the owner, 2026-11-11): each row says what can 
     assert.match(one.send.tederText, /בכפתור כאן למטה/);
     await s.app.db.query('UPDATE stores SET demo_for = NULL WHERE id = $1', [id]);
     assert.equal((await get(`/internal/leads/${id}`)).lead.send.main, 'both', 'nothing chosen: both, as before');
+
+    // The owner, 2026-11-12: "Lead page shouldnt let me send a message while a demo is being built". Toran's page
+    // made again (a new sample chat), or Teder's demo written again: no message is due, and a press refused.
+    await enqueue(s.app.db, 'pitch', { storeId: id, by: 'Admin' }, { dedupeKey: `pitch:${id}` });
+    one = (await get(`/internal/leads/${id}`)).lead;
+    assert.deepEqual([one.send.options, one.send.main, one.send.toranText, one.send.tederText, one.send.bothText, one.send.copy], [[], null, null, null, null, null]);
+    for (const p of ['send-toran', 'send-teder', 'send-both']) assert.deepEqual(await post(`/internal/leads/${id}/${p}`, { by: 'Admin' }), { status: 400, json: { ok: false, error: 'הדף של תורן עוד נבנה. אפשר יהיה לשלוח כשהוא מוכן.' } });
+    await s.app.db.query("UPDATE jobs SET status = 'done' WHERE kind = 'pitch'");
+    teder.state.lead = { ...teder.ready, demo: { ...teder.ready.demo, status: 'building', building: true, pageUrl: null } };
+    assert.deepEqual((await get(`/internal/leads/${id}`)).lead.send.options, []);
+    assert.deepEqual(await post(`/internal/leads/${id}/send-toran`, { by: 'Admin' }), { status: 400, json: { ok: false, error: 'הדמו של תדר עוד נבנה. אפשר יהיה לשלוח כשהוא מוכן.' } });
+    // A build a restart cut off (still marked building, nothing building it): failed, built again from here, and it
+    // holds no message for good.
+    teder.state.lead = { ...teder.ready, demo: { ...teder.ready.demo, status: 'building', building: false, pageUrl: null } };
+    one = (await get(`/internal/leads/${id}`)).lead;
+    assert.deepEqual([one.teder.state, one.teder.error, (await row()).build.teder], ['failed', 'הבנייה של הדמו נעצרה באמצע. אפשר לבנות אותו שוב.', true]);
+    assert.deepEqual(one.send.options, ['toran'], "Toran's message alone can go");
+    teder.state.lead = teder.ready;
+    assert.equal((await get(`/internal/leads/${id}`)).lead.send.options.length, 3, 'built: the messages are due again');
     delete s.app.env.META_OUTREACH_PHONE_ID;
 
     // Sent by hand: Teder's alone marks Teder, and Toran stays to send.

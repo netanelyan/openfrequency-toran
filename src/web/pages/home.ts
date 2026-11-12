@@ -17,7 +17,7 @@ import { GraphError, TOKEN_GONE } from '../../channels/meta.ts';
 import { questionOf } from '../../assistant/index.ts';
 import { forgetStorePrompt } from '../../agent/loop.ts';
 import { agentEffort, agentModel } from '../../agent/llm/index.ts';
-import { avatar, channelLogo, channelTag, conversationRow, filesHtml, maskPeer, peerLabel, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, whyHe, type InboxState } from '../inbox.ts';
+import { ARCHIVE_DAYS, ARCHIVED_SQL, archivedSql, avatar, channelLogo, channelTag, conversationRow, filesHtml, maskPeer, peerLabel, ROW_SQL, STATE_HE, STATE_SQL, stateChip, WAITING_SQL, whyHe, type InboxState } from '../inbox.ts';
 import { checkUpload, fileOf, MAX_BYTES } from '../../channels/files.ts';
 import { apartCustomer, candidates, otherConversations, sameCustomer } from '../../channels/customers.ts';
 import { customerSettings, customerToday } from './customer.ts';
@@ -74,14 +74,17 @@ ${installCard(r.ctx.install)}
 async function inboxPane(app: App, r: DashReq, current = 0) {
   const sp = r.url.searchParams;
   const op = r.ctx.operator;
-  const filter = op && ['handoff', 'miss'].includes(sp.get('filter') || '') ? sp.get('filter')! : '';
+  const filter = op && !(sp.get('box') === 'archive' && !sp.get('q')) && ['handoff', 'miss'].includes(sp.get('filter') || '') ? sp.get('filter')! : '';
   const storeId = Number(sp.get('store') || 0);
   // The chat on the store's site (channels/web.ts) is a tab only where one of the stores here has it on.
   const web = Boolean(await app.db.one(`SELECT 1 FROM channel_accounts a JOIN stores s ON s.id = a.store_id WHERE a.channel = 'web' AND ${storesOf(r.scope, 's')} LIMIT 1`));
   const shown = MESSAGING.filter((ch) => (ch === 'web' ? web : enabledChannels(app.env).has(ch)));
   const channel = (shown as string[]).includes(sp.get('channel') || '') ? sp.get('channel')! : '';
   const q = String(sp.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-  const state = (Object.keys(STATE_HE) as InboxState[]).includes(sp.get('state') as InboxState) ? (sp.get('state') as InboxState) : '';
+  // The archive (inbox.ts ARCHIVED_SQL) is a list of its own, as a messaging app keeps its archived chats; a search
+  // looks in every conversation, the archive's too, and says which are in it.
+  const archive = !q && sp.get('box') === 'archive';
+  const state = !archive && (Object.keys(STATE_HE) as InboxState[]).includes(sp.get('state') as InboxState) ? (sp.get('state') as InboxState) : '';
   // Everything but where it stands, so the tabs can say how many each has.
   const where = [messagingSql('c.channel'), storesOf(r.scope, 's')];
   const params: unknown[] = [];
@@ -99,16 +102,20 @@ async function inboxPane(app: App, r: DashReq, current = 0) {
     const n = `$${params.length}`;
     where.push(`(c.peer ILIKE ${n} OR c.meta->>'name' ILIKE ${n} OR c.meta->>'subject' ILIKE ${n} OR EXISTS (SELECT 1 FROM messages w WHERE w.conversation_id = c.id AND w.text ILIKE ${n}))`);
   }
-  const counts = (await app.db.one<Record<'all' | InboxState, number>>(`SELECT COUNT(*)::int AS all, COUNT(*) FILTER (WHERE st = 'waiting')::int AS waiting, COUNT(*) FILTER (WHERE st = 'alone')::int AS alone, COUNT(*) FILTER (WHERE st = 'fixed')::int AS fixed
-    FROM (SELECT ${STATE_SQL} AS st FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')}) x`, params))!;
+  // The tabs count the list they open: the conversations out of the archive, or with a search every one it finds.
+  const listed = q ? 'TRUE' : 'NOT arch';
+  const counts = (await app.db.one<Record<'all' | InboxState | 'archived', number>>(`SELECT COUNT(*) FILTER (WHERE ${listed})::int AS all, COUNT(*) FILTER (WHERE st = 'waiting' AND ${listed})::int AS waiting, COUNT(*) FILTER (WHERE st = 'alone' AND ${listed})::int AS alone, COUNT(*) FILTER (WHERE st = 'fixed' AND ${listed})::int AS fixed, COUNT(*) FILTER (WHERE arch)::int AS archived
+    FROM (SELECT st, ${archivedSql("st = 'waiting'")} AS arch FROM (SELECT ${STATE_SQL} AS st, c.archived_at, c.unarchived_at, c.last_at FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')}) c) x`, params))!;
+  if (archive) where.push(ARCHIVED_SQL);
+  else if (!q) where.push(`NOT ${ARCHIVED_SQL}`);
   if (state === 'waiting') where.push(WAITING_SQL);
   else if (state) where.push(`${STATE_SQL} = '${state}'`);
   if (filter === 'handoff') where.push('c.handoffs > 0');
   if (filter === 'miss') where.push('c.misses > 0');
-  const list = await app.db.query<any>(`SELECT ${ROW_SQL}, c.store_id, c.handoffs, c.misses, c.agent_paused_until, s.name, s.domain, s.brand, s.brand_override FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
+  const list = await app.db.query<any>(`SELECT ${ROW_SQL}${q ? `, ${ARCHIVED_SQL} AS archived` : ''}, c.store_id, c.handoffs, c.misses, c.agent_paused_until, s.name, s.domain, s.brand, s.brand_override FROM conversations c JOIN stores s ON s.id = c.store_id WHERE ${where.join(' AND ')} ORDER BY c.last_at DESC LIMIT 100`, params);
   const stores = op ? 2 : (await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM stores WHERE ${storesOf(r.scope)}`))?.n || 0;
 
-  const keep = { filter, state, channel, store: storeId ? String(storeId) : '', q };
+  const keep = { box: archive ? 'archive' : '', filter, state, channel, store: storeId ? String(storeId) : '', q };
   const qsOf = (o: Record<string, string>) => {
     const s = new URLSearchParams(Object.entries({ ...keep, ...o }).filter(([, v]) => v)).toString();
     return s ? `?${s}` : '';
@@ -119,21 +126,26 @@ async function inboxPane(app: App, r: DashReq, current = 0) {
   const tab = (f: string, label: string) => `<a href="${link({ filter: f, state: '' })}"${cur(filter === f && !state)}>${label}${f ? '' : n(counts.all)}</a>`;
   const stTab = (st: InboxState) => `<a href="${link({ state: st, filter: '' })}"${cur(state === st)}${st === 'waiting' && counts.waiting ? ' class="hot"' : ''}>${STATE_HE[st][0]}${n(counts[st])}</a>`;
   const chTab = (ch: string, label: string) => `<a href="${link({ channel: ch })}"${cur(channel === ch)}>${ch ? channelLogo(ch, { label: false }) : ''}${label}</a>`;
-  const hidden = Object.entries({ ...keep, q: '' }).filter(([, v]) => v).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join('');
+  const hidden = Object.entries({ ...keep, q: '', box: '' }).filter(([, v]) => v).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join('');
   const paused = (c: any) => c.agent_paused_until && new Date(c.agent_paused_until).getTime() > now();
   const noteOf = (c: any) => (op ? [c.handoffs ? `${c.handoffs} העברות` : '', c.misses ? `${c.misses} פספוסים` : '', paused(c) ? 'אצלך' : ''].filter(Boolean).join(' · ') : '') || null;
   const rows = list.map((c) => conversationRow({ ...c, store: stores > 1 ? displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain : null, note: noteOf(c) }, { current: c.id === current, qs: qsOf({}) }));
   const empty = q ? `<div class="ib-none">${icon('search')}<b>לא נמצאו שיחות</b>אין שיחה עם "${esc(q)}". אפשר לחפש שם, מספר, מייל או מילה מתוך ההודעות.</div>`
+    : archive ? `<div class="ib-none">${icon('archive')}<b>אין שיחות בארכיון</b>שיחה שלא נכתב בה כלום ${ARCHIVE_DAYS} ימים עוברת לכאן לבד. אפשר גם להעביר שיחה לכאן מהכפתור "לארכיון" שבראש השיחה.</div>`
     : state === 'waiting' ? `<div class="ib-none">${icon('check')}<b>אין שאלות שמחכות לכם</b>כשתורן לא מוצא תשובה באתר, השאלה מגיעה לכאן.</div>`
+    : counts.archived ? `<div class="ib-none">${icon('check')}<b>אין שיחות פתוחות</b>שיחה שלא נכתב בה כלום ${ARCHIVE_DAYS} ימים עוברת לארכיון, וחוזרת לכאן כשהלקוח כותב שוב.</div>`
     : `<div class="ib-none">${icon('chat')}<b>${op ? 'עוד אין שיחות' : 'אין כאן שיחות'}</b>${op ? 'שיחה מופיעה כאן כשמישהו שולח קוד דמו למספר, או כותב למייל של חנות שמחוברת.' : 'שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.'}</div>`;
-  const html = `<aside class="ib-pane" aria-label="השיחות">
+  // At the head of the whole list, the way into the archive, with how many are in it; over the archive, the way back.
+  const toArchive = !archive && !q && !state && !filter && counts.archived ? `<a class="ib-arch" href="${link({ box: 'archive', state: '', filter: '' })}">${icon('archive')}<span class="t">ארכיון</span><span class="n num">${counts.archived}</span></a>` : '';
+  const archHead = archive ? `<div class="ib-up"><a href="${link({ box: '' })}" aria-label="חזרה לשיחות">${icon('chev')}</a><div><b>ארכיון</b><small>שיחות ש${op ? 'העברת' : 'העברתם'} לכאן, ושיחות שלא נכתב בהן כלום ${ARCHIVE_DAYS} ימים. כשהלקוח כותב שוב, השיחה חוזרת לשיחות.</small></div></div>` : '';
+  const html = `<aside class="ib-pane" aria-label="${archive ? 'השיחות בארכיון' : 'השיחות'}">
   <div class="ib-tools">
     <form class="ib-search" method="get" action="/chats" role="search">${icon('search')}<input type="search" name="q" value="${esc(q)}" placeholder="חיפוש לפי שם, מספר או מילה" aria-label="חיפוש בשיחות" maxlength="80">${hidden}</form>
-    <nav class="seg" aria-label="איפה השיחה עומדת">${tab('', 'הכול')}${stTab('waiting')}${stTab('alone')}${stTab('fixed')}</nav>
-    ${op ? `<nav class="ib-ch" aria-label="סינון">${tab('handoff', 'עם העברה')}${tab('miss', 'עם פספוס')}</nav>` : ''}
+    ${archive ? '' : `<nav class="seg" aria-label="איפה השיחה עומדת">${tab('', 'הכול')}${stTab('waiting')}${stTab('alone')}${stTab('fixed')}</nav>`}
+    ${op && !archive ? `<nav class="ib-ch" aria-label="סינון">${tab('handoff', 'עם העברה')}${tab('miss', 'עם פספוס')}</nav>` : ''}
     ${shown.length > 1 ? `<nav class="ib-ch" aria-label="ערוץ">${chTab('', 'כל הערוצים')}${shown.map((ch) => chTab(ch, CHANNEL_HE[ch])).join('')}</nav>` : ''}
   </div>
-  <div class="ib-list">${rows.join('') || empty}</div>
+  ${archHead}<div class="ib-list">${toArchive}${rows.join('') || empty}</div>
 </aside>`;
   return { html, back: link({}), shown };
 }
@@ -179,7 +191,7 @@ const AUTO_HE: Record<string, string> = Object.fromEntries(Object.entries(MESSAG
 const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', claim: 'עובדה שלא הגיעה מהנתונים', continuation: 'המשך של משפט שנחתך' };
 
 async function chat(app: App, r: DashReq, id: number) {
-  const c = await app.db.one<any>(`SELECT c.*, ${STATE_SQL} AS state, s.name, s.domain, s.brand, s.id AS sid FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.id = $1`, [id]);
+  const c = await app.db.one<any>(`SELECT c.*, ${STATE_SQL} AS state, ${ARCHIVED_SQL} AS archived, s.name, s.domain, s.brand, s.id AS sid FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.id = $1`, [id]);
   if (!c) return null;
   // The operator reads the agent's workings (its tool calls, the cost); a customer reads the conversation and where it stands.
   const op = r.ctx.operator;
@@ -247,11 +259,16 @@ async function chat(app: App, r: DashReq, id: number) {
   ${learned.length ? `<p class="small mt12 m0">${icon('book')} תורן שמר מהשיחה הזו את התשובה ל"${esc(learned.map((x) => x.question).join('", "'))}". <a href="/lead/${c.sid}/knowledge#answers">${op ? 'לתשובות של החנות' : 'לתשובות שלכם'}</a></p>` : ''}
 </div>` : '';
   const many = op || ((await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM stores WHERE ${storesOf(r.scope)}`))?.n || 0) > 1;
+  // To the archive and back, in the conversation's head (on a phone, its icon alone). One that waits is marked handled
+  // on the way, said before the second press, so it never sits in the archive and in the badge at once.
+  const archiveLabel = c.archived ? 'להוציא מהארכיון' : 'לארכיון';
+  const archiveButton = r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/archive`, `<span>${archiveLabel}</span>`, { cls: 'btn sm', iconName: 'archive', title: archiveLabel, fields: { on: c.archived ? '0' : '1' }, confirm: waiting && !c.archived ? 'השיחה הזו מחכה לכם. בארכיון היא תסומן כטופלה, ותחזור לשיחות כשהלקוח יכתוב שוב. לחצו שוב כדי להעביר.' : null });
   const pane = await inboxPane(app, r, id);
   const subject = c.channel === 'email' && c.meta?.subject ? `<p class="th-subj">${icon('mail')}<bdi>${esc(c.meta.subject)}</bdi></p>` : '';
   const facts = [
     channelTag(c.channel) + (c.channel === 'whatsapp' && !c.account_id ? '<span class="chip ghost">דמו</span>' : ''),
     stateChip(c.state),
+    ...(c.archived ? ['<span class="chip ghost">בארכיון</span>'] : []),
     ...(many ? [`<span class="chip">${esc(c.brand?.name || c.name || c.domain)}</span>`] : []),
     `<span class="chip">התחילה ${esc(stamp(c.started_at))}</span>`,
     ...(op ? [`<span class="chip">${c.handoffs} העברות · ${c.misses} פספוסים · ${r.ctx.dev ? `${usd(cost?.api, 4)} במחירי API` : `${tokenNum(cost?.api)} טוקנים`}</span>`] : []),
@@ -259,7 +276,7 @@ async function chat(app: App, r: DashReq, id: number) {
   const thread = `<section class="ib-read thread" aria-labelledby="th-name">
 <header class="th-head"><a class="th-back" href="${esc(pane.back)}" aria-label="חזרה לשיחות">${icon('chev')}</a>${avatar(`${c.channel}:${c.peer || c.id}`, c.meta?.name, c.channel, { cls: 'av lg', label: false })}
 <div class="th-who"><h1 class="title" id="th-name"><bdi>${esc(customerName)}</bdi></h1><p class="th-facts">${facts.join('')}</p></div>
-<div class="end">${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}<span>מה הוא יודע</span></a>`}</div></header>
+<div class="end">${archiveButton}${op ? `<a class="btn sm" href="/lead/${c.sid}">לליד</a>` : `<a class="btn sm" href="/lead/${c.sid}/knowledge">${icon('book')}<span>מה הוא יודע</span></a>`}</div></header>
 ${subject}
 <div class="th-body"><div class="chat">${out.join('')}</div></div>
 ${replyBox}
@@ -440,6 +457,16 @@ export function homeRoutes(app: App): Route<DashReq>[] {
       const id = Number(m[1]);
       if (!(await apartCustomer(app, id, Number(r.form.other) || 0, r.user.name))) throw new ActionError('אי אפשר להפריד את השיחה הזו.');
       return { redirect: `/chat/${id}#customer`, message: 'הופרד. השיחה הזו כבר לא מופיעה כאן.' };
+    }],
+    // The archive (inbox.ts ARCHIVED_SQL). Putting a conversation there marks what waits in it handled, as "טיפלתי בזה"
+    // does (one Toran answered alone stays "ענה לבד"); taking it out counts its five silent days again from now.
+    ['POST', /^\/chat\/(\d+)\/archive$/, async (r, m) => {
+      const id = Number(m[1]);
+      const on = r.form.on !== '0';
+      if (on) await app.db.query(`UPDATE conversations c SET archived_at = now(), settled_upto = CASE WHEN ${WAITING_SQL} THEN COALESCE((SELECT MAX(id) FROM messages WHERE conversation_id = c.id), 0) ELSE c.settled_upto END WHERE c.id = $1`, [id]);
+      else await app.db.query('UPDATE conversations SET archived_at = NULL, unarchived_at = now() WHERE id = $1', [id]);
+      await audit(app.db, { actor: r.user.name, action: on ? 'archive' : 'unarchive', detail: { conversationId: id } });
+      return on ? { redirect: '/chats', message: 'השיחה עברה לארכיון. כשהלקוח יכתוב שוב, היא תחזור לשיחות.' } : { redirect: `/chat/${id}`, message: 'השיחה חזרה לשיחות.' };
     }],
     ['POST', /^\/chat\/(\d+)\/resume$/, async (r, m) => {
       await resumeAgent(app, Number(m[1]), r.user.name);

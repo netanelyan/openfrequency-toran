@@ -611,8 +611,10 @@ export const STOPPED_SAID = 'הסרנו אתכם, ולא נשלח לכם יות�
 /**
  * "הסירו אותי" (the pitch's button) or a "לא" to a pitch, from a number that got one in the last REPLY_DAYS: kept in
  * outreach_stops, its leads in both products marked lost (opted_out), one line back inside the 24 hours their message
- * opened. A bare "לא" counts only while they have not started a conversation with us since the pitch (a demo, our
- * support), where it may be an answer to something else. Null for anything else, which goes on as before.
+ * opened. A bare "לא" counts only while they have not written to us since the pitch (in a demo, to our support), where
+ * it may be an answer to something else. Our own messages are not theirs: the pitch itself is kept in our support's
+ * conversation with them (keepPitch), which then counted as talking, and "לא מעוניין" to it was answered as a question
+ * (the trace of 2026-11-12). Null for anything else, which goes on as before.
  */
 export async function outreachWord(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult | null> {
   const text = String(inbound.text || '');
@@ -624,7 +626,7 @@ export async function outreachWord(app: App, adapter: ChannelAdapter, inbound: I
   );
   if (!pitch) return null;
   if (!STOP_ALWAYS.test(text)) {
-    const talking = await app.db.one("SELECT 1 FROM conversations WHERE channel = 'whatsapp' AND peer = $1 AND started_at > $2 LIMIT 1", [phone, new Date(pitch.at).toISOString()]);
+    const talking = await app.db.one("SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.channel = 'whatsapp' AND c.peer = $1 AND m.role = 'customer' AND m.at > $2 LIMIT 1", [phone, new Date(pitch.at).toISOString()]);
     if (talking) return null;
   }
   const fresh = await app.db.one('INSERT INTO outreach_stops (phone, product, said) VALUES ($1, $2, $3) ON CONFLICT (phone) DO NOTHING RETURNING phone', [phone, pitch.product, cleanLine(text, 200)]);

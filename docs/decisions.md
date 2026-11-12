@@ -1402,3 +1402,53 @@ correctly. same with teder, its for creating a nice community etc".
 
 **Tested** (test/outreach.test.ts, including the words before going while the new ones are reviewed; test/both.test.ts,
 test/rules.test.ts, test/web.test.ts).
+
+## 2026-11-12: the inbox has an archive; five silent days put a conversation there by itself
+
+**What happened.** The owner: "Add an options to archive chats, and archive them automatically 5 days after
+inactivity".
+
+**Decision** (web/inbox.ts `ARCHIVED_SQL`, migration 079).
+- A conversation is in the archive when the owner put it there and nothing was written in it since, or when nothing
+  was written in it for five days and it waits for no one. A conversation waiting for the owner is never put away by
+  itself, so the badge and the list always agree.
+- "לארכיון" in the conversation's head (on a phone, its icon alone). One that waits is marked handled on the way, as
+  "טיפלתי בזה", said before the second press; one Toran answered alone stays "ענה לבד".
+- A new message brings it back by itself. "להוציא מהארכיון" brings it back by hand, and its five days count again
+  from then.
+- The archive is a row at the head of the list with its count, where a messaging app keeps its archived chats, and a
+  list of its own with the way back. A search looks in every conversation and marks the archive's. Today's last
+  conversations leave the archive out, and say where the rest went.
+- Toran answers in an archived conversation as in any other. Only the lists leave it out.
+
+**Tested** (test/archive.test.ts; test/isolation.test.ts has the new action).
+
+## 2026-11-12: no message goes from a lead's page while one of its demos is being built
+
+**What happened.** The owner: "Lead page shouldnt let me send a message while a demo is being built."
+
+**Decision** (ops/leadsAdmin.ts `leadOne`, `notWhileBuilding`). While Toran's page of the lead is being built or made
+again (its site read, or its sample chat made again: an `ingest` or `pitch` job), or Teder's demo of it is being written
+(new, building, or written again), no message is due: the lead's page offers none to send from our number and none to
+copy. A press that comes anyway (a page left open) is refused with Toran's line, "הדף של תורן עוד נבנה. אפשר יהיה לשלוח
+כשהוא מוכן." (or Teder's). Marking by hand that a message went ("שלחתי") stays open: it only records what the operator
+did from their own phone.
+
+**Tested** (test/leads-admin.test.ts).
+
+## 2026-11-12: "לא מעוניין" to a pitch kept in our inbox is the way out again
+
+**What happened.** Since a pitch is kept in our support's conversation with the number (d5b0533, keepPitch), that
+conversation starts when the pitch goes. The way out read any conversation started after the pitch as "they are talking
+to us", where a bare "לא" may answer something else, so "לא", "לא תודה" and "לא מעוניין" to the pitch itself were
+answered as questions, the number was not removed, and a reminder could still go. Found by tracing what Toran does when a
+lead answers (the owner: "How does our toran answer after a lead answers? Make sure the behavior is defined").
+
+**Decision** (ops/outreach.ts `outreachWord`). "Talking" is a message they wrote to us since the pitch (in a demo, to
+our support), never ours. "הסר" and "הסירו אותי" are the way out always, as before.
+
+**Tested** (test/outreach.test.ts, with our support's store set, as on the server).
+A Teder demo still marked new or building with nothing building it (a restart cut its build off; Teder builds only
+when asked and says whether a build runs) is a failed one on the lead's page, with "הבנייה של הדמו נעצרה באמצע. אפשר
+לבנות אותו שוב." and the button to build it again (Teder's build starts a cut-off one again), so it never holds the
+lead's message for good.

@@ -163,7 +163,7 @@ const UPLOAD = /^\/chat\/\d+\/reply$/;
 // guide before the store exists, and the pages' own colours and polls. Connecting a channel and every other change wait
 // for the payment, as Teder's do.
 const OPEN_UNPAID_GET = /^\/(start|knowledge|lead\/\d+\/knowledge|chats|chat\/\d+(\/file\/\d+)?|whatsapp|waiting\.json|notifications\/latest\.json|static\/stores\.css|export\/conversations\.csv)$/;
-const OPEN_UNPAID_POST = /^\/(start(\/verify(\/(email|code|key))?)?|chat\/\d+\/(reply|settle|resume))$/;
+const OPEN_UNPAID_POST = /^\/(start(\/verify(\/(email|code|key))?)?|chat\/\d+\/(reply|settle|resume|archive))$/;
 
 /**
  * What the pay page says beyond its words (pages/basic.ts refusalPage): whether the workspace has a store, how reading

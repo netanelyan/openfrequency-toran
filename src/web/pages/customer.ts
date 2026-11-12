@@ -17,7 +17,7 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, dayHe, esc, fold, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
 import { installCard, installPanel } from '../install.ts';
 import { storesOf, theirsOrOurs, type Scope } from '../workspace.ts';
-import { channelLogo, conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
+import { ARCHIVE_DAYS, ARCHIVED_SQL, channelLogo, conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { storeConnectReady } from '../../channels/kapso.ts';
 import { dmConnectReady } from '../../channels/zernio.ts';
@@ -367,7 +367,9 @@ async function today(app: App, r: DashReq) {
   const many = stores.length > 1;
   const nameOf = new Map(stores.map((s) => [s.id, s.name]));
   const waiting = await app.db.query<any>(`SELECT ${ROW_SQL}, c.store_id FROM conversations c WHERE ${messagingSql('c.channel')} AND c.store_id IN (${ids}) AND ${WAITING_SQL} ORDER BY c.last_at DESC LIMIT 10`);
-  const recent = await app.db.query<any>(`SELECT ${ROW_SQL}, c.store_id FROM conversations c WHERE ${messagingSql('c.channel')} AND c.store_id IN (${ids}) AND NOT ${WAITING_SQL} ORDER BY c.last_at DESC LIMIT 5`);
+  const recent = await app.db.query<any>(`SELECT ${ROW_SQL}, c.store_id FROM conversations c WHERE ${messagingSql('c.channel')} AND c.store_id IN (${ids}) AND NOT ${WAITING_SQL} AND NOT ${ARCHIVED_SQL} ORDER BY c.last_at DESC LIMIT 5`);
+  // None out of the archive (web/inbox.ts): said so, with the way to it, rather than "no conversations yet".
+  const archived = recent.length ? 0 : (await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM conversations c WHERE ${messagingSql('c.channel')} AND c.store_id IN (${ids}) AND ${ARCHIVED_SQL}`))?.n || 0;
   const month = await app.db.one<Record<InboxState, number>>(`SELECT COUNT(*) FILTER (WHERE state = 'alone')::int AS alone, COUNT(*) FILTER (WHERE state = 'fixed')::int AS fixed, COUNT(*) FILTER (WHERE state = 'waiting')::int AS waiting
     FROM (SELECT ${STATE_SQL} AS state FROM conversations c WHERE ${messagingSql('c.channel')} AND c.store_id IN (${ids}) AND c.last_at >= ${MONTH_START}) x`);
   const usage = await usages(app, stores);
@@ -418,7 +420,7 @@ ${live ? `<div class="kpis">
 </div>
 ${waitList('')}
 <section class="group mt24"><header><h2>שיחות אחרונות</h2><a class="end small" href="/chats">כל השיחות</a></header>
-  ${recent.length ? `<div class="list">${recent.map(row).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.</div>`}
+  ${recent.length ? `<div class="list">${recent.map(row).join('')}</div>` : archived ? `<div class="empty">${icon('archive')}<b>אין שיחות מהימים האחרונים</b>שיחה שלא נכתב בה כלום ${ARCHIVE_DAYS} ימים עוברת לארכיון. <a href="/chats?box=archive">לשיחות בארכיון</a></div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.</div>`}
 </section>
 ${setup && !tried && !many ? tryCard(app, stores[0], true) : ''}` : ''}
 ${installCard(r.ctx.install)}

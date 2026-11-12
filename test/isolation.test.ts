@@ -56,6 +56,7 @@ const ID_CASES: Record<string, (i: Ids) => string> = {
   'POST ^\\/chat\\/(\\d+)\\/same$': (i) => `/chat/${i.chatB}/same`,
   'POST ^\\/chat\\/(\\d+)\\/apart$': (i) => `/chat/${i.chatB}/apart`,
   'POST ^\\/chat\\/(\\d+)\\/resume$': (i) => `/chat/${i.chatB}/resume`,
+  'POST ^\\/chat\\/(\\d+)\\/archive$': (i) => `/chat/${i.chatB}/archive`,
   'GET ^\\/lead\\/(\\d+)$': (i) => `/lead/${i.b}`,
   'GET ^\\/job\\/(\\d+)$': (i) => `/job/${i.jobB}`,
   'POST ^\\/lead\\/(\\d+)\\/channels\\/email$': (i) => `/lead/${i.b}/channels/email`,
