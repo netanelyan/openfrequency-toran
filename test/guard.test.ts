@@ -179,6 +179,47 @@ test('a cut the customer did not ask about goes quietly: a greeting never gets "
   assert.equal(guardReply(reply, noStock).needsHandoff, true);
 });
 
+test('a reply says the hand-off once: the model\'s sentence that only repeats the honest line goes, and a later line says only what it is not sure of (docs/models.md, q11)', () => {
+  const asked = 'אני מארגנת אירוע ל-30 איש. אפשר הנחה על 30 ספלים?';
+  const a = buildAllow({ toolTexts: [tool, policy], customerTexts: [asked] });
+  const line = 'הנחה או החזר מאשר רק נציג מהחנות, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.';
+  // The model's own line is cut for its "הנחה" and the guard's put in its place: its next sentence went out beside it,
+  // "...יחזור אליך כאן. הוא יחזור אליכם כאן."
+  const q11 = guardReply('הנחה מאשר רק נציג מהחנות, אז העברתי לו את הבקשה. הוא יחזור אליכם כאן.', a, { asked });
+  assert.equal(q11.text, line);
+  assert.equal(q11.handoffReason, 'discount');
+  assert.deepEqual(q11.redactions.map((r) => r.rule), ['promise', 'continuation']);
+  assert.equal(guardReply('העברתי את הבקשה לנציג מהחנות. בינתיים אפשר לתת לך 10% הנחה.', a, { asked }).text, line, 'said before the cut');
+  assert.equal(guardReply('הנחה מאשר רק נציג מהחנות. נציג יחזור אליך בהקדם עם תשובה.', a, { asked }).text, line);
+  assert.equal(guardReply('הנחה מאשר רק נציג מהחנות, אז העברתי לו את הבקשה. הוא יחזור אליכם כאן.', a, { asked, voice: { emoji: true, plural: true } }).text, line.replace('אליך', 'אליכם'));
+  // A sentence that says more than the hand-off stays, and the honest line then says only its own part.
+  assert.equal(
+    guardReply('העברתי לנציג את השאלה על 30 הספלים לאירוע, והוא יחזור אליך כאן. בינתיים יש לך 10% הנחה.', a, { asked }).text,
+    'העברתי לנציג את השאלה על 30 הספלים לאירוע, והוא יחזור אליך כאן. הנחה או החזר מאשר רק נציג מהחנות.',
+  );
+  // Two cuts of two kinds: passed on once, and the second line is only what it is not sure of.
+  assert.equal(
+    guardReply('הספל עולה 95 ₪. המשלוח יגיע תוך 2 ימי עסקים.', a, { asked: 'כמה עולה הספל ומתי הוא יגיע?' }).text,
+    'על המחיר המדויק אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן. גם על זמני המשלוח אני לא בטוח.',
+  );
+  // "Back in stock" is not someone getting back to the customer.
+  assert.equal(
+    guardReply('האגרטל הגבוה יחזור למלאי אחרי השריפה הבאה. הספל עולה 95 ₪.', a, { asked: 'כמה עולה הספל?' }).text,
+    'האגרטל הגבוה יחזור למלאי אחרי השריפה הבאה. על המחיר המדויק אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן.',
+  );
+  // An offer to pass it on is not the hand-off itself: the honest line still says it was passed.
+  assert.equal(
+    guardReply('רוצים שאעביר את השאלה לנציג? הספל עולה 95 ₪.', a, { asked: 'כמה עולה הספל?' }).text,
+    'רוצים שאעביר את השאלה לנציג? על המחיר המדויק אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן.',
+  );
+  const en = buildAllow({ toolTexts: [tool, policy], customerTexts: ['Can I get a discount?'] });
+  assert.equal(guardReply('You can have a 10% discount. Someone from the store will get back to you here.', en, { asked: 'Can I get a discount?' }).text, "Discounts and refunds are approved only by someone from the store, so I've passed your request to them. They'll reply here.");
+  assert.equal(guardReply('The mug is 95 ₪. It arrives in 2 days.', en, { asked: 'How much is the mug and when does it arrive?' }).text, "I'm not sure about the exact price, so I've passed your question to someone from the store. They'll reply here. I'm not sure about delivery times either.");
+  // A company's lines say it once too.
+  const co = buildAllow({ toolTexts: [], customerTexts: ['אפשר הנחה?'] });
+  assert.equal(guardReply('אפשר לתת לך 20% הנחה. נציג שלנו יחזור אליך כאן.', co, { asked: 'אפשר הנחה?', company: true }).text, 'הנחה או הסדר מיוחד מאשר רק נציג שלנו, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.');
+});
+
 test('every handoff line kept in English reads in Hebrew for the owner and the operator', () => {
   for (const old of ['the guard cut stock: מה נשמע', "Toran is not paid for in this store's workspace: היי", "the store's spend cap ($5) is reached: היי", 'no answer within 30 seconds: היי', 'the model declined to answer', 'the agent failed: boom', 'no answer after 6 rounds: היי']) {
     const he = summaryHe(old);
