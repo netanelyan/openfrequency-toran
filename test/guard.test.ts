@@ -276,3 +276,8 @@ test('a reply that has the link does not offer to send one (the owner, 2026-11-1
   // A link and another question: nothing comes off.
   assert.equal(say('הוא עולה 299 ₪. https://pouf.example/products/pouf באיזה צבע?').text, 'הוא עולה 299 ₪. https://pouf.example/products/pouf באיזה צבע?');
 });
+
+test('a broken character the model put inside a word goes: the word is whole again', () => {
+  assert.equal(undash('אם נגר\uFFFDם נזק במשלוח, מחליפים.'), 'אם נגרם נזק במשלוח, מחליפים.');
+  assert.equal(guardReply('היי, מה מחפ\uFFFDשים?', buildAllow({ toolTexts: [], customerTexts: [] })).text, 'היי, מה מחפשים?');
+});

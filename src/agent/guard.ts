@@ -553,7 +553,9 @@ export function styleReply(text: string, { emoji = true, plural = false }: { emo
 /** The voice rules' punctuation: no em or en dashes as breaks. */
 // A dash between two numbers is a range ("1–3 ימי עסקים"), kept as a plain hyphen; anywhere else it is a sentence
 // break the voice guide does not allow, and becomes a comma.
-export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2').replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',');
+// The model now and then puts a broken character inside a word ("נגר�ם", in a demo's answer on 2026-11-12, though the
+// store's page has the word whole): it is one character too many, and it goes.
+export const undash = (t: string) => t.replace(/�/g, '').replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2').replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',');
 
 // verified: sentences the claim check's second opinion (claims.ts, TORAN_GUARD_LLM) found backed; the lexical rules
 // still apply to them.
