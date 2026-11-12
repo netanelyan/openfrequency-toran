@@ -414,13 +414,16 @@ What keeps a customer's message from being lost or delayed without anyone knowin
     "checking" line and goes to the owner, as past a cap; the owner's line in the inbox is "תורן העביר אליכם את השאלה
     הזו כדי שתענו עליה בעצמכם." with what the customer wrote, and the owner never sees a cost, a cap or a share. Its
     voice and the looks of its photos are not read either. You get one alert, `cost50:ws:<workspace>:<month>`: "תורן
-    עצר את המודל בחשבון 7 (<the store>) עד סוף החודש". The owner's assistant goes on answering the owner (its cost
-    still counts).
+    עצר את המודל בחשבון 7 (<the store>) עד סוף החודש". The owner is told once, as the terms promise ("אם זה קורה,
+    אנחנו מודיעים לכם", src/owners/paused.ts): one email to the workspace's owners through accounts, as
+    `conversation_waiting` (the kind accounts takes from Toran when customers wait; Toran's own mail when accounts
+    cannot decide), and a line at the top of Today while it lasts, "עד 1 בדצמבר תורן מעביר אליכם כל שאלה של לקוח",
+    in the terms' words and with no cost. The owner's assistant goes on answering the owner (its cost still counts).
   - **The lift:** on the store's page (`/admin/toran/lead/<id>#cost`, "החבילה של הלקוח"), the month's cost and share,
     and past 50% the one button, "להחזיר את המודל עד סוף החודש": the model answers again in every store of the
-    workspace until the month ends, and nothing more is said that month. "לעצור שוב מעל 50%" takes it back. Each is
-    an audit row (`cost_lift`, `cost_stop`) with the workspace, the month, the cost and the share. The next month
-    starts with no lift.
+    workspace until the month ends, the owner's line on Today goes, and nothing more is said that month. "לעצור שוב
+    מעל 50%" takes it back. Each is an audit row (`cost_lift`, `cost_stop`) with the workspace, the month, the cost and
+    the share. The next month starts with no lift.
   - `stores.config.capUsd`, when you set one, still stops its one store when it comes first (on the paid API).
 - **Spend caps of the stores no customer pays for** (leads, demos, our support store): each store's month against its
   plan's conversations, twice, at $0.25 each ($150; the operator's `stores.config.capUsd` replaces it), beside

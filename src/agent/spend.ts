@@ -4,6 +4,7 @@ import { audit } from '../db/log.ts';
 import { monthOf, PLANS, planOf, type PlanKey } from '../plans.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { lastKnown } from '../billing/entitlement.ts';
+import { enqueue } from '../jobs/queue.ts';
 import { displayName } from '../ingest/brand.ts';
 
 // What the model may still spend, asked before each agent turn (agent/loop.ts), a store's voice (agent/voice.ts), the
@@ -20,7 +21,8 @@ import { displayName } from '../ingest/brand.ts';
 //   STOP_SHARE (50%)   no model call for the workspace's stores until the month ends: a customer's message gets the
 //                      honest "checking" line and goes to the owner, as past a cap (agent/loop.ts), and the owner's line
 //                      says only that Toran passed the question on, never a cost or a share. The operator hears once,
-//                      and can lift it for the rest of the month on the store's page (/lead/<id>#cost), audited
+//                      and can lift it for the rest of the month on the store's page (/lead/<id>#cost), audited. The
+//                      owner is told once by email and on Today while it lasts, as the terms promise (owners/paused.ts)
 //
 // On every backend: the subscription's calls count at their API price, so a workspace stops in development as it would
 // in production. It replaces the plan's cap for these stores (its conversations twice over at $0.25: $150 for a store
@@ -224,7 +226,9 @@ async function customerCap(app: App, store: { id: number; config?: any }, worksp
   if (s.share >= STOP_SHARE) {
     // A lift is the operator's answer to this alert: after one, nothing more is said this month.
     if (s.lifted) return null;
-    await alertOperator(app, `cost50:ws:${workspaceId}:${month}`, `תורן עצר את המודל בחשבון ${workspaceId} (${who}) עד סוף החודש`, `${costLine(s, 'כבר')} מעכשיו עד סוף החודש השאלות של הלקוחות בחנויות של החשבון עוברות לבעלים בלי מודל, והבעלים לא רואים סכום או אחוז. אפשר להחזיר את המודל לחודש הזה בדף של החנות, בחלק "החבילה של הלקוח".`, { everyMinutes: ONCE_A_MONTH, storeId: store.id });
+    const first = await alertOperator(app, `cost50:ws:${workspaceId}:${month}`, `תורן עצר את המודל בחשבון ${workspaceId} (${who}) עד סוף החודש`, `${costLine(s, 'כבר')} מעכשיו עד סוף החודש השאלות של הלקוחות בחנויות של החשבון עוברות לבעלים בלי מודל, והבעלים לא רואים סכום או אחוז. הם מקבלים מייל אחד ושורה בדף "היום". אפשר להחזיר את המודל לחודש הזה בדף של החנות, בחלק "החבילה של הלקוח".`, { everyMinutes: ONCE_A_MONTH, storeId: store.id });
+    // The owner is told once too, as the terms promise (owners/paused.ts): the email waits for the worker, never the customer.
+    if (first) await enqueue(app.db, 'owner_paused', { workspace: workspaceId, month }, { dedupeKey: `owner_paused:${workspaceId}:${month}` }).catch((e) => app.log(`[spend] workspace ${workspaceId}: the owners' notice was not queued: ${e?.message || e}`));
     return { by: 'share', cap: (s.base * STOP_SHARE) / usdIls(app.env), spent: s.usd, customer: true };
   }
   await alertOperator(app, `cost30:ws:${workspaceId}:${month}`, `המודל בחשבון ${workspaceId} (${who}) עלה החודש ${percent(s.share)} ממה שהלקוח משלם`, `${costLine(s, 'עד עכשיו')} ב-50% תורן יעצור את המודל בחנויות של החשבון עד סוף החודש, והשאלות של הלקוחות יעברו לבעלים.`, { everyMinutes: ONCE_A_MONTH, storeId: store.id });

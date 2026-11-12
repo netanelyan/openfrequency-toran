@@ -11,6 +11,8 @@ import { J } from '../src/db/index.ts';
 import { usage } from '../src/db/log.ts';
 import { monthOf } from '../src/plans.ts';
 import { customerHealth } from '../src/ops/health.ts';
+import { pausedNotice, untilHe } from '../src/owners/paused.ts';
+import { drain } from '../src/jobs/worker.ts';
 import type { App } from '../src/app.ts';
 import { customer, testApp } from './helpers.ts';
 import { serve } from './serve.ts';
@@ -161,6 +163,9 @@ test('at 50% no model call: the customer gets the honest line, the owner a hando
     assert.equal((await capFor(app, { id: storeId, config: {} }))?.by, 'share');
     // The operator's health row puts the month's spend against that line: half of 590 ₪, in dollars.
     assert.equal((await customerHealth(app)).find((r) => r.storeId === storeId)?.capUsd, 93.06);
+    // The owners' notice is asked for once, with the alert: one job, however many messages come.
+    const jobs = await app.db.query<{ payload: any }>("SELECT payload FROM jobs WHERE kind = 'owner_paused'");
+    assert.deepEqual(jobs.map((j) => j.payload), [{ workspace: WS, month: monthOf() }]);
   } finally {
     await app.db.close();
   }
@@ -230,6 +235,69 @@ test('the operator lifts the stop on the store\'s page for the rest of the month
     assert.equal(calls, before, 'stopped again');
   } finally {
     await s.close();
+  }
+});
+
+test('past 50% the owner is told, as the terms promise: one email through accounts and a line on Today while it lasts, never a cost; the lift takes the line away', async () => {
+  const s = await serve();
+  const id = s.seeded.storeId;
+  s.app.env.PUBLIC_BASE_URL = 'https://toran.openfrequency.co.il';
+  s.accounts.notifyOn();
+  try {
+    await s.app.db.query('UPDATE stores SET workspace_id = $2 WHERE id = $1', [id, WS]);
+    s.accounts.price(WS, 590);
+    s.as(s.accounts.session(customer(WS)).cookie);
+    assert.doesNotMatch(await (await s.get('/')).text(), /id="paused"/, 'under the line: nothing said');
+    await usage(s.app.db, { storeId: id, kind: 'llm', backend: 'api', usd: AT_50, apiUsd: AT_50, tag: 'agent' });
+    const conv = await conversationFor(s.app.db, id, 'whatsapp', '972500000410');
+    await runTurn(s.app, { storeId: id, conversationId: conv, text: 'יש ספלים?', channel: 'whatsapp', footer: false });
+
+    // Today, first: until when, why in the terms' words, and where the questions wait.
+    const today = await (await s.get('/')).text();
+    const line = /<div class="banner info" id="paused">[\s\S]*?<\/div><a[^>]*>[^<]*<\/a><\/div>/.exec(today)?.[0] || '';
+    const until = untilHe(monthOf());
+    assert.match(line, new RegExp(`עד ${until} תורן מעביר אליכם כל שאלה של לקוח`));
+    assert.match(line, /שימוש חריג מאוד, הרבה מעבר לחבילה/);
+    assert.match(line, /href="\/chats\?state=waiting"/);
+    assert.doesNotMatch(line, /₪|\$|%|\d+\.\d\d/, 'never a cost or a share');
+
+    // The email: once, through accounts, as the kind an owner gets when customers wait for them, by the worker.
+    assert.equal(await drain(s.app, { kinds: ['owner_paused'] }), 1);
+    assert.deepEqual((await s.app.db.one<any>("SELECT status, result FROM jobs WHERE kind = 'owner_paused'")), { status: 'done', result: { sent: 1 } });
+    assert.equal(s.accounts.notified.length, 1);
+    const mail = s.accounts.notified[0];
+    assert.equal(mail.workspace, WS);
+    assert.equal(mail.product, 'toran');
+    assert.equal(mail.kind, 'conversation_waiting');
+    assert.equal(mail.link, 'https://toran.openfrequency.co.il/chats?state=waiting');
+    assert.match(mail.subject, new RegExp(`^עד ${until} תורן מעביר אליכם כל שאלה של לקוח בכלי חרס של נורית$`));
+    assert.match(mail.text, /שימוש חריג מאוד/);
+    assert.doesNotMatch(`${mail.subject} ${mail.text}`, /₪|\$|%/);
+    assert.equal((await pausedNotice(s.app, WS, monthOf())).why, 'already told');
+    assert.equal(s.accounts.notified.length, 1, 'one email a month');
+
+    // The operator lifts it: the line goes.
+    s.login();
+    const token = /name="_csrf" value="([^"]+)"/.exec(await (await s.get(`/lead/${id}`)).text())![1];
+    assert.equal((await s.post(`/lead/${id}/cost-lift`, { _csrf: token, on: '1' })).status, 303);
+    s.as(s.accounts.session(customer(WS)).cookie);
+    assert.doesNotMatch(await (await s.get('/')).text(), /id="paused"/);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a notice asked for and then lifted before the worker runs it is not sent; nor one for another month', async () => {
+  const { app, storeId } = await customerStore();
+  try {
+    await usage(app.db, { storeId, kind: 'llm', backend: 'api', usd: AT_50, apiUsd: AT_50, tag: 'agent' });
+    await setLift(app, WS, true, { actor: 'operator', storeId });
+    assert.equal((await pausedNotice(app, WS, monthOf())).why, 'the model answers again');
+    assert.equal((await pausedNotice(app, WS, '2020-01')).why, 'another month');
+    assert.equal(untilHe('2026-11'), '1 בדצמבר');
+    assert.equal(untilHe('2026-12'), '1 בינואר');
+  } finally {
+    await app.db.close();
   }
 });
 

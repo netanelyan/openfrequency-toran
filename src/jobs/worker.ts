@@ -30,6 +30,7 @@ import { checkDomain, domainsToCheck } from '../channels/mailDomain.ts';
 import { handleHook, pollStore, scheduleAuto, sendDue, setupSource, submitNew } from '../auto/jobs.ts';
 import { checkTemplates, templateStatus } from '../auto/templates.ts';
 import { waitingDigest } from '../owners/waiting.ts';
+import { pausedNotice } from '../owners/paused.ts';
 import { learnVoice } from '../agent/voice.ts';
 import { takeOrderKey } from '../domainProof.ts';
 
@@ -184,6 +185,8 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return rereadCompany(app);
     case 'owner_waiting':
       return waitingDigest(app, Number(p.storeId));
+    case 'owner_paused':
+      return pausedNotice(app, Number(p.workspace), String(p.month || ''));
     case 'looks':
       return await readLooks(app, Number(p.storeId));
     case 'ingest':

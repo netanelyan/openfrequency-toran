@@ -36,6 +36,8 @@ import { webAccountOf } from '../../channels/web.ts';
 import { liveOf, setLive, type LiveState } from '../../golive.ts';
 import { vapid } from '../../owners/push.ts';
 import { voicePanel } from './voice.ts';
+import { shareOf, stopped } from '../../agent/spend.ts';
+import { pausedCopy } from '../../owners/paused.ts';
 
 // The customer's dashboard (docs/customer.md): what openfrequency.co.il/toran sells a store owner, on the pages they
 // sign in to. Today (what waits for them, the month in numbers, the store's channels), the inbox (pages/home.ts, with
@@ -155,6 +157,20 @@ async function setupPage(app: App, r: DashReq, title: string, active: string) {
   const list = steps.length ? `<section class="panel setupbox mt16" id="setup"><header><h2>מה נשאר</h2></header><div class="list">${steps.map(stepItem).join('')}</div></section>` : '';
   return layout({ ...r.ctx, title, active }, `<div class="head"><h1>${esc(title)}</h1></div>
 ${box}${list}`);
+}
+
+/**
+ * While Toran passes every question to the owner until the month ends (agent/spend.ts, past half of what the workspace
+ * pays), Today says so first, in the terms' words and never with a cost (owners/paused.ts); the operator's lift takes it
+ * away. Only on one workspace's screens: the operator's view of every customer has no one to say it to.
+ */
+async function pausedBanner(app: App, r: DashReq): Promise<string> {
+  const ws = Number(r.scope.workspaceId);
+  if (!(ws > 0)) return '';
+  const s = await shareOf(app, ws);
+  if (!stopped(s)) return '';
+  const c = pausedCopy(s.month);
+  return `<div class="banner info" id="paused">${icon('hand')}<div><b>${esc(c.title)}</b><p>${esc(c.text)}</p></div><a class="btn sm" href="/chats?state=waiting">לשאלות שמחכות</a></div>`;
 }
 
 /** On Today while the store's site is read for the first time, or cannot be: a banner above the rest. */
@@ -301,6 +317,7 @@ async function today(app: App, r: DashReq) {
   const stores = await myStores(app, r.scope);
   if (!stores.length) return setupPage(app, r, 'היום', 'today');
   const reading = await readingBanner(app, r);
+  const paused = await pausedBanner(app, r);
   const ids = stores.map((s) => s.id).join(', ');
   const many = stores.length > 1;
   const nameOf = new Map(stores.map((s) => [s.id, s.name]));
@@ -332,7 +349,7 @@ async function today(app: App, r: DashReq) {
   const notLive = `<div class="banner warn" id="not-live">${icon('alert')}<div><b>תורן עוד לא עונה ללקוחות</b><p>הוא מתחיל לענות כשמחברים ערוץ אחד (וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר) ומפעילים אותו. עד אז הודעות של לקוחות מחכות לכם בשיחות, ואפשר לנסות אותו בעצמכם.</p></div></div>`;
 
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(dayHe(now()))}${many ? '' : ` · ${esc(stores[0].name)}`}</p></div>
-${reading}${reconnect}${recap}
+${paused}${reading}${reconnect}${recap}
 ${goLive}${live ? '' : `${goLive ? '' : notLive}${setupBlock(app, setup)}${many ? '' : tryCard(app, stores[0], false, !setupBlock(app, setup) && !goLive)}`}
 ${live && weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
 ${live ? `<div class="kpis">

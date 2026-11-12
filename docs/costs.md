@@ -38,11 +38,12 @@ plan's list price).
 | חנות גדולה, 1,500 conversations | 1,190 ₪ | 357 ₪ ($112.62) | 595 ₪ ($187.70) |
 
 At 30% we get one alert that month on WhatsApp. At 50% the model stops for every store of the workspace until the
-month ends: a customer's message gets the honest "checking" line and goes to the owner, who reads only that Toran passed
-it on, and we get one alert; the store's page (/admin/toran/lead/<id>#cost) lifts it for the rest of the month,
-audited. At about $0.03 an answer, the real stores' cost before caching, a full store plan is about 19% and a full big
-plan about 48%. Leads, demos and our support store are held to `TORAN_MONTHLY_CAP_USD` instead, which no longer counts
-or stops a customer's store (docs/operator.md, section 6).
+month ends: a customer's message gets the honest "checking" line and goes to the owner, who reads only that Toran
+passed it on and gets one email and a line on Today in the terms' words, and we get one alert; the store's page
+(/admin/toran/lead/<id>#cost) lifts it for the rest of the month, audited. At about $0.03 an answer, the real stores'
+cost before caching, a full store plan is about 19% and a full big plan about 48%. Leads, demos and our support store
+are held to `TORAN_MONTHLY_CAP_USD` instead, which no longer counts or stops a customer's store (docs/operator.md,
+section 6).
 
 What is not known yet, and should be measured on the first real stores: the real number of answers per
 conversation, the prompt cache's share in production, and Meta's template volume per store.
