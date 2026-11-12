@@ -175,6 +175,9 @@ function aboutOf(s: any, name: string, stock: Stock | undefined) {
       currency: String(s.config?.currency || 'ILS'),
       kinds: stock?.kinds || [],
       social: { instagram: https(sig.social?.instagram), tiktok: https(sig.social?.tiktok), facebook: https(sig.social?.facebook) },
+      // Whether its site was read for them: a store found before 2026-11-05 was not (leads/social.ts), and its having
+      // none is then not known.
+      socialRead: Boolean(sig.social) && typeof sig.social === 'object' && !Array.isArray(sig.social),
     },
   };
 }

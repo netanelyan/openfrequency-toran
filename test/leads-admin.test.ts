@@ -7,6 +7,7 @@ import path from 'node:path';
 import { ROOT } from '../src/core/paths.ts';
 import { INTERNAL_TOKEN } from './helpers.ts';
 import { serve } from './serve.ts';
+import { readSocial, SOCIAL_UNREAD } from '../src/leads/social.ts';
 
 // The shared lead dashboard's data, for accounts' /admin/leads (the owner, 2026-11-08: "make the shared lead dashboard
 // be in the admin dashboard, not in one of the products"; ops/leadsAdmin.ts): Toran's stores that are leads, each
@@ -322,9 +323,29 @@ test('a store in a few words: its own line, its products and prices once read, t
     const list = await get('/internal/leads');
     const row = (id: number) => list.leads.find((x: any) => x.id === id);
     assert.equal(row(read).about, 'פופים, הדומים וספות נפתחות לסלון | משלוח חינם');
-    assert.deepEqual(row(read).facts, { products: 5, productsAtLeast: false, priceMin: 249, priceMax: 4999, currency: 'ILS', kinds: ['פופים', 'ספות'], social: { instagram: 'https://www.instagram.com/pofi/', tiktok: null, facebook: null } }, 'what Toran read wins over the count when found; the prices are of what it sells (no shipping line, nothing free); a profile that is not an https address is left out');
+    assert.deepEqual(row(read).facts, { products: 5, productsAtLeast: false, priceMin: 249, priceMax: 4999, currency: 'ILS', kinds: ['פופים', 'ספות'], social: { instagram: 'https://www.instagram.com/pofi/', tiktok: null, facebook: null }, socialRead: true }, 'what Toran read wins over the count when found; the prices are of what it sells (no shipping line, nothing free); a profile that is not an https address is left out');
     assert.equal(row(found).about, null, 'a title that is only its name says nothing more');
     assert.deepEqual([row(found).facts.products, row(found).facts.productsAtLeast, row(found).facts.priceMin, row(found).facts.kinds], [40, false, null, []], 'not read yet: the count when it was found');
+    assert.equal(row(found).facts.socialRead, false, 'found before its profiles were read: having none is not known');
+
+    // Read now (leads/social.ts): its home page, then its contact page for a network the home page lacks; a profile
+    // kept already is never replaced, and a site that does not answer stays unread.
+    const pages: Record<string, string> = {
+      'https://found.example/': '<html><body><a href="https://www.instagram.com/found.shop/">IG</a><a href="/pages/contact">צור קשר</a></body></html>',
+      'https://found.example/pages/contact': '<html><body><a href="https://www.tiktok.com/@found.shop">TikTok</a></body></html>',
+    };
+    const asked: string[] = [];
+    s.app.fetcher = async (url) => {
+      asked.push(url);
+      if (!pages[url]) throw new Error('not here');
+      return { url, status: 200, contentType: 'text/html', text: pages[url], headers: {} };
+    };
+    assert.deepEqual((await s.app.db.query<{ id: number }>(`SELECT id FROM stores WHERE ${SOCIAL_UNREAD} AND id IN ($1, $2)`, [read, found])).map((r) => r.id), [found], 'only the store never read');
+    assert.deepEqual(await readSocial(s.app, { id: found, url: 'https://found.example/' }), { instagram: 'https://www.instagram.com/found.shop/', tiktok: 'https://www.tiktok.com/@found.shop', facebook: null });
+    const again = (await get('/internal/leads')).leads.find((x: any) => x.id === found);
+    assert.deepEqual([again.facts.social, again.facts.socialRead], [{ instagram: 'https://www.instagram.com/found.shop/', tiktok: 'https://www.tiktok.com/@found.shop', facebook: null }, true]);
+    assert.equal(await readSocial(s.app, { id: read, url: 'https://pofi.example/' }), null, 'did not answer');
+    assert.equal((await get('/internal/leads')).leads.find((x: any) => x.id === read).facts.social.instagram, 'https://www.instagram.com/pofi/', 'nothing written');
   } finally {
     await s.close();
   }

@@ -5,6 +5,8 @@
 //   add   <url> [<url>...]       one store by hand (what the dashboard's "add by URL" does)
 //   list  [--all]                the leads, qualified first (--all includes the unqualified)
 //   show  <domain|id>            one lead with its score breakdown and signals
+//   social                       the Instagram, TikTok and Facebook of every lead found before Toran read them
+//                                (leads/social.ts), one site at a time
 //
 // Discovery only reads: it fetches public pages politely (robots.txt, one request a
 // second per host) and never contacts anyone.
@@ -13,6 +15,7 @@ import { makeApp } from '../src/app.ts';
 import { closeBrowser } from '../src/core/browser.ts';
 import { israelDate } from '../src/core/clock.ts';
 import { discover } from '../src/leads/discover.ts';
+import { readSocial, SOCIAL_UNREAD } from '../src/leads/social.ts';
 import { brave, braveQueries, crawl, seeds, storecensus, type Candidate } from '../src/leads/sources.ts';
 
 const args = process.argv.slice(2);
@@ -56,6 +59,17 @@ try {
     })();
     const { stats } = await discover(app.db, gen, { fetcher: app.fetcher, render: app.render, limit: urls.length, log: say }, 'manual');
     say(`${stats.leads} added, ${stats.merged} merged, ${stats.skipped} already known, ${stats.rejected + stats.failed} not added`);
+  } else if (cmd === 'social') {
+    const rows = await app.db.query<{ id: number; url: string; domain: string }>(`SELECT id, url, domain FROM stores WHERE ${SOCIAL_UNREAD} ORDER BY id`);
+    say(`${rows.length} stores whose profiles were never read`);
+    let found = 0;
+    let failed = 0;
+    for (const r of rows) {
+      const s = await readSocial(app, r);
+      if (!s) failed++;
+      else if (s.instagram || s.tiktok || s.facebook) found++;
+    }
+    say(`read ${rows.length - failed}: ${found} with a profile; ${failed} did not answer, and stay unread`);
   } else if (cmd === 'forget-failed') {
     // After a network outage: the domains that failed to load are tried again on the next run.
     const r = await app.db.query("DELETE FROM seen_domains WHERE verdict = 'failed' RETURNING domain");
