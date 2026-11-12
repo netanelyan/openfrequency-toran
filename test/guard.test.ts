@@ -215,6 +215,11 @@ test('a reply says the hand-off once: the model\'s sentence that only repeats th
   const en = buildAllow({ toolTexts: [tool, policy], customerTexts: ['Can I get a discount?'] });
   assert.equal(guardReply('You can have a 10% discount. Someone from the store will get back to you here.', en, { asked: 'Can I get a discount?' }).text, "Discounts and refunds are approved only by someone from the store, so I've passed your request to them. They'll reply here.");
   assert.equal(guardReply('The mug is 95 ₪. It arrives in 2 days.', en, { asked: 'How much is the mug and when does it arrive?' }).text, "I'm not sure about the exact price, so I've passed your question to someone from the store. They'll reply here. I'm not sure about delivery times either.");
+  // An English reply with a Hebrew word in it gets the English line (the tools' rules have the model write "(נציג)").
+  assert.equal(
+    guardReply("The sand mug (ספל חול) is 95 ₪. I've passed your question to someone from the store (נציג).", en, { asked: 'How much is the sand mug?' }).text,
+    "I'm not sure about the exact price, so I've passed your question to someone from the store. They'll reply here.",
+  );
   // A company's lines say it once too.
   const co = buildAllow({ toolTexts: [], customerTexts: ['אפשר הנחה?'] });
   assert.equal(guardReply('אפשר לתת לך 20% הנחה. נציג שלנו יחזור אליך כאן.', co, { asked: 'אפשר הנחה?', company: true }).text, 'הנחה או הסדר מיוחד מאשר רק נציג שלנו, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.');

@@ -1,4 +1,4 @@
-import { heWord, normalize, termGroups } from '../core/hebrew.ts';
+import { hebrewRatio, heWord, normalize, termGroups } from '../core/hebrew.ts';
 import { claimEvidence, claimViolation, type ClaimEvidence } from './claims.ts';
 
 // The reply guard: a deterministic filter on every reply, after the model and before
@@ -403,6 +403,12 @@ const HANDOFF_WORDS = new Set(
 const handoffWord = (w: string) => HANDOFF_WORDS.has(w) || (/^[והלמבש]{1,2}[א-ת]/.test(w) && (HANDOFF_WORDS.has(w.slice(1)) || HANDOFF_WORDS.has(w.slice(2))));
 const onlyHandsOver = (t: string) => normalize(t).split(' ').filter(Boolean).every(handoffWord);
 
+/**
+ * A reply is English by most of its letters: an English reply may carry a Hebrew word (the tools' rules have the model
+ * write "someone from the store (נציג)", a product keeps its Hebrew name), and its honest line is still English.
+ */
+const englishReply = (text: string) => /[a-z]/i.test(text) && hebrewRatio(text) < 0.5;
+
 /** The reply's pieces (out) with the hand-off said once; placed: the honest lines put in, by their place in out. */
 function handOverOnce(out: string[], placed: Map<number, string>, english: boolean, redactions: Redaction[]): void {
   if (![...placed.keys()].some((i) => TAIL.test(out[i].trim()))) return;
@@ -447,7 +453,7 @@ export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2
 // asked: the customer's message this turn; a cut about something it did not ask about gets no honest line and no handoff.
 // voice: the store's emoji switch and address (agent/voice.ts), applied to the whole reply, the honest lines included.
 export function guardReply(text: string, allow: Allow, { company = false, verified, asked, voice }: { company?: boolean; verified?: Set<string>; asked?: string; voice?: { emoji: boolean; plural: boolean } } = {}): GuardResult {
-  const english = !/[א-ת]/.test(text) && /[a-z]/i.test(text);
+  const english = englishReply(text);
   const lines = company ? (english ? REPLACE_COMPANY_EN : REPLACE_COMPANY) : english ? REPLACE_EN : REPLACE;
   const out: string[] = [];
   const redactions: Redaction[] = [];
