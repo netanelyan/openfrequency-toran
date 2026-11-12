@@ -5,7 +5,7 @@ import { now } from '../../core/clock.ts';
 import { enqueue } from '../../jobs/queue.ts';
 import { audit } from '../../db/log.ts';
 import { contactTarget, pitchUrl, reminderMessage } from '../../outreach.ts';
-import { getOffer, offerReady, priceSentence, setOffer, type Offer } from '../../offer.ts';
+import { getOffer, offerReady, priceSentence, savedOffer, setOffer, type Offer } from '../../offer.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { ago, csrfField, dayLine, esc, icon, layout, postButton, stamp, storeBadge, timeHe, tokenNum, usd } from '../ui.ts';
 import { installCard, installPanel } from '../install.ts';
@@ -323,6 +323,7 @@ async function settings(app: App, r: DashReq) {
   const runs = op ? await app.db.query<any>('SELECT * FROM discovery_runs ORDER BY id DESC LIMIT 8') : [];
   const keys = KEYS.map((k) => `<li><code>${k.name}</code><span>${esc(k.he)}</span><span class="end chip ${isSet(k.name, app.env) ? 'ok' : 'ghost'}">${isSet(k.name, app.env) ? 'מוגדר' : 'חסר'}</span></li>`).join('');
   const offer = await getOffer(app.db);
+  const saved = await savedOffer(app.db);
   const dev = r.ctx.dev;
   const money = (x: number) => (dev ? usd(x, 3) : `${tokenNum(x)}`);
   const body = `<div class="head"><h1>הגדרות</h1><p class="sub">החודש: ${dev ? `${usd(tot?.paid, 2)} שולם, ${usd(tot?.api, 2)} במחירי API` : `${tokenNum(tot?.api)} טוקנים`}, ${tot?.searches || 0} חיפושים.</p></div>
@@ -338,7 +339,7 @@ async function settings(app: App, r: DashReq) {
     </section>` : ''}
   </div>
   <div class="grid12">
-    ${op ? `${offerPanel(r, offer)}
+    ${op ? `${offerPanel(r, saved, offer)}
     ${channelsPanel(r, await channelStates(app.db), enabledChannels(app.env))}
     <section class="panel"><header><h2>מפתחות</h2></header><ul class="keys">${keys}</ul><p class="small muted mt12 m0">הערכים נשמרים ב־<span class="ltr">private/.env</span> בלבד ולא מוצגים כאן.</p></section>` : ''}
     <section class="panel"><header><h2>המותג</h2></header><a class="btn sm" href="/brand">לדף המותג</a></section>
@@ -357,23 +358,29 @@ function channelsPanel(r: DashReq, states: Record<string, ChannelState>, on: Set
   const row = (c: string) => `<label class="f mt8">${esc(CHANNEL_HE[c as keyof typeof CHANNEL_HE])}${on.has(c) ? '' : '<small>הקוד של הערוץ הזה עוד כבוי בשרת, אז הוא נשאר כבוי.</small>'}<select name="${c}"${on.has(c) ? '' : ' disabled'}>${(['off', 'demo', 'live'] as ChannelState[]).map((v) => `<option value="${v}"${states[c] === v ? ' selected' : ''}>${label[v]}</option>`).join('')}</select></label>`;
   return `<section class="panel" id="channels"><header><h2>ערוצים</h2></header>
   <form method="post" action="/settings/channels">${csrfField(r.ctx)}${ALL_CHANNELS.map(row).join('')}<button class="btn sm mt12" type="submit">לשמור</button></form>
-  <p class="small muted mt12 m0">מה שנבחר כאן מופיע באתר: ערוץ שלא פעיל מסומן שם "בקרוב". "פעיל" בוחרים רק כשחנות שמשלמת יכולה לקבל בו את תורן.</p>
+  <p class="small muted mt12 m0">זה רק מה ש־/channels.json אומר לאתר, והאתר לא קורא אותו כרגע: הרשימה שלו קבועה אצלו (toran.channelsFrom הוא config ב־site.config.json). אם יעבור לקרוא מכאן, דמו ופעיל נראים שם אותו דבר, וכבוי מסומן "בקרוב". לחנויות זה לא משנה כלום: מה שחנות יכולה לחבר נקבע ב־TORAN_CHANNELS ובחיבור לספק.</p>
 </section>`;
 }
 
-/** The offer every pitch page quotes: one place, and until it is set every page waits (offer.ts). */
-function offerPanel(r: DashReq, o: Offer) {
+/**
+ * The offer every pitch page quotes (offer.ts): the plans accounts sells, unless a price of our own is ticked here on
+ * purpose. `o` is the row as kept, for the form; `shown` is what the pages say.
+ */
+function offerPanel(r: DashReq, o: Offer, shown: Offer) {
   const vat = (v: string, label: string) => `<option value="${v}"${o.vat === v ? ' selected' : ''}>${label}</option>`;
-  return `<section class="panel" id="offer"><header><h2>המחיר בדפי הדמו</h2><span class="end chip ${offerReady(o) ? 'ok' : 'bad'}">${offerReady(o) ? 'מוגדר' : 'חסר, הדפים מחכים'}</span></header>
-  <form method="post" action="/settings/offer">${csrfField(r.ctx)}
+  return `<section class="panel" id="offer"><header><h2>המחיר בדפי הדמו</h2><span class="end chip ${offerReady(shown) ? 'ok' : 'bad'}">${shown.override ? 'מחיר שלנו' : 'מהחבילות'}</span></header>
+  <p class="small m0">ככה זה כתוב בדף: ${priceSentence(shown, (s) => `<mark>${esc(s)}</mark>`, esc)}${shown.bigMonthly ? ` החבילה הגדולה: ${esc(shown.bigMonthly.toLocaleString('he-IL'))} ₪ לחודש.` : ''}</p>
+  <p class="small muted mt8 m0">${shown.override ? 'זה המחיר שסימנתם כאן במקום החבילות.' : 'מהחבילות בחשבונות (subscriptions.js), אותו מחיר שהלקוח משלם.'}</p>
+  <details class="mt12"${o.override ? ' open' : ''}><summary class="small">מחיר אחר בדפי הדמו</summary>
+  <form method="post" action="/settings/offer" class="mt8">${csrfField(r.ctx)}
+    <label class="row"><input type="checkbox" name="override" value="1"${o.override ? ' checked' : ''}> להציג את המחיר הזה במקום החבילות</label>
     <label class="f">מחיר לחודש, בשקלים<input type="number" name="monthly" min="1" max="100000" step="1" inputmode="numeric" value="${o.monthly ?? ''}"></label>
     <label class="f mt8">מחיר לחודש של חבילת חנות גדולה, בשקלים<small>1,500 שיחות בחודש. ריק: הדף מציג רק את החבילה של 300 שיחות.</small><input type="number" name="bigMonthly" min="1" max="100000" step="1" inputmode="numeric" value="${o.bigMonthly ?? ''}"></label>
     <label class="f mt8">מע״מ<select name="vat">${vat('', 'עוד לא נקבע')}${vat('included', 'כולל מע״מ')}${vat('excluded', 'לא כולל מע״מ')}</select></label>
     <label class="f mt8">דמי הקמה, בשקלים<small>0 אם אין. ריק אם עוד לא נקבע.</small><input type="number" name="setup" min="0" max="100000" step="1" inputmode="numeric" value="${o.setup ?? ''}"></label>
     <label class="f mt8">העיר בתחתית הדף<input type="text" name="city" maxlength="40" value="${esc(o.city)}" dir="rtl"></label>
     <button class="btn sm mt12" type="submit">לשמור</button>
-  </form>
-  <p class="small muted mt12 m0">ככה זה כתוב בדף: ${priceSentence(o, (s) => `<mark>${esc(s)}</mark>`, esc)}</p>
+  </form></details>
 </section>`;
 }
 
@@ -464,10 +471,10 @@ export function homeRoutes(app: App): Route<DashReq>[] {
       const vat = r.form.vat === 'included' || r.form.vat === 'excluded' ? r.form.vat : null;
       const city = String(r.form.city || '').replace(/\s+/g, ' ').trim().slice(0, 40) || 'אשדוד';
       // The big plan (offer.ts bigMonthly): shown beside the store plan on a pitch page once Toran is on sale; empty keeps it off.
-      const offer: Offer = { monthly: num(r.form.monthly, 1), vat, setup: num(r.form.setup, 0), city, ...('bigMonthly' in r.form ? { bigMonthly: num(r.form.bigMonthly, 1) } : {}) };
+      const offer: Offer = { monthly: num(r.form.monthly, 1), vat, setup: num(r.form.setup, 0), city, override: r.form.override === '1', ...('bigMonthly' in r.form ? { bigMonthly: num(r.form.bigMonthly, 1) } : {}) };
       await setOffer(app.db, offer);
       await audit(app.db, { actor: r.user.name, action: 'offer', detail: offer });
-      return { redirect: '/settings#offer', message: offerReady(offer) ? 'המחיר נשמר. דפים שאין להם חוסר אחר יכולים להיפתח.' : 'נשמר. עד שהמחיר, המע״מ ודמי ההקמה קבועים, הדפים מחכים.' };
+      return { redirect: '/settings#offer', message: !offer.override ? 'נשמר. דפי הדמו מציגים את המחיר מהחבילות.' : offerReady(offer) ? 'המחיר נשמר. דפי הדמו מציגים אותו במקום החבילות.' : 'נשמר. עד שהמחיר, המע״מ ודמי ההקמה קבועים, הדפים מחכים.' };
     }],
     ['POST', /^\/settings\/discover$/, async (r) => {
       const source = ['storecensus', 'crawl', 'brave', 'seeds'].includes(r.form.source) ? r.form.source : 'storecensus';

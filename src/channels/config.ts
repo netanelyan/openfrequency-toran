@@ -50,10 +50,14 @@ export async function setChannelState(db: Db, env: Record<string, string | undef
   return next;
 }
 
-/** GET /channels.json: what the website shows. Nothing about any store or workspace. */
+/**
+ * GET /channels.json: what the website shows. Nothing about any store or workspace. The chat on the store's own site is
+ * every store's, with no setting of the server's and no provider (web.ts), so it is always live (the audit of
+ * 2026-11-12, P1-21: left out, a website reading this would tag it "בקרוב").
+ */
 export async function publicChannels(db: Db) {
   const states = await channelStates(db);
-  return { channels: states, live: ALL_CHANNELS.filter((c) => states[c] === 'live'), demo: ALL_CHANNELS.filter((c) => states[c] === 'demo'), soon: ALL_CHANNELS.filter((c) => states[c] === 'off') };
+  return { channels: { ...states, web: 'live' as const }, live: [...ALL_CHANNELS.filter((c) => states[c] === 'live'), 'web'], demo: ALL_CHANNELS.filter((c) => states[c] === 'demo'), soon: ALL_CHANNELS.filter((c) => states[c] === 'off') };
 }
 
 /** The address a store's mail is forwarded to. */

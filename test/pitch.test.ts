@@ -57,7 +57,7 @@ test('a page is held for each missing field: price, the two numbers, the colour,
   const { app, store } = await seeded();
   try {
     const keys = async () => (await pitchGaps(app, await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [store.id]))).map((g) => g.key).sort();
-    assert.deepEqual(await keys(), ['price'], 'no price set yet');
+    assert.deepEqual(await keys(), [], 'no price of our own: the plans accounts sells (offer.ts)');
     await setOffer(app.db, { ...OFFER, setup: null });
     assert.deepEqual(await keys(), ['price'], 'a setup fee that is not decided still holds the page');
     await setOffer(app.db, OFFER);

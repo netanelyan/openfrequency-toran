@@ -48,8 +48,10 @@ test('the funnel: review, approve, send by hand, the one reminder (never on Shab
     const id = s.seeded.storeId;
     assert.match(await (await s.get('/review')).text(), /כלי חרס של נורית/);
     const token = await s.csrf();
+    // The plans are the price (offer.ts); a price of our own that is not whole yet holds the page.
+    await setOffer(s.app.db, { ...TEST_OFFER, vat: null });
     const held = await s.post(`/lead/${id}/approve`, { _csrf: token }, { 'x-tn-ajax': '1' });
-    assert.equal((await held.json()).ok, false, 'no price yet: the page cannot be approved');
+    assert.equal((await held.json()).ok, false, 'a price of our own with no VAT yet: the page cannot be approved');
     assert.match(await (await s.get('/review')).text(), /המחיר עוד לא נקבע/);
     await setOffer(s.app.db, TEST_OFFER);
     const ap = await s.post(`/lead/${id}/approve`, { _csrf: token }, { 'x-tn-ajax': '1' });

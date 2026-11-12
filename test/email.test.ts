@@ -231,10 +231,11 @@ test('channel config: the code flag, the states the website reads, and no "live"
   const app = await testApp();
   assert.deepEqual([...enabledChannels({})], ['whatsapp']);
   assert.deepEqual([...enabledChannels({ TORAN_CHANNELS: 'email, sms,instagram' })], ['whatsapp', 'email', 'instagram']);
-  assert.deepEqual(await publicChannels(app.db), { channels: { whatsapp: 'demo', email: 'off', messenger: 'off', instagram: 'off' }, live: [], demo: ['whatsapp'], soon: ['email', 'messenger', 'instagram'] });
+  // The site chat is every store's, with no setting of the server's: always live (P1-21).
+  assert.deepEqual(await publicChannels(app.db), { channels: { whatsapp: 'demo', email: 'off', messenger: 'off', instagram: 'off', web: 'live' }, live: ['web'], demo: ['whatsapp'], soon: ['email', 'messenger', 'instagram'] });
   await assert.rejects(setChannelState(app.db, {}, 'email', 'live'), /code for email is off/);
   await setChannelState(app.db, { TORAN_CHANNELS: 'email' }, 'email', 'live');
-  assert.deepEqual((await publicChannels(app.db)).live, ['email']);
+  assert.deepEqual((await publicChannels(app.db)).live, ['email', 'web']);
   await app.db.close();
 });
 

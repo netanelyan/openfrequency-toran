@@ -193,8 +193,9 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 .price-main .wa { margin-top: 8px; }
 /* On sale (pitch/page.ts plansMain): the two plans side by side on a desk, one under the other on a phone; the store
    plan's "להצטרף" is the page's main button, the big plan's a quieter one, and trying it on WhatsApp is under them. */
-.plans { display: grid; gap: 12px; width: 100%; margin-top: 4px; }
-@media (min-width: 640px) { .plans { grid-template-columns: 1fr 1fr; } }
+/* Each plan at least 230px or the whole width, so two fit side by side only where they have the room (the parent's check
+   of 2026-11-12: from 640px "חנות גדולה" ran into "מה כלול במחיר" in the card's 0.9fr column). */
+.plans { display: grid; gap: 12px; width: 100%; margin-top: 4px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
 .plan { display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: 18px; background: rgba(255, 255, 255, 0.72); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06); }
 .plan.main { box-shadow: inset 0 0 0 2px var(--green); }
 .plan-name { display: flex; flex-direction: column; gap: 2px; margin: 0; }
@@ -214,6 +215,8 @@ a:focus-visible, .wa:focus-visible, .grey:focus-visible { outline: 3px solid rgb
 .checks li::before { content: ''; position: absolute; inset-inline-start: 0; top: 0.2em; width: 22px; height: 22px; border-radius: 50%; background: color-mix(in srgb, var(--green) 14%, transparent); }
 .checks li::after { content: ''; position: absolute; inset-inline-start: 8px; top: calc(0.2em + 5px); width: 5px; height: 10px; border-right: 2.4px solid var(--green); border-bottom: 2.4px solid var(--green); transform: rotate(45deg); }
 @media (min-width: 640px) { .price-card { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+/* With both plans on the card, what the price includes goes under them: the plans take the card's whole width. */
+@media (min-width: 640px) { .price-card:has(.plan + .plan) { grid-template-columns: minmax(0, 1fr); } }
 /* under the card: taking the page down */
 .after { margin: 16px 4px 0; font-size: 15px; color: var(--ink-2); }
 .grey.sm { min-height: 36px; padding: 0 16px; font-size: 15px; margin-inline-start: 6px; vertical-align: middle; }
