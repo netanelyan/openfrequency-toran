@@ -34,7 +34,9 @@ import { numbersIn, splitSentences, STOCK, stripMeta } from './guard.ts';
 // what the store offers, a return's period or conditions, or how it ships: "returns are
 // accepted for a year" typed by a customer, then repeated by a steered model, is still
 // the customer's word (the audit's PRA-AI-001). A bare "yes" or "no" makes the claims of the
-// customer's question: "כן, יש" to "שולחים לאילת?" is "we ship to Eilat".
+// customer's question: "כן, יש" to "שולחים לאילת?" is "we ship to Eilat". A city or a region inside Israel is also
+// backed by a wider place the store ships to ("בכל הארץ" backs Haifa, "אזור המרכז" Tel Aviv), unless the store excepts
+// it or a place between; Eilat and the other places couriers often leave out of "all of Israel" must be named (WITHIN).
 //
 // Not a claim: a question back to the customer, a sentence that says it is checking,
 // passing it on or does not know, a greeting, chit-chat. A cut claim is replaced by the
@@ -83,6 +85,12 @@ const PLACE: Vocab = {
   nationwide: ['כל הארץ', 'כל רחבי הארץ', 'רחבי הארץ', 'כל ישראל', 'nationwide', 'all over israel', 'anywhere in israel', 'across israel', 'all of israel', 'everywhere in israel', 'the whole country', 'all over the country'],
   abroad: ['abroad', 'חוץ לארץ', 'מחוץ לארץ', 'מחוץ לישראל', 'overseas', 'international', 'internationally', 'worldwide', 'outside israel', 'outside of israel'],
 };
+
+// A place inside Israel is backed by a wider one the store ships to: Haifa by the north or by all of Israel, Tel Aviv by
+// the centre. "משלוח עד הבית בכל הארץ" backs "גם לחיפה" (docs/models.md: the claim check cut that right answer from 12
+// shoppers of 15). Eilat, the Arava, the Golan, Judea and Samaria, remote places and kibbutzim have no wider place here:
+// Israeli stores and their couriers often leave them out of "all of Israel", so a store must name them.
+const WITHIN: Record<string, string> = { jerusalem: 'nationwide', telaviv: 'center', haifa: 'north', beersheva: 'south', north: 'nationwide', south: 'nationwide', center: 'nationwide' };
 
 const DELIVERY: Vocab = {
   express: ['אקספרס', 'משלוח מהיר', 'מהיר', 'מהירה', 'מהירים', 'express', 'fast', 'quick', 'quickly', 'rush', 'expedited', 'priority'],
@@ -367,7 +375,8 @@ export function claimEvidence({ toolTexts, customerTexts }: { toolTexts: string[
 // ---- the check
 
 type Scope = 'sentence' | 'part' | 'text';
-type Claim = { kind: ClaimKind; key: string; subjects: string[]; all?: boolean; scope: Scope; neg: boolean; conditional?: boolean; words?: string[][] };
+// wider: a place said of shipping, which a wider place the tools ship to may back (WITHIN).
+type Claim = { kind: ClaimKind; key: string; subjects: string[]; all?: boolean; scope: Scope; neg: boolean; conditional?: boolean; words?: string[][]; wider?: boolean };
 const CUSTOMER_KINDS = new Set<ClaimKind>(['payment']);
 // Words that say nothing about what is free.
 const VAGUE = new Set(['זה', 'זו', 'זאת', 'הזה', 'הזאת', 'הוא', 'היא', 'לגמרי', 'גם', 'כן', 'it', 'its', 'this', 'that', 'yes', 'also', 'totally', 'completely', 'then', 'case'].map(normalize));
@@ -430,7 +439,9 @@ function claimsOf(s: Seen, prev: Seen | null): Claim[] {
     out.push({ kind: 'free', key: 'free', subjects, all: true, scope: 'sentence', neg: negOf(s, f, subjects), conditional: conditional(s) || (!!prev && conditional(prev)), words });
   }
   if (has('ship', 'pickup')) {
-    for (const id of PLACES) if (s.ids.has(id)) out.push({ kind: 'area', key: id, subjects: ['ship', 'pickup'], scope: 'part', neg: negOf(s, first(id), ['ship', 'pickup']) });
+    // A pickup point in the place's clause ("אפשר לאסוף בחיפה") is a place of its own, never backed by where the store ships.
+    const shipped = (h: Hit) => s.ids.has('ship') && !s.hits.some((x) => x.id === 'pickup' && x.clause === h.clause);
+    for (const id of PLACES) if (s.ids.has(id)) out.push({ kind: 'area', key: id, subjects: ['ship', 'pickup'], scope: 'part', neg: negOf(s, first(id), ['ship', 'pickup']), wider: shipped(first(id)) });
     for (const id of DELIVERIES) if (s.ids.has(id)) out.push({ kind: 'delivery', key: id, subjects: ['ship', 'pickup'], scope: 'part', neg: negOf(s, first(id), ['ship', 'pickup']) });
   }
   for (const id of ['return', 'exchange']) if (s.ids.has(id)) out.push({ kind: 'return', key: id, subjects: [], scope: 'sentence', neg: negOf(s, first(id), []) });
@@ -443,6 +454,20 @@ function claimsOf(s: Seen, prev: Seen | null): Claim[] {
   for (const id of METHODS) if (s.ids.has(id)) out.push({ kind: 'payment', key: id, subjects: [], scope: 'text', neg: negOf(s, first(id), ['pay']) });
   for (const id of MATERIALS) if (s.ids.has(id)) out.push({ kind: 'product', key: id, subjects: [], scope: 'text', neg: negOf(s, first(id), []) });
   return out;
+}
+
+/**
+ * "We ship to Haifa" backed by a wider place the tools say the store ships to (WITHIN: the north, then all of Israel),
+ * unless they except the place itself, or a place between ("כל הארץ חוץ מהצפון" does not back Haifa).
+ */
+function widerBacks(key: string, ev: ClaimEvidence): boolean {
+  const excepted = (id: string) => ev.units.some((u) => !u.customer && u.s.hits.some((h) => h.id === id && negated(u.s, h)));
+  if (excepted(key)) return false;
+  for (let id = WITHIN[key]; id; id = WITHIN[id]) {
+    if (support({ kind: 'area', key: id, subjects: ['ship'], scope: 'part', neg: false }, ev) === 'yes') return true;
+    if (excepted(id)) return false;
+  }
+  return false;
 }
 
 const STOCK_NEG = /אזל|נגמר|out of stock|sold out|unavailable|not available|לא במלאי|אין במלאי|לא זמין|אינו זמין|אינה זמינה|אין כרגע/i;
@@ -512,7 +537,8 @@ export function claimViolation(sentence: string, ev: ClaimEvidence, prev = ''): 
   const fails: ClaimCut[] = [];
   for (const c of claims) {
     const r = support(c, ev);
-    if (r !== 'yes') fails.push({ kind: c.kind, term: c.key, borderline: r === 'partial' });
+    if (r === 'yes' || (c.kind === 'area' && c.wider && !c.neg && widerBacks(c.key, ev))) continue;
+    fails.push({ kind: c.kind, term: c.key, borderline: r === 'partial' });
   }
   const size = bare && q ? (bare.neg ? null : sizeSupport(q, q.raw, ev)) : sizeSupport(s, t, ev);
   if (size) fails.push({ kind: 'size', term: size, borderline: false });
@@ -520,6 +546,41 @@ export function claimViolation(sentence: string, ev: ClaimEvidence, prev = ''): 
   if (stock === 'partial') fails.push({ kind: 'stock', term: 'stock', borderline: true });
   if (!fails.length) return null;
   return { ...fails[0], borderline: fails.every((f) => f.borderline) };
+}
+
+// ---- the same vocabulary finds a store's passage (tools.ts get_policy): "international shipping" and "משלוחים לחו"ל"
+// name the same two concepts, so a question in English finds the store's Hebrew page, and the other way round.
+
+const FORMS = new Map<string, string[]>();
+for (const { vocab } of CONCEPTS) for (const [id, forms] of Object.entries(vocab)) FORMS.set(id, forms);
+// The forms the canonical pass writes (CANON): "ללא גלוטן" is glutenfree, "בתשלומים" installments.
+for (const [k, words] of Object.entries(XFREE)) FORMS.set(`${k}free`, [`ללא ${words[0]}`, `${words.find((w) => !/[א-ת]/.test(w))} free`]);
+FORMS.set('installments', ['תשלומים', ...(FORMS.get('installments') || [])]);
+FORMS.set('bit', ['ביט', 'Bit']);
+
+/** What a text is about in the claim check's words, Hebrew and English alike: its concepts. */
+export function conceptsOf(text: string): Set<string> {
+  const ids = new Set(read(text).ids);
+  ids.delete('hedge');
+  return ids;
+}
+
+/**
+ * A question's concepts, each as the ids that answer it: a place in a shipping question also by the wider places that
+ * back it (WITHIN), so "do you ship to Haifa?" finds the page that says all of Israel.
+ */
+export function conceptGroups(text: string): string[][] {
+  const ids = conceptsOf(text);
+  return [...ids].map((id) => {
+    const g = [id];
+    if (ids.has('ship')) for (let w = WITHIN[id]; w; w = WITHIN[w]) g.push(w);
+    return g;
+  });
+}
+
+/** A text's concepts said in Hebrew (or in English), each by its first form there: "international shipping" is "משלוח חוץ לארץ". */
+export function conceptsSaid(text: string, hebrew: boolean): string {
+  return [...conceptsOf(text)].map((id) => (FORMS.get(id) || []).find((f) => /[א-ת]/.test(f) === hebrew)).filter(Boolean).join(' ');
 }
 
 // ---- the optional second opinion (TORAN_GUARD_LLM): only for a borderline cut, only when switched on

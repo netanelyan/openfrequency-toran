@@ -1,4 +1,4 @@
-import { heWord, termGroups } from '../core/hebrew.ts';
+import { hebrewRatio, heWord, normalize, termGroups } from '../core/hebrew.ts';
 import { claimEvidence, claimViolation, type ClaimEvidence } from './claims.ts';
 
 // The reply guard: a deterministic filter on every reply, after the model and before
@@ -32,7 +32,9 @@ import { claimEvidence, claimViolation, type ClaimEvidence } from './claims.ts';
 // A cut sentence is replaced by one honest line, once per category per reply (later
 // cuts in the same category are dropped), and a cut in price/stock/delivery/promise
 // sets needsHandoff: unknown means escalate. A sentence ending in ":" that is cut takes
-// the list after it with it (tiyul-plus's colon continuation).
+// the list after it with it (tiyul-plus's colon continuation). The reply says the
+// hand-off once (handOverOnce): the model's sentence that only repeats it goes, and a
+// second line says only what it is not sure of.
 //
 // THE CLAIMS (claims.ts): a sentence that passes all of the above may still state a fact
 // with no number in it ("returns are free", "we ship to Eilat", "it's cotton"). Its key
@@ -378,6 +380,55 @@ export function askedAbout(rule: string, asked: string | undefined): boolean {
   return rule in ASKS ? ASKS[rule].test(text) : true;
 }
 
+// ---- the hand-off said once (docs/models.md, q11: "...הוא יחזור אליך כאן. הוא יחזור אליכם כאן.")
+//
+// An honest line above is what it is not sure of, then its tail: the question was passed on, and who answers here. When
+// a line with its tail is put in, a sentence of the model's that says only that goes, before the cut or after it; one
+// that says more stays, and then no line says the tail again. A later line in the same reply says only what it is not
+// sure of ("גם על זמני המשלוח אני לא בטוח."). A line with no tail is left as it is.
+const TAIL = /,\s(?:אז העברתי|so I've passed)[\s\S]*$/;
+// "יחזור למלאי" (back in stock) is no one answering the customer.
+const SAYS_PASSED = /(?<![א-ת])[וש]?(?:העברתי|העברנו|אעביר|נעביר|מעביר|מעבירה|הועבר|הועברה)(?![א-ת])|\b(?:passed|forwarded|handed)\b|\bpass(?:ing)? (?:it|this|that|your)\b/i;
+const SAYS_ANSWERED = /(?<![א-ת])[וש]?(?:יחזור|תחזור|יחזרו|נחזור|אחזור|יענה|תענה|יענו|ישיב|תשיב|ישיבו|יצור|ייצור|יצרו|ייצרו)\s+(?:אליך|אלייך|אליכם|אליכן|לך|לכם|לכן|כאן|פה|בהקדם|בקרוב|קשר)(?![א-ת])|\b(?:get|getting|be|come) back to you\b|(?:\bwill|'ll)\s+(?:reply|answer|respond|get in touch|be in touch|follow up|contact you)\b/i;
+// An offer ("רוצים שאעביר לנציג?") says nothing was passed on yet.
+const handsOver = (t: string) => (SAYS_PASSED.test(t) || SAYS_ANSWERED.test(t)) && !/\?\s*$/.test(t);
+// The words such a sentence is made of: a sentence of nothing else says only what the line's tail says.
+const HANDOFF_WORDS = new Set(
+  normalize(
+    `הוא היא הם הן נציג נציגה נציגים מישהו מישהי החנות חנות הצוות צוות שלנו יחזור תחזור יחזרו נחזור אחזור יענה תענה יענו ישיב תשיב ישיבו יצור ייצור יצרו ייצרו קשר
+    אליך אלייך אליכם אליכן לך לכם לכן כאן פה בהקדם בקרוב בהמשך בינתיים העברתי העברנו אעביר נעביר מעביר מעבירה הועבר הועברה את השאלה הבקשה השיחה הפנייה הפניה ההודעה זה זאת לו לה להם אז גם עם תשובה כבר עכשיו ישירות
+    i ive we weve they theyll he she hell shell someone somebody person a the from store team our us will get back to you here soon shortly reply answer respond contact be in touch passed forwarded handed pass your question request message it this that on and so with an just now as possible them have has follow up directly`,
+  ).split(' '),
+);
+const handoffWord = (w: string) => HANDOFF_WORDS.has(w) || (/^[והלמבש]{1,2}[א-ת]/.test(w) && (HANDOFF_WORDS.has(w.slice(1)) || HANDOFF_WORDS.has(w.slice(2))));
+const onlyHandsOver = (t: string) => normalize(t).split(' ').filter(Boolean).every(handoffWord);
+
+/**
+ * A reply is English by most of its letters: an English reply may carry a Hebrew word (the tools' rules have the model
+ * write "someone from the store (נציג)", a product keeps its Hebrew name), and its honest line is still English.
+ */
+const englishReply = (text: string) => /[a-z]/i.test(text) && hebrewRatio(text) < 0.5;
+
+/** The reply's pieces (out) with the hand-off said once; placed: the honest lines put in, by their place in out. */
+function handOverOnce(out: string[], placed: Map<number, string>, english: boolean, redactions: Redaction[]): void {
+  if (![...placed.keys()].some((i) => TAIL.test(out[i].trim()))) return;
+  const handing = out.flatMap((t, i) => (!placed.has(i) && handsOver(t) ? [i] : []));
+  const own = handing.some((i) => !onlyHandsOver(out[i]));
+  let told = own;
+  let unsure = false;
+  for (const [i, rule] of placed) {
+    const line = out[i].trim();
+    if (!TAIL.test(line)) continue;
+    const core = line.replace(TAIL, '');
+    if (told) out[i] = out[i].replace(line, unsure && rule !== 'promise' ? (english ? `${core} either.` : `גם ${core}.`) : `${core}.`);
+    told = true;
+    unsure ||= rule !== 'promise';
+  }
+  if (own) return;
+  for (const i of handing) redactions.push({ rule: 'continuation', sentence: out[i].trim() });
+  for (const i of [...handing].reverse()) out.splice(i, 1);
+}
+
 const EMOJI = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:️|‍\p{Extended_Pictographic})*/gu;
 
 /**
@@ -402,11 +453,12 @@ export const undash = (t: string) => t.replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2
 // asked: the customer's message this turn; a cut about something it did not ask about gets no honest line and no handoff.
 // voice: the store's emoji switch and address (agent/voice.ts), applied to the whole reply, the honest lines included.
 export function guardReply(text: string, allow: Allow, { company = false, verified, asked, voice }: { company?: boolean; verified?: Set<string>; asked?: string; voice?: { emoji: boolean; plural: boolean } } = {}): GuardResult {
-  const english = !/[א-ת]/.test(text) && /[a-z]/i.test(text);
+  const english = englishReply(text);
   const lines = company ? (english ? REPLACE_COMPANY_EN : REPLACE_COMPANY) : english ? REPLACE_EN : REPLACE;
   const out: string[] = [];
   const redactions: Redaction[] = [];
   const done = new Set<string>();
+  const placed = new Map<number, string>(); // the honest lines put in: their place in out, and their rule
   let dropContinuation = false;
   let handoffReason: string | null = null;
   let prev = '';
@@ -439,8 +491,10 @@ export function guardReply(text: string, allow: Allow, { company = false, verifi
     if (done.has(rule)) continue;
     done.add(rule);
     const lead = /^\s*/.exec(sentence)?.[0] || '';
+    if (lines[rule]) placed.set(out.length, rule);
     if (lines[rule]) out.push(`${lead}${lines[rule]}${sentence.endsWith('\n') ? '\n' : ' '}`);
   }
+  handOverOnce(out, placed, english, redactions);
   let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
   // Nothing left: the honest line when the customer asked something, a plain offer to help when they did not.
   if (!result) result = handoffReason || askedAbout('claim', asked) ? checkingLine(english, company) : english ? 'How can I help?' : 'במה אפשר לעזור?';
