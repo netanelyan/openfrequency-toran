@@ -104,8 +104,9 @@ run again: q5's 12 cut answers pass, q11's 12 doubled replies say the line once,
   "חיפה" in the shipping page, which says "בכל הארץ", cut the sentence and handed off. In 12 of them the customer read
   "על זה אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן. ההזמנה מגיעה תוך 3 עד 5 ימי עסקים..."
   **Now** a city or a region inside Israel is backed by a wider place the store ships to (`WITHIN`: Haifa by the north
-  or by all of Israel, Tel Aviv by the centre), unless the page excepts it or a place between; Eilat, the Arava, the
-  Golan, Judea and Samaria, remote places and kibbutzim pass only when the store names them, as before. After: the
+  or by all of Israel, Tel Aviv by the centre), unless the page excepts it or a place between; remote places and
+  kibbutzim pass only when the store names them, as before (Eilat, the Arava, the Golan and Judea and Samaria are part
+  of all of Israel since 2026-11-12, docs/decisions.md). After: the
   price and the delivery time in 10 of 13 answers, none cut. The other 3 are the model's own: it handed off on its
   first call, before it looked anything up (once in 4 before, at high), which no change here touches.
 - **A doubled line on a discount.** On q11 the guard cut the model's own "הנחה מאשר רק נציג מהחנות, אז העברתי לו את

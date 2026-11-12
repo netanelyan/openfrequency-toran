@@ -313,6 +313,23 @@ export async function disconnectZernio(app: App, storeId: number, channel: ZChan
   return true;
 }
 
+/**
+ * A store deleted here (erase.ts eraseStore): its profile at Zernio goes too, once its accounts were disconnected
+ * (docs.zernio.com/profiles/delete-profile: an active account blocks it with a 400). Best effort: a profile left there
+ * is empty, so a refusal is logged and the row here goes anyway.
+ */
+export async function dropZernioProfile(app: App, storeId: number) {
+  const p = await app.db.one<{ profile_id: string }>('SELECT profile_id FROM zernio_profiles WHERE store_id = $1', [storeId]);
+  if (!p) return false;
+  try {
+    await api(app, 'DELETE', `profiles/${p.profile_id}`);
+  } catch (e: any) {
+    if (!(e instanceof GraphError && e.status === 404)) app.log(`[zernio] profile ${p.profile_id} of store ${storeId} not deleted there: ${e?.message || e}`);
+  }
+  await app.db.query('DELETE FROM zernio_profiles WHERE store_id = $1', [storeId]);
+  return true;
+}
+
 // ---- the webhook
 
 /** A customer of one connected account: Zernio's conversation id (sending needs it) and the name Zernio gave. */

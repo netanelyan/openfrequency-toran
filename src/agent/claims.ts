@@ -36,7 +36,7 @@ import { numbersIn, splitSentences, STOCK, stripMeta } from './guard.ts';
 // the customer's word (the audit's PRA-AI-001). A bare "yes" or "no" makes the claims of the
 // customer's question: "כן, יש" to "שולחים לאילת?" is "we ship to Eilat". A city or a region inside Israel is also
 // backed by a wider place the store ships to ("בכל הארץ" backs Haifa, "אזור המרכז" Tel Aviv), unless the store excepts
-// it or a place between; Eilat and the other places couriers often leave out of "all of Israel" must be named (WITHIN).
+// it or a place between. Eilat, the Arava, the Golan and Judea and Samaria are backed by "all of Israel" alone (WITHIN).
 //
 // Not a claim: a question back to the customer, a sentence that says it is checking,
 // passing it on or does not know, a greeting, chit-chat. A cut claim is replaced by the
@@ -88,9 +88,10 @@ const PLACE: Vocab = {
 
 // A place inside Israel is backed by a wider one the store ships to: Haifa by the north or by all of Israel, Tel Aviv by
 // the centre. "משלוח עד הבית בכל הארץ" backs "גם לחיפה" (docs/models.md: the claim check cut that right answer from 12
-// shoppers of 15). Eilat, the Arava, the Golan, Judea and Samaria, remote places and kibbutzim have no wider place here:
-// Israeli stores and their couriers often leave them out of "all of Israel", so a store must name them.
-const WITHIN: Record<string, string> = { jerusalem: 'nationwide', telaviv: 'center', haifa: 'north', beersheva: 'south', north: 'nationwide', south: 'nationwide', center: 'nationwide' };
+// shoppers of 15). Eilat, the Arava, the Golan and Judea and Samaria are part of the country (the owner, 2026-11-12:
+// "eilat, arava, golan and ayush are a part of the country"), so "all of Israel" backs them, unless the store excepts
+// them; a region does not ("הדרום" of a store in Ashdod is not Eilat). Remote places and kibbutzim have no wider place.
+const WITHIN: Record<string, string> = { jerusalem: 'nationwide', telaviv: 'center', haifa: 'north', beersheva: 'south', north: 'nationwide', south: 'nationwide', center: 'nationwide', eilat: 'nationwide', arava: 'nationwide', golan: 'nationwide', judea: 'nationwide' };
 
 const DELIVERY: Vocab = {
   express: ['אקספרס', 'משלוח מהיר', 'מהיר', 'מהירה', 'מהירים', 'express', 'fast', 'quick', 'quickly', 'rush', 'expedited', 'priority'],

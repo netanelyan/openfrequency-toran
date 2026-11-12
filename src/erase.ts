@@ -3,6 +3,12 @@ import type { Db } from './db/index.ts';
 import { audit } from './db/log.ts';
 import { MESSAGE_KINDS } from './jobs/queue.ts';
 import { sweepFiles } from './jobs/retention.ts';
+import { forgetStorePrompt } from './agent/loop.ts';
+import { dropSource } from './auto/platforms.ts';
+import { disconnectKapso } from './channels/kapso.ts';
+import { dropDomain } from './channels/mailDomain.ts';
+import { disconnectZernio, dropZernioProfile, type ZChannel } from './channels/zernio.ts';
+import { disconnectOrders } from './orders.ts';
 import { timingSafeEqual } from 'node:crypto';
 import type { Out, Req, Route } from './web/server.ts';
 
@@ -65,6 +71,49 @@ export async function eraseWorkspace(app: App, workspaceId: number) {
   deleted.filesOnDisk = await sweepFiles(app);
   await audit(db, { actor: 'accounts', action: 'workspace_deleted', detail: { workspace: workspaceId, ...deleted } });
   app.log(`[erase] workspace ${workspaceId}: ${Object.entries(deleted).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ') || 'nothing was there'}`);
+  return deleted;
+}
+
+/**
+ * The operator's "למחוק את החנות" on a store's page (the owner's test store, 2026-11-12: "delete My Store 10, i am done
+ * with the checks"). One store and everything keyed by it, as a deleted workspace's stores go, but first what it holds
+ * outside this database: its accounts at Zernio and Kapso (strict: one the provider refuses throws here, before
+ * anything is deleted, so the operator can try again), its Zernio profile, the platform's webhooks, its own mail
+ * domain at Resend, and the order key. Its site's proof goes too, so adding it again asks to prove it again. What is
+ * the workspace's (its owners' numbers, Teder's events) stays with the workspace. The usage rows stay, without the store.
+ */
+export async function eraseStore(app: App, storeId: number, by: string) {
+  const { db } = app;
+  const s = await db.one<{ domain: string; workspace_id: number | null }>('SELECT domain, workspace_id FROM stores WHERE id = $1', [storeId]);
+  if (!s) return null;
+  const outside = await db.query<{ channel: string; kind: string }>("SELECT DISTINCT channel, kind FROM channel_accounts WHERE store_id = $1 AND kind IN ('zernio', 'kapso') AND status <> 'off'", [storeId]);
+  for (const a of outside) {
+    if (a.kind === 'kapso') await disconnectKapso(app, storeId, by, { strict: true });
+    else await disconnectZernio(app, storeId, a.channel as ZChannel, by, { strict: true });
+  }
+  await dropZernioProfile(app, storeId);
+  await dropSource(app, storeId);
+  await dropDomain(app, storeId, by, { quiet: true });
+  await disconnectOrders(app, storeId, by);
+  const accounts = (await db.query<{ external_id: string }>('SELECT external_id FROM channel_accounts WHERE store_id = $1', [storeId])).map((r) => r.external_id);
+  const deleted = await db.tx(async (t) => {
+    const out: Record<string, number> = {
+      conversations: await count(t, 'SELECT COUNT(*)::int AS n FROM conversations WHERE store_id = $1', [storeId]),
+      messages: await count(t, 'SELECT COUNT(*)::int AS n FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.store_id = $1', [storeId]),
+      files: await count(t, 'SELECT COUNT(*)::int AS n FROM files f JOIN conversations c ON c.id = f.conversation_id WHERE c.store_id = $1', [storeId]),
+    };
+    out.jobs = await del(t, `DELETE FROM jobs WHERE status <> 'running' AND (payload->>'storeId' = $1 OR (kind = ANY($2::text[]) AND payload->>'account' = ANY($3::text[]))) RETURNING id`, [String(storeId), MESSAGE_KINDS, accounts]);
+    out.assistantMessages = await del(t, 'DELETE FROM assistant_messages WHERE store_id = $1 RETURNING id', [storeId]);
+    out.demoRequests = await del(t, 'DELETE FROM demo_requests WHERE store_id = $1 RETURNING id', [storeId]);
+    out.claims = await del(t, 'DELETE FROM domain_claims WHERE domain = $1 RETURNING domain', [s.domain]);
+    out.audit = await del(t, 'DELETE FROM audit WHERE store_id = $1 RETURNING id', [storeId]);
+    out.stores = await del(t, 'DELETE FROM stores WHERE id = $1 RETURNING id', [storeId]);
+    return out;
+  });
+  deleted.filesOnDisk = await sweepFiles(app);
+  forgetStorePrompt(storeId);
+  await audit(db, { actor: by, action: 'store_deleted', detail: { store: storeId, domain: s.domain, workspace: s.workspace_id, ...deleted } });
+  app.log(`[erase] store ${storeId} (${s.domain}): ${Object.entries(deleted).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ')}`);
   return deleted;
 }
 

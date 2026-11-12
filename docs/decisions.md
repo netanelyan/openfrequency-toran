@@ -1294,3 +1294,20 @@ production's own `usage` rows leave room.
 
 **Tested** (test/models.test.ts, test/vision.test.ts): the defaults and their settings; the CLI's two requests counted
 as one with all its thinking, never more than its own total.
+
+## 2026-11-12: "כל הארץ" includes Eilat, the Arava, the Golan and Judea and Samaria; deleting a store
+
+**Decision.** The owner: "eilat, arava, golan and ayush are a part of the country". A store that ships "בכל הארץ" backs
+a reply that it ships to Eilat, the Arava, the Golan or Judea and Samaria, unless it excepts them ("חוץ מאילת"). Only
+"all of Israel" reaches them; a region does not ("הדרום" of a store in Ashdod is not Eilat). Remote places and
+kibbutzim still need the store to name them. This replaces the 2026-11-11 line above that "כל הארץ" is not Eilat
+(`WITHIN` in src/agent/claims.ts).
+
+**Deleting a store.** The owner, done testing on their own store 96: "delete My Store 10". The operator's
+"למחוק את החנות", at the bottom of a store's page (src/erase.ts `eraseStore`). It disconnects the store's accounts at
+Zernio and Kapso first, strictly, so a refusal there stops everything before anything here is deleted. Then it removes
+the store's Zernio profile, the platform's webhooks, its own mail domain and the order key. One transaction deletes the
+store and everything keyed by it, as a deleted workspace's stores go, and also its site's proof. Adding the site again
+asks for proof again. The usage rows stay, without the store. Our company store is never deleted from there.
+
+**Tested** (test/claims.test.ts, test/erase.test.ts, test/isolation.test.ts).

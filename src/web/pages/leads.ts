@@ -25,6 +25,8 @@ import { OpsError, sendNow } from '../../ops/actions.ts';
 import { sendBoth, sendTeder } from '../../ops/both.ts';
 import { tederBuild, tederState } from '../../ops/tederLeads.ts';
 import { monthHe, percent, setLift, shareOf, shekels, stopped, type Share } from '../../agent/spend.ts';
+import { isCompany } from '../../company.ts';
+import { eraseStore } from '../../erase.ts';
 
 /** Teder's stages for a lead, as its /leads names them (openfrequency-teder src/web/leads.js STAGE_HE). */
 const TEDER_STAGE_HE: Record<string, string> = { new: 'חדש', demo_ready: 'דמו מוכן', sent: 'נשלח', opened: 'פתחו', replied: 'ענו', joined: 'הצטרפו', irrelevant: 'לא רלוונטי' };
@@ -232,6 +234,10 @@ ${waBanner(await waAccountOf(app, id), id)}
       <div class="row mt12">${postButton(r.ctx, `/lead/${id}/release`, 'לשחרר את האתר מהחשבון', { cls: 'btn sm danger', confirm: 'לשחרר? החנות חוזרת להיות ליד שלנו, והחשבון של הלקוח לא רואה אותה יותר. מי שיוכיח שהאתר שלו יוכל להוסיף אותה.' })}</div>
     </section>` : ''}
     <section class="panel"><header><h2>מה קרה</h2></header><ol class="trace">${events.map((e) => `<li class="ok"><b>${esc(EVENT_HE[e.kind] || e.kind)}</b> <span class="d">${esc(stamp(e.at))}</span></li>`).join('') || '<li>עוד כלום</li>'}</ol></section>
+    ${isCompany(s) ? '' : `<section class="panel" id="delete"><header><h2>למחוק את החנות</h2></header>
+      <p class="small muted m0">החנות יוצאת מתורן: הערוצים שלה מתנתקים, והשיחות, מה שתורן למד מהאתר, הדף וקוד הדמו נמחקים. אי אפשר להחזיר את זה.</p>
+      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/delete`, 'למחוק את החנות', { cls: 'btn sm danger', confirm: 'למחוק את החנות? הערוצים שלה יתנתקו, והשיחות, הידע, הדף וקוד הדמו יימחקו. אי אפשר להחזיר את זה.' })}</div>
+    </section>`}
   </div>
 </div>${ready ? '' : ''}`;
   return layout({ ...r.ctx, title: name, active: 'lead' }, body);
@@ -427,6 +433,19 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
       await app.db.query('DELETE FROM domain_claims WHERE domain = $1', [s.domain]);
       await audit(app.db, { actor: r.user.name, action: 'release_domain', storeId: s.id, detail: { from, domain: s.domain } });
       return { message: 'האתר שוחרר מהחשבון.' };
+    }],
+    // "למחוק את החנות" (erase.ts eraseStore): its channels at Zernio and Kapso first, and a provider that refuses stops
+    // it before anything here is deleted. Never our own company store.
+    ['POST', /^\/lead\/(\d+)\/delete$/, async (r, m) => {
+      const s = await store(m[1]);
+      if (isCompany(s)) throw new ActionError('את החנות של OpenFrequency לא מוחקים מכאן.');
+      try {
+        await eraseStore(app, s.id, r.user.name);
+      } catch (e: any) {
+        app.log(`[erase] store ${s.id} not deleted: ${e?.message || e}`);
+        throw new ActionError('לא הצלחנו לנתק את אחד הערוצים של החנות, אז לא נמחק כלום. נסו שוב בעוד כמה דקות.');
+      }
+      return { redirect: '/leads', message: 'החנות נמחקה מתורן.' };
     }],
     // The model back for the rest of the month in a workspace past half of what it pays, or the stop again (agent/spend.ts
     // setLift, audited as cost_lift and cost_stop with the month's numbers). The operator's, from the store's page.

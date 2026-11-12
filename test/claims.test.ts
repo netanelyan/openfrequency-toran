@@ -105,7 +105,7 @@ test('not free: backed by a cost the store wrote for the same thing', () => {
   assert.equal(guardReply('אריזת מתנה לא בחינם.', noCost).redactions[0]?.rule, 'promise');
 });
 
-test('shipping areas: a place the policy names, with the same polarity; "all of Israel" is not Eilat', () => {
+test('shipping areas: a place the policy names, with the same polarity; "all of Israel" is Eilat too', () => {
   passes('שולחים לכל הארץ.');
   passes('No problem, we ship nationwide.');
   passes('אין בעיה, שולחים לכל הארץ.');
@@ -113,8 +113,8 @@ test('shipping areas: a place the policy names, with the same polarity; "all of 
   passes('לא, אין משלוחים לחו"ל כרגע.');
   passes("We don't ship abroad.");
   passes('אפשר לאסוף מהסטודיו בקיבוץ.');
-  cuts('שולחים גם לאילת.', 'area', allow());
-  cuts('We ship to Eilat.', 'area');
+  passes('שולחים גם לאילת.', allow());
+  passes('We ship to Eilat.');
   cuts('Sorry, we don\'t ship to Eilat.', 'area');
   cuts('שולחים לכל הארץ חוץ מאילת.', 'area');
   cuts('We ship everywhere in Israel except Eilat.', 'area');
@@ -145,19 +145,26 @@ test('a place inside Israel is backed by "all of Israel" or by its region, unles
   cuts('שולחים לחיפה.', 'area', page('משלוחים לאזור המרכז בלבד.'));
   cuts('שולחים לחיפה.', 'area', page('אין משלוחים לכל הארץ, רק לאזור המרכז.'));
   cuts('שולחים לחיפה.', 'area', page('משלוח עד הבית עולה 35 ₪.'));
-  // Eilat and the areas couriers often leave out of "all of Israel" must be named; a pickup point is no shipping area;
-  // "not to Haifa" says the opposite of the page.
-  cuts('שולחים גם לאילת.', 'area');
-  cuts('שולחים גם ליהודה ושומרון.', 'area');
-  cuts('שולחים גם לרמת הגולן.', 'area');
+  // Eilat, the Arava, the Golan and Judea and Samaria are part of "all of Israel" (the owner, 2026-11-12), unless the
+  // store excepts them; a region of the store's does not reach them. A pickup point is no shipping area; "not to
+  // Haifa" says the opposite of the page.
+  passes('שולחים גם לאילת.');
+  passes('שולחים גם ליהודה ושומרון.');
+  passes('שולחים גם לרמת הגולן.');
+  passes('כן, שולחים גם לערבה.');
+  cuts('שולחים גם לאילת.', 'area', page('משלוחים לכל הארץ חוץ מאילת.'));
+  cuts('שולחים גם לאילת.', 'area', page('משלוחים לכל הארץ, למעט אילת והערבה.'));
+  cuts('שולחים לאילת.', 'area', page('משלוחים לאזור הדרום בלבד.'));
   cuts('אפשר לאסוף בחיפה.', 'area');
   cuts('לא שולחים לחיפה.', 'area');
 });
 
 test('the customer\'s question is not evidence: "do you ship to Eilat?" does not let the reply say yes', () => {
-  const a = buildAllow({ toolTexts: [policy], customerTexts: ['יש משלוח לאילת?', 'אתם שולחים לאילת'] });
+  // A store that ships to the centre alone: nothing it wrote backs Eilat.
+  const centre = policy.replace('משלוח עד הבית בכל הארץ עולה 35 ₪.', 'משלוח עד הבית באזור המרכז עולה 35 ₪.');
+  const a = buildAllow({ toolTexts: [centre], customerTexts: ['יש משלוח לאילת?', 'אתם שולחים לאילת'] });
   cuts('כן, שולחים לאילת.', 'area', a);
-  const told = buildAllow({ toolTexts: [policy], customerTexts: ['אני גר באילת'] });
+  const told = buildAllow({ toolTexts: [centre], customerTexts: ['אני גר באילת'] });
   cuts('כן, שולחים לאילת.', 'area', told);
 });
 
@@ -268,8 +275,9 @@ test('stock: said of the product the tools say the opposite of', () => {
 
 test('a bare "yes" or "no" makes the claims of the customer\'s question', () => {
   const asked = (q: string) => allow([q]);
-  cuts('כן, יש.', 'area', asked('יש משלוח לאילת?'));
-  cuts('כן, שולחים.', 'area', asked('שולחים לאילת?'));
+  cuts('כן, יש.', 'area', asked('יש משלוח לחו"ל?'));
+  cuts('כן, שולחים.', 'area', asked('שולחים לחו"ל?'));
+  passes('כן, יש.', asked('יש משלוח לאילת?'));
   passes('לא, כרגע אין.', asked('שולחים לחו"ל?'));
   passes('No, we don\'t.', asked('Do you ship abroad?'));
   cuts('Yes, we do.', 'area', asked('Do you ship abroad?'));
@@ -308,7 +316,7 @@ test('a company store: its "works today" list backs a claim as a tool result wou
 });
 
 test('an English reply gets the English line; a cut is replaced once, and a lexical cut comes first', () => {
-  const en = guardReply('Returns are free. We also ship to Eilat. Anything else?', allow());
+  const en = guardReply('Returns are free. We also ship abroad. Anything else?', allow());
   assert.equal(en.text, "I'm not sure about that, so I've passed your question to someone from the store. They'll reply here. Anything else?");
   assert.deepEqual(en.redactions.map((r) => r.claim), ['free', 'area']);
   const price = guardReply('ההחזרה חינם ועולה 20 ₪.', allow());
