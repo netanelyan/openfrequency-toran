@@ -58,6 +58,28 @@ test('get_policy without embeddings finds the shipping passage by its words, and
   await app.db.close();
 });
 
+test('get_policy finds the store\'s Hebrew passage for a question in English, by what it is about (docs/models.md, q10)', async () => {
+  const { app, ctx } = await storeApp();
+  const abroad = await runTool(ctx, 'get_policy', { topic: 'shipping to London, international shipping' });
+  assert.match(abroad.content, /כרגע אין משלוחים לחו"ל/);
+  assert.doesNotMatch(abroad.content, /החזרות והחלפות/, 'the returns page is not about shipping abroad');
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'Do you ship to Haifa?' })).content, /משלוח עד הבית בכל הארץ/);
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'Can I pay with Bit?' })).content, /From the store's FAQ: "אפשר לשלם בביט\?"/);
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'Can I return a plate if the colour is wrong?' })).content, /אפשר להחזיר או להחליף כלי תוך 14 יום/);
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'Is the espresso cup dishwasher safe?' })).content, /זיגוג מט עדיף לשטוף ביד/);
+  // Nothing found for words in another language than the store's pages: one more look in Hebrew before a handoff.
+  const none = await runTool(ctx, 'get_policy', { topic: 'Is there parking near the studio?' });
+  assert.match(none.content, /^No passage of the store's answers or pages is about/);
+  assert.match(none.content, /Call get_policy once more with the topic in Hebrew/);
+  const he = await runTool(ctx, 'get_policy', { topic: 'האם יש חניה ליד הסטודיו?' });
+  assert.doesNotMatch(he.content, /once more/, 'asked in the pages\' own language, it is a handoff as before');
+  assert.match(he.content, /call handoff with reason "unknown"/);
+  // The owner's correction of a page answers for it, in English too.
+  await app.db.query("UPDATE policies SET override_text = 'משלוח עד הבית בכל הארץ עולה 30 ₪.' WHERE kind = 'shipping'");
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'How much is shipping?' })).content, /From the store's shipping policy \([^)]*\):\nמשלוח עד הבית בכל הארץ עולה 30 ₪/);
+  await app.db.close();
+});
+
 test('the store block computes the catalogue facts and carries the tone sample in the store\'s words', async () => {
   const { app, id } = await storeApp();
   const s = await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [id]);

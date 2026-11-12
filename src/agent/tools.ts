@@ -1,7 +1,8 @@
 import type { Db } from '../db/index.ts';
 import { V } from '../db/index.ts';
-import { normalize, termGroups } from '../core/hebrew.ts';
+import { hebrewRatio, normalize, termGroups } from '../core/hebrew.ts';
 import { embed } from '../ingest/embed.ts';
+import { conceptGroups, conceptsOf, conceptsSaid } from './claims.ts';
 import { contactsIn, findOrder, fromOrder, orderAccessOf, phoneGiven, type Order } from '../orders.ts';
 import { pageFor, shipmentsTold } from '../tracking.ts';
 import type { ToolDef } from './llm/types.ts';
@@ -268,34 +269,59 @@ async function getProduct(c: ToolContext, input: any): Promise<ToolOutcome> {
 async function getPolicy(c: ToolContext, input: any): Promise<ToolOutcome> {
   const topic = String(input.topic || '');
   const groups = termGroups(topic);
-  const matched = (text: string) => {
+  // What the topic is about, in the claim check's words (claims.ts), Hebrew and English alike: "international shipping"
+  // and "משלוחים לחו"ל" are both ship and abroad. A passage in another language than the topic matches by its concepts,
+  // so a question in English finds the store's Hebrew page (docs/models.md, q10: every English question about the pages
+  // found nothing); one in the topic's own language by its words, as before.
+  const he = hebrewRatio(topic) >= 0.5;
+  const about = conceptGroups(topic);
+  const score = (text: string) => {
     const n = normalize(text);
-    return groups.filter((g) => g.some((t) => n.includes(t))).length;
+    const words = groups.filter((g) => g.some((t) => n.includes(t))).length;
+    const ids = about.length && (hebrewRatio(text) >= 0.5) !== he ? conceptsOf(text) : null;
+    const concepts = ids ? about.filter((g) => g.some((id) => ids.has(id))).length : 0;
+    return { words, concepts, s: words + concepts };
   };
+  const fits = (x: { words: number; concepts: number }) => x.words >= Math.min(2, groups.length) || (about.length > 0 && x.concepts >= Math.min(2, about.length));
   // The owner's own answers come first: they are the most trusted text the agent has.
   const faqs = await c.db.query<{ question: string; answer: string | null; site_answer: string | null }>('SELECT question, answer, site_answer FROM faqs WHERE store_id = $1', [c.storeId]);
   const faqHits = faqs
-    .map((f) => ({ f, s: matched(f.question) }))
+    .map((f) => ({ f, s: score(f.question).s }))
     .filter((x) => x.s > 0 && (x.f.answer || x.f.site_answer))
     .sort((a, b) => b.s - a.s)
     .slice(0, 2);
 
   const chunks: { text: string; kind: string; title: string; url: string; d?: number }[] = [];
+  // The topic is also asked by its concepts in the other language ("shipping to London, international shipping" as
+  // "משלוח חוץ לארץ"): e5 puts an English question about 0.2 from every Hebrew passage, the right one included, and
+  // that one 0.15 from the shipping page (measured on the fictional store).
+  const other = conceptsSaid(topic, !he);
+  // Each on its own: in one batch with another text, a query's vector moves by about 0.0025, which is enough to move a
+  // passage across the cut below.
   const q = await embed([topic], 'query', c.env);
+  const q2 = q && other ? await embed([other], 'query', c.env) : null;
   if (q) {
     const rows = await c.db.query<any>(
-      `SELECT c.text, c.kind, p.title, p.url, COALESCE(p.override_text, '') AS override, c.embedding <=> $2::vector AS d
-       FROM chunks c JOIN policies p ON p.id = c.policy_id WHERE c.store_id = $1 AND c.embedding IS NOT NULL ORDER BY d LIMIT 4`,
-      [c.storeId, V(q[0])],
+      `SELECT c.text, c.kind, p.title, p.url, c.embedding <=> $2::vector AS d, c.embedding <=> $3::vector AS d2
+       FROM chunks c JOIN policies p ON p.id = c.policy_id WHERE c.store_id = $1 AND c.embedding IS NOT NULL
+       ORDER BY LEAST(c.embedding <=> $2::vector, c.embedding <=> $3::vector) LIMIT 8`,
+      [c.storeId, V(q[0]), V((q2 || q)[0])],
     );
+    // A passage in the topic's own language is measured from the topic, one in the other language from its concepts too.
+    const near = rows
+      .map((r) => ({ ...r, d: (hebrewRatio(r.text) >= 0.5) === he ? Number(r.d) : Math.min(Number(r.d), Number(r.d2)) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 4);
     // e5's scores sit in a narrow band (a right passage about 0.12 distance, an unrelated one about 0.2), so the cut is
     // relative: the best passage if it is close enough, and the others only near it.
-    const best = rows[0]?.d ?? 1;
-    for (const r of rows) if (r.d <= Math.min(0.19, best + 0.025)) chunks.push({ text: r.text, kind: r.kind, title: r.title, url: r.url, d: r.d });
+    const best = near[0]?.d ?? 1;
+    for (const r of near) if (r.d <= Math.min(0.19, best + 0.025)) chunks.push({ text: r.text, kind: r.kind, title: r.title, url: r.url, d: r.d });
   }
+  let pages: { text: string }[] = [];
   if (!chunks.length) {
     const rows = await c.db.query<any>('SELECT c.text, c.kind, p.title, p.url FROM chunks c JOIN policies p ON p.id = c.policy_id WHERE c.store_id = $1', [c.storeId]);
-    const scored = rows.map((r) => ({ r, s: matched(r.text) })).filter((x) => x.s >= Math.min(2, groups.length)).sort((a, b) => b.s - a.s).slice(0, 3);
+    pages = rows;
+    const scored = rows.map((r) => ({ r, ...score(r.text) })).filter(fits).sort((a, b) => b.s - a.s).slice(0, 3);
     for (const { r } of scored) chunks.push({ text: r.text, kind: r.kind, title: r.title, url: r.url });
   }
   // An owner's correction to a whole policy replaces its chunks.
@@ -307,9 +333,19 @@ async function getPolicy(c: ToolContext, input: any): Promise<ToolOutcome> {
   // "לא כתבנו כלום ... makes it feel bizarre").
   const checking = c.company ? 'say you are not sure and that you passed the question to someone from our team (נציג), who will answer here' : 'say you are not sure and that you passed the question to someone from the store (נציג), who will answer here';
   for (const { f } of faqHits) parts.push(`From the ${biz}'s FAQ: "${f.question}"\n${f.answer || f.site_answer}`);
-  for (const o of overrides) if (chunks.some((ch) => ch.kind === o.kind) || matched(o.title) > 0) parts.push(`From the ${biz}'s ${o.kind} policy (${o.title}):\n${o.override_text}`);
+  for (const o of overrides) if (chunks.some((ch) => ch.kind === o.kind) || score(o.title).s > 0) parts.push(`From the ${biz}'s ${o.kind} policy (${o.title}):\n${o.override_text}`);
   for (const ch of chunks) if (!overrides.some((o) => o.kind === ch.kind)) parts.push(`From the ${biz}'s ${ch.kind} page (${ch.title}, ${ch.url}):\n${ch.text}`);
-  if (!parts.length) return { ok: true, content: `No passage of the ${biz}'s answers or pages is about "${topic}".\nRule: you do not know the answer. Do not guess what is usual, and do not say why you do not know (nothing about what is or is not written). ${checking[0].toUpperCase()}${checking.slice(1)}, and call handoff with reason "unknown".` };
+  if (!parts.length) {
+    const none = `No passage of the ${biz}'s answers or pages is about "${topic}".`;
+    // Asked in another language than the pages are written in, and their concepts did not find it either: the model
+    // asks once more in the pages' own language, before it hands off.
+    const pagesHe = pages.length ? hebrewRatio(pages.map((p) => p.text).join('\n')) >= 0.5 : he;
+    if (pagesHe !== he && /\p{L}/u.test(topic)) {
+      const lang = pagesHe ? 'Hebrew' : 'English';
+      return { ok: true, content: `${none}\nRule: the ${biz}'s pages are in ${lang}, and these words are not. Call get_policy once more with the topic in ${lang}, and answer in the ${c.company ? 'person' : 'customer'}'s own language. If that finds nothing either, you do not know the answer: ${checking}, and call handoff with reason "unknown". Do not guess what is usual, and do not say why you do not know.` };
+    }
+    return { ok: true, content: `${none}\nRule: you do not know the answer. Do not guess what is usual, and do not say why you do not know (nothing about what is or is not written). ${checking[0].toUpperCase()}${checking.slice(1)}, and call handoff with reason "unknown".` };
+  }
   return {
     ok: true,
     content: `${parts.join('\n\n')}\nRule: answer only with what these passages say, in your own short words. A number, a time or a condition that is not written here, you do not know. If these passages are near the question but do not answer it (the ${c.company ? 'person' : 'customer'} asked about installation and they are about shipping), do not say what they lack: ${checking}, and call handoff with reason "unknown" in this same answer.`,

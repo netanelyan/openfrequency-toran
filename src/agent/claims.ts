@@ -548,6 +548,41 @@ export function claimViolation(sentence: string, ev: ClaimEvidence, prev = ''): 
   return { ...fails[0], borderline: fails.every((f) => f.borderline) };
 }
 
+// ---- the same vocabulary finds a store's passage (tools.ts get_policy): "international shipping" and "משלוחים לחו"ל"
+// name the same two concepts, so a question in English finds the store's Hebrew page, and the other way round.
+
+const FORMS = new Map<string, string[]>();
+for (const { vocab } of CONCEPTS) for (const [id, forms] of Object.entries(vocab)) FORMS.set(id, forms);
+// The forms the canonical pass writes (CANON): "ללא גלוטן" is glutenfree, "בתשלומים" installments.
+for (const [k, words] of Object.entries(XFREE)) FORMS.set(`${k}free`, [`ללא ${words[0]}`, `${words.find((w) => !/[א-ת]/.test(w))} free`]);
+FORMS.set('installments', ['תשלומים', ...(FORMS.get('installments') || [])]);
+FORMS.set('bit', ['ביט', 'Bit']);
+
+/** What a text is about in the claim check's words, Hebrew and English alike: its concepts. */
+export function conceptsOf(text: string): Set<string> {
+  const ids = new Set(read(text).ids);
+  ids.delete('hedge');
+  return ids;
+}
+
+/**
+ * A question's concepts, each as the ids that answer it: a place in a shipping question also by the wider places that
+ * back it (WITHIN), so "do you ship to Haifa?" finds the page that says all of Israel.
+ */
+export function conceptGroups(text: string): string[][] {
+  const ids = conceptsOf(text);
+  return [...ids].map((id) => {
+    const g = [id];
+    if (ids.has('ship')) for (let w = WITHIN[id]; w; w = WITHIN[w]) g.push(w);
+    return g;
+  });
+}
+
+/** A text's concepts said in Hebrew (or in English), each by its first form there: "international shipping" is "משלוח חוץ לארץ". */
+export function conceptsSaid(text: string, hebrew: boolean): string {
+  return [...conceptsOf(text)].map((id) => (FORMS.get(id) || []).find((f) => /[א-ת]/.test(f) === hebrew)).filter(Boolean).join(' ');
+}
+
 // ---- the optional second opinion (TORAN_GUARD_LLM): only for a borderline cut, only when switched on
 
 export const claimLlmOn = (env: Record<string, string | undefined>) => /^(1|on|true|yes)$/i.test(String(env.TORAN_GUARD_LLM || '').trim());
