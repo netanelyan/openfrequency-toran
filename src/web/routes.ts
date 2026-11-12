@@ -6,7 +6,7 @@ import { leadRoutes } from './pages/leads.ts';
 import { reviewRoutes } from './pages/review.ts';
 import { assistantRoutes } from './pages/assistant.ts';
 import { storeColor } from '../ingest/brand.ts';
-import { selling, storeIdIn, storesOf, type Scope } from './workspace.ts';
+import { selling, storeIdIn, storesOf, theirsOrOurs, type Scope } from './workspace.ts';
 import { messagingSql } from '../channels/config.ts';
 import { counted, planOf, usageOf } from '../plans.ts';
 import { WAITING_SQL } from './inbox.ts';
@@ -49,12 +49,14 @@ export async function headerCounts(app: App, sc: Scope, { look = false }: { look
     return { waiting: { review: r?.review || 0, followups: r?.followups || 0, chats: r?.chats || 0 }, spend: { usd: Number(u?.usd) || 0, cap }, plan: null };
   }
   // A customer: the conversations waiting for them, and this month's conversations against their stores' plans. The
-  // operator's `look`: every customer's store, never the leads (pages/customer.ts myStores).
-  const theirs = sc.operator ? ' AND workspace_id IS NOT NULL' : '';
+  // operator's `look`: every customer's store and our own company store, never the leads (pages/customer.ts myStores);
+  // the plan's ring counts the customers' stores alone, ours has no plan.
+  const theirs = sc.operator ? ` AND ${theirsOrOurs()}` : '';
   const w = await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM conversations c WHERE ${messagingSql('c.channel')} AND c.store_id IN (SELECT id FROM stores WHERE ${storesOf(sc)}${theirs}) AND ${WAITING_SQL}`);
-  const stores = await app.db.query<{ id: number; config: any; name: string | null; domain: string; brand: any }>(`SELECT id, config, name, domain, brand FROM stores WHERE ${storesOf(sc)}${theirs} ORDER BY id`);
-  const n = await counted(app.db, stores.map((s) => s.id), { months: 1 });
-  const usage = stores.map((s) => usageOf(planOf(s.config), n.get(s.id)));
+  const stores = await app.db.query<{ id: number; config: any; name: string | null; domain: string; brand: any; platform: string | null }>(`SELECT id, config, name, domain, brand, platform FROM stores WHERE ${storesOf(sc)}${theirs} ORDER BY id`);
+  const paying = stores.filter((s) => s.platform !== 'company');
+  const n = await counted(app.db, paying.map((s) => s.id), { months: 1 });
+  const usage = paying.map((s) => usageOf(planOf(s.config), n.get(s.id)));
   const plan = usage.length ? { used: usage.reduce((a, u) => a + u.thisMonth, 0), cap: usage.reduce((a, u) => a + u.cap, 0) } : null;
   // The store the pages are about, in the header where Teder shows the account (docs/design-pro.md, "The two desks side by
   // side"): its name, its address and its colour. A workspace's first; most have one.

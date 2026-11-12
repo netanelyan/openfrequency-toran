@@ -431,3 +431,41 @@ test('while Meta reviews the new words, the ones it approved before go, with onl
     await app.db.close();
   }
 });
+
+// The owner, 2026-11-12: "i also sent a lead message and cant see it in the inbox". A pitch from our number is kept in
+// our support's conversation with that number, where the answer comes in; those sent before were brought in once.
+test('a pitch from our number is in our own inbox, in the conversation its answer comes into; the ones sent before are brought in once', async () => {
+  const { app } = await pitchApp();
+  try {
+    const ours = (await app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, status) VALUES ('openfrequency.example', 'https://openfrequency.example/', 'OpenFrequency', 'company', 'manual', 'of-c1', 'company') RETURNING id"))!.id;
+    app.env.TORAN_SUPPORT_STORE = 'openfrequency.example';
+    assert.equal((await outreach.sendPitch(app, pitch())).sent, true);
+    const c = (await app.db.one<any>("SELECT c.id, c.store_id, c.peer, c.meta, a.status AS line FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE c.peer = $1", [PHONE]))!;
+    assert.deepEqual([c.store_id, c.line, c.meta.name], [ours, 'line', 'כלי חרס של נורית'], "our support's conversation with them, under the store's name");
+    const m = (await app.db.one<any>('SELECT role, author, auto, text, delivery FROM messages WHERE conversation_id = $1', [c.id]))!;
+    assert.deepEqual([m.role, m.author, m.auto], ['owner', 'Demo', 'outreach'], "the operator's message, said as a pitch");
+    assert.match(m.text, /^היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן, [^]*https:\/\/toran\.openfrequency\.co\.il\/s\/nurit-x1[^]*\n\n\[לנסות את תורן\] \[הסירו אותי\]$/, 'its words with the page, and its buttons');
+    assert.equal(m.delivery.length, 1, "Meta's id, for the delivery report");
+    // Their answer comes into the same conversation (channels/demo.ts: a phone with no demo is our support's).
+    const { openConversation } = await import('../src/channels/conversations.ts');
+    const again = await openConversation(app.db, { storeId: ours, channel: 'whatsapp', peer: PHONE, accountId: (await app.db.one<any>("SELECT id FROM channel_accounts WHERE status = 'line'"))!.id });
+    assert.deepEqual([again.id, again.created], [c.id, false]);
+
+    // One sent before this, as the event of the time kept it (no conversation): brought in once, in the words of then.
+    const lead = (await app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug) VALUES ('pofi.example', 'https://pofi.example/', 'פופי', 'shopify', 'seed', 'pofi-c1') RETURNING id"))!.id;
+    await app.db.query("INSERT INTO events (store_id, kind, data) VALUES (NULL, 'outreach_wa', $1::jsonb)", [JSON.stringify({ product: 'toran', stage: 'first', phone: OTHER, ref: `toran:${lead}`, by: 'נתנאל', template: 'toran_pitch', state: 'sent', id: 'wamid.before' })]);
+    assert.equal(await outreach.keepSentPitches(app), 1);
+    assert.equal(await outreach.keepSentPitches(app), 0, 'once');
+    const before = (await app.db.one<any>('SELECT m.text, m.author, c.meta FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.peer = $1', [OTHER]))!;
+    assert.match(before.text, /^היי, כאן OpenFrequency\. בנינו לפופי תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי[^]*\[לנסות את תורן\] \[הסירו אותי\]$/);
+    assert.deepEqual([before.author, before.meta.name], ['נתנאל', 'פופי']);
+
+    // From a number of its own (META_OUTREACH_PHONE_ID) the answers come there: nothing kept here.
+    app.env.META_OUTREACH_PHONE_ID = app.env.META_DEMO_PHONE_ID;
+    assert.equal((await outreach.sendPitch(app, pitch({ phone: '972500000558' }))).sent, true);
+    assert.equal(await app.db.one("SELECT 1 FROM conversations WHERE peer = '972500000558'"), null);
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});

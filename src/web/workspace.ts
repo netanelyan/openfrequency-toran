@@ -20,12 +20,17 @@ export type Scope = {
   /** View-as: every POST is refused. */
   readOnly: boolean;
   /**
-   * The operator on a customer's screens, on Toran's own name (server.ts `look`): every customer's store, never our
-   * company store or a lead, so each list, count and page agrees with the badge (the owner's inbox, 2026-11-11, listed our
-   * support chat as waiting beside a badge of one).
+   * The operator on a customer's screens, on Toran's own name (server.ts `look`): every customer's store and our own
+   * company store (OpenFrequency's Toran: our number's support and demo, and the leads' answers to our pitches), never a
+   * lead, and the same stores in every list, count and page, so each agrees with the badge (the owner's inbox,
+   * 2026-11-11, listed our support chat as waiting beside a badge of one, and the store was left out to match; then,
+   * 2026-11-12, with no customer's store left: "fix openfrequency's toran. why isnt it set up? it was").
    */
   customers?: boolean;
 };
+
+/** The stores the operator sees on a customer's screens (`customers`): every customer's, and our own company store. */
+export const theirsOrOurs = (alias = '') => `(${alias ? `${alias}.` : ''}workspace_id IS NOT NULL OR ${alias ? `${alias}.` : ''}platform = 'company')`;
 
 export function scopeOf(s: Session): Scope {
   const workspaceId = s.workspace ? s.workspace.id : null;
@@ -36,7 +41,7 @@ export function scopeOf(s: Session): Scope {
 }
 
 /** A condition on stores (alias optional): TRUE for the operator, the workspace's stores for anyone else. */
-export const storesOf = (sc: Scope, alias = '') => (sc.workspaceId == null ? (sc.customers ? `${alias ? `${alias}.` : ''}workspace_id IS NOT NULL` : 'TRUE') : `${alias ? `${alias}.` : ''}workspace_id = ${Number(sc.workspaceId)}`);
+export const storesOf = (sc: Scope, alias = '') => (sc.workspaceId == null ? (sc.customers ? theirsOrOurs(alias) : 'TRUE') : `${alias ? `${alias}.` : ''}workspace_id = ${Number(sc.workspaceId)}`);
 
 /**
  * A condition on stores: a lead the operator is selling to, so no workspace's. The review queue, the pages ready to
@@ -46,7 +51,7 @@ export const storesOf = (sc: Scope, alias = '') => (sc.workspaceId == null ? (sc
 export const selling = (alias = '') => `${alias ? `${alias}.` : ''}workspace_id IS NULL`;
 
 /** A condition on a row that carries a store id (conversations, usage, events): its store is the scope's. */
-export const storeIdIn = (sc: Scope, column: string) => (sc.workspaceId == null ? (sc.customers ? `${column} IN (SELECT id FROM stores WHERE workspace_id IS NOT NULL)` : 'TRUE') : `${column} IN (SELECT id FROM stores WHERE workspace_id = ${Number(sc.workspaceId)})`);
+export const storeIdIn = (sc: Scope, column: string) => (sc.workspaceId == null ? (sc.customers ? `${column} IN (SELECT id FROM stores WHERE ${theirsOrOurs()})` : 'TRUE') : `${column} IN (SELECT id FROM stores WHERE workspace_id = ${Number(sc.workspaceId)})`);
 
 /** May this scope see this store? */
 export async function ownsStore(db: Db, sc: Scope, storeId: number): Promise<boolean> {

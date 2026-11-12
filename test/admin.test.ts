@@ -128,12 +128,27 @@ test("on Toran's own name the operator sees the product: every customer's store 
         assert.equal(r.headers.location, `https://accounts.test/admin/toran${path}`, path);
       }
       await s.app.db.query('UPDATE stores SET workspace_id = NULL WHERE id = $1', [s.seeded.storeId]);
-      // A store in no workspace (a lead, our company store) is not on a customer's screens: its pages go to /admin, and
-      // no list or count has it (the owner's inbox, 2026-11-11, listed our support chat beside a badge of one).
+      // A lead is not on a customer's screens: its pages go to /admin, and no list or count has it.
       const lead = await at(`/lead/${s.seeded.storeId}/knowledge`, op);
       assert.equal(lead.status, 303);
       assert.equal(lead.headers.location, `https://accounts.test/admin/toran/lead/${s.seeded.storeId}/knowledge`);
-      assert.equal(storesOf({ workspaceId: null, operator: true, readOnly: false, customers: true }, 's'), 's.workspace_id IS NOT NULL');
+      assert.equal(storesOf({ workspaceId: null, operator: true, readOnly: false, customers: true }, 's'), "(s.workspace_id IS NOT NULL OR s.platform = 'company')");
+      // Our own company store is: OpenFrequency's Toran, our number's support and demo, with no customer's store left
+      // (the owner, 2026-11-12: "fix openfrequency's toran. why isnt it set up? it was"). Its chat waiting for an answer is
+      // in the inbox and in the badge alike (2026-11-11: the inbox listed our support chat beside a badge of one).
+      const ours = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, status, brand) VALUES ('openfrequency.example', 'https://openfrequency.example/', 'OpenFrequency', 'company', 'manual', 'of-c1', 'company', '{\"name\": \"OpenFrequency\"}'::jsonb) RETURNING id"))!.id;
+      const chat = (await s.app.db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer) VALUES ($1, 'whatsapp', '972500000777') RETURNING id", [ours]))!.id;
+      await s.app.db.query("INSERT INTO messages (conversation_id, role, text) VALUES ($1, 'customer', 'אפשר לדבר עם מישהו?'), ($1, 'system', 'עבר אליכם')", [chat]);
+      await s.app.db.query("UPDATE messages SET handoff = '{\"reason\": \"human_requested\", \"summary\": \"רוצים לדבר עם מישהו\"}'::jsonb WHERE conversation_id = $1 AND role = 'system'", [chat]);
+      const ofHome = await at('/', op);
+      assert.equal(ofHome.status, 200);
+      assert.doesNotMatch(ofHome.body, /action="\/start"|הכתובת של האתר שלכם/, 'not the setup');
+      assert.match(ofHome.body, /OpenFrequency/, "our own store's name in the header");
+      const inbox = await at('/chats', op);
+      assert.match(inbox.body, new RegExp(`href="/chat/${chat}"`), 'its chat in the inbox');
+      assert.equal((await at(`/chat/${chat}`, op)).status, 200, 'and it opens');
+      const waiting = JSON.parse((await at('/waiting.json', op)).body).chats;
+      assert.equal(waiting, 1, 'the badge counts it, as the inbox lists it');
       assert.equal(storesOf({ workspaceId: null, operator: true, readOnly: false }), 'TRUE', "the operator's own pages still have every store");
 
       // In their own workspace: the customer's Today and nav, nothing of the operator's.

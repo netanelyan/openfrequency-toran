@@ -8,6 +8,9 @@ import { J } from '../db/index.ts';
 import { audit, event, usage } from '../db/log.ts';
 import { cloudSend, GRAPH, GraphError, numberQuality, templateHealth } from '../channels/meta.ts';
 import { ourLines, tokenOf } from '../channels/lines.ts';
+import { openConversation } from '../channels/conversations.ts';
+import { supportAccount } from '../company.ts';
+import { displayName } from '../ingest/brand.ts';
 import { reply } from '../channels/send.ts';
 import { le } from '../outreach.ts';
 import { TEDER_DOES, TEDER_WHAT, TORAN_DOES, TORAN_WHAT } from '../pitchWords.ts';
@@ -478,6 +481,7 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
     const sent = await cloudSend(app.env, app.graph, phoneId, token, phone, { template: { name: t.name, sid: t.name, vars: pitchVars(t, name, page, p.url2), urls, payload: 'OUTREACH_STOP', payloadIndex: urls.length } });
     await mark(app, claim.id, { state: 'sent', id: sent.id || null });
     await usage(app.db, { kind: 'bsp', backend: 'meta_line', units: 1, usd: sent.usd, apiUsd: sent.usd, tag: 'wa_outreach' }).catch(() => {});
+    await keepPitch(app, { eventId: claim.id, phone, storeName: name, text: pitchShown(t, pitchVars(t, name, page, p.url2)), by: p.by, sentId: sent.id || null }).catch((e) => app.log(`[outreach] ${who}: sent, and not kept in our inbox (${masked(cleanLine(e?.message || e, 200))})`));
   } catch (e: any) {
     const code = e instanceof GraphError ? e.code : null;
     const why = masked(cleanLine(e?.message || e, 300));
@@ -493,6 +497,50 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   }
   app.log(`[outreach] ${who}: sent`);
   return { sent: true, why: null, said: SAID_HE.sent };
+}
+
+/** A pitch as it reads in the chat: its words, and its buttons under them as the store sees them. */
+export const pitchShown = (t: OutreachTemplate, vars: string[]) => `${outreachFilled(t, vars)}\n\n${[t.url.text, ...(t.url2 ? [t.url2.text] : []), t.stop].map((b) => `[${b}]`).join(' ')}`;
+
+/**
+ * A pitch, in our own inbox (the owner, 2026-11-12: "i also sent a lead message and cant see it in the inbox"): in the
+ * conversation with that number on our support's account on our number (company.ts supportAccount), the one its answer
+ * comes into (channels/demo.ts: a phone with no demo is our support's), as the operator's message (role owner, its
+ * author the operator), with the store's name on a conversation it starts. Only for a pitch from our public number
+ * (DEMO_WA_NUMBER): one from a number of its own (META_OUTREACH_PHONE_ID) is answered there. The event keeps the
+ * conversation (kept), so it is kept once.
+ */
+async function keepPitch(app: App, k: { eventId: number | string; phone: string; storeName: string; text: string; by: string; sentId: string | null }): Promise<number | null> {
+  if (digits(app.env.META_OUTREACH_PHONE_ID)) return null;
+  const number = digits(app.env.DEMO_WA_NUMBER);
+  const support = number ? await supportAccount(app, { kind: 'meta' }, number) : null;
+  if (!support) return null;
+  const c = await openConversation(app.db, { storeId: support.store_id, channel: 'whatsapp', peer: k.phone, accountId: support.id, meta: () => ({ name: k.storeName }) });
+  await app.db.query("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'owner', $2, $3, 'outreach', $4::jsonb)", [c.id, k.text, k.by, J(k.sentId ? [k.sentId] : [])]);
+  await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [c.id]);
+  await mark(app, k.eventId, { kept: c.id });
+  return c.id;
+}
+
+/**
+ * The pitches sent from our one number before they were kept in our inbox: each in its conversation, as keepPitch keeps
+ * a new one, with the store's name from the lead's own row (ref toran:<id> or store:<id>) and the words of the template
+ * it went as. Returns how many were kept; one whose store or template is not known is left as it is.
+ */
+export async function keepSentPitches(app: App): Promise<number> {
+  const sent = await app.db.query<{ id: number; data: any }>("SELECT id, data FROM events WHERE kind = 'outreach_wa' AND data->>'state' = 'sent' AND data->>'kept' IS NULL ORDER BY id");
+  const named = new Map([...Object.values(OUTREACH_TEMPLATES), ...Object.values(OUTREACH_TEMPLATES).map((t) => t.previous!).filter(Boolean), TORAN_LAUNCH].map((t) => [t.name, t]));
+  let kept = 0;
+  for (const e of sent) {
+    const t = named.get(String(e.data?.template || ''));
+    const id = /^(?:toran|store):(\d+)$/.exec(String(e.data?.ref || ''))?.[1];
+    const s = id ? await app.db.one<any>('SELECT name, brand, brand_override, domain, slug FROM stores WHERE id = $1', [Number(id)]) : null;
+    if (!t || !s) continue;
+    const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
+    const c = await keepPitch(app, { eventId: e.id, phone: String(e.data.phone || ''), storeName: name, text: pitchShown(t, [le(name)]), by: String(e.data.by || 'operator'), sentId: e.data.id || null });
+    if (c) kept++;
+  }
+  return kept;
 }
 
 /**

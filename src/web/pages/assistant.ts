@@ -7,7 +7,7 @@ import { localPhone } from '../../core/urls.ts';
 import { accountsLinks } from '../accounts.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, layout, postButton, stamp, storeBadge } from '../ui.ts';
-import { storesOf } from '../workspace.ts';
+import { storesOf, theirsOrOurs } from '../workspace.ts';
 
 // The owner's assistant on the dashboard (src/assistant): the chat, the one action waiting for "כן" with its two
 // buttons, a few questions to start from, and the owner's WhatsApp numbers (linked in accounts), from which they can
@@ -91,7 +91,7 @@ export function assistantRoutes(app: App): Route<DashReq>[] {
     // 2026-11-12, P0-2: every self-serve store read "העוזר נפתח לחנות שתורן כבר עונה בה"). The operator's own list
     // keeps to the stores that are past the demo.
     ['GET', /^\/assistant$/, async (r) => {
-      const stores = await app.db.query<any>(`SELECT id, name, domain, brand, brand_override FROM stores WHERE ${storesOf(r.scope)}${r.ctx.operator ? " AND status IN ('pilot', 'paid', 'demo_started')" : r.scope.operator ? ' AND workspace_id IS NOT NULL' : ''} ORDER BY updated_at DESC LIMIT 50`);
+      const stores = await app.db.query<any>(`SELECT id, name, domain, brand, brand_override FROM stores WHERE ${storesOf(r.scope)}${r.ctx.operator ? " AND status IN ('pilot', 'paid', 'demo_started')" : r.scope.operator ? ` AND ${theirsOrOurs()}` : ''} ORDER BY updated_at DESC LIMIT 50`);
       if (stores.length === 1) return { redirect: `/lead/${stores[0].id}/assistant` };
       const start = !r.scope.operator && !r.ctx.readOnly && Number(r.scope.workspaceId) > 0;
       const list = stores.length

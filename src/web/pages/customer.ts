@@ -16,7 +16,7 @@ import { accountsLinks } from '../accounts.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, dayHe, esc, fold, icon, layout, postButton, shortDate, stamp, storeBadge } from '../ui.ts';
 import { installCard, installPanel } from '../install.ts';
-import { storesOf, type Scope } from '../workspace.ts';
+import { storesOf, theirsOrOurs, type Scope } from '../workspace.ts';
 import { channelLogo, conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type InboxState } from '../inbox.ts';
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { storeConnectReady } from '../../channels/kapso.ts';
@@ -54,11 +54,11 @@ const FIRST_DAYS = 14;
 
 type Store = { id: number; name: string; domain: string; slug: string | null; platform: string; config: any; demo_code: string | null; taken_down_at: string | null; ingested_at: string | null; live_at: string | null; agent_name: string | null };
 
-/** The stores a customer page is about: the workspace's, or for the operator every customer's (never their own leads). */
+/** The stores a customer page is about: the workspace's, or for the operator every customer's and our own (never a lead). */
 export async function myStores(app: App, sc: Scope): Promise<Store[]> {
   const rows = await app.db.query<any>(`SELECT s.id, s.name, s.domain, s.slug, s.platform, s.config, s.brand, s.brand_override, s.demo_code, s.taken_down_at, s.ingested_at, s.agent_name,
       (SELECT MIN(connected_at) FROM channel_accounts a WHERE a.store_id = s.id) AS live_at
-    FROM stores s WHERE ${storesOf(sc, 's')}${sc.operator ? ' AND s.workspace_id IS NOT NULL' : ''} ORDER BY s.id LIMIT 50`);
+    FROM stores s WHERE ${storesOf(sc, 's')}${sc.operator ? ` AND ${theirsOrOurs('s')}` : ''} ORDER BY s.id LIMIT 50`);
   return rows.map((s) => ({ ...s, name: displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain }));
 }
 
