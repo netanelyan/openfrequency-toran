@@ -21,10 +21,10 @@ import { channelLogo, conversationRow, ROW_SQL, STATE_SQL, WAITING_SQL, type Inb
 import { waAccountOf, waBanner, waLine } from './whatsapp.ts';
 import { storeConnectReady } from '../../channels/kapso.ts';
 import { dmConnectReady } from '../../channels/zernio.ts';
-import { socialAccountOf, socialLine } from './social.ts';
+import { socialAccountOf, socialBanner, socialLine } from './social.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
 import { mailCard, mailState } from './mailSetup.ts';
-import { IN_HE, offChannels } from './channelOff.ts';
+import { answersHe, IN_HE, offChannels, type Answering, type OffChannel } from './channelOff.ts';
 import { orderAccessOf } from '../../orders.ts';
 import { ordersOn, ordersPanel } from './orders.ts';
 import { autoPanel } from './auto.ts';
@@ -83,31 +83,48 @@ type ChannelRow = { ch: AnyChannel | 'web'; on: boolean; text: string; state: Co
 
 async function channelsOf(app: App, s: Store): Promise<ChannelRow[]> {
   const code = enabledChannels(app.env);
-  const states = await channelStates(app.db);
   const wa = await waAccountOf(app, s.id);
   // Email is connected once the store's mail comes through (mailSetup.ts's last step), not when its address is made: a
   // card half way says so (the owner's Settings, 2026-11-11, said "מחובר" beside the email card's "באמצע").
   const mail = code.has('email') && app.mail ? await mailState(app, s.id) : null;
   const web = await webChatState(app, s.id);
+  // Whether Toran answers on each connected channel now: never "תורן עונה בו" before go-live, while paused or beside
+  // "תורן לא עונה כאן" (the audit of 2026-11-12, P1-1).
+  const off = await offChannels(app, s.id);
+  const live = (await liveOf(app, s.id)).state;
+  const answering = (ch: OffChannel): Answering => (live !== 'live' ? live : off.includes(ch) ? 'off' : 'live');
   const waState: ConnState = wa?.status === 'active' ? 'on' : wa?.status === 'pending' ? 'wait' : wa?.status === 'reconnect' || wa?.status === 'error' ? 'bad' : storeConnectReady(app.env) ? 'off' : 'soon';
+  const webText: Record<Answering, string> = {
+    live: 'פועל באתר, ותורן עונה בו.',
+    never: 'פועל באתר. עד שמפעילים את תורן, מי שכותב בו מקבל תשובה שההודעה הגיעה.',
+    paused: 'פועל באתר. תורן מושהה, ומי שכותב בו מקבל תשובה שההודעה הגיעה.',
+    off: 'פועל באתר. כרגע תורן לא עונה בו, ומי שכותב מקבל תשובה שההודעה הגיעה.',
+  };
   const rows: ChannelRow[] = [
-    { ch: 'whatsapp', on: wa?.status === 'active', state: waState, text: waLine(wa && wa.status !== 'off' ? wa : null, s, storeConnectReady(app.env)) },
+    { ch: 'whatsapp', on: wa?.status === 'active', state: waState, text: waLine(wa && wa.status !== 'off' ? wa : null, s, storeConnectReady(app.env), answering('whatsapp')) },
     // The address on our domain is the email card's business (pages/mailSetup.ts), not this line's.
     mail?.step === 'done'
-      ? { ch: 'email', on: true, state: 'on', text: `מחובר${mail.from ? `, <bdi>${esc(mail.from)}</bdi>` : ''}. תורן עונה בו.` }
+      ? { ch: 'email', on: true, state: 'on', text: `מחובר${mail.from ? `, <bdi>${esc(mail.from)}</bdi>` : ''}. ${answersHe(answering('email'), 'תורן עונה בו')}.` }
       : mail?.on
         ? { ch: 'email', on: false, state: 'half', text: 'החיבור באמצע. <a href="/settings#email">להמשיך</a>' }
         : { ch: 'email', on: false, state: mail ? 'off' : 'soon', text: mail ? '<a href="/settings#email">לחבר את המייל</a>' : 'בקרוב' },
     ...(await Promise.all((['instagram', 'messenger'] as const).map(async (ch) => {
       const a = await socialAccountOf(app, s.id, ch);
       const state: ConnState = a?.status === 'active' ? 'on' : a?.status === 'error' ? 'bad' : dmConnectReady(app.env, ch) ? 'off' : 'soon';
-      return { ch, on: a?.status === 'active', state, text: socialLine(a && a.status !== 'off' ? a : null, ch, s, dmConnectReady(app.env, ch)) };
+      return { ch, on: a?.status === 'active', state, text: socialLine(a && a.status !== 'off' ? a : null, ch, s, dmConnectReady(app.env, ch), answering(ch)) };
     }))),
-    { ch: 'web' as const, on: web === 'on', state: web === 'on' ? 'on' : web === 'waiting' ? 'wait' : 'off', text: web === 'on' ? 'פועל באתר' : web === 'waiting' ? 'מופעל, ונשאר להוסיף אותו לאתר. <a href="/settings#webchat">איך מוסיפים</a>' : 'לא מופעל. <a href="/settings#webchat">להפעיל</a>' },
+    { ch: 'web' as const, on: web === 'on', state: web === 'on' ? 'on' : web === 'waiting' ? 'wait' : 'off', text: web === 'on' ? webText[answering('web')] : web === 'waiting' ? 'מופעל, ונשאר להוסיף אותו לאתר. <a href="/settings#webchat">איך מוסיפים</a>' : 'לא מופעל. <a href="/settings#webchat">להפעיל</a>' },
   ];
-  // A channel the owner switched Toran off on (pages/channelOff.ts) says so on its line.
+  // A channel the owner switched Toran off on (pages/channelOff.ts) says so on its chip too. A channel whose provider is
+  // not set up on this server is not offered at all (P2-14: no "בקרוב" for what is on sale; the server is P0-7's).
+  return rows.filter((x) => x.state !== 'soon').map((x) => (x.on && off.includes(x.ch) ? { ...x, state: 'paused' as const } : x));
+}
+
+/** The channels where Toran answers customers now, by their Hebrew names: connected, the store live, not switched off there. */
+async function answeringChannels(app: App, s: Store): Promise<string[]> {
+  if ((await liveOf(app, s.id)).state !== 'live') return [];
   const off = await offChannels(app, s.id);
-  return rows.map((x) => (x.on && off.includes(x.ch) ? { ...x, state: 'paused' as const } : x));
+  return (await channelsOf(app, s)).filter((c) => c.on && !off.includes(c.ch)).map((c) => CHANNEL_HE[c.ch]);
 }
 
 const CONN_CHIP: Record<ConnState, [string, string]> = { on: ['ok', 'מחובר'], wait: ['', 'מחכה'], half: ['sig', 'באמצע'], bad: ['bad', 'צריך לחבר שוב'], paused: ['warn', 'תורן לא עונה כאן'], off: ['muted', 'לא מחובר'], soon: ['muted', 'בקרוב'] };
@@ -162,7 +179,11 @@ async function readingBanner(app: App, r: DashReq): Promise<string> {
   if (!(Number(r.scope.workspaceId) > 0)) return '';
   const st = storeState(await setupStoreOf(app, Number(r.scope.workspaceId)));
   if (st.status === 'working') return `<div class="banner info" data-wait-job="${st.job}"${support(app) ? ` data-help="${esc(support(app)!)}"` : ''}>${icon('clock')}<div><b>קוראים את האתר שלכם</b><p>זה לוקח דקה או שתיים. אחר כך תראו ב<a href="/knowledge">מה תורן יודע</a> את המוצרים ואת דפי המדיניות שנקראו.</p></div></div>`;
-  if (st.status === 'attention') return `<div class="banner warn">${icon('alert')}<div><b>${st.verify ? 'צריך לאמת שהאתר שלכם' : 'לא הצלחנו לקרוא את האתר'}</b><p>${esc(st.detail)}</p></div>${writeUs(app)}</div>`;
+  // A read that failed, of a store that exists: "לנסות שוב" reads it again (the audit of 2026-11-12, P1-25: only
+  // "כתבו לנו" was offered); proving the site goes to /start.
+  const found = await setupStoreOf(app, Number(r.scope.workspaceId));
+  const again = st.status === 'attention' && !st.verify && found.store && canIngest(found.store.platform) && !r.ctx.readOnly ? postButton(r.ctx, `/lead/${found.store.id}/reread`, 'לנסות שוב', { cls: 'btn sm primary', iconName: 'refresh' }) : '';
+  if (st.status === 'attention') return `<div class="banner warn">${icon('alert')}<div><b>${st.verify ? 'צריך לאמת שהאתר שלכם' : 'לא הצלחנו לקרוא את האתר'}</b><p>${esc(st.detail)}</p></div>${again}${writeUs(app)}</div>`;
   return '';
 }
 
@@ -198,14 +219,20 @@ const stepItem = (x: Step) => {
   return href && x.status !== 'done' ? `<a href="${esc(href)}">${label}</a>` : `<div class="li">${label}</div>`;
 };
 
-function setupBlock(app: App, st: Setup | null): string {
+/**
+ * `main`: no banner above holds the page's main action. While one does, the block's button is a plain one, and none at
+ * all when the next step is that banner itself (the audit of 2026-11-12, P1-11: "להפעיל את תורן" beside "להמשיך" to the
+ * same banner).
+ */
+function setupBlock(app: App, st: Setup | null, main = true): string {
   if (!st || st.ready) return '';
   const counted = st.steps.filter((x) => x.status !== 'soon');
   const done = counted.filter((x) => x.status === 'done').length;
   const next = nextStep(st);
   const item = stepItem;
+  const button = !next || (!main && next.key === 'live') ? '' : `<p class="mt12 m0"><a class="btn${main ? ' primary' : ''}" href="${esc(rel(next.href)!)}">${STEP_BUTTON[next.key] ? `${icon('chat')}${STEP_BUTTON[next.key]}` : `${icon('chev')}להמשיך`}</a></p>`;
   return `<section class="panel setupbox" id="setup"><header><h2>מה נשאר</h2><span class="end chip">${done} מתוך ${counted.length}</span></header>
-  ${next ? `<p class="m0"><b>${esc(next.title)}</b>${next.detail ? `<br><span class="muted">${esc(next.detail)}</span>` : ''}</p><p class="mt12 m0"><a class="btn primary" href="${esc(rel(next.href)!)}">${STEP_BUTTON[next.key] ? `${icon('chat')}${STEP_BUTTON[next.key]}` : `${icon('chev')}להמשיך`}</a></p>` : ''}
+  ${next ? `<p class="m0"><b>${esc(next.title)}</b>${next.detail ? `<br><span class="muted">${esc(next.detail)}</span>` : ''}</p>${button}` : ''}
   <details class="mt12"><summary class="small">כל הצעדים</summary><div class="list mt8">${st.steps.map(item).join('')}</div><p class="small muted mt8 m0">אותם צעדים, עם תדר אם יש לכם, בדף <a href="${esc(accountsLinks(app.env).setup)}">ההקמה בחשבון</a>.</p></details>
 </section>`;
 }
@@ -214,26 +241,42 @@ function setupBlock(app: App, st: Setup | null): string {
  * The one press, as Teder's "נשאר צעד אחד" (golive.ts; TORAN-READINESS.md P1-7): a store with a channel connected and
  * Toran switched off, or paused. One button, pressed twice; the owner's alone (a team member sees the line, no button).
  */
-function goLiveBanner(r: DashReq, s: Store, state: LiveState): string {
+/** "3 לקוחות כבר כתבו ומחכים לכם בשיחות": the waiting count in the words of a banner, or nothing. */
+const waitersHe = (n: number) => (n === 1 ? 'לקוח אחד כבר כתב ומחכה לכם בשיחות.' : n > 1 ? `${n} לקוחות כבר כתבו ומחכים לכם בשיחות.` : '');
+
+function goLiveBanner(r: DashReq, s: Store, state: LiveState, waiting = 0): string {
   const may = r.user.role !== 'client_member';
   const paused = state === 'paused';
   const button = may ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('check')}${paused ? 'להפעיל שוב את תורן' : 'להפעיל את תורן'}`, { cls: 'btn primary', fields: { on: '1' }, confirm: 'לחצו שוב כדי להפעיל' }) : '';
-  return `<div class="banner ${paused ? 'warn' : 'info'}" id="golive">${icon(paused ? 'alert' : 'check')}<div><b>${paused ? `תורן מושהה ב${esc(s.name)}` : 'נשאר צעד אחד: להפעיל את תורן'}</b><p>${paused ? 'עד שמפעילים אותו שוב, הודעות של לקוחות מחכות לכם בשיחות.' : 'הערוץ מחובר. מהרגע שמפעילים, תורן עונה ללקוחות לבד, ומה שהוא לא יודע מגיע אליכם. עד אז הודעות מחכות לכם בשיחות.'}${may ? '' : ' רק מי שפתח את החשבון יכול להפעיל.'}</p></div>${button}</div>`;
+  // While every message waits for the owner, the count is said here (the audit of 2026-11-12, P1-5: Today showed none).
+  const text = paused
+    ? waiting ? `${waiting === 1 ? 'לקוח אחד מחכה' : `${waiting} לקוחות מחכים`} לתשובה שלכם. <a href="/chats?state=waiting">לשיחות שמחכות</a>` : 'עד שמפעילים אותו שוב, הודעות של לקוחות מחכות לכם בשיחות.'
+    : `הערוץ מחובר. מהרגע שמפעילים, תורן עונה ללקוחות לבד, ומה שהוא לא יודע מגיע אליכם. ${waitersHe(waiting) || 'עד אז הודעות מחכות לכם בשיחות.'}`;
+  return `<div class="banner ${paused ? 'warn' : 'info'}" id="golive">${icon(paused ? 'alert' : 'check')}<div><b>${paused ? `תורן מושהה ${prefixed('ב', esc(s.name))}` : 'נשאר צעד אחד: להפעיל את תורן'}</b><p>${text}${may ? '' : ' רק מי שפתח את החשבון יכול להפעיל.'}</p></div>${button}</div>`;
 }
 
-/** Settings: whether Toran answers in the store, and the way to pause it or switch it on again. */
-async function livePanel(app: App, r: DashReq, s: Store): Promise<string> {
+/**
+ * Settings: whether Toran answers in the store, and the way to pause it or switch it on again. With no channel
+ * connected there is nothing to switch on yet, so the panel says what comes first (the audit of 2026-11-12, P1-2:
+ * pressed, it said "מהרגע הזה הוא עונה ללקוחות" while Today said it does not answer). `main`: its button is the page's
+ * main one (customerSettings).
+ */
+async function livePanel(app: App, r: DashReq, s: Store, main = true): Promise<string> {
   const { state, pausedAt } = await liveOf(app, s.id);
+  const channels = (await activeChannels(app, s.id)).length > 0;
   const may = !r.ctx.readOnly && r.user.role !== 'client_member';
-  const chip = state === 'live' ? '<span class="end chip ok">עונה ללקוחות</span>' : state === 'paused' ? '<span class="end chip warn">מושהה</span>' : '<span class="end chip ghost">עוד לא הופעל</span>';
+  const chip = state === 'live' ? (channels ? '<span class="end chip ok">עונה ללקוחות</span>' : '<span class="end chip ghost">עוד אין ערוץ מחובר</span>') : state === 'paused' ? '<span class="end chip warn">מושהה</span>' : channels ? '<span class="end chip ghost">עוד לא הופעל</span>' : '<span class="end chip ghost">עוד אין ערוץ מחובר</span>';
   // The store-wide stop (the owner, 2026-11-09: one "להפסיק את תורן בכל הערוצים" under Settings, owner-role only,
   // with a confirm step, audited by setLive); one channel alone is the switch on its own card (pages/channelOff.ts).
-  const text = state === 'live' ? 'תורן עונה ללקוחות בכל הערוצים המחוברים. אפשר לעצור אותו בכולם, למשל במבצע שהאתר עוד לא מעודכן בו: הודעות יחכו לכם בשיחות, ומפעילים שוב כשרוצים.'
-    : state === 'paused' ? `תורן מושהה בכל הערוצים${pausedAt ? ` מ־${esc(stamp(pausedAt))}` : ''}, אז הודעות של לקוחות מחכות לכם בשיחות.` : 'תורן עוד לא הופעל בחנות, אז הודעות של לקוחות מחכות לכם בשיחות.';
+  const text = state === 'live' ? (channels ? 'תורן עונה ללקוחות בכל הערוצים המחוברים. אפשר לעצור אותו בכולם, למשל במבצע שהאתר עוד לא מעודכן בו: הודעות יחכו לכם בשיחות, ומפעילים שוב כשרוצים.' : 'תורן מופעל. הוא יתחיל לענות כשתחברו ערוץ.')
+    : state === 'paused' ? `תורן מושהה בכל הערוצים${pausedAt ? ` מ־${esc(stamp(pausedAt))}` : ''}, אז הודעות של לקוחות מחכות לכם בשיחות.` : channels ? 'תורן עוד לא הופעל בחנות, אז הודעות של לקוחות מחכות לכם בשיחות.' : 'קודם מחברים ערוץ אחד, ואז מפעילים את תורן כאן.';
   const button = !may ? '' : state === 'live'
     ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('x')}להפסיק את תורן בכל הערוצים`, { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי לעצור. עד שמפעילים שוב, תורן לא עונה לאף לקוח.' })
-    : postButton(r.ctx, `/lead/${s.id}/live`, `${icon('check')}${state === 'paused' ? 'להפעיל שוב' : 'להפעיל את תורן'}`, { cls: 'btn sm primary', fields: { on: '1' }, confirm: 'לחצו שוב כדי להפעיל' });
-  return `<section class="panel" id="golive"><header><h2>תורן ${prefixed('ב', esc(s.name))}</h2>${chip}</header><p class="m0">${text}</p>${button ? `<div class="row mt12">${button}</div>` : ''}</section>`;
+    : !channels ? `<a class="btn sm" href="#channels">${icon('chat')}לחבר ערוץ</a>`
+    : postButton(r.ctx, `/lead/${s.id}/live`, `${icon('check')}${state === 'paused' ? 'להפעיל שוב' : 'להפעיל את תורן'}`, { cls: `btn sm${main ? ' primary' : ''}`, fields: { on: '1' }, confirm: 'לחצו שוב כדי להפעיל' });
+  // A team member sees where it stands and why there is no button (P2-23), as the go-live banner says it.
+  const member = !r.ctx.readOnly && r.user.role === 'client_member' ? '<p class="small muted mt8 m0">את זה משנה מי שפתח את החשבון.</p>' : '';
+  return `<section class="panel" id="golive"><header><h2>תורן ${prefixed('ב', esc(s.name))}</h2>${chip}</header><p class="m0">${text}</p>${button ? `<div class="row mt12">${button}</div>` : ''}${member}</section>`;
 }
 
 /**
@@ -290,9 +333,11 @@ async function readRecap(app: App, s: Store): Promise<string> {
   const seen = await app.db.one<{ ingested_at: string | null; knowledge_seen_at: string | null }>('SELECT ingested_at, knowledge_seen_at FROM stores WHERE id = $1', [s.id]);
   if (!seen?.ingested_at || seen.knowledge_seen_at || now() - new Date(seen.ingested_at).getTime() > 86_400_000) return '';
   const n = await app.db.one<{ products: number; policies: number }>('SELECT (SELECT COUNT(*)::int FROM products WHERE store_id = $1 AND gone_at IS NULL) AS products, (SELECT COUNT(*)::int FROM policies WHERE store_id = $1) AS policies', [s.id]);
-  const products = n?.products === 1 ? 'מוצר אחד' : `${num(n?.products || 0)} מוצרים`;
-  const policies = n?.policies === 1 ? 'דף מדיניות אחד' : `${num(n?.policies || 0)} דפי מדיניות`;
-  return `<div class="banner info">${icon('book')}<div><b>קראנו את האתר: ${products} ו${policies}</b><p>מכאן תורן עונה ללקוחות. כדאי לעבור על זה פעם אחת ולהוסיף תשובות משלכם.</p></div><a class="btn sm" href="/lead/${s.id}/knowledge">לבדוק מה תורן יודע</a></div>`;
+  // A site read with nothing in it is not "from here Toran answers" (the audit of 2026-11-12, P1-12).
+  if (!n?.products && !n?.policies) return `<div class="banner warn">${icon('alert')}<div><b>קראנו את האתר, ולא מצאנו בו מוצרים או דפי מדיניות</b><p>בלי אלה תורן לא יודע מה לענות, אז כל שאלה תגיע אליכם. אם החנות בכתובת אחרת, או שזה לא נראה נכון, כתבו לנו ונבדוק.</p></div>${writeUs(app)}</div>`;
+  const products = n.products === 1 ? 'מוצר אחד' : `${num(n.products || 0)} מוצרים`;
+  const policies = n.policies === 1 ? 'דף מדיניות אחד' : `${num(n.policies || 0)} דפי מדיניות`;
+  return `<div class="banner info">${icon('book')}<div><b>קראנו את האתר: ${products} ${prefixed('ו', policies)}</b><p>מתוך זה תורן עונה ללקוחות. כדאי לעבור על זה פעם אחת ולהוסיף תשובות משלכם.</p></div><a class="btn sm" href="/lead/${s.id}/knowledge">לבדוק מה תורן יודע</a></div>`;
 }
 
 // ---- Today
@@ -317,8 +362,9 @@ async function today(app: App, r: DashReq) {
   const row = (c: any) => conversationRow({ ...c, store: many ? nameOf.get(c.store_id) : null });
   const weeks = firstWeeks(stores);
   const channels = await Promise.all(stores.map(async (s) => ({ s, rows: await channelsOf(app, s) })));
-  // A store's WhatsApp that has to be connected again (channels/waStore.ts) comes first: customers are waiting on it.
-  const reconnect = (await Promise.all(stores.map(async (s) => waBanner(await waAccountOf(app, s.id), s.id)))).join('');
+  // A store's WhatsApp that has to be connected again (channels/waStore.ts), or a Page or an Instagram account that
+  // stopped (the audit of 2026-11-12, P1-8), comes first: customers are waiting on it.
+  const reconnect = (await Promise.all(stores.map(async (s) => `${waBanner(await waAccountOf(app, s.id), s.id)}${socialBanner(await socialAccountOf(app, s.id, 'instagram'), 'instagram', s.id)}${socialBanner(await socialAccountOf(app, s.id, 'messenger'), 'messenger', s.id)}`))).join('');
   // Until the store answers customers on a channel, Today is about what is left (TORAN-READINESS.md P0-3): the next
   // step, trying Toran, and none of the month's zeros.
   const ws = Number(r.scope.workspaceId);
@@ -326,14 +372,23 @@ async function today(app: App, r: DashReq) {
   // Answering customers takes a channel and the switch on (golive.ts): a store with a channel and the switch off waits for one press.
   const states = await Promise.all(stores.map(async (s) => ({ s, channels: (await activeChannels(app, s.id)).length > 0, live: (await liveOf(app, s.id)).state })));
   const live = states.some((x) => x.channels && x.live === 'live');
-  const goLive = r.ctx.readOnly ? '' : states.filter((x) => x.channels && x.live !== 'live').map((x) => goLiveBanner(r, x.s, x.live)).join('');
+  const waitingOf = (id: number) => waiting.filter((c: any) => c.store_id === id).length;
+  const goLive = r.ctx.readOnly ? '' : states.filter((x) => x.channels && x.live !== 'live').map((x) => goLiveBanner(r, x.s, x.live, many ? waitingOf(x.s.id) : waitingAll)).join('');
   const recap = many ? '' : await readRecap(app, stores[0]);
   const tried = setup?.steps.find((x) => x.key === 'test')?.status === 'done';
   const notLive = `<div class="banner warn" id="not-live">${icon('alert')}<div><b>תורן עוד לא עונה ללקוחות</b><p>הוא מתחיל לענות כשמחברים ערוץ אחד (וואטסאפ, צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר) ומפעילים אותו. עד אז הודעות של לקוחות מחכות לכם בשיחות, ואפשר לנסות אותו בעצמכם.</p></div></div>`;
+  // One main button on the page (the audit of 2026-11-12, P1-11): a banner's, when one holds it (go-live, a channel to
+  // connect again, paying in the grace), else the setup block's, else trying Toran.
+  const banner = Boolean(goLive || reconnect || r.ctx.pay?.state === 'due' || /btn sm primary/.test(reading));
+  const block = setupBlock(app, setup, !banner);
+  // While Toran does not answer, every message waits for the owner: the list is here too (P1-5).
+  const waitList = (h2 = 'mt24') => `<section class="group ${h2}"><header><h2>מחכות לכם</h2>${waitingAll > waiting.length ? `<a class="end small" href="/chats?state=waiting">כולן</a>` : ''}</header>
+  ${waiting.length ? `<div class="list">${waiting.map(row).join('')}</div><p class="small muted mt8 m0">כשעונים ללקוח מהשיחה, אפשר לשמור את התשובה, ותורן יענה ככה בפעם הבאה.</p>` : `<div class="empty">${icon('check')}<b>אין שאלות שמחכות לכם</b>כשלקוח שואל משהו שאין עליו תשובה באתר, תורן אומר לו שהעביר את השאלה לחנות, והשאלה מגיעה לכאן.</div>`}
+</section>`;
 
   const body = `<div class="head"><h1>היום</h1><p class="sub">${esc(dayHe(now()))}${many ? '' : ` · ${esc(stores[0].name)}`}</p></div>
 ${reading}${reconnect}${recap}
-${goLive}${live ? '' : `${goLive ? '' : notLive}${setupBlock(app, setup)}${many ? '' : tryCard(app, stores[0], false, !setupBlock(app, setup) && !goLive)}`}
+${goLive}${live ? '' : `${goLive ? '' : notLive}${!live && waiting.length ? waitList('') : ''}${block}${many ? '' : tryCard(app, stores[0], false, !block && !banner)}`}
 ${live && weeks ? `<div class="banner info">${icon('chat')}<div><b>בשבועיים הראשונים אנחנו עוברים איתכם על השיחות</b><p>עד ${esc(shortDate(weeks))} אנחנו קוראים כל שיחה, ומתקנים איתכם מה שתורן ענה לא נכון או לא ידע. ${writeUs(app, 'לכתוב לנו על שיחה')}</p></div></div>` : ''}
 ${live ? `<div class="kpis">
   <a class="kpi lead" href="/chats?state=waiting"><span class="l">${waitingAll === 1 ? 'שאלה מחכה לכם' : 'שאלות מחכות לכם'}</span><span class="v">${waitingAll}</span><span class="s">${waitingAll ? 'מה שאין עליו תשובה באתר, ותורן העביר אליכם' : 'כל מה שנשאל קיבל תשובה'}</span></a>
@@ -344,9 +399,7 @@ ${live ? `<div class="kpis">
     ${carts ? `<a href="${CARTS_HREF}" title="${esc(cartLine(carts))}"><span class="l">עגלות שחזרו החודש</span><span class="cnt ${carts.recovered ? 'ok' : 'zero'}">${carts.recovered}${moneyHe(carts.money) ? ` · ${esc(moneyHe(carts.money))}` : ''}</span></a>` : ''}
   </div>
 </div>
-<section class="group"><header><h2>מחכות לכם</h2>${waitingAll > waiting.length ? `<a class="end small" href="/chats?state=waiting">כולן</a>` : ''}</header>
-  ${waiting.length ? `<div class="list">${waiting.map(row).join('')}</div><p class="small muted mt8 m0">כשעונים ללקוח מהשיחה, אפשר לשמור את התשובה, ותורן יענה ככה בפעם הבאה.</p>` : `<div class="empty">${icon('check')}<b>אין שאלות שמחכות לכם</b>כשלקוח שואל משהו שאין עליו תשובה באתר, תורן אומר לו שהוא בודק, והשאלה מגיעה לכאן.</div>`}
-</section>
+${waitList('')}
 <section class="group mt24"><header><h2>שיחות אחרונות</h2><a class="end small" href="/chats">כל השיחות</a></header>
   ${recent.length ? `<div class="list">${recent.map(row).join('')}</div>` : `<div class="empty">${icon('chat')}<b>עוד אין שיחות</b>שיחה מופיעה כאן מהרגע שלקוח כותב לחנות באחד הערוצים המחוברים.</div>`}
 </section>
@@ -371,7 +424,8 @@ async function usages(app: App, stores: Store[]): Promise<{ s: Store; usage: Usa
 const ANSWERS_ALONE = ['מחיר, מבצע ומלאי של מוצר, ישר מדף המוצר', 'מידות, צבעים ומה שכתוב בתיאור', 'משלוחים, החזרות ותשלום, לפי דפי המדיניות שבאתר', 'אם יש בחנות מוצר מסוים', 'לקוחות שכותבים באנגלית'];
 const LEAVES_YOU = ['שאלה שאין עליה תשובה באתר', 'בקשה להנחה או להחזר כספי', 'איפה הזמנה מסוימת נמצאת'];
 // Once the store's orders are connected (pages/orders.ts), where an order is moves to what Toran answers alone.
-const ORDER_ALONE = 'איפה ההזמנה, למי שנותן את המייל או הטלפון שבה';
+// The rule as orders.ts keeps it (the audit of 2026-11-12, P1-16): writing from the order's phone or email, or giving its phone.
+const ORDER_ALONE = 'איפה ההזמנה, למי שכותב מהטלפון או מהמייל שבה, או נותן את הטלפון שבה';
 const ORDER_LEAVES = 'שינוי, ביטול או החזרה של הזמנה';
 const POLICY_HE: Record<string, string> = { shipping: 'משלוחים', returns: 'החזרות', payment: 'תשלום', contact: 'יצירת קשר', about: 'אודות', faq: 'שאלות', other: 'אחר' };
 
@@ -392,7 +446,8 @@ async function knowledge(app: App, r: DashReq, id: number) {
   const ordersBox = await ordersPanel(app, r, s, writeUs(app));
 
   const answer = (x: any) => `<form class="mt12" method="post" action="/lead/${id}/faq/${x.id}">${csrfField(r.ctx)}<label class="f">${esc(x.question)}${x.conversation_id ? `<small>מהתשובה שלכם <a href="/chat/${x.conversation_id}">בשיחה</a>, ${esc(shortDate(x.created_at))}</small>` : ''}<textarea name="answer" rows="2" dir="auto" maxlength="2000"${ro ? ' readonly' : ''}>${esc(x.answer)}</textarea></label>${ro ? '' : '<div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div>'}</form>`;
-  const body = `<div class="head"><div class="row">${storeBadge({ id: s.id, name: s.name, domain: s.domain })}<h1 class="title">מה תורן יודע על ${esc(s.name)}</h1></div><p class="sub">תורן עונה ללקוחות רק ממה שכתוב באתר ומהתשובות שלכם כאן. ${s.ingested_at ? `האתר נקרא לאחרונה ${esc(stamp(s.ingested_at))}, ונקרא שוב כל יום.` : 'האתר עוד לא נקרא.'}</p></div>
+  // The section's own name on top, as Teder's sections and Today open, and the store in the line under it (P2-3).
+  const body = `<div class="head"><h1>מה תורן יודע</h1><p class="sub">תורן עונה ללקוחות של ${esc(s.name)} רק ממה שכתוב באתר ומהתשובות שלכם כאן. ${s.ingested_at ? `האתר נקרא לאחרונה ${esc(stamp(s.ingested_at))}, ונקרא שוב כל יום.` : 'האתר עוד לא נקרא.'}</p></div>
 ${reading ? `<div class="banner info">${icon('clock')}<div><b>קורא את האתר עכשיו</b><p>זה לוקח דקה או שתיים. מה שהשתנה באתר ייכנס לתשובות של תורן מיד אחרי.</p></div></div>` : ''}
 <div class="cols">
   <div class="grid12">
@@ -449,9 +504,16 @@ async function autoOn(app: App, stores: Store[]): Promise<Record<string, string[
   return Object.fromEntries(KIND_KEYS.map((k) => [k, [...on[k]]]));
 }
 
-const INCLUDED = (app: App, live: string[], weeks: number | null, auto: Record<string, string[]>) => [
-  { text: 'עונה ללקוחות 24/7 בערוצים הפעילים, מתוך מה שכתוב באתר שלכם', state: live.length ? `<span class="chip ok">פעיל ב${esc(live.join(' וב'))}</span>` : '<span class="chip ghost">מחכה לחיבור של ערוץ</span>' },
+/** "בוואטסאפ, במייל ובצ׳אט באתר": each with ב, the last joined with ו. */
+const inEach = (names: string[]) => (names.length < 2 ? names.map((n) => `ב${n}`).join('') : `${names.slice(0, -1).map((n) => `ב${n}`).join(', ')} וב${names[names.length - 1]}`);
+
+// The chip counts the channels Toran answers on, not the connected ones (the audit of 2026-11-12, P1-1), and wraps on a
+// phone (P1-13: one unbreakable chip pushed /plan 36px sideways at 360px).
+const INCLUDED = (app: App, live: string[], connected: boolean, weeks: number | null, auto: Record<string, string[]>, orders: boolean) => [
+  { text: 'עונה ללקוחות 24/7 בערוצים הפעילים, מתוך מה שכתוב באתר שלכם', state: live.length ? `<span class="chip ok">פעיל ${esc(inEach(live))}</span>` : connected ? '<span class="chip ghost">מחכה להפעלה</span>' : '<span class="chip ghost">מחכה לחיבור של ערוץ</span>' },
   { text: 'כל השיחות בתיבה אחת, ושאלה שאין עליה תשובה באתר מגיעה אליכם', state: '<a class="chip ok" href="/chats">פעיל</a>' },
+  // As the website lists it (P2-21): where an order is, once the store's orders are connected (pages/orders.ts).
+  { text: 'איפה ההזמנה עכשיו, עם לינק למעקב, ללקוח שההזמנה שלו', state: orders ? '<a class="chip ok" href="/knowledge#orders">פעיל</a>' : '<a class="chip ghost" href="/knowledge#orders">מחברים את ההזמנות</a>' },
   { text: 'תזכורות על עגלה נטושה, למי שהסכים לקבל מכם הודעות', state: auto.cart.length ? `<a class="chip ok" href="/settings#auto">פעיל ב${esc(auto.cart.join(' וב'))}</a>` : '<a class="chip ghost" href="/settings#auto">כבוי, מפעילים בהגדרות</a>' },
   { text: 'הודעות על תשלום ומשלוח, ובקשה לביקורת אחרי שההזמנה הגיעה', state: (['payment', 'shipping', 'review'] as const).some((k) => auto[k].length) ? `<a class="chip ok" href="/settings#auto">פעיל: ${esc((['payment', 'shipping', 'review'] as const).filter((k) => auto[k].length).map((k) => KINDS[k].he).join(', '))}</a>` : '<a class="chip ghost" href="/settings#auto">כבוי, מפעילים בהגדרות</a>' },
   { text: 'בשבועיים הראשונים אנחנו עוברים איתכם על השיחות ומתקנים מה שצריך', state: weeks ? `<span class="chip ok">עד ${esc(shortDate(weeks))}</span>` : '<span class="chip ghost">מתחיל כשהערוץ הראשון מתחבר</span>' },
@@ -466,7 +528,13 @@ async function plan(app: App, r: DashReq) {
   const month = monthOf(now());
   const months = [month, prevMonth(month), prevMonth(prevMonth(month))];
   const live = new Set<string>();
-  for (const s of stores) for (const c of await channelsOf(app, s)) if (c.on) live.add(CHANNEL_HE[c.ch]);
+  let connected = false;
+  for (const s of stores) {
+    for (const c of await answeringChannels(app, s)) live.add(c);
+    connected ||= (await channelsOf(app, s)).some((c) => c.on);
+  }
+  let ordersAny = false;
+  for (const s of stores) ordersAny ||= ordersOn(await orderAccessOf(app.db, s.id));
   const owner = r.user.role !== 'client_member';
   const links = accountsLinks(app.env);
 
@@ -479,12 +547,15 @@ async function plan(app: App, r: DashReq) {
 </section>`;
   };
 
-  const body = `<div class="head"><h1>החבילה</h1><p class="sub">כמה שיחות היו החודש, ומה יש בחבילה. המחיר, החשבוניות והתשלום נמצאים בחשבון שלכם ב-OpenFrequency.</p><div class="end"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></div>
+  // Cancelling is in the account, at any time, as the website's FAQ, terms and contract say (accounts does it), not "write
+  // to us" (the audit of 2026-11-12, P1-20). The 30 days to download are kept after the plan stops (server.ts lets the
+  // export through while unpaid).
+  const body = `<div class="head"><h1>החבילה</h1><p class="sub">כמה שיחות היו החודש, ומה יש בחבילה. המחיר, החשבוניות והתשלום נמצאים בחשבון שלכם ב־OpenFrequency.</p><div class="end"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></div>
 <div class="cols">
   <div class="grid12">
     ${list.map(storePanel).join('')}
     <section class="panel"><header><h2>מה יש בחבילה</h2></header>
-      <ul class="keys">${INCLUDED(app, [...live], firstWeeks(stores), await autoOn(app, stores)).map((x) => `<li><span>${esc(x.text)}</span><span class="end">${x.state}</span></li>`).join('')}</ul>
+      <ul class="keys">${INCLUDED(app, [...live], connected, firstWeeks(stores), await autoOn(app, stores), ordersAny).map((x) => `<li><span>${esc(x.text)}</span><span class="end">${x.state}</span></li>`).join('')}</ul>
     </section>
   </div>
   <div class="grid12">
@@ -492,12 +563,12 @@ async function plan(app: App, r: DashReq) {
       <p class="m0">שיחה היא לקוח אחד שכתב לחנות באחד הערוצים שלה. כל עוד הוא ממשיך לכתוב, או חוזר תוך שבוע, זו אותה שיחה. במייל, שיחה היא שרשור אחד. שיחה נספרת בחודש שבו הלקוח כתב בה. שיחות על מספר הדמו שלנו לא נספרות.</p>
     </section>
     <section class="panel"><header><h2>כשמספר השיחות משתנה</h2></header>
-      <p class="m0">חודש עמוס אחד לא עולה לכם יותר. רק אחרי חודשיים ברצף מעל ${num(PLANS.store.conversations)} שיחות, החנות עוברת לחבילה הגדולה, עד ${num(PLANS.big.conversations)} שיחות בחודש, ואנחנו כותבים לכם בוואטסאפ שבוע לפני. אחרי חודשיים ברצף מתחת ל-${num(PLANS.store.conversations)} שיחות, היא חוזרת לחבילת חנות.</p>
+      <p class="m0">חודש עמוס אחד לא עולה לכם יותר. רק אחרי חודשיים ברצף מעל ${num(PLANS.store.conversations)} שיחות, החנות עוברת לחבילה הגדולה, עד ${num(PLANS.big.conversations)} שיחות בחודש, ואנחנו מודיעים לכם לפני. אחרי חודשיים ברצף מתחת ל־${num(PLANS.store.conversations)} שיחות, היא חוזרת לחבילת חנות.</p>
     </section>
     <section class="panel" id="stop"><header><h2>להפסיק</h2></header>
-      <p class="m0">אין התחייבות, משלמים חודש בחודש. כדי להפסיק, כותבים לנו. תורן עונה עד סוף החודש האחרון ששילמתם, ומספר הוואטסאפ של החנות נשאר שלכם. את השיחות אנחנו שומרים עוד 30 יום, כדי שתוכלו להוריד אותן, ואחר כך מוחקים אותן.</p>
-      <div class="row mt12">${writeUs(app)}${owner ? `<a class="btn sm" href="/export/conversations.csv">${icon('copy')}להוריד את כל השיחות</a>` : ''}</div>
-      ${owner ? '<p class="small muted mt8 m0">קובץ CSV שנפתח באקסל: כל הודעה בשורה, עם הערוץ, הלקוח, השעה ומי כתב.</p>' : '<p class="small muted mt8 m0">את השיחות מוריד מי שפתח את החשבון.</p>'}
+      <p class="m0">אין התחייבות, משלמים חודש בחודש. מבטלים בחשבון שלכם ב־OpenFrequency, בכל זמן, ותורן עונה עד סוף החודש האחרון ששילמתם. מספר הוואטסאפ של החנות נשאר שלכם. את השיחות אנחנו שומרים עוד 30 יום, כדי שתוכלו להוריד אותן, ואחר כך מוחקים אותן.</p>
+      <div class="row mt12">${owner ? `<a class="btn sm" href="${esc(links.home)}">${icon('ext')}לבטל בחשבון</a><a class="btn sm" href="/export/conversations.csv">${icon('copy')}להוריד את כל השיחות</a>` : ''}</div>
+      ${owner ? '<p class="small muted mt8 m0">קובץ CSV שנפתח באקסל: כל הודעה בשורה, עם הערוץ, הלקוח, השעה ומי כתב.</p>' : '<p class="small muted mt8 m0">את המנוי מבטל, ואת השיחות מוריד, מי שפתח את החשבון.</p>'}
     </section>
   </div>
 </div>`;
@@ -509,23 +580,41 @@ async function plan(app: App, r: DashReq) {
 export async function customerSettings(app: App, r: DashReq) {
   const stores = await myStores(app, r.scope);
   const links = accountsLinks(app.env);
+  const owner = !r.ctx.readOnly && r.user.role !== 'client_member';
   const panels = await Promise.all(stores.map(async (s) => {
+    // One main button on Settings (the audit of 2026-11-12, P1-11: two to six at once): switching Toran on while a
+    // channel waits for it, else the next step of a card in progress, the email's first, then the site chat's.
+    const { state } = await liveOf(app, s.id);
+    const goLiveMain = owner && state !== 'live' && (await activeChannels(app, s.id)).length > 0;
+    const mail = enabledChannels(app.env).has('email') && app.mail ? await mailState(app, s.id) : null;
+    const mailBusy = Boolean(mail?.on && mail.step !== 'done');
+    const web = await webAccountOf(app, s.id);
+    const webWaiting = web?.status === 'active' && !web.meta?.first_seen_at;
     // The email is its own card now, a guided flow (pages/mailSetup.ts; the owner, 2026-11-09: "i dont understand
     // anything, and i am the owner"). Stopping Toran on one channel is a switch on that channel's card
     // (pages/channelOff.ts), not a message to us: the line under the list says where it is.
-    // On a phone each part folds to one row (TORAN-READINESS.md P1-19, Teder's fold): a link into one opens it.
-    return `${await livePanel(app, r, s)}${fold('channels', 'מה מחובר לתורן', `<section class="panel" id="channels"><header><h2>מה מחובר לתורן</h2></header>${channelList(await channelsOf(app, s))}
-  <p class="small muted mt12 m0">כל ערוץ מחובר אפשר לעצור לבד, במתג "תורן עונה" שבו. בשיחה אחת עוצרים את תורן כשעונים בה בעצמכם.</p></section>`)}${voicePanel(r, s)}${fold('email', 'המייל', await mailCard(app, r, s))}${fold('auto', 'הודעות אוטומטיות', await autoPanel(app, r, s))}${fold('webchat', 'צ׳אט באתר', await webChatPanel(app, r, s))}${fold('reviews', 'ביקורות', await reviewsPanel(app, r, s))}`;
+    // On a phone each part folds to one row (TORAN-READINESS.md P1-19, Teder's fold; the audit of 2026-11-12, P1-18:
+    // every part, as Teder's), but the switch while it is the page's main button.
+    const live = await livePanel(app, r, s, goLiveMain);
+    return `${goLiveMain ? live : fold('golive', 'תורן בחנות', live)}${fold('channels', 'מה מחובר לתורן', `<section class="panel" id="channels"><header><h2>מה מחובר לתורן</h2></header>${channelList(await channelsOf(app, s))}
+  <p class="small muted mt12 m0">כל ערוץ מחובר אפשר לעצור לבד, במתג "תורן עונה" שבו. בשיחה אחת עוצרים את תורן כשעונים בה בעצמכם.</p></section>`)}${fold('voice', 'איך תורן מדבר', voicePanel(r, s))}${fold('email', 'המייל', await mailCard(app, r, s, !goLiveMain && (mailBusy || !webWaiting)))}${fold('auto', 'הודעות אוטומטיות', await autoPanel(app, r, s))}${fold('webchat', 'צ׳אט באתר', await webChatPanel(app, r, s, !goLiveMain && !mailBusy))}${fold('reviews', 'ביקורות', await reviewsPanel(app, r, s))}`;
   }));
+  // The plan in Settings, as Teder's (P1-19): the month in one line, the rest on /plan, which the header's meter opens.
+  const usage = stores.length ? await usages(app, stores) : [];
+  const used = usage.reduce((a, u) => a + u.usage.thisMonth, 0);
+  const cap = usage.reduce((a, u) => a + u.usage.cap, 0);
+  const planPanel = stores.length ? `<section class="panel" id="plan"><header><h2>החבילה</h2></header><p class="small m0">החודש היו ${num(used)} שיחות מתוך ${num(cap)}. <a href="/plan">כל הפרטים</a></p></section>` : '';
+  // Who is signed in, and the way out, in one place at the end, as Teder's (P2-1).
+  const who = r.ctx.account?.email ? `נכנסתם בתור <bdi>${esc(r.ctx.account.email)}</bdi>${r.ctx.account.workspace ? `, בחשבון <bdi>${esc(r.ctx.account.workspace)}</bdi>` : ''}. ` : '';
   const body = `<div class="head"><h1>הגדרות</h1></div>
 <div class="cols single">
   <div class="grid12">${panels.join('') || `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>הערוצים נפתחים כאן מיד אחרי שהאתר מאומת. את הוואטסאפ של העסק אפשר כבר להכין.${mayStart(r) ? `<p class="row mt12 m0"><a class="btn sm primary" href="/start">${icon('plus')}להוסיף את החנות</a><a class="btn sm" href="/whatsapp">${icon('chat')}הוואטסאפ של העסק</a></p>` : ''}</div>`}</div>
   <div class="grid12">
-    <section class="panel"><header><h2>החשבון</h2></header><p class="small m0">מי בחשבון, מספרי הוואטסאפ שמהם כותבים לעוזר, החבילה והחשבוניות נמצאים בחשבון שלכם ב-OpenFrequency.</p><div class="row mt12"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a></div></section>
-${r.ctx.readOnly ? '' : await pushPanel(app, r)}
-${installPanel(r.ctx.install)}
-    <section class="panel" id="mails"><header><h2>מיילים</h2></header><p class="small m0">מייל כשלקוח מחכה לתשובה שלכם, וסיכום של החודש בתחילת כל חודש. כל אחד בחשבון בוחר מה הוא מקבל.</p><div class="row mt12"><a class="btn sm" href="${esc(links.notifications)}">${icon('mail')}לבחור מיילים</a></div></section>
-    <a class="btn ghost" href="${esc(r.ctx.logout || '/')}">${icon('logout')}יציאה</a>
+    ${fold('plan', 'החבילה', planPanel)}
+    ${r.ctx.readOnly ? '' : fold('push', 'התראות', await pushPanel(app, r))}
+    ${fold('install', 'להוסיף לטלפון', installPanel(r.ctx.install))}
+    ${fold('mails', 'מיילים', `<section class="panel" id="mails"><header><h2>מיילים</h2></header><p class="small m0">מייל כשלקוח מחכה לתשובה שלכם, וסיכום של החודש בתחילת כל חודש. כל אחד בחשבון בוחר מה הוא מקבל.</p><div class="row mt12"><a class="btn sm" href="${esc(links.notifications)}">${icon('mail')}לבחור מיילים</a></div></section>`)}
+    ${fold('me', 'החשבון', `<section class="panel" id="me"><header><h2>החשבון</h2></header><p class="small m0">${who}מי בחשבון, מספרי הוואטסאפ שמהם כותבים לעוזר, התשלום והחשבוניות נמצאים בחשבון שלכם ב־OpenFrequency.</p><div class="row mt12"><a class="btn sm" href="${esc(links.home)}">${icon('ext')}לחשבון</a><a class="btn sm ghost" href="${esc(r.ctx.logout || '/')}">${icon('logout')}יציאה</a></div></section>`)}
   </div>
 </div>
 <p class="ver">תורן · גרסה 0.1</p>`;
@@ -600,7 +689,8 @@ export function customerRoutes(app: App): Route<DashReq>[] {
       if (raw && !name) throw new ActionError(`השם יכול להיות עד ${NAME_MAX} תווים, באותיות, ספרות ורווחים.`);
       await app.db.query('UPDATE stores SET agent_name = $2, updated_at = now() WHERE id = $1', [id, name]);
       await audit(app.db, { actor: r.user.name, action: 'agent_name', storeId: id, detail: { name } });
-      return { redirect: `/lead/${id}/knowledge#bot-name`, message: name ? `מעכשיו הבוט נקרא ${name}` : 'הבוט בלי שם' };
+      const store = (await myStores(app, r.scope)).find((x) => x.id === id);
+      return { redirect: `/lead/${id}/knowledge#bot-name`, message: name ? `מעכשיו הבוט נקרא ${name}` : `מעכשיו הבוט בלי שם, והוא פשוט הבוט של ${store?.name || 'החנות'}.` };
     }],
     ['POST', /^\/lead\/(\d+)\/reread$/, async (r, m) => {
       const id = Number(m[1]);

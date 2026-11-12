@@ -10,6 +10,7 @@ import { ActionError, type DashReq, type Route } from '../server.ts';
 import { previewPage } from '../widget.ts';
 import { csrfField, esc, icon, postButton, sendTo, stamp } from '../ui.ts';
 import { channelSwitch, offChannels } from './channelOff.ts';
+import { liveOf } from '../../golive.ts';
 
 // The store's chat on its own site (channels/web.ts, web/widget.ts) and the reviews Toran collected (reviews.ts), on
 // the store's Settings: turn the chat on, the one line to add with where to paste it on each platform, the domains it
@@ -74,30 +75,35 @@ function lookCard(r: DashReq, id: number, s: { brand: any; brand_override: any }
   <div class="look-wrap"><div class="look">
   <form method="post" action="/lead/${id}/web" class="look-form" data-look="#look-${id}">${csrfField(r.ctx)}<input type="hidden" name="do" value="look">
     <fieldset class="look-pick"><legend class="sr">הצבע הראשי</legend>
-      <label class="look-opt"><input type="radio" name="use" value="site"${own ? '' : ' checked'}><span><b>כמו באתר שלכם</b><small>${found ? `הצבעים שמצאתי באתר ${swatches}` : 'לא מצאתי צבעים באתר, אז הצ׳אט בצבעים ניטרליים.'}</small></span></label>
+      <label class="look-opt"><input type="radio" name="use" value="site"${own ? '' : ' checked'}><span><b>כמו באתר שלכם</b><small>${found ? `הצבעים שמצאנו באתר ${swatches}` : 'לא מצאנו צבעים באתר, אז הצ׳אט בצבעים ניטרליים.'}</small></span></label>
       <label class="look-opt"><input type="radio" name="use" value="own"${own ? ' checked' : ''}><span><b>צבע אחר</b><small>לכפתור ולבועות של הלקוחות</small></span><input type="color" name="color" value="${esc(choice.color || site.primary)}" aria-label="הצבע הראשי"></label>
     </fieldset>
     <details class="mt8"${mode !== 'site' ? ' open' : ''}><summary class="small">עוד אפשרויות</summary>
       <fieldset class="look-mode mt8"><legend class="small">בהיר או כהה</legend>${MODES.map(([m, t]) => `<label><input type="radio" name="mode" value="${m}"${m === mode ? ' checked' : ''}>${t}${m === 'site' ? (site.dark ? ' (כהה)' : ' (בהיר)') : ''}</label>`).join('')}</fieldset>
-      <p class="small muted mt8 m0">בכל צבע שתבחרו, הטקסט נשאר קריא. כשצריך, אני מכהה או מבהיר אותו קצת.</p>
+      <p class="small muted mt8 m0">בכל צבע שתבחרו, הטקסט נשאר קריא. כשצריך, אנחנו מכהים או מבהירים אותו קצת.</p>
     </details>
-    <div class="row mt12"><button class="btn primary sm" type="submit">לשמור</button></div>
+    <div class="row mt12"><button class="btn sm" type="submit">לשמור</button></div>
   </form>
   ${preview}
   </div></div>`;
 }
 
-/** The chat panel on a store's Settings. */
-export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: string; platform?: string | null }): Promise<string> {
+/**
+ * The chat panel on a store's Settings. `main`: its next step may be the page's main button (Settings passes false while
+ * another card holds it; the audit of 2026-11-12, P1-11).
+ */
+export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: string; platform?: string | null }, main = true): Promise<string> {
   const may = !r.ctx.readOnly && r.user.role !== 'client_member';
   const a = await webAccountOf(app, s.id);
   const on = a?.status === 'active';
   const seen = Boolean(a?.meta?.first_seen_at);
   const chip = !on ? ['ghost', 'כבוי'] : seen ? ['ok', 'פועל באתר'] : ['sig', 'נשאר להוסיף לאתר'];
+  // The chat takes messages while Toran does not answer: what the visitor reads then (channels/store.ts HELD_WEB, P0-5).
+  const store = (await liveOf(app, s.id)).state;
   const head = `<section class="panel" id="webchat"><header><h2>צ׳אט באתר</h2><span class="end chip ${chip[0]}">${chip[1]}</span></header>
-  <p class="m0">כפתור צ׳אט בפינה של האתר של ${esc(s.name)}: הלקוחות שואלים בלי לצאת מהדף, ותורן עונה כמו בוואטסאפ. השיחות מגיעות לתיבה, ואפשר לענות בהן בעצמכם.</p>`;
+  <p class="m0">כפתור צ׳אט בפינה של האתר של ${esc(s.name)}: הלקוחות שואלים בלי לצאת מהדף, ותורן עונה כמו בוואטסאפ. השיחות מגיעות לשיחות כאן, ואפשר לענות בהן בעצמכם.</p>${on && store !== 'live' ? `<p class="small mt8 m0">${store === 'paused' ? 'כל עוד תורן מושהה' : 'עד שמפעילים את תורן'}, מי שכותב בצ׳אט מקבל תשובה שההודעה הגיעה, והשיחה מחכה לכם.</p>` : ''}`;
   if (!on) {
-    return `${head}${may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/web`, 'להפעיל צ׳אט באתר', { cls: 'btn primary sm', fields: { do: 'on' }, iconName: 'chat' })}</div>` : ''}</section>`;
+    return `${head}${may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/web`, 'להפעיל צ׳אט באתר', { cls: 'btn sm', fields: { do: 'on' }, iconName: 'chat' })}</div>` : ''}</section>`;
   }
   const line = `<script src="${publicBase(app)}/w/${a!.external_id}.js" async></script>`;
   const domains = (a!.meta?.domains || []) as string[];
@@ -115,9 +121,9 @@ export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: 
   const self = `<details class="mt12"><summary class="small">להוסיף בעצמי</summary>
     ${mine ? steps(mine) : Object.values(PLATFORM_STEPS).map((p) => `<p class="small mt8 m0"><b class="ltr">${p.name}</b></p>${steps(p)}`).join('')}
     <div class="row mt8">${copy}</div></details>`;
-  const add = seen ? `${channelSwitch(r, s.id, 'web', (await offChannels(app, s.id)).includes('web'))}` : `<h3 class="q1 mt16">נשאר להוסיף את הצ׳אט לאתר</h3>
+  const add = seen ? `${channelSwitch(r, s.id, 'web', (await offChannels(app, s.id)).includes('web'), store)}` : `<h3 class="q1 mt16">נשאר להוסיף את הצ׳אט לאתר</h3>
   <p class="small m0">את זה עושה בדרך כלל מי שמנהל לכם את האתר, בכמה דקות. שולחים לו הודעה מוכנה עם כל מה שצריך.</p>
-  ${sendTo(forDev, `הצ׳אט של תורן באתר של ${s.name}`, 'לשלוח למי שמנהל לכם את האתר', 'btn primary')}
+  ${sendTo(forDev, `הצ׳אט של תורן באתר של ${s.name}`, 'לשלוח למי שמנהל לכם את האתר', main ? 'btn primary' : 'btn')}
   ${self}`;
   const more = may ? `<details class="more mt16"><summary>עוד אפשרויות</summary>
     <h3 class="small mt12">השורה של הצ׳אט</h3><div class="row mt8"><code class="snippet ltr">${esc(line)}</code></div>
@@ -175,7 +181,7 @@ export function webChatRoutes(app: App): Route<DashReq>[] {
         const bad = typed.filter((d) => !siteOrigin(d));
         if (bad.length) throw new ActionError(`לא הצלחנו לקרוא את הכתובת ${bad[0]}. כותבים כתובת אחת בכל שורה, למשל shop.co.il.`);
         await turnOn(app, id, r.user.name, typed);
-        return { redirect: '/settings#webchat', message: 'נשמר.' };
+        return { redirect: '/settings#webchat', message: 'שמרנו. הצ׳אט יופיע רק באתרים שברשימה.' };
       }
       if (what === 'look') {
         const look = choiceOf(r.form);

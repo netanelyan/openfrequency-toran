@@ -12,7 +12,9 @@ import { tokenState } from '../../channels/waStore.ts';
 import { oneNumberRoles, ROLE_HE, type Role } from '../../channels/lines.ts';
 import { isCompany } from '../../company.ts';
 import { BINDING_DAYS } from '../../channels/demo.ts';
-import { channelSwitch, offChannels } from './channelOff.ts';
+import { answeringOn, answersHe, channelSwitch, offChannels, type Answering } from './channelOff.ts';
+import { localPhone } from '../../core/urls.ts';
+import { liveOf, type LiveState } from '../../golive.ts';
 import { pendingClaim } from '../../domainProof.ts';
 
 // A store connects its own WhatsApp number (channels/meta.ts, waStore.ts): the page under /lead/<id>/whatsapp, which
@@ -61,38 +63,60 @@ const ZERNIO_WA_ERRORS_HE: Record<string, string> = {
   whatsapp_number_already_connected: 'המספר הזה כבר מחובר לשירות אחר. מנתקים אותו שם, ואז מנסים שוב.',
   one_whatsapp_per_profile: 'לחנות הזו כבר מחובר מספר. מנתקים אותו כאן, ואז מחברים את החדש.',
   connection_cancelled: 'החלון נסגר לפני הסוף. אפשר לנסות שוב.',
-  session_expired: 'עבר יותר משעה מאז שהחלון נפתח. לוחצים שוב על "לחבר".',
+  session_expired: 'עבר יותר משעה מאז שהחלון נפתח. אפשר ללחוץ שוב על הכפתור ולהתחיל מחדש.',
 };
 
-const phone = (a: WaRow) => (a.meta?.display_phone_number ? `<bdi class="ltr">+${esc(a.meta.display_phone_number)}</bdi>` : '');
+/** The number as the owner writes it (050-000-0123), or "המספר" when Meta gave none. */
+const phone = (a: WaRow) => (a.meta?.display_phone_number ? `<bdi class="ltr">${esc(localPhone(String(a.meta.display_phone_number)))}</bdi>` : 'המספר');
 const AGAIN = 'לחבר מחדש את הוואטסאפ';
 
 /**
  * The banner on Today, the lead page and the WhatsApp page while the store's token ends within WARN_DAYS, or has
- * ended (channels/waStore.ts). `here`: on the WhatsApp page itself, whose own button connects again.
+ * ended (channels/waStore.ts), or Zernio disconnected the number (channels/zernio.ts). `here`: on the WhatsApp page
+ * itself, whose own button connects again. On Meta the customers' messages still reach the inbox; through Zernio they
+ * reach only the phone until the number is connected again (the audit of 2026-11-12, P1-8).
  */
 export function waBanner(a: WaRow | null, storeId: number, { here = false }: { here?: boolean } = {}): string {
   if (!a) return '';
   const t = tokenState(a);
   if (!t.ended && !t.soon) return '';
   const go = here ? '' : `<a class="btn sm primary" href="/lead/${storeId}/whatsapp">${icon('chat')}${AGAIN}</a>`;
+  if (t.ended && a.kind === 'zernio') return `<div class="banner bad">${icon('alert')}<div><b>תורן לא עונה בוואטסאפ של החנות</b><p>החיבור של הוואטסאפ לתורן התנתק, ותורן לא עונה בו. הודעות חדשות של לקוחות מגיעות רק לוואטסאפ בטלפון, ולא לשיחות כאן. מחברים מחדש, וזה לוקח דקה.</p></div>${go}</div>`;
   if (t.ended) return `<div class="banner bad">${icon('alert')}<div><b>תורן לא עונה בוואטסאפ של החנות</b><p>החיבור של הוואטסאפ לתורן הסתיים. ההודעות של הלקוחות מחכות לכם בשיחות, ואפשר לענות להן מהטלפון. כדי שתורן יחזור לענות, מחברים מחדש. זה לוקח דקה.</p></div>${go}</div>`;
   const ends = shortDate(t.endsAt);
-  return `<div class="banner warn">${icon('alert')}<div><b>צריך לחבר מחדש את הוואטסאפ עד ${esc(ends)}</b><p>החיבור של הוואטסאפ לתורן מסתיים ב-${esc(ends)}, ואחרי זה תורן לא יוכל לענות בו. זה לוקח דקה, והוואטסאפ בטלפון לא משתנה.</p></div>${go}</div>`;
+  return `<div class="banner warn">${icon('alert')}<div><b>צריך לחבר מחדש את הוואטסאפ עד ${esc(ends)}</b><p>החיבור של הוואטסאפ לתורן מסתיים ב־${esc(ends)}, ואחרי זה תורן לא יוכל לענות בו. זה לוקח דקה, והוואטסאפ בטלפון לא משתנה.</p></div>${go}</div>`;
 }
 
-/** One line on the store's WhatsApp, for Today, Settings and the lead page. */
-export function waLine(a: WaRow | null, s: { id: number; demo_code?: string | null; taken_down_at?: string | null; platform?: string | null }, ready: boolean): string {
-  if (a?.status === 'reconnect') return `החיבור של ${phone(a)} לתורן הסתיים, ותורן לא עונה בו. <a href="/lead/${s.id}/whatsapp">${AGAIN}</a>`;
-  if (a?.status === 'active' && tokenState(a).soon) return `מחובר, ${phone(a)}. החיבור מסתיים ב-${esc(shortDate(tokenState(a).endsAt))}. <a href="/lead/${s.id}/whatsapp">${AGAIN}</a>`;
+/**
+ * One line on the store's WhatsApp, for Today, Settings and the lead page. `answering`: whether Toran answers there now
+ * (channelOff.ts answeringOn), so a connected number never reads "תורן עונה בו" before go-live, while paused or switched
+ * off (the audit of 2026-11-12, P1-1).
+ */
+export function waLine(a: WaRow | null, s: { id: number; demo_code?: string | null; taken_down_at?: string | null; platform?: string | null }, ready: boolean, answering: Answering = 'live'): string {
+  if (a?.status === 'reconnect') return `החיבור של ${phone(a)} לתורן ${a.kind === 'zernio' ? 'התנתק' : 'הסתיים'}, ותורן לא עונה בו. <a href="/lead/${s.id}/whatsapp">${AGAIN}</a>`;
+  if (a?.status === 'active' && tokenState(a).soon) return `מחובר, ${phone(a)}. החיבור מסתיים ב־${esc(shortDate(tokenState(a).endsAt))}. <a href="/lead/${s.id}/whatsapp">${AGAIN}</a>`;
   // Our company store's number is our one number (channels/lines.ts): never this store's own WhatsApp.
   if (a?.status === 'active' && isCompany(s)) return `מחובר, ${phone(a)}. זה המספר שלנו: תורן עונה בו לבעלי העסקים, לדמו ולתמיכה, והוואטסאפ בטלפון ממשיך לעבוד. <a href="/lead/${s.id}/whatsapp">מה המספר עושה</a>`;
-  if (a?.status === 'active') return a.meta?.coexistence === false ? `מחובר, ${phone(a)}. תורן עונה בו, ועל מה שמחכה לכם עונים מהשיחות כאן.` : `מחובר, ${phone(a)}. תורן עונה בו, והוואטסאפ בטלפון ממשיך לעבוד.`;
-  if (a?.status === 'pending') return `${phone(a)} ממתין לאישור של Meta. תורן יתחיל לענות בו לבד כשהמספר מאושר.`;
-  if (a?.status === 'error') return `Meta עצרה את המספר ${phone(a)} (${esc(a.meta?.why || 'בלי סיבה')}). תורן לא עונה בו. כתבו לנו ונבדוק יחד.`;
+  if (a?.status === 'active') {
+    const app = a.meta?.coexistence !== false;
+    if (answering === 'never') return app ? `מחובר, ${phone(a)}. תורן יענה בו מהרגע שמפעילים אותו, והוואטסאפ בטלפון ממשיך לעבוד.` : `מחובר, ${phone(a)}. תורן יענה בו מהרגע שמפעילים אותו. עד אז עונים ללקוחות מהשיחות כאן.`;
+    if (answering !== 'live') return `מחובר, ${phone(a)}. ${answersHe(answering, '')}.`;
+    return app ? `מחובר, ${phone(a)}. תורן עונה בו, והוואטסאפ בטלפון ממשיך לעבוד.` : `מחובר, ${phone(a)}. תורן עונה בו, ועל מה שמחכה לכם עונים מהשיחות כאן.`;
+  }
+  if (a?.status === 'pending') return answering === 'live' ? `${phone(a)} מחכה לאישור של Meta. תורן יתחיל לענות בו לבד כשהמספר מאושר.` : `${phone(a)} מחכה לאישור של Meta. אחרי האישור נשאר רק להפעיל את תורן.`;
+  // Meta's own reason is for us (kept on the row), never the owner's screen (P1-14).
+  if (a?.status === 'error') return `Meta הגבילה את ${phone(a) === 'המספר' ? 'המספר' : `המספר ${phone(a)}`}, ותורן לא עונה בו. כתבו לנו ונבדוק יחד.`;
   // Not connected: one clear button (the owner, 2026-11-09: "i dont see a place where to connect the whatsapp number"),
   // and no demo code on the line (the project's rule: no codes or mechanics shown).
   return ready ? `<a class="btn sm" href="/lead/${s.id}/whatsapp">${icon('chat')}${CONNECT}</a>` : 'החיבור של הוואטסאפ של העסק עוד לא פתוח אצלנו.';
+}
+
+/** What the store's page says once a number is connected, by whether Toran answers in the store yet. */
+function connectedNotice(store: LiveState, number: 'app' | 'new' = 'app'): string {
+  const phoneLine = number === 'new' ? 'על המספר הזה עונים ללקוחות מהשיחות כאן, לא מאפליקציה בטלפון.' : 'והוואטסאפ בטלפון ממשיך לעבוד.';
+  if (store === 'never') return `<div class="banner info">${icon('check')}<div><b>הוואטסאפ מחובר</b><p>נשאר להפעיל את תורן, ואז הוא עונה בו. עד אז ההודעות מחכות לכם${number === 'new' ? ' בשיחות.' : `, ${phoneLine}`}</p></div><a class="btn sm primary" href="/#golive">${icon('check')}להפעיל את תורן</a></div>`;
+  if (store === 'paused') return noticeHe('info', 'הוואטסאפ מחובר', `תורן מושהה בחנות. כשמפעילים אותו שוב, הוא עונה גם בו${number === 'new' ? '.' : `, ${phoneLine}`}`);
+  return noticeHe('info', 'הוואטסאפ מחובר', number === 'new' ? `תורן עונה בו מעכשיו. ${phoneLine}` : `תורן עונה בו מעכשיו, ${phoneLine}`);
 }
 
 /** The button's words wherever the store's WhatsApp is connected from: Settings, Today, setup, its own page. */
@@ -178,7 +202,7 @@ function connectGuide(via: 'zernio' | 'kapso' | 'meta', button: string, extra = 
   <ol class="steps mt8">
     <li><b>${via === 'meta' ? 'נפתח חלון של Meta' : 'נפתח עמוד באנגלית'}</b><span>${esc(page)}</span></li>
     <li><b>נכנסים לפייסבוק</b><span>ובוחרים את העסק, או יוצרים אותו.</span></li>
-    <li><b>מקלידים את המספר של העסק</b><span>בוחרים ישראל +972 ומקלידים את המספר בלי ה-0. אם מופיעה בחירה בין SMS לשיחה, לא נוגעים בה ולוחצים Next: Meta מזהה שהמספר באפליקציה ועוברת לחיבור שלה, בלי SMS. לא בוחרים מספר מהרשימה שנפתחת.</span></li>
+    <li><b>מקלידים את המספר של העסק</b><span>בוחרים ישראל <bdi dir="ltr">+972</bdi> ומקלידים את המספר בלי ה-0. אם מופיעה בחירה בין SMS לשיחה, לא נוגעים בה ולוחצים Next: Meta מזהה שהמספר באפליקציה ועוברת לחיבור שלה, בלי SMS. לא בוחרים מספר מהרשימה שנפתחת.</span></li>
     <li><b>מאשרים בטלפון</b><span>באפליקציית WhatsApp Business: סורקים את הקוד שעל המסך במצלמה שבאפליקציה, או פותחים את ההודעה מ-Facebook Business ומאשרים. אפשר לשתף גם את השיחות של חצי השנה האחרונה.</span></li>
     <li><b>חוזרים לכאן לבד</b><span>והעמוד אומר שהמספר מחובר.</span></li>
   </ol>
@@ -228,19 +252,21 @@ async function page(app: App, r: DashReq, id: number, notice = '') {
   // number has no token of ours; Meta taking its access away makes it 'reconnect' too (kapso.ts kapsoEvent).
   const again = Boolean(live && tok && (tok.ended || tok.soon));
   const connectButton = (label: string) => ro ? '<p class="muted mt12 m0">במצב צפייה אי אפשר לחבר.</p>' : !ready
-    ? '<p class="muted mt12 m0">החיבור עוד לא פתוח בשרת. כתבו לנו, ונחבר יחד.</p>'
+    ? '<p class="muted mt12 m0">החיבור עוד לא פתוח אצלנו. כתבו לנו, ונחבר יחד.</p>'
     : viaKapso || viaZernio
       ? `<div class="mt16">${postButton(r.ctx, `/lead/${id}/whatsapp/${viaZernio ? 'zernio' : 'kapso'}/start`, label, { cls: 'btn primary', iconName: 'chat' })}</div>`
       : `<div class="mt16" data-wa-connect data-app-id="${esc(m.appId)}" data-config-id="${esc(m.configId)}" data-version="${esc(m.version)}" data-action="/lead/${id}/whatsapp/connect" data-csrf="${esc(r.ctx.csrf)}"><button class="btn primary" type="button" disabled>${icon('chat')}${label}</button><p class="small mt8 m0" data-msg role="status" aria-live="polite"></p></div>`;
   const chip = a?.status === 'active' ? (tok?.soon ? ['sig', 'צריך לחבר מחדש'] : ['ok', 'מחובר']) : a?.status === 'pending' ? ['sig', 'ממתין לאישור של Meta'] : a?.status === 'reconnect' ? ['bad', 'צריך לחבר מחדש'] : ['bad', 'נעצר'];
   const until = a?.token_expires_at ? esc(stamp(a.token_expires_at)) : a?.token_checked_at ? 'בלי הגבלת זמן' : '';
+  const answering = await answeringOn(app, id, 'whatsapp');
+  const store = (await liveOf(app, id)).state;
 
   const state = live
     ? `<section class="panel"><header><h2>הוואטסאפ של ${esc(name)}</h2><span class="end chip ${chip[0]}">${chip[1]}</span></header>
-  <p class="m0">${waLine(a, s, ready)}</p>
+  <p class="m0">${waLine(a, s, ready, answering)}</p>
   ${a!.status === 'pending' ? '<p class="small muted mt8 m0">בודקים מול Meta כל עשר דקות. לרוב זה לוקח כמה דקות, לפעמים עד יום.</p>' : ''}
-  ${again ? `<p class="small mt12 m0">מחברים מחדש באותו חלון של Meta, עם אותו מספר. השיחות נשארות, והוואטסאפ בטלפון לא משתנה.</p>${connectButton(AGAIN)}` : ''}
-  ${a!.status === 'active' && !ours ? channelSwitch(r, id, 'whatsapp', (await offChannels(app, id)).includes('whatsapp')) : ''}
+  ${again ? `<p class="small mt12 m0">${viaZernio || a!.kind === 'zernio' ? 'מחברים מחדש דרך אותו עמוד של Zernio, עם אותו מספר. השיחות נשארות, והוואטסאפ בטלפון לא משתנה.' : 'מחברים מחדש באותו חלון של Meta, עם אותו מספר. השיחות נשארות, והוואטסאפ בטלפון לא משתנה.'}</p>${connectButton(AGAIN)}` : ''}
+  ${a!.status === 'active' && !ours ? channelSwitch(r, id, 'whatsapp', (await offChannels(app, id)).includes('whatsapp'), store) : ''}
   <dl class="kv mt12"><dt>שם העסק ב-WhatsApp</dt><dd>${esc(a!.name || a!.meta?.verified_name || '-')}</dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd>${until ? `<dt>החיבור בתוקף עד</dt><dd>${until}</dd>` : ''}</dl>
   <p class="small mt12 m0">${a!.meta?.coexistence === false ? 'המספר הזה מחובר לתורן בלבד, בלי אפליקציה בטלפון. עונים ללקוחות מהשיחות כאן, ואחרי שעניתם תורן מפסיק לענות בשיחה הזו לזמן מה.' : 'כשעונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.'}</p>
   ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: ours ? 'לנתק? תורן יפסיק לענות במספר שלנו: לבעלי העסקים, בדמו ובתמיכה. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' : 'לנתק? תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}
@@ -290,7 +316,8 @@ export function whatsappRoutes(app: App): Route<DashReq>[] {
       let notice: string;
       try {
         const out = await finishKapsoConnect(app, id, r.url.searchParams.get('phone_number_id'), r.user.name);
-        notice = out.status === 'active' ? noticeHe('info', 'הוואטסאפ מחובר', 'תורן עונה בו מעכשיו, והוואטסאפ בטלפון ממשיך לעבוד.') : noticeHe('info', 'החיבור נשלח', 'המספר ממתין לאישור של Meta, ותורן יתחיל לענות בו לבד כשהוא מאושר.');
+        const store = (await liveOf(app, id)).state;
+        notice = out.status === 'active' ? connectedNotice(store) : noticeHe('info', 'החיבור נשלח', store === 'live' ? 'המספר מחכה לאישור של Meta, ותורן יתחיל לענות בו לבד כשהוא מאושר.' : 'המספר מחכה לאישור של Meta. אחרי האישור נשאר רק להפעיל את תורן.');
       } catch (e: any) {
         if (!(e instanceof KapsoError)) app.log(`[kapso] connect for store ${id} failed: ${e?.message || e}`);
         notice = noticeHe('warn', 'החיבור לא הושלם', e instanceof KapsoError ? e.he : 'Kapso לא אישרה את המספר. אפשר לנסות שוב בעוד כמה דקות, ואם זה חוזר, כתבו לנו.');
@@ -325,7 +352,7 @@ export function whatsappRoutes(app: App): Route<DashReq>[] {
         try {
           const number = q.get('number') === 'new' ? 'new' : 'app';
           await finishZernioConnect(app, id, 'whatsapp', q.get('accountId'), r.user.name, { number });
-          notice = noticeHe('info', 'הוואטסאפ מחובר', number === 'new' ? 'תורן עונה בו מעכשיו. על המספר הזה עונים ללקוחות מהשיחות כאן, לא מאפליקציה בטלפון.' : 'תורן עונה בו מעכשיו, והוואטסאפ בטלפון ממשיך לעבוד.');
+          notice = connectedNotice((await liveOf(app, id)).state, number);
         } catch (e: any) {
           if (!(e instanceof ZernioError)) app.log(`[zernio] whatsapp connect for store ${id} failed: ${e?.message || e}`);
           notice = noticeHe('warn', 'החיבור לא הושלם', e instanceof ZernioError ? e.he : 'Zernio לא אישרה את המספר. אפשר לנסות שוב בעוד כמה דקות, ואם זה חוזר, כתבו לנו.');
@@ -343,7 +370,8 @@ export function whatsappRoutes(app: App): Route<DashReq>[] {
         const out = await connectWhatsapp(app, id, { code: r.form.code, phoneId: r.form.phone_number_id, wabaId: r.form.waba_id, businessId: r.form.business_id, event: r.form.event, by: r.user.name, email });
         // Our company store's number is our one number from now on (channels/lines.ts): nothing else to set.
         if (out.ours) return { redirect: `/lead/${id}/whatsapp`, message: out.status === 'active' ? 'המספר שלנו מחובר. מעכשיו תורן עונה בו לבעלי העסקים, לדמו ולתמיכה.' : 'החיבור נשלח. כש-Meta תאשר את המספר, תורן יענה בו לבעלי העסקים, לדמו ולתמיכה.' };
-        return { redirect: `/lead/${id}/whatsapp`, message: out.status === 'active' ? 'הוואטסאפ מחובר. תורן עונה בו מעכשיו.' : 'החיבור נשלח. ממתין לאישור של Meta, ותורן יתחיל לענות לבד כשהמספר מאושר.' };
+        const store = (await liveOf(app, id)).state;
+        return { redirect: `/lead/${id}/whatsapp`, message: out.status === 'active' ? (store === 'live' ? 'הוואטסאפ מחובר. תורן עונה בו מעכשיו.' : store === 'paused' ? 'הוואטסאפ מחובר. תורן מושהה בחנות, וכשמפעילים אותו שוב הוא עונה גם בו.' : 'הוואטסאפ מחובר. נשאר להפעיל את תורן, ואז הוא עונה בו.') : store === 'live' ? 'החיבור נשלח. המספר מחכה לאישור של Meta, ותורן יתחיל לענות לבד כשהוא מאושר.' : 'החיבור נשלח. המספר מחכה לאישור של Meta, ואחרי האישור נשאר רק להפעיל את תורן.' };
       } catch (e: any) {
         if (e instanceof ConnectError) throw new ActionError(e.he);
         app.log(`[wa] connect for store ${id} failed: ${e?.message || e}`);

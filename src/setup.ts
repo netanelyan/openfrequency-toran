@@ -89,15 +89,22 @@ export function storeState({ store, add, read, claim = null }: Awaited<ReturnTyp
   return { status: 'todo', detail: 'כותבים את הכתובת של האתר, ותורן קורא ממנו את המוצרים ואת דפי המדיניות.', job: null };
 }
 
-const SOCIAL_TITLE: Record<Social, string> = { messenger: 'מחברים את מסנג׳ר', instagram: 'מחברים את האינסטגרם' };
+const SOCIAL_TITLE: Record<Social, string> = { messenger: 'מחברים את המסנג׳ר', instagram: 'מחברים את האינסטגרם' };
 
 /**
- * The channels a store answers customers on now: WhatsApp, email, Instagram or Messenger connected and active, and the
- * web chat once it opened on the store's own site (widget.ts firstSeen). Today and the checklist both read it.
+ * The channels a store answers customers on now: WhatsApp, Instagram or Messenger connected and active, the web chat
+ * once it opened on the store's own site (widget.ts firstSeen), and email once its card is done, the store's mail
+ * coming through (pages/mailSetup.ts): an address made at the card's first step is no channel yet (the audit of
+ * 2026-11-12, P1-3: the checklist said a channel was connected with no mail ever forwarded). Today and the checklist
+ * both read it.
  */
 export async function activeChannels(app: App, storeId: number): Promise<string[]> {
   const rows = await app.db.query<{ channel: string; meta: any }>("SELECT channel, meta FROM channel_accounts WHERE store_id = $1 AND status = 'active'", [storeId]);
-  return [...new Set(rows.filter((x) => x.channel !== 'web' || x.meta?.first_seen_at).map((x) => x.channel))];
+  // The card's own address (it keeps the store's mail as `from` and the provider it picked); an address the operator
+  // made by hand (pages/leads.ts) was forwarded by hand, and counts as before.
+  const card = (m: any) => Boolean(m && ('from' in m || 'provider' in m));
+  const mailDone = rows.some((x) => x.channel === 'email' && card(x.meta)) ? (await mailState(app, storeId)).step === 'done' : true;
+  return [...new Set(rows.filter((x) => (x.channel !== 'web' || x.meta?.first_seen_at) && (x.channel !== 'email' || !card(x.meta) || mailDone)).map((x) => x.channel))];
 }
 
 export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
@@ -107,6 +114,9 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
   const found = await setupStoreOf(app, workspaceId);
   const s = found.store;
   const first = storeState(found);
+  // Whether Toran answers in the store: a number waiting for Meta is not "תורן יתחיל לענות בו לבד" before go-live (P1-1).
+  const live = s ? (await liveOf(app, s.id)).state : 'never';
+  const pendingWa = live === 'live' ? 'המספר מחכה לאישור של Meta. תורן יתחיל לענות בו לבד.' : 'המספר מחכה לאישור של Meta. אחרי האישור נשאר רק להפעיל את תורן.';
   const steps: Step[] = [
     { key: 'store', title: 'מוסיפים את החנות', status: first.status, detail: first.detail, href: at(s ? `/lead/${s.id}/knowledge` : first.status === 'working' ? '/' : '/start'), required: true },
   ];
@@ -128,9 +138,9 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
       const href = at(`/lead/${s.id}/whatsapp`);
       const a = await waAccountOf(app, s.id);
       if (a?.status === 'active') return { status: 'done', detail: '', href };
-      if (a?.status === 'pending') return { status: 'working', detail: 'המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.', href };
+      if (a?.status === 'pending') return { status: 'working', detail: pendingWa, href };
       if (a?.status === 'reconnect') return { status: 'attention', detail: 'החיבור הסתיים. צריך לחבר את המספר מחדש.', href };
-      if (a?.status === 'error') return { status: 'attention', detail: 'Meta עצרה את המספר. כתבו לנו ונבדוק יחד.', href };
+      if (a?.status === 'error') return { status: 'attention', detail: 'Meta הגבילה את המספר. כתבו לנו ונבדוק יחד.', href };
       if (!waReady) return { status: 'soon', detail: 'החיבור של הוואטסאפ עוד לא פתוח אצלנו.', href: null };
       return { status: 'todo', detail: s.ingested_at ? 'תורן עונה במספר שכבר יש לעסק, והוואטסאפ בטלפון ממשיך לעבוד.' : 'אפשר לחבר כבר עכשיו, עוד לפני שתורן סיים לקרוא את האתר. הוואטסאפ בטלפון ממשיך לעבוד.', href };
     });
@@ -163,17 +173,20 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     const live = await activeChannels(app, s.id);
     if (live.length) return { status: 'done', detail: '', href };
     const wa = await waAccountOf(app, s.id);
-    if (wa?.status === 'pending') return { status: 'working', detail: 'המספר ממתין לאישור של Meta. תורן יתחיל לענות בו לבד.', href };
+    if (wa?.status === 'pending') return { status: 'working', detail: pendingWa, href };
     const web = await webAccountOf(app, s.id);
     if (web?.status === 'active') return { status: 'working', detail: 'הצ׳אט מופעל, ונשאר להוסיף אותו לאתר.', href };
-    return { status: 'todo', detail: 'רוב העסקים מתחילים מהוואטסאפ. אפשר גם צ׳אט באתר, מייל, אינסטגרם או מסנג׳ר, ולהוסיף עוד אחר כך.', href };
+    // The email card half way (P1-3): said, not counted.
+    if (on.has('email') && app.mail && (await mailState(app, s.id)).on) return { status: 'working', detail: 'התחלתם לחבר את המייל. נשאר להעביר אליו את המייל של החנות, ואז תורן יכול לענות בו.', href: at('/settings#email') };
+    return { status: 'todo', detail: 'אפשר להתחיל מהוואטסאפ, מהצ׳אט באתר, מהמייל, מאינסטגרם או ממסנג׳ר, ולהוסיף עוד אחר כך.', href };
   });
 
   // One press, as Teder's "להעלות לאוויר" (golive.ts; TORAN-READINESS.md P1-7): until then a message on the store's own
   // channels waits for the owner in the inbox, and Toran says nothing.
   await step('live', 'מפעילים את תורן', true, async (s) => {
-    const href = at('/#golive');
     const { state } = await liveOf(app, s.id);
+    // Today's go-live banner shows once a channel answers; until then the way on is connecting one (P2-6).
+    const href = (await activeChannels(app, s.id)).length ? at('/#golive') : at('/settings#channels');
     if (state === 'live') return { status: 'done', detail: '', href };
     if (state === 'paused') return { status: 'attention', detail: 'תורן מושהה, אז הודעות של לקוחות מחכות לכם בשיחות. מפעילים אותו שוב בהגדרות.', href: at('/settings#golive') };
     return { status: 'todo', detail: 'לחיצה אחת, ומהרגע הזה תורן עונה ללקוחות בערוצים המחוברים. עד אז הודעות מחכות לכם בשיחות.', href };
@@ -188,11 +201,13 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
     return { status: 'todo', detail: 'כפתור צ׳אט בפינה של האתר, ותורן עונה בו כמו בוואטסאפ.', href };
   });
 
-  if (on.has('email')) {
+  // A channel this server cannot connect is not offered, rather than shown as coming (the audit of 2026-11-12, P2-14 and
+  // accounts' audit P1-8: Instagram and Messenger read "בקרוב" on accounts' /setup for a paying customer). P0-7 is the
+  // server's half: with Zernio set there, they are steps like any other.
+  if (on.has('email') && app.mail) {
     await step('email', 'מחברים את המייל', false, async (s) => {
       // The email card's guided steps (pages/mailSetup.ts): done once the owner finished them or a mail came through.
       const href = at('/settings#email');
-      if (!app.mail) return { status: 'soon', detail: 'המייל עוד לא פתוח אצלנו.', href: null };
       const st = await mailState(app, s.id);
       if (st.step === 'done') return { status: 'done', detail: '', href };
       if (st.on) return { status: 'working', detail: st.step === 'confirm' ? 'מייל האישור מ-Gmail הגיע. מאשרים אותו בהגדרות, בלחיצה אחת.' : 'באמצע. ממשיכים מאיפה שעצרתם.', href };
@@ -201,20 +216,19 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
   }
 
   for (const ch of ['messenger', 'instagram'] as const) {
-    if (!on.has(ch)) continue;
+    if (!on.has(ch) || !dmConnectReady(app.env, ch)) continue;
     await step(ch, SOCIAL_TITLE[ch], false, async (s) => {
       const href = at(`/lead/${s.id}/${ch}`);
       const a = await socialAccountOf(app, s.id, ch);
       if (a?.status === 'active') return { status: 'done', detail: '', href };
       if (a?.status === 'error') return { status: 'attention', detail: 'החיבור נעצר. צריך לחבר שוב.', href };
-      if (!dmConnectReady(app.env, ch)) return { status: 'soon', detail: 'החיבור עוד לא פתוח.', href: null };
       return { status: 'todo', detail: ch === 'messenger' ? 'מחברים את הדף של החנות בפייסבוק.' : 'מחברים את חשבון האינסטגרם של החנות.', href };
     });
   }
 
-  await step('orders', 'מחברים את ההזמנות', false, async (s) => {
+  // Only on a platform whose orders Toran reads (P2-6: a Cashcow store read "כרגע זה עובד עם Shopify, WooCommerce ו-Wix").
+  if (!s || ordersPlatform(s.platform)) await step('orders', 'מחברים את ההזמנות', false, async (s) => {
     const href = at(`/lead/${s.id}/knowledge#orders`);
-    if (!ordersPlatform(s.platform)) return { status: 'soon', detail: 'כרגע זה עובד עם Shopify, WooCommerce ו-Wix.', href: null };
     const a = await orderAccessOf(app.db, s.id);
     if (a?.status === 'active') return { status: 'done', detail: '', href };
     if (a) return { status: 'attention', detail: 'המפתח לא עובד. מדביקים מפתח חדש.', href };

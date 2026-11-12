@@ -1,5 +1,6 @@
 import { a11yHead, a11yWidget, toranMark, ofMark, iconLinks } from '../brand.ts';
 import { themeButton, themeHead, themeMeta } from './theme.ts';
+import { prefixed } from '../core/hebrew.ts';
 import type { InstallCtx } from './install.ts';
 
 // The pieces every page is made of. Pages are functions from data to HTML strings: no
@@ -148,7 +149,8 @@ export const CUSTOMER_NAV: [string, string, string, string][] = [
   ['/results', 'תוצאות', 'results', 'results'],
   ['/settings', 'הגדרות', 'settings', 'settings'],
 ];
-const SECTION_OF: Record<string, string> = { lead: 'leads', add: 'leads', chat: 'chats', brand: 'settings', discover: 'leads' };
+// /plan is Settings' part (its fold "החבילה"), as Teder keeps the plan in Settings (the audit of 2026-11-12, P1-19).
+const SECTION_OF: Record<string, string> = { lead: 'leads', add: 'leads', chat: 'chats', brand: 'settings', discover: 'leads', plan: 'settings' };
 
 export type PageCtx = {
   title: string;
@@ -171,6 +173,8 @@ export type PageCtx = {
   wide?: boolean;
   /** Accounts' sign-out page. */
   logout?: string;
+  /** Who is signed in, for Settings' "החשבון" (server.ts, from accounts' session): their address and the workspace's name. */
+  account?: { email: string; workspace: string } | null;
   /** A customer's conversations this month against their plans (plans.ts), in the header where the operator sees tokens. */
   plan?: { used: number; cap: number } | null;
   /** The pay reminder (billing/entitlement.ts payReminder) and where to pay: accounts' /setup. */
@@ -282,11 +286,11 @@ ${iconLinks()}
 ${ctx.admin ? '' : '<link rel="manifest" href="/static/manifest.webmanifest">\n'}</head>
 <body${ctx.readOnly ? ' class="ro"' : ''}>
 ${SPRITE}
-${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צפייה בחשבון <b>${esc(ctx.viewAs.name)}</b>, כמו שהלקוח רואה אותו. אי אפשר לשנות כאן כלום.</span><a href="${esc(ctx.viewAs.admin)}">חזרה לניהול</a></div>` : ''}
+${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>אתם צופים ${prefixed('ב', esc(ctx.viewAs.name))} כמו שהלקוח רואה אותו. זו צפייה בלבד, ושום שינוי לא נשמר.</span><a href="${esc(ctx.viewAs.admin)}">סיום צפייה</a></div>` : ''}
 <header class="top"><div class="wrap">
   <a class="brand" href="/" aria-label="תורן, להיום">${toranMark(34, { label: null })}<b>תורן</b></a>
   ${storePill(ctx)}
-  <button class="sidetoggle" type="button" data-side aria-label="${ctx.side === 'mini' ? 'הרחבת סרגל הצד' : 'כיווץ סרגל הצד'}" aria-expanded="${ctx.side === 'mini' ? 'false' : 'true'}">${icon('sidebar')}</button>
+  <button class="sidetoggle" type="button" data-side aria-label="${ctx.side === 'mini' ? 'להרחיב את סרגל הצד' : 'לכווץ את סרגל הצד'}" aria-expanded="${ctx.side === 'mini' ? 'false' : 'true'}" title="${ctx.side === 'mini' ? 'להרחיב' : 'לכווץ'}">${icon('sidebar')}</button>
   <nav class="nav" aria-label="ראשי">${nav}</nav>
   <div class="tools">
     ${meter}
@@ -297,7 +301,7 @@ ${ctx.viewAs ? `<div class="viewas" role="status">${icon('eye')}<span>מצב צ�
 <main class="wrap${ctx.wide ? ' wide' : ''}" id="main">
 ${adminBar(ctx)}${payBanner(ctx)}
 ${body}
-<footer class="foot">${ofMark(20, { label: null })}<span class="ltr">OpenFrequency<sup>™</sup></span></footer>
+<footer class="foot">${ofMark(28, { label: null })}<span class="ltr">OpenFrequency<sup>™</sup></span></footer>
 </main>
 <nav class="tabbar" aria-label="ניווט">${tabs}</nav>
 <div id="toast" role="status" aria-live="polite"${flash}></div>

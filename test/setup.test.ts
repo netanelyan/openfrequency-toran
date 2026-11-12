@@ -285,17 +285,18 @@ test('/internal/setup follows the channels: WhatsApp pending, active and stopped
     await s.app.db.query("INSERT INTO auto_settings (store_id, kind, whatsapp) VALUES ($1, 'cart', true)", [id]);
     assert.equal((await steps(s, 21)).by.auto.status, 'done');
 
-    // Email, Messenger and Instagram are steps only where TORAN_CHANNELS lists them, and soon until they can connect.
+    // Email, Messenger and Instagram are steps only where TORAN_CHANNELS lists them and this server can connect them:
+    // never "בקרוב" for what is on sale (the audit of 2026-11-12, P2-14; accounts' audit P1-8).
     s.app.env.TORAN_CHANNELS = 'whatsapp,email,messenger';
     d = await steps(s, 21);
-    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'whatsapp', 'knowledge', 'test', 'channels', 'live', 'web', 'email', 'messenger', 'orders', 'auto']);
-    assert.deepEqual([d.by.email.status, d.by.email.href], ['soon', null], 'no mail provider here');
+    assert.deepEqual(d.steps.map((x: any) => x.key), ['store', 'whatsapp', 'knowledge', 'test', 'channels', 'live', 'web', 'messenger', 'orders', 'auto']);
+    assert.equal(d.by.email, undefined, 'no mail provider here: not offered');
     assert.deepEqual([d.by.messenger.status, d.by.messenger.href], ['todo', `${BASE}/lead/${id}/messenger`], 'the Meta app is set up and PUBLIC_BASE_URL is https');
-    assert.equal(d.by.email.required || d.by.messenger.required, false);
+    assert.equal(d.by.messenger.required, false);
     assert.equal(d.ready, true, 'optional steps never hold it back');
     delete s.app.env.META_APP_SECRET;
     d = await steps(s, 21);
-    assert.deepEqual([d.by.messenger.status, d.by.messenger.href], ['soon', null], 'not socialReady');
+    assert.equal(d.by.messenger, undefined, 'not socialReady: not offered');
     assert.equal(d.by.whatsapp.status, 'done', 'a number already connected stays done');
 
     // The web chat alone is a channel too, once it opened on the store's own site; switched on is not yet installed.

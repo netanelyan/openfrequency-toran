@@ -222,13 +222,13 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   const photos = photoIds(files);
   if (!text && !photos.length) {
     await hold(app, conv, inbound);
-    await handOver(app, store.id, conv, 'attachment', `${files.length} files, no text`, 'הלקוח שלח קבצים בלי טקסט, ותורן לא ענה. הקבצים מחכים לך.');
+    await handOver(app, store.id, conv, 'attachment', `${files.length} files, no text`, 'הלקוח שלח קבצים בלי טקסט, ותורן לא ענה. הקבצים מחכים לכם.');
     return { action: 'no_text', storeId: store.id };
   }
   const today = await db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.account_id = $1 AND c.peer = $2 AND m.role = 'agent' AND m.at > now() - interval '1 day'", [account.id, inbound.from]);
   if ((today?.n || 0) >= DAILY_REPLIES) {
     await hold(app, conv, inbound);
-    await handOver(app, store.id, conv, 'limit', `${DAILY_REPLIES} answers today to ${inbound.from}`, `תורן כבר ענה ללקוח הזה ${DAILY_REPLIES} פעמים היום, אז מכאן ההודעות מחכות לך.`);
+    await handOver(app, store.id, conv, 'limit', `${DAILY_REPLIES} answers today to ${inbound.from}`, `תורן כבר ענה ללקוח הזה ${DAILY_REPLIES} פעמים היום, אז מכאן ההודעות מחכות לכם.`);
     return { action: 'limit', storeId: store.id };
   }
 
@@ -236,7 +236,7 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   if (busy) {
     await hold(app, conv, inbound);
     await handOver(app, store.id, conv, 'limit', busy.summary, busy.text);
-    await alertOperator(app, `busy:${busy.kind}:${store.id}`, `עומס חריג בחנות ${store.id}`, busy.summary, { storeId: store.id });
+    await alertOperator(app, `busy:${busy.kind}:${store.id}`, `עומס חריג בחנות ${store.id}`, busy.alert, { storeId: store.id });
     return { action: 'limit', storeId: store.id };
   }
 
@@ -252,16 +252,16 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
 }
 
 /** Is the store's hour past its limits? What the owner is told, or null. */
-async function busyHour(app: App, storeId: number, account: Account, conv: number, from: string): Promise<{ kind: string; summary: string; text: string } | null> {
+async function busyHour(app: App, storeId: number, account: Account, conv: number, from: string): Promise<{ kind: string; summary: string; text: string; alert: string } | null> {
   const turns = Number(app.env.TORAN_STORE_TURNS_PER_HOUR) || STORE_TURNS_PER_HOUR;
   const n = await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE store_id = $1 AND kind = ANY($2::text[]) AND at > now() - interval '1 hour'", [storeId, IN_KINDS]);
-  if ((n?.n || 0) >= turns) return { kind: 'turns', summary: `${n!.n} answers in the last hour at store ${storeId}, over ${turns}`, text: `בשעה האחרונה תורן ענה בחנות ${n!.n} פעמים, הרבה יותר מבשעה רגילה. עד שזה נרגע, הודעות חדשות מחכות לך כאן.` };
+  if ((n?.n || 0) >= turns) return { kind: 'turns', summary: `${n!.n} answers in the last hour at store ${storeId}, over ${turns}`, text: `בשעה האחרונה תורן ענה בחנות ${n!.n} פעמים, הרבה יותר מבשעה רגילה. עד שזה נרגע, הודעות חדשות מחכות לכם כאן.`, alert: `בשעה האחרונה תורן ענה בחנות ${storeId} ${n!.n} פעמים, יותר מ־${turns}. עד שזה נרגע, הודעות חדשות מחכות לבעלים.` };
   if (account.channel !== 'email') return null;
   // A new sender: this address never wrote to the store before (this message is not written yet).
   if (await app.db.one("SELECT 1 FROM conversations c JOIN messages m ON m.conversation_id = c.id WHERE c.store_id = $1 AND c.peer = $2 AND m.role = 'customer' LIMIT 1", [storeId, from])) return null;
   const senders = Number(app.env.TORAN_NEW_SENDERS_PER_HOUR) || NEW_SENDERS_PER_HOUR;
   const m = await app.db.one<{ n: number }>("SELECT COUNT(DISTINCT peer)::int AS n FROM conversations WHERE store_id = $1 AND channel = 'email' AND started_at > now() - interval '1 hour'", [storeId]);
-  if ((m?.n || 0) > senders) return { kind: 'senders', summary: `${m!.n} new email senders in the last hour at store ${storeId}, over ${senders}`, text: `בשעה האחרונה כתבו לחנות במייל ${m!.n} כתובות חדשות, הרבה יותר מהרגיל. עד שזה נרגע, תורן לא עונה לכתובות חדשות, וההודעות שלהן מחכות לך.` };
+  if ((m?.n || 0) > senders) return { kind: 'senders', summary: `${m!.n} new email senders in the last hour at store ${storeId}, over ${senders}`, text: `בשעה האחרונה כתבו לחנות במייל ${m!.n} כתובות חדשות, הרבה יותר מהרגיל. עד שזה נרגע, תורן לא עונה לכתובות חדשות, וההודעות שלהן מחכות לכם.`, alert: `בשעה האחרונה כתבו לחנות ${storeId} במייל ${m!.n} כתובות חדשות, יותר מ־${senders}. עד שזה נרגע, תורן לא עונה לכתובות חדשות.` };
   return null;
 }
 

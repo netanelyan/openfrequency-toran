@@ -179,6 +179,8 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
 .spend .lbl { font-size: 12px; color: var(--ink-2); }
 .spend .amt { font-size: 12px; color: var(--ink-2); }
 .spend .amt b { font-size: 13px; font-weight: 600; color: var(--ink); }
+/* The narrowest phones keep the count and drop " / 300" (Teder's rule, P2-5). */
+@media (max-width: 380px) { .spend .amt > span { display: none; } }
 .ring { width: 20px; height: 20px; flex: none; fill: none; stroke-width: 3; }
 .ring circle { stroke: var(--line-2); }
 .ring circle.v { stroke: var(--accent-fill); stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
@@ -321,11 +323,19 @@ svg.i { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none;
 main.wrap { padding-top: 28px; }
 .head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 4px 16px; margin: 0 0 28px; }
 .head > :first-child { grid-column: 1; grid-row: 1; min-width: 0; }
-.head .sub { grid-column: 1 / -1; grid-row: 2; color: var(--ink-p); font-size: 14px; }
+.head .sub { grid-column: 1 / -1; grid-row: 2; margin: 0; color: var(--ink-p); font-size: 14px; }
 .head .end { grid-column: 2; grid-row: 1; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .head h1 { margin: 0; font: 700 26px/1.12 var(--display); }
 .head h1.title { font-size: 22px; line-height: 1.2; text-wrap: balance; }
 @media (min-width: 900px) { .head h1 { font-size: 32px; line-height: 1.08; } .head h1.title { font-size: 30px; line-height: 1.12; } main.wrap { padding-top: 44px; } }
+/* On a phone the actions at the headline's end drop under it when the two do not fit side by side (Teder's rule; the
+   audit of 2026-11-12, P2-2: /plan's "לחשבון"). */
+@media (max-width: 699px) {
+  .head { display: flex; flex-wrap: wrap; align-items: flex-end; }
+  .head > :first-child { flex: 1 1 auto; }
+  .head .end { order: 2; }
+  .head .sub { order: 3; flex-basis: 100%; }
+}
 h2 { font: 700 16px/1.24 var(--display); margin: 0; }
 h3 { font-size: 14px; margin: 0; font-weight: 600; }
 .lede { color: var(--ink-2); max-width: 68ch; margin: 0 0 24px; }
@@ -373,6 +383,16 @@ h3 { font-size: 14px; margin: 0; font-weight: 600; }
 .banner p { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; }
 .banner > div { flex: 1; min-width: 0; }
 .banner form, .banner > .btn { margin-inline-start: auto; flex: none; }
+/* The reminder to pay for the next month (ui.ts payBanner) is the subscription's, not the page's: set off from the
+   page's headline by more than the banners under a headline are (Teder's rule). */
+.banner.pay { margin-bottom: 24px; }
+/* On a phone the banner's buttons go under its words, in line with them, not beside them in a column that left the
+   words a third of the width (the audit of 2026-11-12, P1-17: 3 to 5 words a line; Teder's rule). */
+@media (max-width: 699px) {
+  .banner { flex-wrap: wrap; }
+  .banner > div:not(.actions) { flex: 1 1 calc(100% - 32px); }
+  .banner > form, .banner > .btn { flex: 0 1 auto; margin-inline-start: 32px; }
+}
 
 /* ------------------------------------------------------------ buttons and forms */
 
@@ -604,6 +624,8 @@ details.panel[open] > summary { margin-bottom: 16px; }
 .keys li { flex-wrap: wrap; }
 .keys code { font-size: 12px; direction: ltr; unicode-bidi: isolate; min-width: 0; overflow-wrap: anywhere; }
 .keys .end { margin-inline-start: auto; }
+/* A chip in a list of what the plan has wraps, as a line does (P1-13: one chip pushed /plan 36px sideways at 360px). */
+.keys .chip { white-space: normal; }
 a.back { display: inline-flex; align-items: center; gap: 2px; min-height: 32px; color: var(--accent-p); font-size: 14px; margin-bottom: 4px; }
 a.back svg.i { transform: rotate(-90deg); width: 18px; height: 18px; }
 blockquote.q { margin: 0; padding: 10px 12px; border-inline-start: 3px solid var(--line-2); background: var(--inset); border-radius: 0 10px 10px 0; font-size: 13px; color: var(--ink); unicode-bidi: plaintext; text-align: start; white-space: pre-wrap; }
@@ -1038,6 +1060,8 @@ li.review .stars { color: var(--warn); letter-spacing: 1px; font-weight: 600; }
 /* Today's "מה נשאר" (pages/customer.ts setupBlock): a step that is done is a row, not a link, laid out like the links. */
 .list .li { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
 .setupbox details > summary { cursor: pointer; }
+/* Each step's line is read whole, on a phone too (P2-6: it was cut with an ellipsis). */
+.setupbox .list .t b, .setupbox .list .t small { white-space: normal; overflow: visible; text-overflow: clip; }
 
 /* A fold (ui.ts fold, as Teder's): from 700px open, with no row of its own; on a phone a glass row with its name and the
    chevron, and open, its panel is the tile's body (TORAN-READINESS.md P1-19). */

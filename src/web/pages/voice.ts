@@ -37,7 +37,7 @@ export function voicePanel(r: DashReq, s: Store): string {
     <label class="f mt12">משהו שתורן צריך לדעת על איך אתם מדברים<small>למשל: "פונים ללקוחות בשם הפרטי", או "כותבים 'קישור' ולא 'לינק'".</small><textarea name="note" rows="2" maxlength="${NOTE_MAX}" dir="auto"${off}>${esc(choice.note)}</textarea></label>
     ${learned}
   </details>
-  ${may ? `<div class="row mt12"><button class="btn primary sm" type="submit">${icon('check')}לשמור</button></div>` : ''}
+  ${may ? `<div class="row mt12"><button class="btn sm" type="submit">${icon('check')}לשמור</button></div>` : ''}
 </form>`;
   return `<section class="panel" id="voice"><header><h2>איך תורן מדבר</h2></header>
   <p class="small muted m0">תורן למד מהאתר של ${esc(s.name)} איך אתם כותבים, ועונה ככה ללקוחות. אפשר לבחור סגנון אחר, וכאן רואים איך כל אחד נשמע.</p>

@@ -15,6 +15,10 @@ import { alertOperator } from '../ops/alert.ts';
 import { isCompany } from '../company.ts';
 import { lineNumber, lineOf, oneNumber, withOne } from './lines.ts';
 import { ownerEcho, OURS_HE } from './waStore.ts';
+import { prefixed } from '../core/hebrew.ts';
+import { displayName } from '../ingest/brand.ts';
+import { notify } from '../owners/push.ts';
+import { ownersOf } from '../owners/identity.ts';
 
 // A store's Facebook Page (Messenger) and Instagram account through Zernio (docs.zernio.com), while our own Meta app has
 // no review for them (the owner, 2026-11-08: "find a kapso for instagram and messanger"; INSTAGRAM-MESSENGER-PROVIDERS.md).
@@ -185,7 +189,7 @@ export type WaNumber = 'app' | 'new';
  * own name, or accounts' /admin for our company store connected from there. `number`: WhatsApp's, see WaNumber.
  */
 export async function startZernioConnect(app: App, storeId: number, channel: ZChannel, by: string, { viaAdmin = false, number = 'app' }: { viaAdmin?: boolean; number?: WaNumber } = {}): Promise<string> {
-  if (!readyFor(app.env, channel)) throw new ZernioError('ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET, TORAN_CHANNELS or an https PUBLIC_BASE_URL is missing', `החיבור ל${CHANNEL_HE[channel]} עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.`);
+  if (!readyFor(app.env, channel)) throw new ZernioError('ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET, TORAN_CHANNELS or an https PUBLIC_BASE_URL is missing', `החיבור ${prefixed('ל', CHANNEL_HE[channel])} עוד לא פתוח אצלנו. כתבו לנו ונחבר יחד.`);
   const s = await app.db.one<{ id: number; name: string | null; domain: string; platform: string | null }>('SELECT id, name, domain, platform FROM stores WHERE id = $1', [storeId]);
   if (!s) throw new ZernioError(`no store ${storeId}`, 'אין חנות כזו.');
   // Our own number is on Meta directly, never through Zernio (lines.ts).
@@ -238,11 +242,11 @@ const waMetaOf = (a: any) => ({
  */
 export async function finishZernioConnect(app: App, storeId: number, channel: ZChannel, accountIdIn: unknown, by: string, { number = 'app' }: { number?: WaNumber } = {}) {
   const accountId = String(accountIdIn ?? '').trim().toLowerCase();
-  if (!/^[0-9a-f]{24}$/.test(accountId)) throw new ZernioError('no accountId came back', `Zernio לא החזירה את פרטי ה${CHANNEL_HE[channel]}. אפשר לנסות שוב.`);
+  if (!/^[0-9a-f]{24}$/.test(accountId)) throw new ZernioError('no accountId came back', `לא קיבלנו את פרטי ה${CHANNEL_HE[channel]}. אפשר לנסות שוב.`);
   const p = await app.db.one<{ profile_id: string }>('SELECT profile_id FROM zernio_profiles WHERE store_id = $1', [storeId]);
-  if (!p) throw new ZernioError(`store ${storeId} has no Zernio profile`, 'לא התחלנו חיבור לחנות הזו. לוחצים על "לחבר" ומתחילים מחדש.');
+  if (!p) throw new ZernioError(`store ${storeId} has no Zernio profile`, 'לא התחלנו חיבור לחנות הזו. אפשר ללחוץ שוב על הכפתור ולהתחיל מחדש.');
   const a = await zernioAccount(app, p.profile_id, channel, accountId);
-  if (!a) throw new ZernioError(`account ${accountId} is not store ${storeId}'s profile's at Zernio`, 'החשבון הזה לא חובר דרך החנות שלכם. לוחצים על "לחבר" ומתחילים מחדש.');
+  if (!a) throw new ZernioError(`account ${accountId} is not store ${storeId}'s profile's at Zernio`, 'החשבון הזה לא חובר דרך החנות שלכם. אפשר ללחוץ שוב על הכפתור ולהתחיל מחדש.');
   const wa = channel === 'whatsapp' ? waMetaOf(a) : null;
   if (wa) {
     // Never one of our own numbers (lines.ts), whatever Zernio says it connected.
@@ -354,6 +358,8 @@ export async function zernioWebhook(app: App, body: any): Promise<{ action: stri
     await app.db.query(`UPDATE channel_accounts SET status = '${wa ? 'reconnect' : 'error'}', meta = meta || $2::jsonb WHERE id = $1`, [a.id, J({ why: 'disconnected' })]);
     await event(app.db, storeId, `${LEDGER[channel].tag}_${wa ? 'reconnect' : 'error'}`, { accountId: a.id, why: 'disconnected', via: 'zernio' });
     await alertOperator(app, `zernio_gone:${storeId}:${channel}`, `תורן: ה${CHANNEL_HE[channel]} של חנות ${storeId} התנתק`, `Zernio אומר שה${wa ? 'מספר' : 'חשבון'} התנתק. תורן לא עונה בו עד שהחנות מחברת אותו שוב בדף הערוץ שלה.`, { storeId, everyMinutes: 24 * 60 }).catch(() => {});
+    // And the store's owner, who is the one to connect it again (the audit of 2026-11-12, P1-8: only we heard of it).
+    await tellDisconnected(app, storeId, channel).catch((e) => app.log(`[zernio] telling store ${storeId} of the disconnect failed: ${e?.message || e}`));
     return { action: wa ? 'reconnect' : 'error' };
   }
   if (name === 'conversation.control_changed') {
@@ -415,6 +421,42 @@ export async function zernioWebhook(app: App, body: any): Promise<{ action: stri
     return { action: 'echo_queued' };
   }
   return { action: 'ignored' };
+}
+
+const GONE: Record<ZChannel, { the: string; body: string }> = {
+  whatsapp: { the: 'הוואטסאפ', body: 'תורן לא עונה בו עד שמחברים אותו שוב. הודעות חדשות של לקוחות מגיעות בינתיים רק לוואטסאפ בטלפון, ולא לשיחות בתורן.' },
+  instagram: { the: 'האינסטגרם', body: 'תורן לא עונה בהודעות שם עד שמחברים שוב. הן מגיעות בינתיים רק לאפליקציה.' },
+  messenger: { the: 'הדף בפייסבוק', body: 'תורן לא עונה בהודעות שם עד שמחברים שוב. הן מגיעות בינתיים רק לאפליקציה.' },
+};
+
+/**
+ * Zernio disconnected a channel of the store: its owner hears of it in the browser, and by email where mail is on
+ * here (to whoever connected it and the workspace's owners, as waStore.ts tells of a WhatsApp token that ended), with
+ * the way to connect it again. One a channel a day.
+ */
+async function tellDisconnected(app: App, storeId: number, channel: ZChannel) {
+  if (await app.db.one("SELECT 1 FROM events WHERE store_id = $1 AND kind = 'zernio_gone_told' AND data->>'channel' = $2 AND at > now() - interval '1 day'", [storeId, channel])) return;
+  const s = await app.db.one<any>('SELECT name, domain, brand, brand_override, workspace_id FROM stores WHERE id = $1', [storeId]);
+  if (!s) return;
+  const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
+  const g = GONE[channel];
+  const url = `/lead/${storeId}/${channel}`;
+  const title = `${g.the} של ${name} התנתק מתורן`;
+  await notify(app, { storeId, kind: 'channel', title, body: g.body, url });
+  let emails = 0;
+  if (app.mail && s.workspace_id) {
+    const base = String(app.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+    for (const o of (await ownersOf(app, Number(s.workspace_id))) || []) {
+      if (!o.user.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.user.email)) continue;
+      try {
+        await app.mail.notice(o.user.email, title, `שלום,\n\n${title}. ${g.body}\n\nמחברים שוב כאן, וזה לוקח דקה:\n${base}${url}\n\nתורן, OpenFrequency`);
+        emails++;
+      } catch (e: any) {
+        app.log(`[zernio] the disconnect notice to the owner of store ${storeId} failed: ${e?.message || e}`);
+      }
+    }
+  }
+  await event(app.db, storeId, 'zernio_gone_told', { channel, emails });
 }
 
 /** An answer sent this soon after the customer's message is the Page's instant reply or away message, not a person. */

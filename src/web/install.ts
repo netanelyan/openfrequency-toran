@@ -61,7 +61,7 @@ const inl = (ic: string) => icon(ic, 'i inl');
  * The link to open in the other browser, copied by static/app.js's copy (data-copy): the field is filled there with the
  * page's own origin, so the link is the site the phone is on.
  */
-const copy = (browser: string) => `<input type="hidden" data-install-url value=""><button class="btn primary" type="button" data-copy="[data-install-url]" data-done="${esc(`הקישור הועתק. עכשיו פותחים אותו ב${browser}.`)}">${icon('copy')}להעתיק את הקישור</button>`;
+const copy = (browser: string) => `<input type="hidden" data-install-url value=""><button class="btn sm" type="button" data-copy="[data-install-url]" data-done="${esc(`הקישור הועתק. עכשיו פותחים אותו ב${browser}.`)}">${icon('copy')}להעתיק את הקישור</button>`;
 
 /** Each browser's steps; the one the server guessed shows, the rest wait hidden for static/app.js to pick another. */
 function variants(shown: InstallPlatform | 'prompt'): string {
@@ -87,7 +87,7 @@ ${step('check', 'מקישים על <b>התקנה</b>')}
     v('desktop', `<ol class="isteps">
 ${step('install', 'בכרום או באדג׳ לוחצים על סמל ההתקנה בשורת הכתובת', 'לא רואים אותו? בתפריט ⋮ של כרום בוחרים "הפעלת Cast, שמירה ושיתוף" ואז "התקנת הדף כאפליקציה".')}
 </ol><p class="small muted mt12 m0">בטלפון פותחים את ההגדרות בתורן, ושם כתוב איך מוסיפים.</p>`),
-    v('prompt', `<button class="btn primary" type="button" data-install-go>${icon('get')}להתקין</button>`),
+    v('prompt', `<button class="btn sm" type="button" data-install-go>${icon('get')}להתקין</button>`),
   ].join('\n');
 }
 

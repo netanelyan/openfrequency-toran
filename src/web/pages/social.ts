@@ -9,7 +9,8 @@ import { isCompany } from '../../company.ts';
 import { ConnectError } from '../../channels/waStore.ts';
 import { GraphError } from '../../channels/meta.ts';
 import { SecretError } from '../../core/secrets.ts';
-import { channelSwitch, offChannels } from './channelOff.ts';
+import { answeringOn, answersHe, channelSwitch, offChannels, type Answering } from './channelOff.ts';
+import { liveOf } from '../../golive.ts';
 import { ActionError, DASH_CSP, viaAdminReq, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, layout, postButton, stamp, storeBadge } from '../ui.ts';
 
@@ -32,12 +33,27 @@ export async function socialAccountOf(app: App, storeId: number, channel: Social
 
 const WHAT: Record<Social, string> = { messenger: 'את הדף בפייסבוק', instagram: 'את האינסטגרם' };
 
-/** One line on the store's Page or Instagram, for Today, Settings and the lead page. */
-export function socialLine(a: SocialRow | null, channel: Social, s: { id: number }, ready: boolean): string {
+/**
+ * One line on the store's Page or Instagram, for Today, Settings and the lead page. `answering`: whether Toran answers
+ * there now (channelOff.ts answeringOn; the audit of 2026-11-12, P1-1).
+ */
+export function socialLine(a: SocialRow | null, channel: Social, s: { id: number }, ready: boolean, answering: Answering = 'live'): string {
   const name = a?.name ? `<bdi>${esc(a.name)}</bdi>` : '';
-  if (a?.status === 'active') return `מחובר${name ? `, ${name}` : ''}. תורן עונה בו.`;
+  if (a?.status === 'active') return `מחובר${name ? `, ${name}` : ''}. ${answersHe(answering, 'תורן עונה בו')}.`;
   if (a?.status === 'error') return `החיבור${name ? ` של ${name}` : ''} נעצר, ותורן לא עונה בו. <a href="/lead/${s.id}/${channel}">לחבר שוב</a>`;
   return ready ? `<a href="/lead/${s.id}/${channel}">לחבר ${WHAT[channel]}</a>` : 'בקרוב';
+}
+
+const THE: Record<Social, string> = { messenger: 'הדף בפייסבוק', instagram: 'האינסטגרם' };
+
+/**
+ * On Today while a Page or an Instagram account connected here stopped (Zernio disconnected it, or Meta refused it):
+ * its customers' messages reach only the app until it is connected again (the audit of 2026-11-12, P1-8).
+ */
+export function socialBanner(a: SocialRow | null, channel: Social, storeId: number): string {
+  if (a?.status !== 'error') return '';
+  const name = a.name ? `<bdi>${esc(a.name)}</bdi>` : THE[channel];
+  return `<div class="banner bad">${icon('alert')}<div><b>תורן לא עונה ${channel === 'messenger' ? 'במסנג׳ר' : 'באינסטגרם'}</b><p>החיבור של ${name} לתורן נעצר, ותורן לא עונה בהודעות שם. הן מגיעות רק לאפליקציה. מחברים שוב, וזה לוקח דקה.</p></div><a class="btn sm primary" href="/lead/${storeId}/${channel}">${icon('chat')}לחבר שוב</a></div>`;
 }
 
 const ERRORS: Record<string, string> = {
@@ -89,9 +105,10 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
   const live = a && a.status !== 'off';
   const q = r.url.searchParams;
   const ch = CHANNEL_NAME[channel];
+  const store = (await liveOf(app, id)).state;
 
   const banner = q.get('connected') === '1' && a?.status === 'active'
-    ? `<div class="banner info">${icon('check')}<div><b>מחובר</b><p>תורן עונה מעכשיו ללקוחות שכותבים ${prefixed('ל', esc(a.name || ch))}.</p></div></div>`
+    ? `<div class="banner info">${icon('check')}<div><b>מחובר</b><p>${store === 'live' ? `תורן עונה מעכשיו ללקוחות שכותבים ${prefixed('ל', esc(a.name || ch))}.` : store === 'paused' ? `${esc(a.name || ch)} מחובר. תורן מושהה בחנות, וכשמפעילים אותו שוב הוא עונה גם שם.` : `${esc(a.name || ch)} מחובר. תורן יענה שם מהרגע שמפעילים אותו.`}</p></div>${store === 'never' ? `<a class="btn sm primary" href="/#golive">${icon('check')}להפעיל את תורן</a>` : ''}</div>`
     : q.get('error') ? `<div class="banner bad">${icon('alert')}<div><b>החיבור לא הצליח</b><p>${esc(ERRORS[q.get('error')!] || ERRORS.meta)}</p></div></div>` : '';
 
   const pick = channel === 'messenger' && q.get('pick') && !ro ? await pagesToPick(app, id, q.get('pick')!, r.user.id) : null;
@@ -110,12 +127,12 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
       ? `<p class="muted mt12 m0">${!isCompany(s) ? 'את זה מחברת החנות מהדשבורד שלה, עם החשבון שמנהל את הדף או את האינסטגרם.' : viaAdminReq(r.req) ? 'כדי לחבר מכאן, OF_ACCOUNTS_URL ו־PUBLIC_BASE_URL צריכים להיות באותו דומיין.' : 'את החנות שלנו מחברים מ־/admin באתר של החשבונות.'}</p>`
       : ready
         ? `<form class="mt16" method="post" action="/lead/${id}/${channel}/connect">${csrfField(r.ctx)}<button class="btn primary" type="submit">${icon('chat')}לחבר ${esc(WHAT[channel])}</button></form>`
-        : '<p class="muted mt12 m0">החיבור עוד לא פתוח בשרת. כתבו לנו, ונחבר יחד.</p>';
+        : '<p class="muted mt12 m0">החיבור עוד לא פתוח אצלנו. כתבו לנו, ונחבר יחד.</p>';
 
   const state = live
     ? `<section class="panel"><header><h2>${esc(ch)} של ${esc(name)}</h2><span class="end chip ${a!.status === 'active' ? 'ok' : 'bad'}">${a!.status === 'active' ? 'מחובר' : 'נעצר'}</span></header>
-  <p class="m0">${socialLine(a, channel, s, ready)}</p>
-  ${a!.status === 'active' ? channelSwitch(r, id, channel, (await offChannels(app, id)).includes(channel)) : ''}
+  <p class="m0">${socialLine(a, channel, s, ready, await answeringOn(app, id, channel))}</p>
+  ${a!.status === 'active' ? channelSwitch(r, id, channel, (await offChannels(app, id)).includes(channel), store) : ''}
   <dl class="kv mt12"><dt>${channel === 'messenger' ? 'הדף' : 'החשבון'}</dt><dd><bdi>${esc(a!.name || '-')}</bdi></dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd></dl>
   <p class="small mt12 m0">${esc(OWN_REPLY[channel])}</p>
   <p class="small mt8 m0">${esc(WINDOW)}</p>

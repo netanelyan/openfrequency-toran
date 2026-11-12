@@ -1,6 +1,7 @@
 import type { App } from '../../app.ts';
-import { CHANNEL_HE, type AnyChannel } from '../../channels/config.ts';
+import { type AnyChannel } from '../../channels/config.ts';
 import { audit, event } from '../../db/log.ts';
+import { liveOf, liveState, type LiveState } from '../../golive.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc } from '../ui.ts';
 
@@ -27,6 +28,21 @@ export async function offChannels(app: Pick<App, 'db'>, storeId: number): Promis
   return (s?.agent_off || []).filter((c): c is OffChannel => (CHANNELS as string[]).includes(c));
 }
 
+/**
+ * Whether Toran answers on a connected channel of the store now: it does ('live'), the store was never switched on
+ * ('never'), is paused ('paused'), or the channel alone is switched off ('off'). Every line that says "תורן עונה בו"
+ * reads it (the audit of 2026-11-12, P1-1: the lines said so before go-live, while paused and beside "תורן לא עונה כאן").
+ */
+export type Answering = 'live' | 'never' | 'paused' | 'off';
+export async function answeringOn(app: Pick<App, 'db'>, storeId: number, channel: OffChannel): Promise<Answering> {
+  const s = await app.db.one<{ agent_live_at: string | null; agent_paused_at: string | null; agent_off: string[] | null }>('SELECT agent_live_at, agent_paused_at, agent_off FROM stores WHERE id = $1', [storeId]);
+  const st = liveState(s);
+  return st !== 'live' ? st : (s?.agent_off || []).includes(channel) ? 'off' : 'live';
+}
+
+/** What Toran does on a connected channel, the line's second half: `live` is the channel's own words for answering. */
+export const answersHe = (a: Answering, live: string) => (a === 'live' ? live : a === 'never' ? 'תורן יענה בו מהרגע שמפעילים אותו' : a === 'paused' ? 'תורן מושהה, וההודעות מחכות לכם בשיחות' : 'כרגע תורן לא עונה בו, וההודעות מחכות לכם בשיחות');
+
 /** Switch Toran on or off on one channel of a store. Audited, with an event; nothing when it already stands so. */
 export async function setChannelOff(app: Pick<App, 'db'>, storeId: number, channel: OffChannel, off: boolean, by: string | null = null): Promise<boolean> {
   const before = (await offChannels(app, storeId)).includes(channel);
@@ -39,12 +55,15 @@ export async function setChannelOff(app: Pick<App, 'db'>, storeId: number, chann
 
 /**
  * The switch on a channel's card: "תורן עונה במייל", on or off, and what that means in one line. A team member and
- * view-as see it without the button.
+ * view-as see it without the button. While the whole store is not switched on or is paused (golive.ts), the line says
+ * the switch is for when it is (the audit of 2026-11-12, P2-22: on beside a paused store).
  */
-export function channelSwitch(r: DashReq, storeId: number, channel: OffChannel, off: boolean): string {
+export function channelSwitch(r: DashReq, storeId: number, channel: OffChannel, off: boolean, store: LiveState = 'live'): string {
   const may = !r.ctx.readOnly && r.user.role !== 'client_member';
   const label = `תורן עונה ${IN_HE[channel]}`;
-  const line = off ? `כרגע לא. הודעות ${IN_HE[channel]} מחכות לכם בשיחות.` : `מכבים כשרוצים לענות ${IN_HE[channel]} לבד.`;
+  const line = store === 'never' ? (off ? 'כבוי כאן, גם אחרי שמפעילים את תורן.' : 'יענה כאן מהרגע שמפעילים את תורן.')
+    : store === 'paused' ? (off ? 'כבוי כאן, גם כשמפעילים את תורן שוב.' : 'תורן מושהה בכל הערוצים. כשמפעילים אותו שוב, הוא עונה גם כאן.')
+    : off ? `כרגע לא. הודעות ${IN_HE[channel]} מחכות לכם בשיחות.` : `מכבים כשרוצים לענות ${IN_HE[channel]} לבד.`;
   const sw = `<span class="sw${off ? '' : ' on'}" aria-hidden="true"><i></i></span>`;
   const button = may
     ? `<form method="post" action="/lead/${storeId}/channel-off">${csrfField(r.ctx)}<input type="hidden" name="channel" value="${esc(channel)}"><input type="hidden" name="on" value="${off ? '1' : '0'}"><button class="swbtn" type="submit" role="switch" aria-checked="${off ? 'false' : 'true'}"${off ? '' : ` data-confirm="${esc(`לחצו שוב כדי לעצור את תורן ${IN_HE[channel]}`)}"`}><span class="t"><b>${esc(label)}</b><small>${esc(line)}</small></span>${sw}</button></form>`
@@ -70,8 +89,9 @@ export function channelOffRoutes(app: App): Route<DashReq>[] {
       if (!CHANNELS.includes(channel)) throw new ActionError('אין ערוץ כזה', 404);
       const off = r.form.on !== '1';
       await setChannelOff(app, id, channel, off, r.user.name);
-      const he = CHANNEL_HE[channel];
-      return { redirect: r.ctx.operator ? `/lead/${id}#channels` : BACK[channel](id), message: off ? `תורן לא עונה עכשיו ב${he}. הודעות שם מחכות לכם בשיחות.` : `תורן עונה שוב ב${he}.` };
+      const store = (await liveOf(app, id)).state;
+      const on = store === 'never' ? `תורן יענה ${IN_HE[channel]} מהרגע שמפעילים אותו.` : store === 'paused' ? `תורן יענה ${IN_HE[channel]} כשמפעילים אותו שוב.` : `תורן עונה שוב ${IN_HE[channel]}.`;
+      return { redirect: r.ctx.operator ? `/lead/${id}#channels` : BACK[channel](id), message: off ? `תורן לא עונה עכשיו ${IN_HE[channel]}. הודעות שם מחכות לכם בשיחות.` : on };
     }],
   ];
 }

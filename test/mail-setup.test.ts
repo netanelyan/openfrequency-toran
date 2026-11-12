@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { simEmail } from '../src/channels/email.ts';
 import { drain } from '../src/jobs/worker.ts';
 import { forgetProviders, mxDeps, providerOf, readConfirm } from '../src/web/pages/mailSetup.ts';
+import { activeChannels, setupOf } from '../src/setup.ts';
 import { customer } from './helpers.ts';
 import { serve } from './serve.ts';
 
@@ -93,6 +94,10 @@ test('Gmail: the address typed once, the steps with the address to copy, Gmail\'
     const row = (html: string) => /<li class="conn conn-\w+"><span class="conn-ic chn-email"[^]*?<\/li>/.exec(html)![0];
     assert.match(row(page), /conn-half[^]*החיבור באמצע[^]*chip sig">באמצע</);
     assert.doesNotMatch(row(page), /מחובר/);
+    // Half way is no channel yet (the audit of 2026-11-12, P1-3): not counted, and the checklist says what is left.
+    assert.ok(!(await activeChannels(s.app, id)).includes('email'));
+    const channels = (await setupOf(s.app, WS)).steps.find((x) => x.key === 'channels')!;
+    assert.deepEqual([channels.status, channels.detail], ['working', 'התחלתם לחבר את המייל. נשאר להעביר אליו את המייל של החנות, ואז תורן יכול לענות בו.']);
 
     // Gmail's confirmation arrives at the address: held, never answered, and shown on the card.
     const link = 'https://mail-settings.google.com/mail/vf-%5BANGjdJ8x%5D-abc123';

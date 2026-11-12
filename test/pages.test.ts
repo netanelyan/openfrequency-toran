@@ -77,7 +77,7 @@ test('an error is Toran\'s own page in Hebrew with the way back, never an except
     assert.match(html, /data-error-status="403"/);
     assert.match(html, /הדף ישן\. רעננו אותו ונסו שוב\./);
     assert.ok(html.includes(`href="/lead/${s.seeded.storeId}/knowledge">חזרה לדף הקודם`), 'back to the page before');
-    assert.ok(html.includes('href="/">להיום'));
+    assert.ok(html.includes('href="/">לדף הבית'), 'home, as Teder says it');
     assert.ok(html.includes(A11Y));
     const missing = await s.get('/chat/999999');
     assert.equal(missing.status, 404);

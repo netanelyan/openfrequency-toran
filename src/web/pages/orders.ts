@@ -6,6 +6,7 @@ import { audit } from '../../db/log.ts';
 import { cleanTrackingPage, PAGE_MAX, TrackingPageError } from '../../tracking.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, postButton, sendTo, shortDate } from '../ui.ts';
+import { prefixed } from '../../core/hebrew.ts';
 
 // The store's orders, read-only (src/orders.ts): a panel on the store's knowledge page (pages/customer.ts) where the
 // owner pastes a key that only reads orders, with where to get it on their platform, and POST /lead/<id>/orders to
@@ -82,17 +83,17 @@ export async function ordersPanel(app: App, r: DashReq, s: { id: number; platfor
   const name = PLATFORM[s.platform];
   const head = `<section class="panel" id="orders"><header><h2>שאלות על הזמנות</h2>${a ? `<span class="end chip ${ordersOn(a) ? 'ok' : 'warn'}">${ordersOn(a) ? 'מחובר' : 'המפתח לא עובד'}</span>` : ''}</header>`;
   if (a && ordersOn(a)) {
-    return `${head}<p class="m0">מחובר ל-${name} מ-${esc(shortDate(a.connected_at))}${a.meta?.hint ? `, עם המפתח שנגמר ב-<bdi class="ltr">${esc(a.meta.hint)}</bdi>` : ''}. כשלקוח שואל איפה ההזמנה שלו, תורן מבקש את מספר ההזמנה, בודק ועונה לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. מי שלא כותב מהטלפון שההזמנה נעשתה ממנו מתבקש קודם את המספר הזה. כל השאר מגיע אליכם.</p>
+    return `${head}<p class="m0">מחובר ${prefixed('ל', name)} ${prefixed('מ', esc(shortDate(a.connected_at)))}${a.meta?.hint ? `, עם המפתח שנגמר ב־<bdi class="ltr">${esc(a.meta.hint)}</bdi>` : ''}. כשלקוח שואל איפה ההזמנה שלו, תורן מבקש את מספר ההזמנה, בודק ועונה לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. את הפרטים הוא נותן רק למי שכותב מהטלפון או מהמייל שבהזמנה, או כותב לו את הטלפון שבהזמנה. כל השאר מגיע אליכם.</p>
   ${await trackingPageBox(app, r, s.id, may)}
   ${may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/orders/off`, 'לנתק', { cls: 'btn sm danger', confirm: 'לנתק? שאלות על הזמנות יגיעו שוב אליכם. כדאי למחוק את המפתח גם ב-' + name + '.' })}</div>` : ''}</section>`;
   }
   const broken = a ? `<div class="banner warn">${icon('alert')}<div><p>${name} הפסיק לקבל את המפתח, אז שאלות על הזמנות מגיעות שוב אליכם. אפשר להדביק כאן מפתח חדש.</p></div></div>` : '';
-  const intro = `<p class="m0">כשלקוח שואל איפה ההזמנה שלו, תורן יכול לבדוק ב-${name} ולענות לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. בשביל זה צריך מפתח שרק קורא הזמנות. תורן עונה על הזמנה רק למי שכותב מהטלפון שההזמנה נעשתה ממנו, או נותן את המספר הזה, ככה לקוח אחד לא רואה הזמנה של מישהו אחר.</p>`;
-  if (!secretsReady(app.env)) return `${head}${intro}<p class="small muted mt12 m0">החיבור להזמנות עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.</p>${writeUs ? `<div class="row mt8">${writeUs}</div>` : ''}</section>`;
+  const intro = `<p class="m0">כשלקוח שואל איפה ההזמנה שלו, תורן יכול לבדוק ב-${name} ולענות לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. בשביל זה צריך מפתח שרק קורא הזמנות. תורן עונה על הזמנה רק למי שכותב מהטלפון או מהמייל שבהזמנה, או כותב לו את הטלפון שבה, כדי שלקוח אחד לא יראה הזמנה של מישהו אחר.</p>`;
+  if (!secretsReady(app.env)) return `${head}${intro}<p class="small muted mt12 m0">החיבור להזמנות עוד לא פתוח אצלנו. כתבו לנו ונחבר יחד.</p>${writeUs ? `<div class="row mt8">${writeUs}</div>` : ''}</section>`;
   if (!may) return `${head}${broken}${intro}<p class="small muted mt12 m0">את המפתח מחבר מי שפתח את החשבון.</p></section>`;
   return `${head}${broken}${intro}
   <h3 class="small mt16">איפה מוצאים את המפתח</h3><ol class="steps mt8">${STEPS[s.platform].map((x) => `<li><span>${esc(x)}</span></li>`).join('')}</ol>
-  <form method="post" action="/lead/${s.id}/orders" class="mt12">${csrfField(r.ctx)}${FIELDS[s.platform]}<button class="btn primary mt12" type="submit">${icon('check')}לחבר</button></form>
+  <form method="post" action="/lead/${s.id}/orders" class="mt12">${csrfField(r.ctx)}${FIELDS[s.platform]}<button class="btn mt12" type="submit">${icon('check')}לחבר</button></form>
   <details class="mt12"><summary class="small">מישהו אחר מנהל לכם את האתר?</summary><p class="small mt8 m0">שולחים לו את השלבים, והוא מחזיר לכם את הקודים להדביק כאן.</p>${sendTo([`שלום, אפשר עזרה לחבר את ההזמנות של ${s.name || "החנות"} לתורן? תורן צריך מפתח של ${name} שרק קורא הזמנות:`, ...STEPS[s.platform].map((x, i) => `${i + 1}. ${x.replace(/ומדביקים אותם כאן\.|מעתיקים ומדביקים אותם כאן\./, 'ושולחים לי אותם.')}`), 'תודה'].join('\n'), `מפתח להזמנות של ${name} בשביל תורן`, 'לשלוח לו את השלבים', 'btn sm')}</details>
   ${s.platform === 'shopify' ? oldShopifyApp(r, s.id) : ''}
   <p class="small muted mt8 m0">לפני ששומרים, תורן בודק שהמפתח עובד. אנחנו שומרים אותו מוצפן, ותורן רק קורא איתו. כשמנתקים, הוא נמחק אצלנו.</p></section>`;
@@ -131,7 +132,7 @@ export function ordersRoutes(app: App): Route<DashReq>[] {
       }
       await app.db.query('UPDATE stores SET tracking_page = $2, updated_at = now() WHERE id = $1', [id, page]);
       await audit(app.db, { actor: r.user.name, action: 'tracking_page', storeId: id, detail: { page } });
-      return { redirect: `/lead/${id}/knowledge#orders`, message: page ? 'מעכשיו תורן שולח ללקוחות את דף המעקב שלכם.' : 'דף המעקב נמחק. תורן ישלח את הלינק שבהזמנה.' };
+      return { redirect: `/lead/${id}/knowledge#orders`, message: page ? 'מעכשיו תורן שולח ללקוחות את דף המעקב שלכם.' : 'תורן שולח ללקוחות את הלינק שבהזמנה.' };
     }],
     ['POST', /^\/lead\/(\d+)\/orders\/off$/, async (r, m) => {
       owner(r);

@@ -19,7 +19,8 @@
     const mini = document.documentElement.classList.toggle('side-mini');
     const b = e.currentTarget;
     b.setAttribute('aria-expanded', String(!mini));
-    b.setAttribute('aria-label', mini ? 'הרחבת סרגל הצד' : 'כיווץ סרגל הצד');
+    b.setAttribute('aria-label', mini ? 'להרחיב את סרגל הצד' : 'לכווץ את סרגל הצד');
+    b.setAttribute('title', mini ? 'להרחיב' : 'לכווץ');
     document.cookie = `tn_side=${mini ? 'mini' : 'full'}; Path=/; Max-Age=31536000; SameSite=Strict`;
   });
 
@@ -79,7 +80,7 @@
         ok = true;
       } catch {}
     }
-    say(ok ? (b.dataset.done || 'הועתק') : 'לא הצלחתי להעתיק. אפשר לסמן ולהעתיק ידנית.', !ok);
+    say(ok ? (b.dataset.done || 'הועתק') : 'לא הצלחנו להעתיק. אפשר לסמן ולהעתיק ידנית.', !ok);
     if (ok) {
       b.classList.add('copied');
       setTimeout(() => b.classList.remove('copied'), 1600);
@@ -105,13 +106,13 @@
         body: multipart ? new FormData(form) : new URLSearchParams(new FormData(form)),
         credentials: 'same-origin',
       });
-      const out = await res.json().catch(() => ({ ok: false, message: 'תשובה לא צפויה מהשרת' }));
+      const out = await res.json().catch(() => ({ ok: false, message: 'משהו השתבש אצלנו. אפשר לנסות שוב בעוד רגע.' }));
       const kind = form.dataset.ajax;
       // An answer to a customer that did not go: the reason inside its box, and the text left where it was typed.
       const err = form.querySelector('[data-error]');
       if (kind === 'reply' && err) {
         err.hidden = out.ok;
-        err.textContent = out.ok ? '' : out.message || 'לא נשלח.';
+        err.textContent = out.ok ? '' : out.message || 'התשובה לא נשלחה. אפשר לנסות שוב בעוד רגע.';
         if (!out.ok) return;
       }
       say(out.message, !out.ok);

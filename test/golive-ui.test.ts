@@ -84,7 +84,8 @@ test('the operator sets the big plan\'s price beside the store plan\'s; empty ke
     const page = await (await s.get('/settings')).text();
     assert.match(page, /name="bigMonthly"/);
     const token = await s.csrf('/settings');
-    const base = { _csrf: token, monthly: '590', vat: 'excluded', setup: '990', city: 'אשדוד' };
+    // A price of our own, ticked on purpose; untouched, the pages quote the plans (offer.ts).
+    const base = { _csrf: token, monthly: '590', vat: 'excluded', setup: '990', city: 'אשדוד', override: '1' };
     assert.equal((await s.post('/settings/offer', { ...base, bigMonthly: '1190' })).status, 303);
     assert.equal((await getOffer(s.app.db)).bigMonthly, 1190);
     await s.post('/settings/offer', base);

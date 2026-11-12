@@ -7,7 +7,8 @@ import { enabledChannels, storeAddress } from '../../channels/config.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
 import { csrfField, esc, icon, postButton, sendTo } from '../ui.ts';
 import { mailDomainPanel } from './mailDomain.ts';
-import { channelSwitch, offChannels } from './channelOff.ts';
+import { answeringOn, channelSwitch, offChannels } from './channelOff.ts';
+import { liveOf } from '../../golive.ts';
 
 // The store's email card on Settings, as a guided flow for an owner who knows nothing about tech. The owner,
 // 2026-11-09, pasting the card as it was ("מעבירים לכתובת ... את המייל של החנות, למשל ב-Gmail: הגדרות, "העברה ו-POP/IMAP"
@@ -159,7 +160,7 @@ export async function mailState(app: App, storeId: number): Promise<MailState> {
 /** Connect the store's email: its own address on our receiving domain (the same as leads.ts's /channels/email). */
 export async function connectEmail(app: App, storeId: number, meta: Record<string, unknown>, by: string) {
   const s = await app.db.one<any>('SELECT id, slug, name, domain, brand, brand_override FROM stores WHERE id = $1', [storeId]);
-  if (!s || !app.mail) throw new ActionError('המייל עוד כבוי בשרת (TORAN_CHANNELS).');
+  if (!s || !app.mail) throw new ActionError('המייל עוד לא פתוח אצלנו. כתבו לנו ונחבר אותו יחד.');
   const address = storeAddress(s, app.mail.domain);
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   const taken = await app.db.one<{ store_id: number }>("SELECT store_id FROM channel_accounts WHERE channel = 'email' AND external_id = $1", [address]);
@@ -209,7 +210,7 @@ const SETTINGS_URL = {
  * (learn.microsoft.com/en-us/defender-office-365/outbound-spam-policies-external-email-forwarding): only the admin
  * turns it on, so a business domain's steps carry the message for them.
  */
-function forwardSteps(st: MailState, storeId: number, storeName: string): string {
+function forwardSteps(st: MailState, storeId: number, storeName: string, main = true): string {
   const p = st.provider!;
   const work = Boolean(st.from && !freeAddress(st.from));
   const subject = `העברה של המייל של ${storeName} לתורן`;
@@ -222,7 +223,7 @@ function forwardSteps(st: MailState, storeId: number, storeName: string): string
   ].join('\n');
   const open = (url: string, label: string) => `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">${icon('ext')}${esc(label)}</a>`;
   const helper = (q: string, why: string) => `<details class="mt12"><summary class="small">${esc(q)}</summary><p class="small mt8 m0">${esc(why)}</p>${sendTo(forDev, subject, 'לשלוח למי שמנהל לכם את המייל', 'btn sm')}</details>`;
-  const copy = `<li><b>מעתיקים את הכתובת של תורן</b>${addressBox(`fwd-${storeId}`, st.address)}</li>`;
+  const copy = `<li><b>מעתיקים את הכתובת של תורן</b>${addressBox(`fwd-${storeId}`, st.address, main)}</li>`;
   if (p === 'gmail') {
     return `<ol class="steps mt12">
     ${copy}
@@ -249,8 +250,12 @@ function forwardSteps(st: MailState, storeId: number, storeName: string): string
   ${sendTo(forDev, subject, 'לשלוח למי שמנהל לכם את המייל', 'btn sm')}`;
 }
 
-/** The whole email card for one store on Settings (customer.ts). Empty while email is off on this server. */
-export async function mailCard(app: App, r: DashReq, store: { id: number; name: string }): Promise<string> {
+/**
+ * The whole email card for one store on Settings (customer.ts). Empty while email is off on this server. `main`: its
+ * step's button may be the page's main one; Settings passes false while another card holds it (the audit of
+ * 2026-11-12, P1-11: up to six main buttons on Settings at once).
+ */
+export async function mailCard(app: App, r: DashReq, store: { id: number; name: string }, main = true): Promise<string> {
   if (!enabledChannels(app.env).has('email') || !app.mail) return '';
   const st = await mailState(app, store.id);
   const ro = Boolean(r.ctx.readOnly);
@@ -262,13 +267,15 @@ export async function mailCard(app: App, r: DashReq, store: { id: number; name: 
 
   if (st.step === 'done') {
     const off = (await offChannels(app, id)).includes('email');
+    const answering = await answeringOn(app, id, 'email');
+    const answers = answering === 'live' ? 'תורן עונה ממנו בשם החנות, ומה שהוא לא יודע מגיע אליכם בשיחות.' : answering === 'never' ? 'תורן יענה ממנו בשם החנות מהרגע שמפעילים אותו. עד אז המיילים מחכים לכם בשיחות.' : answering === 'paused' ? 'תורן מושהה, אז המיילים מחכים לכם בשיחות.' : 'כרגע תורן לא עונה בו, והמיילים מחכים לכם בשיחות.';
     const more = `<details class="more mt16"><summary>עוד אפשרויות</summary>
     <h3 class="small mt12">לענות מכתובת של החנות (בשביל מי שמנהל לכם את האתר)</h3>${await mailDomainPanel(app, r, id, st.account!.external_id)}
     <h3 class="small mt16">הכתובת של תורן</h3><p class="small muted m0">לכאן המייל של החנות עובר.</p>${addressBox(`fwd-${st.account!.id}`, st.address, false)}
     ${ro ? '' : `<div class="row mt16">${form(`<button class="btn sm ghost" type="submit">${icon('refresh')}לחבר מייל אחר</button>`, { do: 'change' })}${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לא ייענו.' })}</div>`}
   </details>`;
-    return `${head}<p class="m0">${st.from ? `מייל שמגיע ל-<bdi class="ltr">${esc(st.from)}</bdi> עובר לתורן.` : 'המייל של החנות עובר לתורן.'} תורן עונה ממנו בשם החנות, ומה שהוא לא יודע מגיע אליכם בשיחות.</p>
-  ${channelSwitch(r, id, 'email', off)}
+    return `${head}<p class="m0">${st.from ? `מייל שמגיע ל-<bdi class="ltr">${esc(st.from)}</bdi> עובר לתורן.` : 'המייל של החנות עובר לתורן.'} ${answers}</p>
+  ${channelSwitch(r, id, 'email', off, (await liveOf(app, id)).state)}
   ${more}</section>`;
   }
 
@@ -278,7 +285,7 @@ export async function mailCard(app: App, r: DashReq, store: { id: number; name: 
     if (ro) return `${head}${intro}</section>`;
     if (!st.from) {
       return `${head}${stepTag(1)}<h3 class="q1">מה המייל של החנות?</h3>${intro}
-  ${form(`<label class="f mt12">הכתובת שלקוחות כותבים אליה<input type="email" name="from" required maxlength="120" dir="ltr" inputmode="email" autocomplete="email" placeholder="shop@yourstore.co.il"></label><button class="btn primary mt12" type="submit">להמשיך</button>`, { do: 'from' })}
+  ${form(`<label class="f mt12">הכתובת שלקוחות כותבים אליה<input type="email" name="from" required maxlength="120" dir="ltr" inputmode="email" autocomplete="email" placeholder="shop@yourstore.co.il"></label><button class="btn${main ? ' primary' : ''} mt12" type="submit">להמשיך</button>`, { do: 'from' })}
   </section>`;
     }
     const choice = (p: Provider) => `<button class="choice${st.guess === p ? ' picked' : ''}" type="submit" name="provider" value="${p}"><b>${esc(PROVIDER_HE[p])}</b>${st.guess === p ? '<small>נראה לנו שזה</small>' : ''}</button>`;
@@ -291,11 +298,11 @@ export async function mailCard(app: App, r: DashReq, store: { id: number; name: 
 
   if (st.step === 'confirm') {
     const c = st.confirm!;
-    const codeBox = c.code ? `<div class="copybox mt12"><code class="ltr big" id="code-${id}">${esc(c.code)}</code><button class="btn${c.link ? '' : ' primary'}" type="button" data-copy="#code-${id}" data-done="הקוד הועתק">${icon('copy')}להעתיק</button></div>` : '';
+    const codeBox = c.code ? `<div class="copybox mt12"><code class="ltr big" id="code-${id}">${esc(c.code)}</code><button class="btn${c.link || !main ? '' : ' primary'}" type="button" data-copy="#code-${id}" data-done="הקוד הועתק">${icon('copy')}להעתיק</button></div>` : '';
     // Pressing the link is Google's own way ("לוחצים על קישור האימות"). Pasting the code in Gmail's settings is in
     // guides only, and the Hebrew name of its button ("אימות") is UNVERIFIED, so the code is folded under the link.
     const first = c.link
-      ? `<li><b>מאשרים את ההעברה</b><span>הכפתור פותח את הדף של Gmail, ושם מאשרים.</span><div class="mt8"><a class="btn primary big" href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">${icon('check')}ללחוץ כאן לאישור</a></div>${c.code ? `<details class="mt12"><summary class="small">הכפתור לא עובד? יש גם קוד</summary><p class="small mt8 m0">מדביקים אותו ב-Gmail, בתיבה שליד הכתובת של תורן, ולוחצים "אימות".</p>${codeBox}</details>` : ''}</li>`
+      ? `<li><b>מאשרים את ההעברה</b><span>הכפתור פותח את הדף של Gmail, ושם מאשרים.</span><div class="mt8"><a class="btn${main ? ' primary' : ''} big" href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">${icon('check')}ללחוץ כאן לאישור</a></div>${c.code ? `<details class="mt12"><summary class="small">הכפתור לא עובד? יש גם קוד</summary><p class="small mt8 m0">מדביקים אותו ב-Gmail, בתיבה שליד הכתובת של תורן, ולוחצים "אימות".</p>${codeBox}</details>` : ''}</li>`
       : `<li><b>מדביקים את הקוד ב-Gmail</b><span>בתיבה שליד הכתובת של תורן, ולוחצים "אימות".</span>${codeBox}</li>`;
     return `${head}${stepTag(STEP_OF.confirm)}<h3 class="q1">מייל האישור מ-Gmail הגיע</h3>
   <ol class="steps mt12">${first}<li><b>חוזרים ל-Gmail ומרעננים את הדף</b><span>מסמנים "העברת עותק של הודעות נכנסות אל", ולוחצים למטה "שמירת השינויים".</span></li></ol>
@@ -304,7 +311,7 @@ export async function mailCard(app: App, r: DashReq, store: { id: number; name: 
   }
 
   // forward: Gmail goes on by itself once its mail comes; the others say they are done.
-  const steps = forwardSteps(st, id, storeName);
+  const steps = forwardSteps(st, id, storeName, main);
   const done = ro ? '' : st.provider === 'gmail' ? form(`<button class="linkbtn small" type="submit">כבר אישרתי ב-Gmail</button>`, { do: 'done' }, 'mt12') : form(`<button class="btn mt16" type="submit">${icon('check')}סיימתי</button>`, { do: 'done' });
   return `${head}${stepTag(STEP_OF.forward)}<h3 class="q1">מעבירים את המייל של החנות לתורן</h3>
   <p class="small muted m0">${esc(PROVIDER_HE[st.provider!])}${st.from ? ` · <bdi class="ltr">${esc(st.from)}</bdi>` : ''}</p>
@@ -315,7 +322,7 @@ export async function mailCard(app: App, r: DashReq, store: { id: number; name: 
 
 export function mailSetupRoutes(app: App): Route<DashReq>[] {
   const ready = () => {
-    if (!enabledChannels(app.env).has('email') || !app.mail) throw new ActionError('המייל עוד כבוי בשרת (TORAN_CHANNELS).');
+    if (!enabledChannels(app.env).has('email') || !app.mail) throw new ActionError('המייל עוד לא פתוח אצלנו. כתבו לנו ונחבר אותו יחד.');
   };
   const back = (r: DashReq, id: number) => (r.ctx.operator ? `/lead/${id}#channels` : '/settings#email');
   return [
@@ -354,7 +361,8 @@ export function mailSetupRoutes(app: App): Route<DashReq>[] {
       if (what === 'done') {
         await app.db.query("UPDATE channel_accounts SET meta = meta || $2::jsonb WHERE id = $1", [a.id, J({ done_at: new Date().toISOString() })]);
         await audit(app.db, { actor: r.user.name, action: 'email_setup_done', storeId: id });
-        return { redirect: back(r, id), message: 'המייל מחובר. מייל של לקוח יגיע לתורן, והוא יענה בשם החנות.' };
+        const store = (await liveOf(app, id)).state;
+        return { redirect: back(r, id), message: store === 'live' ? 'המייל מחובר. מייל של לקוח יגיע לתורן, והוא יענה בשם החנות.' : store === 'paused' ? 'המייל מחובר. תורן מושהה בחנות, אז מיילים של לקוחות יחכו לכם בשיחות.' : 'המייל מחובר. מיילים של לקוחות יגיעו לשיחות, ותורן יענה עליהם מהרגע שמפעילים אותו.' };
       }
       if (what === 'change') {
         await app.db.query("UPDATE channel_accounts SET meta = meta - 'provider' - 'done_at' WHERE id = $1", [a.id]);

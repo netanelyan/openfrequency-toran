@@ -123,9 +123,9 @@ ${iconLinks()}
 <body class="login">
 <main class="card" data-error-status="${status}">
   <div class="hero">${toranMark(72, { label: null })}<b>תורן</b></div>
-  <h1>${esc(title)}</h1>
+  <h1 class="err" role="alert">${esc(title)}</h1>
   <p>${esc(text)}</p>
-  <div class="row">${back !== '/' ? `<a class="btn primary" href="${esc(back)}">חזרה לדף הקודם</a>` : ''}<a class="btn${back === '/' ? ' primary' : ''}" href="/">להיום</a>${status >= 500 ? writeToUs() : ''}</div>
+  <div class="row">${back !== '/' ? `<a class="btn primary" href="${esc(back)}">חזרה לדף הקודם</a>` : ''}<a class="btn${back === '/' ? ' primary' : ''}" href="/">לדף הבית</a>${status >= 500 ? writeToUs() : ''}</div>
   <p class="small muted mt12 m0">${accessibilityLink()}</p>
 </main>
 ${themeButton('corner')}
