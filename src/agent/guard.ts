@@ -380,10 +380,12 @@ function demoTruth(text: string, english: boolean): string {
 // An offer to send a link, in a reply that already has one: "רוצים שאבדוק איזה צבעים יש, או שאשלח קישור?" above the
 // product's own link (the owner, 2026-11-12, on a demo: "asks if they want a url but sends it in the same message. it
 // should not ask"). The offer comes off its question ("או שאשלח קישור"), or the question goes when it was only that.
+// "רוצים שאכין לכם קישור להזמנה?" under the product's link is the same offer: the demos' review turned it down each
+// time. The customer who wants to order says so, and gets the order link then (create_cart_link).
 // Hebrew letters are not \w, so no \b beside them.
 const LINK_WORD = String.raw`(?:ה)?(?:קישור|לינק)`;
 const LINK_OFFER = new RegExp(
-  String.raw`(?:ש?אשלח|לשלוח|נשלח)\s+(?:(?:לך|לכם|לכן)\s+)?(?:את\s+)?${LINK_WORD}|(?:רוצים|רוצה|תרצו|תרצה)\s+(?:את\s+)?${LINK_WORD}|\bsend\s+(?:you\s+)?(?:the|a)\s+link\b|\b(?:want|like)\s+(?:the|a)\s+link\b`,
+  String.raw`(?:ש?אשלח|לשלוח|נשלח|ש?אכין|להכין|נכין)\s+(?:(?:לך|לכם|לכן)\s+)?(?:את\s+)?${LINK_WORD}|(?:רוצים|רוצה|תרצו|תרצה)\s+(?:את\s+)?${LINK_WORD}|\bsend\s+(?:you\s+)?(?:the|a)\s+link\b|\b(?:want|like)\s+(?:the|a)\s+link\b`,
   'i',
 );
 const OR_LINK_OFFER = new RegExp(String.raw`(?:,\s*|\s+)(?:או|or)\s+[^?]*?(?:קישור|לינק|\blink\b)[^?]*`, 'i');
@@ -405,6 +407,12 @@ function noLinkOffer(out: string[]) {
     else out.splice(i, 1);
   }
 }
+
+// "לקוח יקר," opens a letter from a call centre, not a chat with a store: the demos' review turned every answer that
+// began with it down, though the prompt never asks for it (a store's own copy may use it, and its voice with it). It
+// goes, and a greeting before it stays ("היי,").
+const DEAR = /(^|[.!?]\s+|\n)[ \t]*((?:היי|הי|שלום)[ \t]*,?[ \t]*)?לקוח(?:ה|ות)?[ \t]+יקר(?:ה|ים|ות)?[ \t]*[,!][ \t]*/g;
+export const undear = (t: string) => t.replace(DEAR, (_m, lead: string, hi: string | undefined) => `${lead}${hi ? `${hi.trim().replace(/,$/, '')}, ` : ''}`);
 
 /** Nothing left after a quiet cut, and nothing asked: a greeting back ("במה אפשר לעזור?" read as a call centre, P2-29). */
 const greeting = (english: boolean, company: boolean) => (english ? (company ? 'Hi, what would you like to ask?' : 'Hi, what are you looking for?') : company ? 'היי, על מה רוצים לשאול?' : 'היי, מה מחפשים?');
@@ -555,7 +563,7 @@ export function styleReply(text: string, { emoji = true, plural = false }: { emo
 // break the voice guide does not allow, and becomes a comma.
 // The model now and then puts a broken character inside a word ("נגר�ם", in a demo's answer on 2026-11-12, though the
 // store's page has the word whole): it is one character too many, and it goes.
-export const undash = (t: string) => t.replace(/�/g, '').replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2').replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',');
+export const undash = (t: string) => t.replace(/\uFFFD/g, '').replace(/(\d)\s*[—–]\s*(\d)/g, '$1-$2').replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',');
 
 // verified: sentences the claim check's second opinion (claims.ts, TORAN_GUARD_LLM) found backed; the lexical rules
 // still apply to them.
@@ -609,7 +617,7 @@ export function guardReply(text: string, allow: Allow, { company = false, demo =
   }
   handOverOnce(out, placed, english, redactions);
   noLinkOffer(out);
-  let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
+  let result = undash(undear(out.join('')).replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
   // Nothing left: the honest line when the customer asked something, a greeting back when they did not.
   if (!result) result = handoffReason || askedAbout('claim', asked) ? checkingLine(english, company, demo) : greeting(english, company);
   if (demo && !company) result = demoTruth(result, english);

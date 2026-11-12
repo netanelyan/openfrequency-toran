@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAllow, guardReply, numbersIn, splitSentences, summaryHe, undash } from '../src/agent/guard.ts';
+import { buildAllow, guardReply, numbersIn, splitSentences, summaryHe, undash, undear } from '../src/agent/guard.ts';
 
 const tool = `2 matching products:
 - [id 12] ספל חול 350 מ"ל: 89 ₪, במלאי, 3 options. https://s.example/products/sandy-mug
@@ -280,4 +280,13 @@ test('a reply that has the link does not offer to send one (the owner, 2026-11-1
 test('a broken character the model put inside a word goes: the word is whole again', () => {
   assert.equal(undash('אם נגר\uFFFDם נזק במשלוח, מחליפים.'), 'אם נגרם נזק במשלוח, מחליפים.');
   assert.equal(guardReply('היי, מה מחפ\uFFFDשים?', buildAllow({ toolTexts: [], customerTexts: [] })).text, 'היי, מה מחפשים?');
+});
+
+test('"לקוח יקר," opens a call centre\'s letter, not a store\'s chat: it goes, and a greeting before it stays', () => {
+  assert.equal(undear('לקוח יקר, השרוול עולה 129 ₪.'), 'השרוול עולה 129 ₪.');
+  assert.equal(undear('היי לקוחה יקרה! יש במלאי.'), 'היי, יש במלאי.');
+  assert.equal(undear('תודה. לקוחות יקרים, המשלוח יוצא מחר.'), 'תודה. המשלוח יוצא מחר.');
+  assert.equal(undear('הלקוח יקר לנו, ולכן יש החזרה.'), 'הלקוח יקר לנו, ולכן יש החזרה.', 'not a greeting: it stays');
+  const allow = buildAllow({ toolTexts: ['- [id 1] שרוול: 129 ₪, במלאי. https://s.example/p'], customerTexts: [] });
+  assert.equal(guardReply('לקוח יקר, השרוול עולה 129 ₪. https://s.example/p רוצים שאכין לכם קישור להזמנה?', allow).text, 'השרוול עולה 129 ₪. https://s.example/p', 'and the order link offered under the product\'s link goes too');
 });
