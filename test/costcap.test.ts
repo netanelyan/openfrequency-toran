@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { conversationFor, runTurn } from '../src/agent/loop.ts';
 import { ALERT_SHARE, capFor, forgetMonthSpend, LIST_ILS, liftOf, monthlyIlsOf, setLift, shareOf, STOP_SHARE, USD_ILS, usdIls, workspaceSpend } from '../src/agent/spend.ts';
-import { checkingLine } from '../src/agent/guard.ts';
+import { cantAnswerLine } from '../src/agent/guard.ts';
 import { scriptedClient, type Script } from '../src/agent/llm/scripted.ts';
 import type { Block, TurnReq } from '../src/agent/llm/types.ts';
 import { entitlementClient } from '../src/billing/entitlement.ts';
@@ -142,7 +142,10 @@ test('at 50% no model call: the customer gets the honest line, the owner a hando
     const conv = await conversationFor(app.db, storeId, 'whatsapp', '972500000402');
     const out = await runTurn(app, { storeId, conversationId: conv, text: 'יש לכם קערה גדולה?', channel: 'whatsapp', footer: false });
     assert.equal(m.calls.length, 0, 'no model call');
-    assert.ok(out.reply.includes(checkingLine(false)), out.reply);
+    // No model call means no answer: the customer reads that Toran cannot answer now and passed it on, the line of every
+    // turn with no answer (guard.ts cantAnswerLine; the audit of 2026-11-12, P2-29: "על זה אני לא בטוח" also answered a
+    // plain "שלום"), never a cost, a cap or a share.
+    assert.ok(out.reply.includes(cantAnswerLine(false)), out.reply);
     assert.equal(out.handoff?.summary, 'תורן העביר אליכם את השאלה הזו כדי שתענו עליה בעצמכם. הלקוח כתב: "יש לכם קערה גדולה?"');
     assert.doesNotMatch(`${out.reply} ${out.handoff?.summary}`, /₪|\$|%|תקרה|תקרת|עלות|הוצאה/, 'never a cost, a cap or a share');
     assert.ok(await app.db.one("SELECT 1 FROM events WHERE kind = 'handoff' AND store_id = $1", [storeId]));
