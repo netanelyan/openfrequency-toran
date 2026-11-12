@@ -49,6 +49,17 @@ test('product search finds Hebrew words under their prefixes, and shows the rows
   await app.db.close();
 });
 
+test('product search in English of a store whose products are named in Hebrew asks for one more search in Hebrew, never "not carried" (docs/models.md, q10)', async () => {
+  const { app, ctx } = await storeApp();
+  const en = await runTool(ctx, 'search_products', { query: 'big olive bowl' });
+  assert.match(en.content, /^No products match "big olive bowl"/);
+  assert.match(en.content, /the store's products are named in Hebrew, and these words are not\. Call search_products once more with them in Hebrew/);
+  assert.doesNotMatch(en.content, /does not seem to carry it/);
+  assert.match((await runTool(ctx, 'search_products', { query: 'קערת זית גדולה' })).content, /קערת זית גדולה: 165 ₪/);
+  assert.match((await runTool(ctx, 'search_products', { query: 'מכונת כביסה' })).content, /Say the store does not seem to carry it/, 'in Hebrew there is nothing more to try');
+  await app.db.close();
+});
+
 test('get_policy without embeddings finds the shipping passage by its words, and says so when the store wrote nothing', async () => {
   const { app, ctx } = await storeApp();
   const r = await runTool(ctx, 'get_policy', { topic: 'כמה עולה משלוח?' });

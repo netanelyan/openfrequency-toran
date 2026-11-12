@@ -200,7 +200,16 @@ async function searchProducts(c: ToolContext, input: any): Promise<ToolOutcome> 
   if (!top.length) {
     if (page > 1 && found.length) return { ok: true, content: `No more results: the search "${input.query}" has ${found.length}, all shown on the pages before.\nRule: do not suggest or describe a product that is not in a result.` };
     const types = [...new Set(all.map((p) => p.product_type).filter(Boolean))].slice(0, 12);
-    return { ok: true, content: `No products match "${input.query}".${types.length ? ` What this store does carry, by type: ${types.join(', ')}.` : ''}\nRule: do not suggest or describe a product that is not in a result. Say the store does not seem to carry it, offer the closest type above if it fits, or hand off.` };
+    const none = `No products match "${input.query}".${types.length ? ` What this store does carry, by type: ${types.join(', ')}.` : ''}`;
+    // Words in another language than the products' names find nothing ("big olive bowl" in a store of "קערת זית
+    // גדולה", told to say the store does not carry it: docs/models.md, q10): one more search in the names' language first.
+    const query = String(input.query || '');
+    const namesHe = hebrewRatio(all.map((p) => p.title).join(' ')) >= 0.5;
+    if (all.length && /\p{L}/u.test(query) && (hebrewRatio(query) >= 0.5) !== namesHe) {
+      const lang = namesHe ? 'Hebrew' : 'English';
+      return { ok: true, content: `${none}\nRule: the store's products are named in ${lang}, and these words are not. Call search_products once more with them in ${lang} before you say anything about this product. Do not suggest or describe a product that is not in a result.` };
+    }
+    return { ok: true, content: `${none}\nRule: do not suggest or describe a product that is not in a result. Say the store does not seem to carry it, offer the closest type above if it fits, or hand off.` };
   }
   // The customer's words that no product in the store mentions, not even in what its photo was read to show: a colour
   // here means the text cannot tell it, and the photos must (the owner's red kit offered for a yellow shirt, 2026-11-09).
