@@ -327,7 +327,9 @@ test('a site is proven the workspace\'s before it is read or a lead moves: a TXT
     assert.equal((await s.app.db.one<any>('SELECT workspace_id FROM stores WHERE id = $1', [lead])).workspace_id, null, 'the lead does not move before the proof');
     const claim = await s.app.db.one<any>('SELECT * FROM domain_claims WHERE workspace_id = 21');
     const page = await (await s.get('/start')).text();
-    assert.ok(page.includes(`toran-verify=${claim.token}`), 'the TXT value');
+    // The TXT value is in the ready message for whoever manages the domain, not on the page (the audit's P1-14).
+    assert.ok(messagesOf(page).some((m) => m.includes(`toran-verify=${claim.token}`)), 'the TXT value, in the message');
+    assert.ok(!page.includes(`toran-verify=${claim.token}`), 'and nowhere else on the page');
     assert.ok(page.includes(`&lt;meta name=&quot;toran-verify&quot; content=&quot;${claim.token}&quot;&gt;`), 'the meta tag');
     const st = await steps(s, 21);
     assert.deepEqual([st.by.store.status, st.by.store.href], ['attention', `${BASE}/start`]);
@@ -409,6 +411,8 @@ const shopifyApi = (): typeof fetch => (async (input: any, init: any = {}) => {
   return out(404, {});
 }) as typeof fetch;
 const page = async (s: S) => (await s.get('/start')).text();
+/** The ready messages a page offers to send on WhatsApp (wa.me/?text=), as the person who gets one reads it. */
+const messagesOf = (html: string) => [...html.matchAll(/href="https:\/\/wa\.me\/\?text=([^"]+)"/g)].map((m) => decodeURIComponent(m[1].replace(/&amp;/g, '&')));
 const ago = (s: S) => s.app.db.query("UPDATE audit SET at = now() - interval '1 minute' WHERE action = 'verify_domain'");
 
 test('what a claimed site is built on: Shopify from /meta.json or its address, WooCommerce from the REST index, anything else; TXT hidden on a shared host', async () => {
@@ -441,7 +445,7 @@ test('a Shopify store proves its site with its own key: the main card, a key for
     assert.equal((await s.post('/start', { _csrf: token, url: 'kli-cheres.example' })).headers.get('location'), '/start');
     const html = await page(s);
     const main = html.split('verify-more')[0];
-    assert.match(main, /<h2>מחברים את החנות ב-Shopify<\/h2>/, 'the key is the main card on Shopify');
+    assert.match(main, /<h2>מחברים את החנות ב־Shopify<\/h2>/, 'the key is the main card on Shopify');
     assert.match(main, /action="\/start\/verify\/key"/);
     assert.match(main, /name="client_id"/);
     assert.equal((main.match(/class="btn primary/g) || []).length, 1, 'one main button');
@@ -450,7 +454,7 @@ test('a Shopify store proves its site with its own key: the main card, a key for
     assert.ok(html.includes('https://wa.me/?text='), 'send it to whoever built the site');
     const claim = (await s.app.db.one<any>('SELECT * FROM domain_claims WHERE workspace_id = 31'))!;
     assert.equal(claim.platform, 'shopify', 'read once and kept');
-    assert.ok(html.includes(`toran-verify=${claim.token}`), 'its own domain: the TXT record is offered too');
+    assert.ok(messagesOf(html).some((m) => m.includes(`toran-verify=${claim.token}`)), 'its own domain: the TXT record is offered too, in its message');
 
     // A member of the account holds no keys.
     s.as(s.accounts.session({ ...customer(31), role: 'client_member' }).cookie);
@@ -491,8 +495,8 @@ test('a myshopify.com address: the key first and no TXT record, since nobody can
     assert.equal((await s.post('/start', { _csrf: token, url: 'https://my-shop.myshopify.com/' })).headers.get('location'), '/start');
     const claim = (await s.app.db.one<any>('SELECT * FROM domain_claims WHERE workspace_id = 32'))!;
     const html = await page(s);
-    assert.match(html.split('verify-more')[0], /<h2>מחברים את החנות ב-Shopify<\/h2>/);
-    assert.ok(!html.includes(`toran-verify=${claim.token}`), 'no TXT value');
+    assert.match(html.split('verify-more')[0], /<h2>מחברים את החנות ב־Shopify<\/h2>/);
+    assert.ok(!html.includes(`toran-verify=${claim.token}`) && !messagesOf(html).some((m) => m.includes(`toran-verify=${claim.token}`)), 'no TXT value');
     assert.doesNotMatch(html, /רשומת TXT/);
     assert.ok(html.includes(`content=&quot;${claim.token}&quot;`), 'the tag is still there, under more ways');
   } finally {
@@ -517,7 +521,7 @@ test('a WooCommerce store proves its site with a REST key the site itself takes,
     }) as typeof fetch;
     const token = await asCustomer(s, 33);
     await s.post('/start', { _csrf: token, url: 'https://www.beit-hasabon.example/' });
-    assert.match((await page(s)).split('verify-more')[0], /<h2>מחברים את החנות ב-WooCommerce<\/h2>/);
+    assert.match((await page(s)).split('verify-more')[0], /<h2>מחברים את החנות ב־WooCommerce<\/h2>/);
     assert.match(await page(s), /name="key"/);
     const yes = await s.post('/start/verify/key', { _csrf: token, ...WOO_KEY });
     assert.equal(yes.headers.get('location'), '/');
@@ -558,7 +562,7 @@ test('a code to the address on the site: masked on the page, 5 tries, 30 minutes
     // The first code: five wrong tries, and the sixth is refused even when it is right.
     const sent = await send();
     assert.equal(sent.status, 200);
-    assert.match((await sent.json()).message, /שלחנו קוד ל-sh\*\*\*@tavlinim-ba-shuk\.example/);
+    assert.match((await sent.json()).message, /שלחנו קוד ל־sh\*\*\*@tavlinim-ba-shuk\.example/);
     assert.equal(mail.outbox!.at(-1)!.to, 'shalom@tavlinim-ba-shuk.example');
     assert.match(String(mail.outbox!.at(-1)!.text), /tavlinim-ba-shuk\.example/);
     const first = codeOf();
@@ -597,7 +601,7 @@ test('a code to the address on the site: masked on the page, 5 tries, 30 minutes
   }
 });
 
-test('a site with no address and no store: the tag is the main card, the site\'s builder first and open, every builder\'s steps folded below', async () => {
+test('a site with no address and no store: the tag is the main card, its ready message to whoever built the site first, every builder\'s steps folded below', async () => {
   const s = await serve();
   try {
     s.app.mail = simEmail();
@@ -607,7 +611,14 @@ test('a site with no address and no store: the tag is the main card, the site\'s
     const main = html.split('verify-more')[0];
     assert.match(main, /<h2>מוסיפים שורה קטנה לאתר<\/h2>/);
     assert.match(main, /data-copy="#verify-tag"/);
-    assert.match(main, /<details class="mt8" open><summary><b>אתר שנבנה בקוד<\/b>/, 'a site of its own: the HTML steps open');
+    // Nobody can tell what this site is built on: whoever built it adds the line, so their ready message leads, as the
+    // main button, and every builder's steps fold below it, none open, code last (the audit's P2-7).
+    const builder = main.indexOf('מי שבנה לכם את האתר יכול להוסיף אותה');
+    assert.ok(builder > 0 && builder < main.indexOf('data-copy="#verify-tag"'), 'the builder first');
+    assert.match(main, /<a class="btn primary" href="https:\/\/wa\.me\/\?text=[^"]+"[^>]*>[^]*?לשלוח בוואטסאפ<\/a>/);
+    assert.equal((main.match(/class="btn primary/g) || []).length, 1, 'one main button');
+    assert.doesNotMatch(main, /<details class="mt8" open>/, "no builder's steps open");
+    assert.ok(main.indexOf('<b>אתר שנבנה בקוד</b>') > main.indexOf('<b>Webflow</b>'), 'code last');
     for (const b of ['WordPress', 'Wix', 'Shopify', 'Webflow']) assert.match(main, new RegExp(`<summary><b>${b}</b>`), b);
     assert.match(main, /action="\/start\/verify"/);
     assert.doesNotMatch(html, /שולחים קוד למייל/, 'no address on the site: no code');

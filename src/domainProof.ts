@@ -300,6 +300,8 @@ export async function takeOrderKey(app: App, storeId: number, by: string): Promi
 export const CODE_MINUTES = 30;
 export const CODE_TRIES = 5;
 export const CODE_SENDS = 3; // an hour, per claim
+/** Tries to send a code in an hour per claim, those that failed too: a mail that keeps failing is not tried forever. */
+export const CODE_ATTEMPTS = 10;
 
 /** in***@store.co.il: enough to tell the addresses apart, not to read them off the page. */
 export function mask(email: string): string {
@@ -327,11 +329,22 @@ export function codeMail(domain: string, code: string) {
   };
 }
 
-/** A new code to one of the site's own addresses (`to` must be one contactEmails found). */
+/**
+ * A new code to one of the site's own addresses (`to` must be one contactEmails found). A send is counted before the
+ * mail goes, so two at once can't both pass the limit; a mail that failed is written down as failed too, and is not
+ * one of the 3 codes an hour (the audit's P2-7: a failed mail used one up, though no code ever arrived). Tries that
+ * keep failing stop at CODE_ATTEMPTS an hour.
+ */
 export async function sendCode(app: App, claim: Claim, to: string, by: string): Promise<void> {
   if (!mailReady(app)) throw new ProofError('email is off here', 'שליחת מייל עוד לא פתוחה כאן. אפשר לבחור דרך אחרת.');
-  const sent = await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM audit WHERE action = 'verify_email_send' AND detail->>'claim' = $1 AND at > now() - interval '1 hour'", [String(claim.id)]);
-  if ((sent?.n || 0) >= CODE_SENDS) throw new ProofError('too many codes this hour', 'כבר שלחנו כמה קודים בשעה האחרונה. אפשר לנסות שוב בעוד שעה, או לבחור דרך אחרת.', 429);
+  const n = await app.db.one<{ sent: number; failed: number }>(
+    "SELECT COUNT(*) FILTER (WHERE action = 'verify_email_send')::int AS sent, COUNT(*) FILTER (WHERE action = 'verify_email_failed')::int AS failed FROM audit WHERE action IN ('verify_email_send', 'verify_email_failed') AND detail->>'claim' = $1 AND at > now() - interval '1 hour'",
+    [String(claim.id)],
+  );
+  const sent = n?.sent || 0;
+  const failed = n?.failed || 0;
+  if (sent - failed >= CODE_SENDS) throw new ProofError('too many codes this hour', 'כבר שלחנו כמה קודים בשעה האחרונה. אפשר לנסות שוב בעוד שעה, או לבחור דרך אחרת.', 429);
+  if (sent >= CODE_ATTEMPTS) throw new ProofError('too many failed sends this hour', 'ניסינו לשלוח כמה פעמים בשעה האחרונה, והמייל לא יצא. אפשר לנסות שוב בעוד שעה, או לבחור דרך אחרת.', 429);
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   await app.db.query('UPDATE domain_claims SET code_hash = $2, code_to = $3, code_sent_at = now(), code_tries = 0 WHERE id = $1', [claim.id, hashOf(claim, code), to]);
   await audit(app.db, { actor: by, action: 'verify_email_send', detail: { workspace: claim.workspace_id, claim: claim.id, domain: claim.domain, to: mask(to) } });
@@ -341,6 +354,7 @@ export async function sendCode(app: App, claim: Claim, to: string, by: string): 
   } catch (e: any) {
     app.log(`[proof] the code for ${claim.domain} was not sent: ${e?.message || e}`);
     await app.db.query('UPDATE domain_claims SET code_hash = NULL WHERE id = $1', [claim.id]);
+    await audit(app.db, { actor: by, action: 'verify_email_failed', detail: { workspace: claim.workspace_id, claim: claim.id, domain: claim.domain, why: String(e?.message || e).slice(0, 200) } });
     throw new ProofError(`the mail was refused: ${e?.message || e}`, 'לא הצלחנו לשלוח את המייל. אפשר לנסות שוב בעוד כמה דקות.', 502);
   }
 }

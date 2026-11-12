@@ -2,11 +2,13 @@ import type { App } from '../../app.ts';
 import { audit } from '../../db/log.ts';
 import { enqueue } from '../../jobs/queue.ts';
 import { canonicalDomain, homeUrl } from '../../core/urls.ts';
+import { prefixed } from '../../core/hebrew.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
+import { readFailure } from '../../ingest/readFailure.ts';
 import { ofWhatsapp } from '../../offer.ts';
 import { setupStoreOf, storeState } from '../../setup.ts';
 import { ActionError, type DashReq, type Route } from '../server.ts';
-import { csrfField, esc, icon, layout } from '../ui.ts';
+import { csrfField, esc, icon, layout, sendTo } from '../ui.ts';
 import { notFoundPage } from './basic.ts';
 import { FIELDS, STEPS } from './orders.ts';
 import { checkClaim, checkCode, claimFor, CODE_MINUTES, codeLive, hostedDns, keyPlatform, mailReady, mask, META, pendingClaim, ProofError, proveByKey, proven, sendCode, siteOf, takeOrderKey, TXT_HOST, type Claim, type Site, type SitePlatform } from '../../domainProof.ts';
@@ -39,6 +41,23 @@ const RATE_SECONDS = 60;
 /** One look for the proof every few seconds per workspace: each look reads DNS and the home page. */
 const VERIFY_SECONDS = 10;
 
+/**
+ * A look for the tag or the record that found nothing (domainProof.ts checkClaim): not there yet, the site kept us out
+ * of its home page (an error page, robots.txt, a block), or the site did not answer. The last two say so plainly: the
+ * line may well be on the site, and looking again the same way does not help (the audit's P2-7).
+ */
+type Look = 'missing' | 'blocked' | 'down';
+const LOOK_HE: Record<Look, string> = {
+  missing: 'עוד לא מצאנו את השורה באתר. אם הוספתם אותה עכשיו, כדאי לחכות כמה דקות ולבדוק שוב.',
+  blocked: 'עוד לא מצאנו את השורה. האתר לא נתן לנו להיכנס לדף הבית, אז אי אפשר לראות אם היא שם. אם היא כבר באתר, כדאי לאמת בדרך אחרת מהדרכים כאן.',
+  down: 'עוד לא מצאנו את השורה. האתר לא ענה לנו כשחיפשנו אותה, אז כדאי לבדוק שהוא פתוח ולנסות שוב בעוד כמה דקות.',
+};
+/** The kind of a look that found nothing, from checkClaim's `why` ("dns <host>: <code>; page: <code>"). */
+export const lookOf = (why: string | null | undefined): Look => {
+  const w = String(why || '');
+  return /page: (http|robots|blocked|too_large)\b/.test(w) ? 'blocked' : /page: (timeout|network)\b/.test(w) ? 'down' : 'missing';
+};
+
 /** A store's address as a customer types it ("store.co.il", "https://www.store.co.il/shop"), or null. */
 export function startUrl(input: string): { url: string; domain: string } | null {
   const raw = String(input || '').trim();
@@ -61,14 +80,24 @@ export function startUrl(input: string): { url: string; domain: string } | null 
 
 const may = (r: DashReq) => !r.scope.operator && !r.ctx.readOnly && Number(r.scope.workspaceId) > 0;
 
-async function page(app: App, r: DashReq, failed: boolean) {
+/**
+ * The address form. After a try that failed (`failed`: the add job's last_error, '' when it kept none), the banner says
+ * why in the owner's words (ingest/readFailure.ts; the pre-launch audit, 2026-11-12, P1-25: the reason stayed in the
+ * job and the owner tried again into the same failure). The first press opens the proof, not the reading, so the
+ * button says "להמשיך" and the line says the proof comes first (P2-7).
+ */
+async function page(app: App, r: DashReq, failed: string | null) {
   const n = ofWhatsapp(app.env);
   const writeUs = n ? ` <a href="https://wa.me/${esc(n)}" target="_blank" rel="noopener">כתבו לנו</a>.` : '';
-  const body = `<div class="head"><h1>מוסיפים את החנות</h1><p class="sub">כותבים את הכתובת של האתר, ותורן קורא ממנו את המוצרים, המחירים ודפי המדיניות. זה לוקח דקה או שתיים.</p></div>
-${failed ? `<div class="banner warn">${icon('alert')}<div><b>לא הצלחנו לקרוא את האתר הקודם</b><p>כדאי לבדוק שהכתובת נכונה ולנסות שוב.${writeUs}</p></div></div>` : ''}
+  const why = failed == null ? null : readFailure(failed);
+  // Under its title the generic line would say "we could not read the site" twice: there it is only what to do.
+  const line = why?.kind === 'other' ? 'כדאי לבדוק שהכתובת נכונה ולנסות שוב. אם זה חוזר, כתבו לנו.' : why?.text;
+  const help = n ? `<a class="btn sm" href="https://wa.me/${esc(n)}" target="_blank" rel="noopener">${icon('send')}לכתוב לנו בוואטסאפ</a>` : '';
+  const body = `<div class="head"><h1>מוסיפים את החנות</h1><p class="sub">כותבים את הכתובת של האתר. אחרי שמאמתים שהוא שלכם, תורן קורא ממנו את המוצרים, המחירים ודפי המדיניות. זה לוקח כמה דקות.</p></div>
+${why ? `<div class="banner warn">${icon('alert')}<div><b>לא הצלחנו לקרוא את האתר הקודם</b><p>${esc(line || '')}</p></div>${help}</div>` : ''}
 <form class="panel" method="post" action="/start">${csrfField(r.ctx)}
   <label class="f">הכתובת של האתר<input type="text" name="url" required maxlength="300" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" dir="ltr" placeholder="store.co.il" autofocus></label>
-  <button class="btn primary mt12" type="submit">${icon('plus')}לקרוא את האתר</button>
+  <button class="btn primary mt12" type="submit">${icon('chev')}להמשיך</button>
   <p class="small muted mt12 m0">כרגע תורן קורא חנויות ${esc(INGESTIBLE_HE)}. האתר שלכם על פלטפורמה אחרת?${writeUs || ' כתבו לנו.'}</p>
 </form>`;
   return layout({ ...r.ctx, title: 'מוסיפים את החנות', active: 'today' }, body);
@@ -88,14 +117,17 @@ ${failed ? `<div class="banner warn">${icon('alert')}<div><b>לא הצלחנו �
 //   Webflow    Site settings > Custom code > Head code > Save changes, and the site published again (help.webflow.com/
 //              site-settings/custom-code, read through a search: the page itself did not open from here). Which Webflow
 //              plans allow custom code is UNVERIFIED
-// A builder's help changes its words now and then: the steps say where to look, not every click.
+// A builder's help changes its words now and then: the steps say where to look, not every click. Wix's own Hebrew help
+// (support.wix.com/he/article/wix-editor-embedding-custom-code-on-your-site, read 2026-11-12) keeps the English names
+// of its buttons and puts the Hebrew beside some of them in brackets: the Wix steps do the same, with the Hebrew it
+// gives and no other (Settings and All pages have none there).
 type Builder = { key: string; name: string; steps: string[]; note?: string };
 const BUILDERS: Builder[] = [
-  { key: 'html', name: 'אתר שנבנה בקוד', steps: ['פותחים את הקובץ של דף הבית, בדרך כלל index.html.', 'מדביקים את השורה בתוך ה-head, למשל ממש לפני </head>.', 'שומרים ומעלים את הקובץ לאתר.'] },
-  { key: 'wordpress', name: 'WordPress', steps: ['בניהול של וורדפרס נכנסים לתוספים, מוסיפים תוסף ומתקינים את WPCode. בחיפוש הוא מופיע גם בשם Insert Headers and Footers.', 'מפעילים אותו, ונכנסים בתפריט ל-Code Snippets ואז ל-Header & Footer.', 'מדביקים את השורה בתיבה Header.', 'לוחצים Save Changes למעלה.'] },
-  { key: 'wix', name: 'Wix', steps: ['בדשבורד של האתר נכנסים ל-Settings, ובחלק Development & integrations לוחצים Custom Code.', 'לוחצים Add Custom Code למעלה, ומדביקים את השורה בתיבה.', 'נותנים לה שם, למשל תורן, ובוחרים All pages.', 'ב-Place Code in בוחרים Head, ולוחצים Apply.'], note: 'ב-Wix זה עובד רק באתר שפורסם ומחובר לדומיין משלכם.' },
-  { key: 'shopify', name: 'Shopify', steps: ['בניהול של Shopify נכנסים ל-Online Store.', 'ליד התבנית לוחצים על שלוש הנקודות, ואז Edit code.', 'פותחים את הקובץ theme.liquid, בתיקייה Layout.', 'מדביקים את השורה ממש לפני </head>, ולוחצים Save.'] },
-  { key: 'webflow', name: 'Webflow', steps: ['בפרויקט נכנסים ל-Site settings, ללשונית Custom code.', 'מדביקים את השורה בתיבה Head code, ולוחצים Save changes.', 'מפרסמים את האתר שוב (Publish). בלי זה השורה לא מופיעה באתר.'] },
+  { key: 'html', name: 'אתר שנבנה בקוד', steps: ['פותחים את הקובץ של דף הבית, בדרך כלל index.html.', 'מדביקים את השורה בתוך ה־head, למשל ממש לפני </head>.', 'שומרים ומעלים את הקובץ לאתר.'] },
+  { key: 'wordpress', name: 'WordPress', steps: ['בניהול של וורדפרס נכנסים לתוספים, מוסיפים תוסף ומתקינים את WPCode. בחיפוש הוא מופיע גם בשם Insert Headers and Footers.', 'מפעילים אותו, ונכנסים בתפריט ל־Code Snippets ואז ל־Header & Footer.', 'מדביקים את השורה בתיבה Header.', 'לוחצים Save Changes למעלה.'] },
+  { key: 'wix', name: 'Wix', steps: ['בדשבורד של האתר נכנסים ל־Settings, ובחלק Development & integrations לוחצים Custom Code (קוד מותאם אישית).', 'לוחצים למעלה על Add Custom Code (הוספת קוד מותאם אישית), ומדביקים את השורה בתיבה.', 'נותנים לה שם, למשל תורן, ותחת Add Code to Pages (הוספת קוד לעמודים) בוחרים All pages, כלומר כל הדפים.', 'תחת Place Code in בוחרים Head (ראש), ולוחצים Apply (אישור).'], note: 'ב־Wix זה עובד רק באתר שפורסם ומחובר לדומיין משלכם.' },
+  { key: 'shopify', name: 'Shopify', steps: ['בניהול של Shopify נכנסים ל־Online Store.', 'ליד התבנית לוחצים על שלוש הנקודות, ואז Edit code.', 'פותחים את הקובץ theme.liquid, בתיקייה Layout.', 'מדביקים את השורה ממש לפני </head>, ולוחצים Save.'] },
+  { key: 'webflow', name: 'Webflow', steps: ['בפרויקט נכנסים ל־Site settings, ללשונית Custom code.', 'מדביקים את השורה בתיבה Head code, ולוחצים Save changes.', 'מפרסמים את האתר שוב (Publish). בלי זה השורה לא מופיעה באתר.'] },
 ];
 const BUILDER_OF: Record<SitePlatform, string> = { shopify: 'shopify', woocommerce: 'wordpress', wordpress: 'wordpress', wix: 'wix', webflow: 'webflow', other: 'html' };
 const PLATFORM_NAME: Partial<Record<SitePlatform, string>> = { shopify: 'Shopify', woocommerce: 'WooCommerce' };
@@ -112,14 +144,18 @@ const copyRow = (id: string, text: string, done: string) => `<div class="row mt8
  *   an address on the site a code to it
  *   anything else          the tag, with steps for each builder, the site's own first and open
  * The others are under "עוד דרכים": the ones left of those, sending the tag to whoever built the site on WhatsApp, and
- * the TXT record when the domain's DNS is the owner's own (hostedDns).
+ * the TXT record when the domain's DNS is the owner's own (hostedDns), as a ready message for whoever manages it.
+ * `looked`: what the last look for the tag or the record found, when it found nothing (lookOf).
  */
-function verifyPage(app: App, r: DashReq, claim: Claim, site: Site) {
+function verifyPage(app: App, r: DashReq, claim: Claim, site: Site, looked: Look | null = null) {
   const n = ofWhatsapp(app.env);
   const writeUs = n ? ` <a href="https://wa.me/${esc(n)}" target="_blank" rel="noopener">כתבו לנו</a> ונעזור.` : ' כתבו לנו ונעזור.';
   const value = `${META}=${claim.token}`;
   const tag = `<meta name="${META}" content="${claim.token}">`;
-  const domain = `<bdi dir="ltr">${esc(claim.domain)}</bdi>`;
+  // A Latin address in a Hebrew line, kept whole: an inline box, so a phone breaks the line before it and never at its
+  // hyphen ("sh***@tavlinim-ba-" / "shuk.example", the audit's P2-7).
+  const ltr = (s: string) => `<bdi class="ltr" dir="ltr">${esc(s)}</bdi>`;
+  const domain = ltr(claim.domain);
   const csrf = csrfField(r.ctx);
   const owner = r.user.role !== 'client_member';
   const keyWay = owner && keyPlatform(site.platform);
@@ -132,20 +168,28 @@ function verifyPage(app: App, r: DashReq, claim: Claim, site: Site) {
   const h = (isMain: boolean, text: string) => (isMain ? `<header><h2>${text}</h2></header>` : `<h3 class="mt24">${text}</h3>`);
   const btn = (isMain: boolean) => (isMain ? 'btn primary' : 'btn sm');
   const check = (isMain: boolean) => `<form method="post" action="/start/verify" class="mt12">${csrf}<button class="${btn(isMain)}" type="submit">${icon('refresh')}לבדוק עכשיו</button></form>`;
+  // What the last look found, beside the button that looks again (not in a banner above a card it has nothing to do
+  // with: after one look it stayed above the email card, the audit's P2-7), and plainly when the site kept us out.
+  const note = !looked || live ? '' : `<p class="small mt12 m0" role="status">${icon('alert')} ${esc(LOOK_HE[looked])}</p>`;
 
   const keyCard = (isMain: boolean) => {
     const p = site.platform as 'shopify' | 'woocommerce';
-    return `${h(isMain, `מחברים את החנות ב-${PLATFORM_NAME[p]}`)}
+    const name = PLATFORM_NAME[p]!;
+    // The same steps for whoever runs the store, as the orders panel sends them (pages/orders.ts): the codes come back
+    // to the owner, who pastes them here.
+    const ask = [`שלום, אפשר עזרה לחבר את החנות ${claim.domain} לתורן? תורן צריך מפתח של ${name} שרק קורא הזמנות:`, ...STEPS[p].map((x, i) => `${i + 1}. ${x.replace(/מעתיקים ומדביקים אותם כאן\.|ומדביקים אותם כאן\./, 'מעתיקים אותם ושולחים לי.')}`), 'תודה'].join('\n');
+    return `${h(isMain, `מחברים את החנות ${prefixed('ב', name)}`)}
   <p class="m0">ככה רואים שהחנות שלכם, ותורן גם יוכל לענות ללקוחות איפה ההזמנה שלהם. צריך מפתח שרק קורא הזמנות.</p>
   <h3 class="small mt16">איך יוצרים את המפתח</h3><ol class="m0">${STEPS[p].map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
   <form method="post" action="/start/verify/key" class="mt8">${csrf}${FIELDS[p]}<button class="${btn(isMain)} mt12" type="submit">${icon('check')}לחבר את החנות</button></form>
-  <p class="small muted mt8 m0">תורן בודק שהמפתח עובד ושהוא של החנות הזאת. אנחנו שומרים אותו מוצפן, ותורן רק קורא איתו.</p>`;
+  <p class="small muted mt8 m0">תורן בודק שהמפתח עובד ושהוא של החנות הזאת. אנחנו שומרים אותו מוצפן, ותורן רק קורא איתו.</p>
+  <details class="mt12"><summary class="small">מישהו אחר מנהל לכם את החנות?</summary><p class="small mt8 m0">שולחים לו את השלבים, והוא מחזיר לכם את הקודים להדביק כאן.</p>${sendTo(ask, `מפתח של ${name} בשביל תורן`, 'לשלוח לו את השלבים', 'btn sm')}</details>`;
   };
 
   const emailCard = (isMain: boolean) => {
     const pick = site.emails.length > 1
-      ? `<p class="m0">באתר מופיעות כמה כתובות מייל. בוחרים אחת, ושולחים אליה קוד של 6 ספרות.</p>${site.emails.map((e, i) => `<label class="row mt8"><input type="radio" name="to" value="${i}"${i === 0 ? ' checked' : ''}> <bdi dir="ltr">${esc(mask(e))}</bdi></label>`).join('')}`
-      : `<p class="m0">באתר מופיעה הכתובת <bdi dir="ltr">${esc(mask(site.emails[0]))}</bdi>. שולחים אליה קוד של 6 ספרות, ומקלידים אותו כאן.</p><input type="hidden" name="to" value="0">`;
+      ? `<p class="m0">באתר מופיעות כמה כתובות מייל. בוחרים אחת, ושולחים אליה קוד של 6 ספרות.</p>${site.emails.map((e, i) => `<label class="row mt8"><input type="radio" name="to" value="${i}"${i === 0 ? ' checked' : ''}> ${ltr(mask(e))}</label>`).join('')}`
+      : `<p class="m0">באתר מופיעה הכתובת ${ltr(mask(site.emails[0]))}. שולחים אליה קוד של 6 ספרות, ומקלידים אותו כאן.</p><input type="hidden" name="to" value="0">`;
     return `${h(isMain, 'שולחים קוד למייל שמופיע באתר')}
   <form method="post" action="/start/verify/email">${csrf}${pick}<button class="${btn(isMain)} mt12" type="submit">${icon('mail')}לשלוח קוד</button></form>`;
   };
@@ -153,31 +197,54 @@ function verifyPage(app: App, r: DashReq, claim: Claim, site: Site) {
   const codeCard = () => {
     const again = site.emails.indexOf(String(claim.code_to || ''));
     return `${h(true, 'מקלידים את הקוד מהמייל')}
-  <p class="m0">שלחנו קוד ל-<bdi dir="ltr">${esc(mask(String(claim.code_to || '')))}</bdi>. הוא בתוקף ${CODE_MINUTES} דקות. לא הגיע? כדאי להציץ גם בספאם.</p>
+  <p class="m0">שלחנו קוד ל־${ltr(mask(String(claim.code_to || '')))}. הוא בתוקף ${CODE_MINUTES} דקות. לא הגיע? כדאי להציץ גם בספאם.</p>
   <form method="post" action="/start/verify/code" class="mt12">${csrf}<label class="f">הקוד<input type="text" name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" dir="ltr" placeholder="123456" autofocus></label><button class="btn primary mt12" type="submit">${icon('check')}לאמת</button></form>
   ${again >= 0 ? `<form method="post" action="/start/verify/email" class="mt8">${csrf}<input type="hidden" name="to" value="${again}"><button class="btn sm ghost" type="submit">לשלוח קוד חדש</button></form>` : ''}`;
   };
 
+  // A link that opens WhatsApp with the message written (faq.whatsapp.com/5913398998672934: wa.me/?text=<urlencoded>).
+  const ask = `היי, אפשר להוסיף לאתר ${claim.domain} את השורה הזאת בתוך ה־head של דף הבית? היא בשביל לחבר את האתר לתורן.\n\n${tag}\n\nתודה`;
+  const askHref = `https://wa.me/?text=${encodeURIComponent(ask)}`;
+  const steps = (list: Builder[], open: string | null) => list.map((b) => `<details class="mt8"${b.key === open ? ' open' : ''}><summary><b>${esc(b.name)}</b></summary><ol class="m0 mt8">${b.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>${b.note ? `<p class="small muted mt8 m0">${esc(b.note)}</p>` : ''}</details>`).join('');
+  // A site whose builder we cannot tell (Cashcow, a builder of its own, plain code): whoever built it adds the line, so
+  // that comes first, with its ready message as the main button, and the steps for each builder fold under "מוסיפים
+  // בעצמכם?", none open, code last. A file named index.html was the first thing such an owner read (the audit's P2-7).
+  const unknown = (BUILDER_OF[site.platform] || 'html') === 'html';
+
   const tagCard = (isMain: boolean) => {
     const first = BUILDER_OF[site.platform] || 'html';
+    if (unknown) {
+      return `${h(isMain, 'מוסיפים שורה קטנה לאתר')}
+  <p class="m0">כדי לאמת שהאתר שלכם, מוסיפים לו שורה קטנה. מי שנכנס לאתר לא רואה אותה.</p>
+  <h3 class="small mt16">מי שבנה לכם את האתר יכול להוסיף אותה</h3>
+  <p class="small m0">שולחים לו בוואטסאפ את השורה עם הסבר קצר. כשהוא מסיים, חוזרים לכאן ולוחצים "לבדוק עכשיו".</p>
+  <div class="row mt8"><a class="${btn(isMain)}" href="${esc(askHref)}" target="_blank" rel="noopener">${icon('chat')}לשלוח בוואטסאפ</a></div>
+  <details class="mt12"><summary class="small">מוסיפים אותה בעצמכם?</summary>
+  <p class="small mt8 m0">מעתיקים את השורה ומדביקים אותה באתר, במקום שמוסיפים בו קוד לכל הדפים. איפה בדיוק, כתוב כאן למטה לפי מה שהאתר בנוי עליו.</p>
+  ${copyRow('verify-tag', tag, 'השורה הועתקה')}
+  ${steps([...BUILDERS.filter((b) => b.key !== 'html'), ...BUILDERS.filter((b) => b.key === 'html')], null)}</details>
+  ${note}${check(false)}`;
+    }
     const list = [...BUILDERS.filter((b) => b.key === first), ...BUILDERS.filter((b) => b.key !== first)];
     return `${h(isMain, 'מוסיפים שורה קטנה לאתר')}
-  <p class="m0">מעתיקים את השורה הזאת ומדביקים אותה בתוך ה-head של דף הבית. מי שנכנס לאתר לא רואה אותה.</p>
+  <p class="m0">מעתיקים את השורה ומדביקים אותה באתר, במקום שמוסיפים בו קוד לכל הדפים. איפה בדיוק, כתוב כאן למטה לפי מה שהאתר בנוי עליו. מי שנכנס לאתר לא רואה אותה.</p>
   ${copyRow('verify-tag', tag, 'השורה הועתקה')}
   <h3 class="small mt16">איפה מדביקים אותה</h3>
-  ${list.map((b) => `<details class="mt8"${b.key === first ? ' open' : ''}><summary><b>${esc(b.name)}</b></summary><ol class="m0 mt8">${b.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>${b.note ? `<p class="small muted mt8 m0">${esc(b.note)}</p>` : ''}</details>`).join('')}
-  ${check(isMain)}`;
+  ${steps(list, first)}
+  ${note}${check(isMain)}`;
   };
 
-  // A link that opens WhatsApp with the message written (faq.whatsapp.com/5913398998672934: wa.me/?text=<urlencoded>).
-  const ask = `היי, אפשר להוסיף לאתר ${claim.domain} את השורה הזאת בתוך ה-head של דף הבית? היא בשביל לחבר את האתר לתורן.\n\n${tag}\n\nתודה`;
   const builderCard = () => `${h(false, 'מי שבנה לכם את האתר יכול להוסיף אותה')}
   <p class="small m0">שולחים לו בוואטסאפ את השורה עם הסבר קצר. כשהוא מסיים, חוזרים לכאן ולוחצים "לבדוק עכשיו".</p>
-  <div class="row mt8"><a class="btn sm" href="https://wa.me/?text=${encodeURIComponent(ask)}" target="_blank" rel="noopener">${icon('chat')}לשלוח בוואטסאפ</a></div>`;
+  <div class="row mt8"><a class="btn sm" href="${esc(askHref)}" target="_blank" rel="noopener">${icon('chat')}לשלוח בוואטסאפ</a></div>`;
 
-  const txtCard = () => `${h(false, 'רשומת TXT בדומיין')}
-  <p class="small m0">מי שמנהל את הדומיין מוסיף בהגדרות ה-DNS רשומת TXT עם הערך הזה, על ${domain} או על <bdi dir="ltr">${esc(`${TXT_HOST}.${claim.domain}`)}</bdi>. רשומה חדשה לפעמים מופיעה רק אחרי כמה דקות.</p>
-  ${copyRow('verify-txt', value, 'הערך הועתק')}
+  // The TXT record, for whoever manages the domain: its host and value are in the ready message only, and the page says
+  // what to do with it ("רשומת TXT" and "הגדרות ה-DNS" are no words for a store owner, the audit's P1-14). The value
+  // stands on a line of its own, so it reads and copies whole in a right-to-left chat.
+  const dnsAsk = [`היי, אפשר להוסיף רשומת TXT לדומיין ${claim.domain}? היא בשביל לחבר את האתר לתורן.`, '', `אפשר לשים אותה על ${claim.domain} עצמו, או על ${TXT_HOST}.${claim.domain}. הערך שלה:`, value, '', 'תודה'].join('\n');
+  const txtCard = () => `${h(false, 'מי שמנהל לכם את הדומיין יכול לאשר מהצד שלו')}
+  <p class="small m0">שולחים הודעה מוכנה למי שמנהל לכם את הדומיין, וכשזה מוכן לוחצים "לבדוק עכשיו". לפעמים זה לוקח כמה דקות.</p>
+  ${sendTo(dnsAsk, `אימות הדומיין ${claim.domain} בשביל תורן`, 'לשלוח למי שמנהל לכם את הדומיין', 'btn sm')}
   ${check(false)}`;
 
   const top = main === 'code' ? codeCard() : main === 'key' ? keyCard(true) : main === 'email' ? emailCard(true) : tagCard(true);
@@ -185,12 +252,11 @@ function verifyPage(app: App, r: DashReq, claim: Claim, site: Site) {
     keyWay && main !== 'key' ? keyCard(false) : '',
     emailWay && main !== 'email' && main !== 'code' ? emailCard(false) : '',
     main !== 'tag' ? tagCard(false) : '',
-    builderCard(),
+    // The tag card of a site of an unknown builder already leads with it.
+    unknown ? '' : builderCard(),
     hostedDns(claim) ? '' : txtCard(),
   ].filter(Boolean);
-  const lookedFor = claim.checked_at && !live ? `<div class="banner warn">${icon('alert')}<div><b>עוד לא מצאנו את השורה</b><p>אם הוספתם אותה עכשיו, כדאי לחכות כמה דקות ולבדוק שוב. רשומת DNS חדשה לפעמים מופיעה רק אחרי זמן מה.</p></div></div>` : '';
   const body = `<div class="head"><h1>מאמתים שהאתר שלכם</h1><p class="sub">לפני שתורן קורא את ${domain} ועונה בשמו, צריך לוודא שהאתר באמת שלכם. דרך אחת מספיקה.</p></div>
-${lookedFor}
 <section class="panel verify-main">${top}</section>
 <details class="panel mt16 verify-more"><summary><h2>עוד דרכים</h2></summary>${more.join('\n')}</details>
 <p class="small muted mt16">אחרי שהאתר מאומת, תורן קורא ממנו את המוצרים ואת דפי המדיניות. משהו לא מסתדר?${writeUs}</p>
@@ -246,9 +312,13 @@ export function startRoutes(app: App): Route<DashReq>[] {
           app.log(`[proof] ${found.claim!.domain}: the site was not read: ${e?.message || e}`);
           return { platform: 'other', emails: [], hosted: hostedDns(found.claim!) };
         });
-        return { html: verifyPage(app, r, found.claim, site) };
+        // The last look for the tag or the record (a store key's try is no look at the site), and why it found nothing.
+        const last = found.claim.checked_at ? await app.db.one<{ detail: any }>("SELECT detail FROM audit WHERE action = 'verify_domain' AND detail->>'workspace' = $1 AND detail->>'domain' = $2 AND COALESCE(detail->>'how', '') <> 'key' ORDER BY id DESC LIMIT 1", [String(r.scope.workspaceId), found.claim.domain]) : null;
+        const looked = found.claim.checked_at ? lookOf(last?.detail?.ok === false ? last.detail.why : null) : null;
+        return { html: verifyPage(app, r, found.claim, site, looked) };
       }
-      return { html: await page(app, r, st.status === 'attention') };
+      // No store here (it would have gone to Today): a try that failed is the add's own, and its reason is the job's.
+      return { html: await page(app, r, st.status === 'attention' ? String(found.add?.status === 'failed' ? found.add.last_error || '' : '') : null) };
     }],
     ['POST', /^\/start$/, async (r) => {
       if (r.scope.operator) throw new ActionError('לא נמצא', 404);
@@ -277,7 +347,7 @@ export function startRoutes(app: App): Route<DashReq>[] {
       await oneLook(ws);
       const res = await checkClaim(app, claim);
       await audit(app.db, { actor: r.user.name, action: 'verify_domain', detail: { workspace: ws, domain: claim.domain, ok: res.ok, how: res.how, why: res.why } });
-      if (!res.ok) throw new ActionError('עוד לא מצאנו את השורה באתר או את הרשומה ב-DNS. אם הוספתם אותה עכשיו, כדאי לחכות כמה דקות ולבדוק שוב.', 422);
+      if (!res.ok) throw new ActionError(LOOK_HE[lookOf(res.why)], 422);
       return addStore(app, r, ws, { url: claim.url, domain: claim.domain });
     }],
     // The store's own key: only the account's owner holds the store's keys (as on the orders panel, pages/orders.ts).
@@ -309,7 +379,7 @@ export function startRoutes(app: App): Route<DashReq>[] {
         if (e instanceof ProofError) throw new ActionError(e.he, e.status);
         throw e;
       }
-      return { redirect: '/start', message: `שלחנו קוד ל-${mask(to)}.` };
+      return { redirect: '/start', message: `שלחנו קוד ל־${mask(to)}.` };
     }],
     ['POST', /^\/start\/verify\/code$/, async (r) => {
       const { ws, claim } = await verifying(r);
