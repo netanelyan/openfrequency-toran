@@ -395,7 +395,7 @@ const markError = (db: Db, storeId: number, why: string) => db.query("UPDATE ord
 // ---- Connecting
 
 const HE = {
-  closed: 'החיבור להזמנות עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.',
+  closed: 'החיבור להזמנות עוד לא פתוח אצלנו. כתבו לנו ונחבר יחד.',
   platform: 'אפשר לחבר הזמנות רק בחנות של Shopify, WooCommerce או Wix.',
   refused: 'החנות לא קיבלה את המפתח. כדאי לבדוק שהעתקתם אותו עד הסוף ושיש לו הרשאה לקרוא הזמנות.',
   // Shopify's shop_not_permitted: the client credentials grant works only for a store in the app's own organization.

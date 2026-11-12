@@ -70,7 +70,7 @@ export function clearNonce(env: Record<string, string | undefined>, secure: bool
 
 /** The button: Meta's login address for this store, and the cookie this browser keeps until Meta sends it back. */
 export async function beginConnect(app: App, storeId: number, channel: Social, user: { id: number; name: string }, { secure, domain = null }: { secure: boolean; domain?: string | null }) {
-  if (!socialReady(app.env, channel)) throw new ConnectError(`${channel} is not ready (TORAN_CHANNELS, the Meta settings, PUBLIC_BASE_URL or TORAN_SECRETS_KEY)`, `החיבור ל${CHANNEL_NAME[channel]} עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.`);
+  if (!socialReady(app.env, channel)) throw new ConnectError(`${channel} is not ready (TORAN_CHANNELS, the Meta settings, PUBLIC_BASE_URL or TORAN_SECRETS_KEY)`, `החיבור ל${CHANNEL_NAME[channel]} עוד לא פתוח אצלנו. כתבו לנו ונחבר יחד.`);
   const state = randomBytes(24).toString('base64url');
   const nonce = randomBytes(24).toString('base64url');
   await app.db.query("DELETE FROM channel_connects WHERE created_at < now() - interval '1 day'");

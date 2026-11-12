@@ -79,7 +79,10 @@ test("the month's results: once a store a month, from the 1st at 09:00, through 
     assert.deepEqual({ ...rep, cart: null }, { month: last, conversations: 1, alone: 0, fixed: 0, waiting: 1, cart: null, cap: 300 });
     const mail = reportMail('כלי חרס', rep, 'https://toran.openfrequency.co.il');
     assert.match(mail.text, /שיחה אחת עם לקוחות של כלי חרס ב/);
-    assert.match(mail.text, /ו-1 עוד מחכות לכם/);
+    assert.match(mail.text, /ו־1 עוד מחכות לכם/);
+    assert.match(mail.subject, /^שיחה אחת עם לקוחות של כלי חרס ב\S+$/, 'no colon heading, conversations as the body counts them');
+    const busy = reportMail('My Store 10', { ...rep, conversations: 12, alone: 9, fixed: 2, waiting: 1 }, 'https://toran.openfrequency.co.il');
+    assert.match(busy.subject, /^תורן ענה לבד ב־9 שיחות של My Store 10 ב/);
 
     assert.deepEqual(await monthlyReports(a, { t: Date.parse('2026-11-01T05:00:00Z') }), { sent: [], skipped: [] }, '07:00 on the 1st: not yet');
     const r = await monthlyReports(a, { force: true });

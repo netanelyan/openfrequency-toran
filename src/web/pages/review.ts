@@ -224,9 +224,11 @@ export function reviewRoutes(app: App): Route<DashReq>[] {
     }],
     ['POST', /^\/lead\/(\d+)\/faq\/(\d+)$/, async (r, m) => {
       const id = Number(m[1]);
-      await app.db.query('UPDATE faqs SET answer = $3 WHERE id = $1 AND store_id = $2', [Number(m[2]), id, String(r.form.answer || '').trim() || null]);
+      const answer = String(r.form.answer || '').trim() || null;
+      await app.db.query('UPDATE faqs SET answer = $3 WHERE id = $1 AND store_id = $2', [Number(m[2]), id, answer]);
       await touch(id);
-      return { message: 'התשובה נשמרה' };
+      // Saved empty, the answer is gone (the audit of 2026-11-12, P2-12: it said "התשובה נשמרה" then too).
+      return { message: answer ? 'התשובה נשמרה' : 'התשובה נמחקה. מעכשיו תורן עונה על זה לפי האתר.' };
     }],
     ['POST', /^\/lead\/(\d+)\/faq$/, async (r, m) => {
       const id = Number(m[1]);

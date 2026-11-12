@@ -34,7 +34,7 @@ export async function headerCounts(app: App, sc: Scope, { look = false }: { look
     `SELECT
        (SELECT COUNT(*)::int FROM stores WHERE status = 'page_ready' AND approved_at IS NULL AND ${storesOf(sc)} AND ${selling()}) AS review,
        (SELECT COUNT(*)::int FROM stores WHERE followup_due_at <= now() AND followup_sent_at IS NULL AND status IN ('sent','opened') AND ${storesOf(sc)} AND ${selling()}) AS followups,
-       (SELECT COUNT(*)::int FROM conversations c WHERE ${messagingSql('c.channel')} AND c.handoffs > 0 AND c.last_at > now() - interval '3 days' AND ${storeIdIn(sc, 'c.store_id')}) AS chats,
+       (SELECT COUNT(*)::int FROM conversations c WHERE ${messagingSql('c.channel')} AND ${WAITING_SQL} AND ${storeIdIn(sc, 'c.store_id')}) AS chats,
        (SELECT COALESCE(SUM(CASE WHEN backend = 'claude-cli' THEN api_usd ELSE usd END), 0)::float FROM usage WHERE at >= date_trunc('month', now()) AND ${storeIdIn(sc, 'store_id')}) AS usd`,
   );
   // The monthly cap is the whole server's: only the operator sees the ring measured against it.

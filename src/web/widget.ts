@@ -121,8 +121,13 @@ const initialOf = (name: string) => (name.trim().match(/[\p{L}\p{N}]/u)?.[0] || 
 // The static files' version: a new deploy's chat.css and chat.js are fetched at once, not after the hour they are kept.
 const CV = Date.now().toString(36);
 
-/** What the chat shows inside its header and around the conversation; the frame and the Settings preview share it. */
-type Face = { name: string; logo: string | null; whatsapp: string | null; bot: string | null };
+/**
+ * What the chat shows inside its header and around the conversation; the frame and the Settings preview share it.
+ * `can`: what the store can be answered on (channels/web.ts siteOf): a starter or a word of the greeting only for that
+ * (the audit of 2026-11-12, P2-8: "איפה ההזמנה שלי?" with no orders connected); `answers` false while Toran does not
+ * answer on the chat, so it says the store will.
+ */
+type Face = { name: string; logo: string | null; whatsapp: string | null; bot: string | null; can?: { shipping: boolean; returns: boolean; orders: boolean }; answers?: boolean };
 
 const ICON_CHAT = '<svg class="c-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4c4.7 0 8.5 3.1 8.5 7s-3.8 7-8.5 7c-.9 0-1.8-.1-2.6-.3L5 19.5l1.1-3.4C4.5 14.8 3.5 13 3.5 11c0-3.9 3.8-7 8.5-7z"/><circle class="c-dot" cx="8.6" cy="11" r="1.15"/><circle class="c-dot" cx="12" cy="11" r="1.15"/><circle class="c-dot" cx="15.4" cy="11" r="1.15"/></svg>';
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>';
@@ -130,11 +135,20 @@ const ICON_SEND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5
 const ICON_WA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19l1-3.3A7.5 7.5 0 1 1 8.6 18z"/></svg>';
 
 // The questions a visitor can tap before writing anything: what most people ask a shop first. Each one is sent as the
-// visitor's own message, answered like any other; they go once the visitor has said something.
-const STARTERS = ['כמה זמן לוקח משלוח?', 'איך מחזירים מוצר?', 'איפה ההזמנה שלי?'];
+// visitor's own message, answered like any other; they go once the visitor has said something. Only the ones the
+// store can be answered on (Face.can); none while Toran does not answer there.
+const STARTERS: [keyof NonNullable<Face['can']>, string][] = [['shipping', 'כמה זמן לוקח משלוח?'], ['returns', 'איך מחזירים מוצר?'], ['orders', 'איפה ההזמנה שלי?']];
+const startersOf = (f: Face) => (f.answers === false ? [] : STARTERS.filter(([k]) => !f.can || f.can[k]).map(([, q]) => q));
+
+/** "מוצרים, מלאי, משלוחים והזמנות": what the greeting offers, from what the store can be answered on. */
+function helloOf(f: Face): string {
+  if (f.answers === false) return 'היי, אפשר לכתוב כאן, ומישהו מהחנות יענה.';
+  const what = ['מוצרים', 'מלאי', ...(!f.can || f.can.shipping ? ['משלוחים'] : []), ...(!f.can || f.can.orders ? ['הזמנות'] : [])];
+  return `היי, אפשר לשאול אותי על ${what.slice(0, -1).join(', ')} ו${what[what.length - 1]}.`;
+}
 
 /** The header's second line: who answers. True only: the bot, by the name the owner gave it, never how fast. */
-const whoAnswers = (bot: string | null) => (bot ? `${bot}, הבוט של החנות` : 'הבוט של החנות');
+const whoAnswers = (f: Face) => (f.answers === false ? 'צ׳אט עם החנות' : f.bot ? `${f.bot}, הבוט של החנות` : 'הבוט של החנות');
 
 function panel(face: Face, { preview = false }: { preview?: boolean } = {}): string {
   const mark = face.logo ? `<img class="c-logo" src="${esc(face.logo)}" alt="" referrerpolicy="no-referrer">` : `<span class="c-initial" aria-hidden="true">${esc(initialOf(face.name))}</span>`;
@@ -143,12 +157,12 @@ function panel(face: Face, { preview = false }: { preview?: boolean } = {}): str
     ? `<p class="c-line c-me">היי, יש לכם את זה במידה M?</p><p class="c-line c-store">כן, יש במידה M בשני צבעים. לשלוח לכם קישור?</p><p class="c-line c-me">כן, תודה</p>`
     : '';
   return `<section class="c-panel" id="c-panel" role="dialog" aria-modal="true" aria-labelledby="c-name" aria-describedby="c-sub"${preview ? '' : ' hidden'}>
-  <header class="c-head"><span class="c-avatar">${mark}</span><div class="c-who"><h2 id="c-name"><bdi>${esc(face.name)}</bdi></h2><p id="c-sub">${esc(whoAnswers(face.bot))}</p></div>
+  <header class="c-head"><span class="c-avatar">${mark}</span><div class="c-who"><h2 id="c-name"><bdi>${esc(face.name)}</bdi></h2><p id="c-sub">${esc(whoAnswers(face))}</p></div>
     <button class="c-close" type="button" aria-label="לסגור את הצ׳אט">${ICON_CLOSE}</button></header>
   <div class="c-lines" role="log" aria-live="polite" aria-relevant="additions" aria-label="השיחה" tabindex="-1">
-    <p class="c-line c-store c-hello">היי, אפשר לשאול אותי על מוצרים, מלאי, משלוחים והזמנות.</p>${sample}
+    <p class="c-line c-store c-hello">${esc(helloOf(face))}</p>${sample}
   </div>
-  ${preview ? '' : `<div class="c-chips" role="group" aria-label="שאלות שאפשר לשאול">${STARTERS.map((q) => `<button class="c-chip" type="button">${esc(q)}</button>`).join('')}</div>`}
+  ${preview || !startersOf(face).length ? '' : `<div class="c-chips" role="group" aria-label="שאלות שאפשר לשאול">${startersOf(face).map((q) => `<button class="c-chip" type="button">${esc(q)}</button>`).join('')}</div>`}
   <div class="c-typing" hidden><span class="c-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="c-sr">כותבים תשובה</span></div>
   <p class="c-error" role="alert" hidden></p>
   <form class="c-box">

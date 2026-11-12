@@ -46,14 +46,14 @@ async function results(app: App, r: DashReq) {
   <a class="kpi lead" href="/chats?state=alone"><span class="l">תורן ענה לבד</span><span class="v ok">${num(cur.alone)}</span><span class="s">${total ? `מתוך ${num(total)} שיחות החודש` : 'שיחה נספרת כאן מהרגע שלקוח כותב לחנות'}</span></a>
   <div class="kpi side">
     <a href="/chats?state=waiting"><span class="l">מחכות לכם</span><span class="cnt ${cur.waiting ? 'sig' : 'zero'}">${num(cur.waiting)}</span></a>
-    <a href="/chats?state=fixed"><span class="l">עניתם בעצמכם</span><span class="cnt ${cur.fixed ? 'sig' : 'zero'}">${num(cur.fixed)}</span></a>
+    <a href="/chats?state=fixed"><span class="l">תיקנתם</span><span class="cnt ${cur.fixed ? 'sig' : 'zero'}">${num(cur.fixed)}</span></a>
     ${cartsNow ? `<a href="/settings#carts" title="${esc(cartLine(cartsNow))}"><span class="l">עגלות שחזרו</span><span class="cnt ${cartsNow.recovered ? 'ok' : 'zero'}">${cartsNow.recovered}${moneyHe(cartsNow.money) ? ` · ${esc(moneyHe(cartsNow.money))}` : ''}</span></a>` : ''}
   </div>
 </div>
 <section class="group mt24"><header><h2>שלושה חודשים</h2></header>
-  <div class="panel"><div class="scrollx"><table class="table stack"><thead><tr><th>חודש</th><th>ענה לבד</th><th>מחכות לכם</th><th>עניתם</th><th>עגלות שחזרו</th></tr></thead><tbody>${months.map((m) => {
+  <div class="panel"><div class="scrollx"><table class="table stack"><thead><tr><th>חודש</th><th>ענה לבד</th><th>מחכות לכם</th><th>תיקנתם</th><th>עגלות שחזרו</th></tr></thead><tbody>${months.map((m) => {
     const c = carts.find((x) => x.month === m.month);
-    return `<tr><td data-k="חודש">${esc(monthHe(m.month))}</td><td class="n" data-k="ענה לבד">${num(m.alone)}</td><td class="n" data-k="מחכות לכם">${num(m.waiting)}</td><td class="n" data-k="עניתם">${num(m.fixed)}</td><td class="n" data-k="עגלות שחזרו">${c ? `${c.recovered}${moneyHe(c.money) ? ` · ${esc(moneyHe(c.money))}` : ''}` : '-'}</td></tr>`;
+    return `<tr><td data-k="חודש">${esc(monthHe(m.month))}</td><td class="n" data-k="ענה לבד">${num(m.alone)}</td><td class="n" data-k="מחכות לכם">${num(m.waiting)}</td><td class="n" data-k="תיקנתם">${num(m.fixed)}</td><td class="n" data-k="עגלות שחזרו">${c ? `${c.recovered}${moneyHe(c.money) ? ` · ${esc(moneyHe(c.money))}` : ''}` : '-'}</td></tr>`;
   }).join('')}</tbody></table></div>
   <p class="small muted mt12 m0">שיחה נספרת בחודש של ההודעה האחרונה בה. שיחות בדמו לא נספרות.</p></div>
 </section>

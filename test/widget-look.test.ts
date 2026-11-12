@@ -151,10 +151,12 @@ test('the owner picks another colour and dark: saved on the chat, the frame and 
     const key = (await s.app.db.one<{ external_id: string }>("SELECT external_id FROM channel_accounts WHERE store_id = $1 AND channel = 'web'", [id]))!.external_id;
 
     const settings = await (await s.get('/settings')).text();
-    assert.match(settings, /איך הצ׳אט נראה[^]*כמו באתר שלכם[^]*הצבעים שמצאתי באתר[^]*fill="#b4532a"[^]*צבע אחר[^]*type="color"[^]*עוד אפשרויות[^]*כהה/);
+    assert.match(settings, /איך הצ׳אט נראה[^]*כמו באתר שלכם[^]*הצבעים שמצאנו באתר[^]*fill="#b4532a"[^]*צבע אחר[^]*type="color"[^]*עוד אפשרויות[^]*כהה/);
     assert.match(settings, /name="use" value="site" checked/, 'as on the site, by default');
     assert.match(settings, new RegExp(`<iframe id="look-${id}" src="/lead/${id}/web/preview\\?use=site`));
-    assert.equal((settings.match(/class="btn primary sm" type="submit">לשמור</g) || []).length, 1, 'one main button for the look');
+    // Saving the look is a plain button: Settings has one main button, a card's next step (the audit of 2026-11-12, P1-11).
+    assert.doesNotMatch(settings, /class="btn primary sm" type="submit">לשמור</);
+    assert.match(settings, /data-look="#look-\d+">[^]*class="btn sm" type="submit">לשמור</);
 
     // The frame as it was, in the site's colour: the header says who answers, never how fast.
     let theme = await (await s.get(`/w/${key}/theme.css`)).text();

@@ -83,7 +83,7 @@ async function recordToken(app: App, accountId: number, t: TokenInfo) {
 }
 
 export async function connectWhatsapp(app: App, storeId: number, input: ConnectInput) {
-  if (!waConnectReady(app.env)) throw new ConnectError('the Meta settings or TORAN_SECRETS_KEY are missing', 'החיבור לוואטסאפ עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.');
+  if (!waConnectReady(app.env)) throw new ConnectError('the Meta settings or TORAN_SECRETS_KEY are missing', 'החיבור לוואטסאפ עוד לא פתוח אצלנו. כתבו לנו ונחבר יחד.');
   const phoneId = digits(input.phoneId);
   const wabaId = digits(input.wabaId);
   const code = String(input.code || '').trim();
@@ -338,7 +338,7 @@ const NOTICE = {
   }),
   ended: (store: string, _ends: string, url: string) => ({
     subject: `תורן הפסיק לענות בוואטסאפ של ${store}`,
-    text: `שלום,\n\nהחיבור של הוואטסאפ של ${store} לתורן הסתיים, ותורן לא עונה בו עכשיו. ההודעות של הלקוחות מחכות לכם בשיחות בדשבורד, ואפשר לענות להן מהטלפון כרגיל.\n\nכדי שתורן יחזור לענות, צריך לחבר מחדש. זה לוקח דקה:\n\n${url}\n\nתורן, OpenFrequency`,
+    text: `שלום,\n\nהחיבור של הוואטסאפ של ${store} לתורן הסתיים, ותורן לא עונה בו עכשיו. ההודעות של הלקוחות מחכות לכם בשיחות בתורן, ואפשר לענות להן מהטלפון כרגיל.\n\nכדי שתורן יחזור לענות, צריך לחבר מחדש. זה לוקח דקה:\n\n${url}\n\nתורן, OpenFrequency`,
   }),
 };
 

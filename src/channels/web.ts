@@ -6,6 +6,7 @@ import { botName } from '../agent/intro.ts';
 import { displayName } from '../ingest/brand.ts';
 import { lookOf, type Look, type LookChoice } from '../ingest/palette.ts';
 import { LIMITS } from './policy.ts';
+import { isLive } from '../golive.ts';
 import type { ChannelAdapter } from './types.ts';
 
 // Toran in a chat on the store's own website (the owner, 2026-11-06, docs/todo.md: "Toran answering inside the store's
@@ -85,7 +86,9 @@ export async function turnOff(app: App, storeId: number, by: string) {
 // the text on it, as the reviews block and older pages name them. `icon` is the square mark the chat's header shows:
 // the site's apple-touch-icon or favicon, else its logo when that is its mark, else the store's initial. `bot` is the
 // name the owner gave the bot, or null (agent/intro.ts): the header says who answers, never a promise of how fast.
-export type Site = { account: WebAccount; name: string; color: string; ink: string; logo: string | null; domains: string[]; whatsapp: string | null; look: Look; bot: string | null };
+// `can`: what the store can be answered on (its shipping and returns pages, its orders connected), for the chat's
+// greeting and starters; `answers`: whether Toran answers on the chat now (the store live, the chat not switched off).
+export type Site = { account: WebAccount; name: string; color: string; ink: string; logo: string | null; domains: string[]; whatsapp: string | null; look: Look; bot: string | null; can: { shipping: boolean; returns: boolean; orders: boolean }; answers: boolean };
 
 /**
  * A store's chat look: the owner's choice for the chat over the site's own look, over the brand's colour (the
@@ -102,7 +105,9 @@ export async function siteOf(app: App, key: string): Promise<Site | null> {
   if (!isKey(key)) return null;
   const account = await app.db.one<WebAccount>("SELECT id, store_id, external_id, status, meta FROM channel_accounts WHERE channel = 'web' AND external_id = $1 AND status = 'active'", [key]);
   if (!account) return null;
-  const s = await app.db.one<any>('SELECT name, domain, brand, brand_override, platform, agent_name FROM stores WHERE id = $1', [account.store_id]);
+  const s = await app.db.one<any>('SELECT name, domain, brand, brand_override, platform, agent_name, agent_live_at, agent_paused_at, agent_off FROM stores WHERE id = $1', [account.store_id]);
+  const kinds = new Set((await app.db.query<{ kind: string }>('SELECT DISTINCT kind FROM policies WHERE store_id = $1', [account.store_id])).map((r) => r.kind));
+  const orders = Boolean(await app.db.one("SELECT 1 FROM order_access WHERE store_id = $1 AND status = 'active'", [account.store_id]));
   const brand = { ...(s?.brand || {}), ...(s?.brand_override || {}) };
   const look = storeLook(s, account.meta?.look);
   // "Continue on WhatsApp": the store's own number, once it answers there, however it is connected (Meta, Kapso, Zernio).
@@ -119,6 +124,8 @@ export async function siteOf(app: App, key: string): Promise<Site | null> {
     whatsapp: number.length >= 8 ? number : null,
     look,
     bot: botName(s || {}),
+    can: { shipping: kinds.has('shipping'), returns: kinds.has('returns'), orders },
+    answers: isLive(s) && !(s?.agent_off || []).includes('web'),
   };
 }
 

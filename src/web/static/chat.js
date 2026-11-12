@@ -127,6 +127,7 @@
     lines.appendChild(p);
     lines.scrollTop = lines.scrollHeight;
     if (who === 'me' && chips) chips.hidden = true;
+    return p;
   }
 
   function markSeen() {
@@ -229,7 +230,7 @@
     e.preventDefault();
     var text = box.value.trim();
     if (!text) return;
-    add('me', text);
+    var line = add('me', text);
     mine[text] = (mine[text] || 0) + 1;
     put('local', 'talked', '1');
     box.value = '';
@@ -237,16 +238,24 @@
     error.hidden = true;
     waitingSince = Date.now();
     typing.hidden = false;
+    // A message the server did not take (twelve a minute, no connection) is not left in the chat as if it went: it goes
+    // back into the box, to send again (the audit of 2026-11-12, P2-8).
+    function unsent(message) {
+      if (line.parentNode) line.parentNode.removeChild(line);
+      mine[text] = Math.max(0, (mine[text] || 1) - 1);
+      if (!box.value) { box.value = text; grow(); }
+      error.textContent = message;
+      error.hidden = false;
+      typing.hidden = true;
+      waitingSince = 0;
+    }
     fetch(base + '/say', { method: 'POST', credentials: 'omit', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ v: visitor, text: text }) })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (d) {
         if (d && d.ok) return;
-        error.textContent = (d && d.message) || 'ההודעה לא נשלחה. אפשר לנסות שוב.';
-        error.hidden = false;
-        typing.hidden = true;
-        waitingSince = 0;
+        unsent((d && d.message) || 'ההודעה לא נשלחה. אפשר לנסות שוב.');
       })
-      .catch(function () { error.textContent = 'אין חיבור כרגע. אפשר לנסות שוב בעוד רגע.'; error.hidden = false; typing.hidden = true; waitingSince = 0; })
+      .catch(function () { unsent('אין חיבור כרגע. אפשר לנסות שוב בעוד רגע.'); })
       .then(poll);
   });
 

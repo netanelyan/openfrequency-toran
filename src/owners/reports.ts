@@ -32,15 +32,20 @@ export async function monthReport(app: App, storeId: number, config: any, month:
 /** The email's words. */
 export function reportMail(storeName: string, r: MonthReport, base: string): { subject: string; text: string; link: string } {
   const m = monthHe(r.month);
+  const n = (x: number) => x.toLocaleString('he-IL');
+  const talks = r.conversations === 1 ? 'שיחה אחת' : `${n(r.conversations)} שיחות`;
   const lines = [
-    `${r.conversations === 1 ? 'שיחה אחת' : `${r.conversations.toLocaleString('he-IL')} שיחות`} עם לקוחות של ${storeName} ב${m}.`,
-    `תורן ענה לבד ב-${r.alone.toLocaleString('he-IL')}, עניתם בעצמכם ב-${r.fixed.toLocaleString('he-IL')}${r.waiting ? `, ו-${r.waiting.toLocaleString('he-IL')} עוד מחכות לכם` : ''}.`,
+    `${talks} עם לקוחות של ${storeName} ב${m}.`,
+    // "טיפלתי בזה" is the owner's too (web/inbox.ts STATE_SQL; the audit of 2026-11-12, P1-4).
+    `תורן ענה לבד ב־${n(r.alone)}, ב־${n(r.fixed)} עניתם או טיפלתם בעצמכם${r.waiting ? `, ו־${n(r.waiting)} עוד מחכות לכם` : ''}.`,
     ...(r.cart ? [`עגלות נטושות: ${r.cart}.`] : []),
-    `בחבילה ${r.cap.toLocaleString('he-IL')} שיחות בחודש${r.conversations > r.cap ? `, וב${m} עברתם אותן. חודש עמוס אחד לא עולה יותר` : ''}.`,
+    `בחבילה ${n(r.cap)} שיחות בחודש${r.conversations > r.cap ? `, וב${m} עברתם אותן. חודש עמוס אחד לא עולה יותר` : ''}.`,
     '',
-    'כל השיחות והמספרים בלוח הבקרה.',
+    'כל השיחות והמספרים בתורן.',
   ];
-  return { subject: `החודש של תורן ב${storeName}: ${r.alone.toLocaleString('he-IL')} תשובות לבד ב${m}`, text: lines.join('\n'), link: `${base}/` };
+  // A sentence, no colon heading and no prefix glued to a Latin name; conversations, as the body counts them (P1-7).
+  const subject = r.alone === 1 ? `תורן ענה לבד בשיחה אחת של ${storeName} ב${m}` : r.alone > 1 ? `תורן ענה לבד ב־${n(r.alone)} שיחות של ${storeName} ב${m}` : `${talks} עם לקוחות של ${storeName} ב${m}`;
+  return { subject, text: lines.join('\n'), link: `${base}/` };
 }
 
 /** On the 1st from 09:00: last month's report to each customer store's owners, once a store. */

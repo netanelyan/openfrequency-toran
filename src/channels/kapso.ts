@@ -127,7 +127,7 @@ const LINK = /^https:\/\/app\.kapso\.ai\//;
  * ?kapso=failed when it was not.
  */
 export async function startKapsoConnect(app: App, storeId: number, by: string): Promise<string> {
-  if (!kapsoReady(app.env)) throw new KapsoError('KAPSO_API_KEY, KAPSO_WEBHOOK_SECRET or an https PUBLIC_BASE_URL is missing', 'החיבור לוואטסאפ עוד לא פתוח בשרת. כתבו לנו ונחבר יחד.');
+  if (!kapsoReady(app.env)) throw new KapsoError('KAPSO_API_KEY, KAPSO_WEBHOOK_SECRET or an https PUBLIC_BASE_URL is missing', 'החיבור לוואטסאפ עוד לא פתוח אצלנו. כתבו לנו ונחבר יחד.');
   const s = await app.db.one<{ name: string | null; domain: string; platform: string | null }>('SELECT name, domain, platform FROM stores WHERE id = $1', [storeId]);
   if (!s) throw new KapsoError(`no store ${storeId}`, 'אין חנות כזו.');
   // Our own number is on Meta directly, never through Kapso (lines.ts).
