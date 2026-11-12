@@ -126,6 +126,34 @@ test('shipping areas: a place the policy names, with the same polarity; "all of 
   passes('החנות נמצאת בירושלים.');
 });
 
+test('a place inside Israel is backed by "all of Israel" or by its region, unless the store excepts it (docs/models.md, q5)', () => {
+  // The model's right answers to "כמה עולה משלוח לחיפה?", which the page answers with "בכל הארץ".
+  passes('משלוח עד הבית בכל הארץ, כולל חיפה, עולה 35 ₪, ובהזמנה מעל 300 ₪ הוא חינם.');
+  passes('משלוח עד הבית לחיפה עולה 35 ₪, וההזמנה מגיעה תוך 3 עד 5 ימי עסקים.');
+  passes('משלוח עד הבית לחיפה, כמו לכל הארץ, עולה 35 ₪.');
+  passes('משלוח עד הבית בכל הארץ עולה 35 ₪, אז גם לחיפה.');
+  passes("Yes, we ship to Haifa, it's 35 ₪.");
+  passes('שולחים גם לירושלים, לתל אביב ולבאר שבע.');
+  passes('שולחים גם לצפון.');
+  passes('כן, שולחים.', allow(['שולחים לחיפה?']));
+  // A place the store names as an exception, or its region, is still cut; so is a wider place the store does not ship to.
+  const page = (text: string) => buildAllow({ toolTexts: [`From the store's shipping page (משלוחים, https://x.example/s):\n${text}`], customerTexts: [] });
+  cuts('שולחים גם לחיפה.', 'area', page('משלוחים לכל הארץ, למעט חיפה והקריות.'));
+  cuts('שולחים גם לחיפה.', 'area', page('משלוחים לכל הארץ חוץ מהצפון.'));
+  passes('שולחים גם לירושלים.', page('משלוחים לכל הארץ חוץ מהצפון.'));
+  passes('שולחים לתל אביב.', page('משלוחים לאזור המרכז בלבד.'));
+  cuts('שולחים לחיפה.', 'area', page('משלוחים לאזור המרכז בלבד.'));
+  cuts('שולחים לחיפה.', 'area', page('אין משלוחים לכל הארץ, רק לאזור המרכז.'));
+  cuts('שולחים לחיפה.', 'area', page('משלוח עד הבית עולה 35 ₪.'));
+  // Eilat and the areas couriers often leave out of "all of Israel" must be named; a pickup point is no shipping area;
+  // "not to Haifa" says the opposite of the page.
+  cuts('שולחים גם לאילת.', 'area');
+  cuts('שולחים גם ליהודה ושומרון.', 'area');
+  cuts('שולחים גם לרמת הגולן.', 'area');
+  cuts('אפשר לאסוף בחיפה.', 'area');
+  cuts('לא שולחים לחיפה.', 'area');
+});
+
 test('the customer\'s question is not evidence: "do you ship to Eilat?" does not let the reply say yes', () => {
   const a = buildAllow({ toolTexts: [policy], customerTexts: ['יש משלוח לאילת?', 'אתם שולחים לאילת'] });
   cuts('כן, שולחים לאילת.', 'area', a);

@@ -49,12 +49,45 @@ test('product search finds Hebrew words under their prefixes, and shows the rows
   await app.db.close();
 });
 
+test('product search in English of a store whose products are named in Hebrew asks for one more search in Hebrew, never "not carried" (docs/models.md, q10)', async () => {
+  const { app, ctx } = await storeApp();
+  const en = await runTool(ctx, 'search_products', { query: 'big olive bowl' });
+  assert.match(en.content, /^No products match "big olive bowl"/);
+  assert.match(en.content, /the store's products are named in Hebrew, and these words are not\. Call search_products once more with them in Hebrew/);
+  assert.doesNotMatch(en.content, /does not seem to carry it/);
+  assert.match((await runTool(ctx, 'search_products', { query: 'קערת זית גדולה' })).content, /קערת זית גדולה: 165 ₪/);
+  assert.match((await runTool(ctx, 'search_products', { query: 'מכונת כביסה' })).content, /Say the store does not seem to carry it/, 'in Hebrew there is nothing more to try');
+  await app.db.close();
+});
+
 test('get_policy without embeddings finds the shipping passage by its words, and says so when the store wrote nothing', async () => {
   const { app, ctx } = await storeApp();
   const r = await runTool(ctx, 'get_policy', { topic: 'כמה עולה משלוח?' });
   assert.match(r.content, /35 ₪/);
   const none = await runTool(ctx, 'get_policy', { topic: 'האם יש חניה ליד הסטודיו?' });
   assert.match(none.content, /No passage of the store's answers or pages is about/);
+  await app.db.close();
+});
+
+test('get_policy finds the store\'s Hebrew passage for a question in English, by what it is about (docs/models.md, q10)', async () => {
+  const { app, ctx } = await storeApp();
+  const abroad = await runTool(ctx, 'get_policy', { topic: 'shipping to London, international shipping' });
+  assert.match(abroad.content, /כרגע אין משלוחים לחו"ל/);
+  assert.doesNotMatch(abroad.content, /החזרות והחלפות/, 'the returns page is not about shipping abroad');
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'Do you ship to Haifa?' })).content, /משלוח עד הבית בכל הארץ/);
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'Can I pay with Bit?' })).content, /From the store's FAQ: "אפשר לשלם בביט\?"/);
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'Can I return a plate if the colour is wrong?' })).content, /אפשר להחזיר או להחליף כלי תוך 14 יום/);
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'Is the espresso cup dishwasher safe?' })).content, /זיגוג מט עדיף לשטוף ביד/);
+  // Nothing found for words in another language than the store's pages: one more look in Hebrew before a handoff.
+  const none = await runTool(ctx, 'get_policy', { topic: 'Is there parking near the studio?' });
+  assert.match(none.content, /^No passage of the store's answers or pages is about/);
+  assert.match(none.content, /Call get_policy once more with the topic in Hebrew/);
+  const he = await runTool(ctx, 'get_policy', { topic: 'האם יש חניה ליד הסטודיו?' });
+  assert.doesNotMatch(he.content, /once more/, 'asked in the pages\' own language, it is a handoff as before');
+  assert.match(he.content, /call handoff with reason "unknown"/);
+  // The owner's correction of a page answers for it, in English too.
+  await app.db.query("UPDATE policies SET override_text = 'משלוח עד הבית בכל הארץ עולה 30 ₪.' WHERE kind = 'shipping'");
+  assert.match((await runTool(ctx, 'get_policy', { topic: 'How much is shipping?' })).content, /From the store's shipping policy \([^)]*\):\nמשלוח עד הבית בכל הארץ עולה 30 ₪/);
   await app.db.close();
 });
 

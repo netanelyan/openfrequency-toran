@@ -92,23 +92,44 @@ neither is the default. xhigh is one setting away (`TORAN_AGENT_EFFORT=xhigh`) o
 (`MODEL_TIMEOUT_MS`), a turn 60 (`TURN_DEADLINE_MS`), and 8,000 output tokens (`AGENT_MAX_TOKENS`). The answers took
 1.1 seconds more than at medium, 10.7 seconds at the 90th percentile against 9.2.
 
-## What still makes Toran look less smart, and is not the model
+## What made Toran look less smart, and was not the model
 
-Found on the way, the same on every configuration, and left for their own change:
+Found on the way, the same on every configuration, and fixed on 2026-11-12. "After" is 13 more runs of q5, q10 and
+q11 at high effort, on the subscription ($0.0113 an answer for the three, $0.0107 before); "before" is the four runs
+above. The four runs' 195 answers were also put through the new guard as the model wrote them, with every tool call
+run again: q5's 12 cut answers pass, q11's 12 doubled replies say the line once, and no other reply changes.
 
 - **The guard cut a right shipping answer.** On q5 the model gave the price in 14 of 15 answers, as "משלוח עד הבית
   בכל הארץ, כולל חיפה, עולה 35 ₪" or "גם לחיפה"; the claim check (src/agent/claims.ts, an `area` claim) found no
   "חיפה" in the shipping page, which says "בכל הארץ", cut the sentence and handed off. In 12 of them the customer read
   "על זה אני לא בטוח, אז העברתי את השאלה לנציג מהחנות. הוא יחזור אליך כאן. ההזמנה מגיעה תוך 3 עד 5 ימי עסקים..."
-  The second opinion (`TORAN_GUARD_LLM`) would not help: it is asked only when the tools mention the term. All of
-  Israel backing an Israeli city would.
+  **Now** a city or a region inside Israel is backed by a wider place the store ships to (`WITHIN`: Haifa by the north
+  or by all of Israel, Tel Aviv by the centre), unless the page excepts it or a place between; Eilat, the Arava, the
+  Golan, Judea and Samaria, remote places and kibbutzim pass only when the store names them, as before. After: the
+  price and the delivery time in 10 of 13 answers, none cut. The other 3 are the model's own: it handed off on its
+  first call, before it looked anything up (once in 4 before, at high), which no change here touches.
 - **A doubled line on a discount.** On q11 the guard cut the model's own "הנחה מאשר רק נציג מהחנות, אז העברתי לו את
-  הבקשה." in all 15 answers (the `promise` rule), put its own line in, and kept the model's next sentence, so in 8 of
-  them the customer read "...הוא יחזור אליך כאן. הוא יחזור אליכם כאן."
-- **English questions about the store's pages find nothing.** On q10, 13 of 15 answers called `get_policy` in
+  הבקשה." in all 15 answers (the `promise` rule), put its own line in, and kept the model's next sentence, so in 12 of
+  them the customer read "...הוא יחזור אליך כאן. הוא יחזור אליכם כאן." (or "אליך" twice). **Now** a reply says the
+  hand-off once (src/agent/guard.ts): a sentence of the model's that only says it was passed on or who answers goes,
+  and a second honest line says only what it is not sure of. After: the line once in 13 of 13.
+- **English questions about the store's pages found nothing.** On q10, 13 of 15 answers called `get_policy` in
   English; the passages are Hebrew, the embeddings' distance cut (0.19, src/agent/tools.ts) let none through, and the
-  answer was a handoff. "shipping to London, international shipping" and "do you ship abroad" return "No passage";
-  "משלוח לחו"ל" returns "כרגע אין משלוחים לחו"ל".
+  answer was a handoff. "shipping to London, international shipping" and "do you ship abroad" returned "No passage";
+  "משלוח לחו"ל" returned "כרגע אין משלוחים לחו"ל". **Now** `get_policy` reads what the question is about in the claim
+  check's vocabulary, Hebrew and English alike, and measures a Hebrew passage from those concepts said in Hebrew too
+  ("משלוח חוץ לארץ", 0.15 from the shipping page); a Hebrew question gets what it got before. Before: 0 of 15 said
+  there is no shipping abroad. After: 11 of 13, all in English. Of the other 2, one handed off before looking, and in
+  one the CLI's written tool call put its arguments one level too deep (`{"input": {"topic": ...}}`), so `get_policy`
+  got no topic: the claude-cli backend's own way of calling tools (src/agent/llm/cli.ts), 1 of 405 calls in all the
+  runs, which the API's tool calls do not have.
+- **An English product name found nothing either** (found in the runs after). Once, the model searched the products
+  only for "big olive bowl"; the names are Hebrew, and the result's rule said to tell the customer the store does not
+  seem to carry it, so the shopper read "I also didn't find a big olive bowl in the store". **Now** words in one
+  language that find nothing in a catalogue named in the other ask for one more search in the names' language first
+  (`search_products`). The bowl's 165 ₪ after: 11 of 13, the misses being that answer and one that handed off before
+  looking. In the 3 runs since this change, the one answer that searched in English first was asked to search again,
+  and found the bowl in Hebrew.
 
 ## The other calls
 
@@ -140,4 +161,7 @@ node scripts/eval-models.ts --configs claude-sonnet-5-5:medium,claude-sonnet-5-5
 
 On the subscription, about seven minutes a configuration on the dev laptop. Every answer goes to
 `private/eval/models-<date>.json` (or `--out`); the table at the end is per configuration. Read the answers: the
-numbers say what it cost and how long it took, not whether it was right.
+numbers say what it cost and how long it took, not whether it was right. `--only q5,q10,q11` runs some of the
+conversations. Point `TORAN_MODELS_DIR` at a folder that has the embedding model (a checkout's `private/models`), or
+the script downloads it into its throwaway folder first, and if that fails `get_policy` matches words only, which
+production does not.
