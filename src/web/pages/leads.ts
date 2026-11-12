@@ -273,7 +273,11 @@ ${j.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>לא 
     }],
     ['POST', /^\/lead\/(\d+)\/channels\/email$/, async (r, m) => {
       const s = await store(m[1]);
-      if (!enabledChannels(app.env).has('email') || !app.mail) throw new ActionError('המייל עוד כבוי בשרת (TORAN_CHANNELS).');
+      // The server's reason is the log's, not the page's (the pre-launch audit, 2026-11-12, P1-14).
+      if (!enabledChannels(app.env).has('email') || !app.mail) {
+        app.log(`[channels] store ${s.id}: email is off here (TORAN_CHANNELS has no email, or there is no mail provider)`);
+        throw new ActionError('המייל עוד לא פתוח אצלנו. כתבו לנו ונחבר אותו יחד.');
+      }
       const address = storeAddress(s, app.mail.domain);
       if (r.form.on === '1') {
         const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;

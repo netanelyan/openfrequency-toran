@@ -163,3 +163,23 @@ test('the own domain over HTTP: the form after email is connected, the records t
     await s.close();
   }
 });
+
+// The pre-launch audit, 2026-11-12, P1-14: "המייל עוד כבוי בשרת (TORAN_CHANNELS)" showed an env name to store owners.
+test('email not open on this server: the own-domain form, its check and the email switch say what to do, never the server\'s setting', async () => {
+  const s = await serve();
+  try {
+    s.login();
+    const id = s.seeded.storeId;
+    const said = 'המייל עוד לא פתוח אצלנו. כתבו לנו ונחבר אותו יחד.';
+    for (const [path, form] of [[`/lead/${id}/mail-domain`, { on: '1', address: 'support@kli-cheres.example' }], [`/lead/${id}/mail-domain/check`, {}], [`/lead/${id}/channels/email`, { on: '1' }]] as const) {
+      const r = await s.post(path, { _csrf: await s.csrf(), ...form }, { 'x-tn-ajax': '1' });
+      assert.equal(r.status, 400, path);
+      assert.equal((await r.json()).message, said, path);
+    }
+    // A mail provider with no domains of its own (no Resend): the same words.
+    s.app.mail = Object.assign(simEmail({ domain: DOMAIN }), { domains: undefined });
+    await assert.rejects(startDomain(s.app, id, 'support@kli-cheres.example', '', 'owner'), (e: any) => e.message === said);
+  } finally {
+    await s.close();
+  }
+});

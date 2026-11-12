@@ -156,7 +156,11 @@ export class OwnDomainError extends Error {}
 /** Start the store's own address: its domain (and subdomain) added at Resend, and the row with the records to add. */
 export async function startDomain(app: App, storeId: number, address: string, sub: string, by: string): Promise<MailDomain> {
   const domains = app.mail?.domains;
-  if (!domains) throw new OwnDomainError('המייל עוד כבוי בשרת (TORAN_CHANNELS).');
+  // The owner reads what to do; the log keeps that this server has no mail provider with domains (Resend).
+  if (!domains) {
+    app.log(`[mail-domain] store ${storeId}: this server's mail has no domains (no Resend)`);
+    throw new OwnDomainError('המייל עוד לא פתוח אצלנו. כתבו לנו ונחבר אותו יחד.');
+  }
   const ours = [app.mail!.domain, 'openfrequency.co.il', String(app.env.TORAN_MAIL_DOMAIN || '').toLowerCase()];
   const p = parseOwnAddress(address, sub, ours);
   if (!p.ok) throw new OwnDomainError(p.he);
