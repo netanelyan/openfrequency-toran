@@ -63,10 +63,12 @@ export function usageOf(plan: PlanKey, byMonth: Map<string, number> | undefined,
   const cap = PLANS[plan].conversations;
   const small = PLANS.store.conversations;
   let note: string | null = null;
+  // The move is ours, by hand, after the operator's alert (ops/watch.ts); nothing sends a WhatsApp a week before, which
+  // this note promised (the audit of 2026-11-12, P2-21). It says what /plan says: we tell them before.
   if (plan === 'store' && thisMonth > cap) {
     note = lastMonth > cap
-      ? `זה החודש השני ברצף מעל ${cap} שיחות, אז מהחודש הבא החנות עוברת לחבילה הגדולה. נכתוב לכם בוואטסאפ שבוע לפני.`
-      : `החודש עברתם את ${cap} השיחות של החבילה, וזה לא עולה לכם יותר. אם גם החודש הבא יהיה מעל ${cap}, החנות תעבור לחבילה הגדולה, ונכתוב לכם בוואטסאפ שבוע לפני.`;
+      ? `זה החודש השני ברצף מעל ${cap} שיחות, אז מהחודש הבא החנות עוברת לחבילה הגדולה. נודיע לכם לפני שזה קורה.`
+      : `החודש עברתם את ${cap} השיחות של החבילה, וזה לא עולה לכם יותר. אם גם החודש הבא יהיה מעל ${cap}, החנות תעבור לחבילה הגדולה, ונודיע לכם לפני שזה קורה.`;
   } else if (plan === 'big' && thisMonth > cap) {
     note = `החודש עברתם את ${cap.toLocaleString('en-US')} השיחות של החבילה הגדולה. כתבו לנו בוואטסאפ, ונבנה חבילה לפי החנות.`;
   } else if (plan === 'big' && lastMonth < small && lastMonth > 0) {

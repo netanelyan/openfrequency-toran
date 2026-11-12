@@ -107,7 +107,7 @@ test('Gmail: the address typed once, the steps with the address to copy, Gmail\'
     assert.equal(s.app.mail!.outbox!.length, 0, 'Toran never answers Gmail');
     assert.deepEqual(await (await s.get(`/lead/${id}/mail/state.json`)).json(), { v: 'confirm' });
     page = await (await s.get('/settings')).text();
-    assert.match(page, /שלב 3 מתוך 3[^]*מייל האישור מ-Gmail הגיע/);
+    assert.match(page, /שלב 3 מתוך 3[^]*מייל האישור מ־Gmail הגיע/);
     assert.ok(page.includes(`<a class="btn primary big" href="${link}" target="_blank" rel="noopener noreferrer">`), 'the link as the main button');
     assert.match(page, /ללחוץ כאן לאישור/);
     assert.match(page, /<code class="ltr big" id="code-\d+">99427480<\/code>/);
@@ -118,7 +118,7 @@ test('Gmail: the address typed once, the steps with the address to copy, Gmail\'
     assert.match(flash(done), /המייל מחובר/);
     page = await (await s.get('/settings')).text();
     assert.match(page, /<section class="panel" id="email"><header><h2>המייל<\/h2><span class="end chip ok">[^]*מחובר<\/span>/);
-    assert.match(page, /מייל שמגיע ל-<bdi class="ltr">nurit\.shop@gmail\.com<\/bdi> עובר לתורן/);
+    assert.match(page, /מייל שמגיע ל־<bdi class="ltr">nurit\.shop@gmail\.com<\/bdi> עובר לתורן/);
     assert.match(page, /role="switch" aria-checked="true"[^]*תורן עונה במייל/);
     assert.match(page, /<details class="more mt16"><summary>עוד אפשרויות<\/summary>[^]*לענות מכתובת של החנות \(בשביל מי שמנהל לכם את האתר\)/);
     assert.deepEqual(await (await s.get(`/lead/${id}/mail/state.json`)).json(), { v: 'done' });

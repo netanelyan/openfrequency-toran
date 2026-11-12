@@ -360,7 +360,8 @@ test('the knowledge page: the owner pastes the key with where to find it, it con
     s.as(s.accounts.session(customer(1)).cookie);
     let page = await (await s.get(`/lead/${a}/knowledge`)).text();
     assert.match(page, /שאלות על הזמנות/);
-    assert.match(page, /החיבור להזמנות עוד לא פתוח בשרת/, 'without TORAN_SECRETS_KEY nothing is stored');
+    // "אצלנו", not "בשרת" (the audit of 2026-11-12, P2-13).
+    assert.match(page, /החיבור להזמנות עוד לא פתוח אצלנו/, 'without TORAN_SECRETS_KEY nothing is stored');
     Object.assign(s.app.env, KEY);
     s.app.api = shopifyApi().api;
     page = await (await s.get(`/lead/${a}/knowledge`)).text();
@@ -376,10 +377,11 @@ test('the knowledge page: the owner pastes the key with where to find it, it con
     const ok = await s.post(`/lead/${a}/orders`, { _csrf: await s.csrf(`/lead/${a}/knowledge`), token: SHOPIFY_TOKEN, shop: '' });
     assert.equal(ok.headers.get('location'), `/lead/${a}/knowledge#orders`);
     page = await (await s.get(`/lead/${a}/knowledge`)).text();
-    assert.match(page, /מחובר ל-Shopify/);
+    assert.match(page, /מחובר ל־Shopify/);
     assert.match(page, /…TEST/);
     assert.ok(!page.includes(SHOPIFY_TOKEN), 'the key is never shown again');
-    assert.match(page, /<li>איפה ההזמנה, למי שנותן את המייל או הטלפון שבה<\/li>/);
+    // The order rule as src/orders.ts keeps it: the order's phone or email writes, or the order's phone is given (P1-16).
+    assert.match(page, /<li>איפה ההזמנה, למי שכותב מהטלפון או מהמייל שבה, או נותן את הטלפון שבה<\/li>/);
 
     // The website's own tracking page: https only, kept as typed with its {number}, and empty takes it away.
     assert.match(page, /action="\/lead\/\d+\/tracking-page"/);

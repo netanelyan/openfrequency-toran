@@ -29,7 +29,7 @@ export async function lostMessage(app: App, job: Job, error: string, { stuck = f
   const channel = (inbound.channel || 'whatsapp') as Channel;
   const account = !echo && inbound.account && inbound.from ? (await accountFor(app, channel, String(inbound.account))) || (channel === 'email' ? await receivingAccount(app, String(inbound.account)) : null) : null;
   const what = echo ? 'an owner\'s own message to a customer' : `a customer's ${channel} message`;
-  await alertOperator(app, `lost:${job.id}`, `הודעה שתורן לא הצליח לטפל בה (${job.kind})`, `עבודה ${job.id}, ${what}${inbound.from ? ` מ-${inbound.from}` : ''}, ${stuck ? 'נתקעה ונעצרה' : `נכשלה ${job.attempts} פעמים`}: ${cleanLine(error, 300)}. אפשר להריץ אותה שוב מדף התור.`, { everyMinutes: 7 * 24 * 60, storeId: account?.store_id ?? null });
+  await alertOperator(app, `lost:${job.id}`, `הודעה שתורן לא הצליח לטפל בה (${job.kind})`, `עבודה ${job.id}, ${what}${inbound.from ? ` מ־${inbound.from}` : ''}, ${stuck ? 'נתקעה ונעצרה' : `נכשלה ${job.attempts} פעמים`}: ${cleanLine(error, 300)}. אפשר להריץ אותה שוב מדף התור.`, { everyMinutes: 7 * 24 * 60, storeId: account?.store_id ?? null });
   if (!account) {
     await event(app.db, null, 'message_lost', { job: job.id, kind: job.kind, error: cleanLine(error, 200) });
     return { kept: 'event' };

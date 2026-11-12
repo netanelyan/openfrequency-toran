@@ -57,7 +57,9 @@ test('one list for both products: merged by Toran\'s id, else the domain; Teder-
     assert.deepEqual(all.tederOnly.map((x: any) => [x.domain, x.where, x.teder.state]), [['teder-only.example', 'new', 'none']]);
     assert.equal(all.counts.all, all.leads.length + all.tederOnly.length);
     const readyOnly = await get('/internal/leads?where=ready');
-    assert.deepEqual(readyOnly.leads.map((x: any) => x.id), [ready]);
+    // The seeded store's demo page lacks nothing now that its price is the plans' (src/offer.ts, 2026-11-12: every page
+    // had a "price" gap while no price was typed), so it is ready too.
+    assert.deepEqual(readyOnly.leads.map((x: any) => x.id).sort((x: number, y: number) => x - y), [s.seeded.storeId, ready].sort((x, y) => x - y));
     assert.deepEqual((await get('/internal/leads?q=answered')).leads.map((x: any) => x.id), [talking]);
 
     // One lead: both demos up and nothing sent, so the message with both is the main way when our number is on.

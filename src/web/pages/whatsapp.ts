@@ -56,7 +56,7 @@ const noticeHe = (kind: 'info' | 'warn', title: string, text: string) => `<div c
 
 /** Zernio's own reasons for a WhatsApp connect that did not go through, said to the store (zernio.com/openapi.yaml, getConnectUrl). */
 const ZERNIO_WA_ERRORS_HE: Record<string, string> = {
-  whatsapp_coexistence_not_registered: 'המספר עוד לא רשום ב-WhatsApp Business בטלפון, או שהוא בשימוש שם פחות משבוע. אחרי שבוע בשימוש באפליקציה מנסים שוב.',
+  whatsapp_coexistence_not_registered: 'המספר עוד לא רשום ב־WhatsApp Business בטלפון, או שהוא בשימוש שם פחות משבוע. אחרי שבוע בשימוש באפליקציה מנסים שוב.',
   // A number for Toran alone that a WhatsApp app still uses, and Meta's own reason when it gave one.
   whatsapp_number_in_use: 'המספר הזה עדיין רשום באפליקציית וואטסאפ. כדי לחבר אותו רק לתורן, מוחקים קודם את החשבון שלו באפליקציה, או מחברים אותו כמו שהוא, עם האפליקציה.',
   whatsapp_error: 'Meta לא השלימה את החיבור. אם זה מספר חדש, כדאי לבדוק שהקוד הגיע אליו ושהוא לא רשום באף אפליקציית וואטסאפ, ולנסות שוב.',
@@ -139,7 +139,7 @@ async function oursPanel(app: App, storeId: number): Promise<string> {
   <p class="small mt12 m0">קוד של דמו נקרא לפני הכול, כדי שגם בעל עסק שלוחץ על הכפתור בעמוד של חנות יקבל את הדמו. מי שבדמו וכותב "תמיכה" או "עזרה" עובר לתמיכה, וכך גם כשעוברים ${BINDING_DAYS} ימים מתחילת הדמו.</p>
   ${off.includes('owner') ? '<p class="small muted mt8 m0">הקו של בעלי העסקים במספר אחר, כי META_OWNER_PHONE_ID מכוון אליו.</p>' : ''}
   ${off.includes('support') ? '<p class="small muted mt8 m0">התמיכה כבויה: TORAN_SUPPORT_STORE מכוון לחנות שלא קיימת כאן.</p>' : ''}
-  <p class="small mt12 m0">כשעונים מהטלפון, התשובה נכנסת לשיחה שבה האדם נמצא עכשיו, ותורן מפסיק לענות בה ל-12 שעות.</p>
+  <p class="small mt12 m0">כשעונים מהטלפון, התשובה נכנסת לשיחה שבה האדם נמצא עכשיו, ותורן מפסיק לענות בה ל־12 שעות.</p>
 </section>`;
 }
 
@@ -154,7 +154,7 @@ const newNumber = (r: DashReq, id: number) => `<details class="mt16"><summary cl
   <ol class="steps mt12">
     <li><span>נכנסים לפייסבוק, ובוחרים את העסק או יוצרים אותו.</span></li>
     <li><span>בוחרים להוסיף מספר חדש, וכותבים את שם העסק כמו שלקוחות יראו אותו. Meta בודקת את השם.</span></li>
-    <li><span>מקלידים את המספר, ומקבלים אליו קוד ב-SMS או בשיחה.</span></li>
+    <li><span>מקלידים את המספר, ומקבלים אליו קוד ב־SMS או בשיחה.</span></li>
   </ol>
   <div class="mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/zernio/start`, 'לחבר מספר חדש לתורן', { cls: 'btn sm', iconName: 'chat', fields: { number: 'new' } })}</div>
 </details>`;
@@ -194,7 +194,7 @@ function connectGuide(via: 'zernio' | 'kapso' | 'meta', button: string, extra = 
   <p class="m0">תורן עונה במספר שכבר יש לעסק, והוואטסאפ בטלפון ממשיך לעבוד. כשעונים ללקוח מהטלפון, התשובה מופיעה גם כאן, ותורן לא מתערב בשיחה הזו.</p>
   <h3 class="small mt16">מה צריך לפני</h3>
   <ul class="m0">
-    <li>הוואטסאפ של העסק באפליקציית WhatsApp Business, מעודכנת. אם זה הוואטסאפ הרגיל, עוברים ל-WhatsApp Business בחינם, והשיחות עוברות איתו.</li>
+    <li>הוואטסאפ של העסק באפליקציית WhatsApp Business, מעודכנת. אם זה הוואטסאפ הרגיל, עוברים ל־WhatsApp Business בחינם, והשיחות עוברות איתו.</li>
     <li>חשבון פייסבוק להיכנס איתו.</li>
     <li>הטלפון עם הוואטסאפ של העסק לידכם.</li>
   </ul>
@@ -202,13 +202,13 @@ function connectGuide(via: 'zernio' | 'kapso' | 'meta', button: string, extra = 
   <ol class="steps mt8">
     <li><b>${via === 'meta' ? 'נפתח חלון של Meta' : 'נפתח עמוד באנגלית'}</b><span>${esc(page)}</span></li>
     <li><b>נכנסים לפייסבוק</b><span>ובוחרים את העסק, או יוצרים אותו.</span></li>
-    <li><b>מקלידים את המספר של העסק</b><span>בוחרים ישראל <bdi dir="ltr">+972</bdi> ומקלידים את המספר בלי ה-0. אם מופיעה בחירה בין SMS לשיחה, לא נוגעים בה ולוחצים Next: Meta מזהה שהמספר באפליקציה ועוברת לחיבור שלה, בלי SMS. לא בוחרים מספר מהרשימה שנפתחת.</span></li>
-    <li><b>מאשרים בטלפון</b><span>באפליקציית WhatsApp Business: סורקים את הקוד שעל המסך במצלמה שבאפליקציה, או פותחים את ההודעה מ-Facebook Business ומאשרים. אפשר לשתף גם את השיחות של חצי השנה האחרונה.</span></li>
+    <li><b>מקלידים את המספר של העסק</b><span>בוחרים ישראל <bdi dir="ltr">+972</bdi> ומקלידים את המספר בלי ה־0. אם מופיעה בחירה בין SMS לשיחה, לא נוגעים בה ולוחצים Next: Meta מזהה שהמספר באפליקציה ועוברת לחיבור שלה, בלי SMS. לא בוחרים מספר מהרשימה שנפתחת.</span></li>
+    <li><b>מאשרים בטלפון</b><span>באפליקציית WhatsApp Business: סורקים את הקוד שעל המסך במצלמה שבאפליקציה, או פותחים את ההודעה מ־Facebook Business ומאשרים. אפשר לשתף גם את השיחות של חצי השנה האחרונה.</span></li>
     <li><b>חוזרים לכאן לבד</b><span>והעמוד אומר שהמספר מחובר.</span></li>
   </ol>
   ${button}
   <details class="mt16"><summary class="small">מה משתנה באפליקציה אחרי החיבור?</summary><p class="small mt8 m0">רשימות תפוצה נכבות, ובשיחות עם לקוחות נכבים הודעות נעלמות, צפייה חד-פעמית ומיקום חי. קבוצות לא עוברות לתורן. כדאי לפתוח את האפליקציה לפחות פעם בשבועיים, אחרת Meta מנתקת את החיבור.</p></details>
-  <details class="mt8"><summary class="small">כמה זה עולה ב-Meta?</summary><p class="small mt8 m0">Meta גובה מהחשבון של העסק על הודעות שיוצאות דרך תורן. 1,000 תשובות ללקוחות בחודש בלי תשלום, ואחר כך לפי הודעה. הודעה שהעסק שולח ראשון, למשל תזכורת על עגלה, בתשלום לכל הודעה. בשביל זה צריך אמצעי תשלום בחשבון של העסק ב-Meta.</p></details>
+  <details class="mt8"><summary class="small">כמה זה עולה ב־Meta?</summary><p class="small mt8 m0">Meta גובה מהחשבון של העסק על הודעות שיוצאות דרך תורן. 1,000 תשובות ללקוחות בחודש בלי תשלום, ואחר כך לפי הודעה. הודעה שהעסק שולח ראשון, למשל תזכורת על עגלה, בתשלום לכל הודעה. בשביל זה צריך אמצעי תשלום בחשבון של העסק ב־Meta.</p></details>
   ${extra}
 </section>`;
 }
@@ -256,7 +256,7 @@ async function page(app: App, r: DashReq, id: number, notice = '') {
     : viaKapso || viaZernio
       ? `<div class="mt16">${postButton(r.ctx, `/lead/${id}/whatsapp/${viaZernio ? 'zernio' : 'kapso'}/start`, label, { cls: 'btn primary', iconName: 'chat' })}</div>`
       : `<div class="mt16" data-wa-connect data-app-id="${esc(m.appId)}" data-config-id="${esc(m.configId)}" data-version="${esc(m.version)}" data-action="/lead/${id}/whatsapp/connect" data-csrf="${esc(r.ctx.csrf)}"><button class="btn primary" type="button" disabled>${icon('chat')}${label}</button><p class="small mt8 m0" data-msg role="status" aria-live="polite"></p></div>`;
-  const chip = a?.status === 'active' ? (tok?.soon ? ['sig', 'צריך לחבר מחדש'] : ['ok', 'מחובר']) : a?.status === 'pending' ? ['sig', 'ממתין לאישור של Meta'] : a?.status === 'reconnect' ? ['bad', 'צריך לחבר מחדש'] : ['bad', 'נעצר'];
+  const chip = a?.status === 'active' ? (tok?.soon ? ['sig', 'צריך לחבר מחדש'] : ['ok', 'מחובר']) : a?.status === 'pending' ? ['sig', 'מחכה לאישור של Meta'] : a?.status === 'reconnect' ? ['bad', 'צריך לחבר מחדש'] : ['bad', 'נעצר'];
   const until = a?.token_expires_at ? esc(stamp(a.token_expires_at)) : a?.token_checked_at ? 'בלי הגבלת זמן' : '';
   const answering = await answeringOn(app, id, 'whatsapp');
   const store = (await liveOf(app, id)).state;
@@ -267,7 +267,7 @@ async function page(app: App, r: DashReq, id: number, notice = '') {
   ${a!.status === 'pending' ? '<p class="small muted mt8 m0">בודקים מול Meta כל עשר דקות. לרוב זה לוקח כמה דקות, לפעמים עד יום.</p>' : ''}
   ${again ? `<p class="small mt12 m0">${viaZernio || a!.kind === 'zernio' ? 'מחברים מחדש דרך אותו עמוד של Zernio, עם אותו מספר. השיחות נשארות, והוואטסאפ בטלפון לא משתנה.' : 'מחברים מחדש באותו חלון של Meta, עם אותו מספר. השיחות נשארות, והוואטסאפ בטלפון לא משתנה.'}</p>${connectButton(AGAIN)}` : ''}
   ${a!.status === 'active' && !ours ? channelSwitch(r, id, 'whatsapp', (await offChannels(app, id)).includes('whatsapp'), store) : ''}
-  <dl class="kv mt12"><dt>שם העסק ב-WhatsApp</dt><dd>${esc(a!.name || a!.meta?.verified_name || '-')}</dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd>${until ? `<dt>החיבור בתוקף עד</dt><dd>${until}</dd>` : ''}</dl>
+  <dl class="kv mt12"><dt>שם העסק ב־WhatsApp</dt><dd>${esc(a!.name || a!.meta?.verified_name || '-')}</dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd>${until ? `<dt>החיבור בתוקף עד</dt><dd>${until}</dd>` : ''}</dl>
   <p class="small mt12 m0">${a!.meta?.coexistence === false ? 'המספר הזה מחובר לתורן בלבד, בלי אפליקציה בטלפון. עונים ללקוחות מהשיחות כאן, ואחרי שעניתם תורן מפסיק לענות בשיחה הזו לזמן מה.' : 'כשעונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.'}</p>
   ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: ours ? 'לנתק? תורן יפסיק לענות במספר שלנו: לבעלי העסקים, בדמו ובתמיכה. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' : 'לנתק? תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}
 </section>`
@@ -369,7 +369,7 @@ export function whatsappRoutes(app: App): Route<DashReq>[] {
         const email = r.user.role === 'superadmin' ? null : r.user.email || null;
         const out = await connectWhatsapp(app, id, { code: r.form.code, phoneId: r.form.phone_number_id, wabaId: r.form.waba_id, businessId: r.form.business_id, event: r.form.event, by: r.user.name, email });
         // Our company store's number is our one number from now on (channels/lines.ts): nothing else to set.
-        if (out.ours) return { redirect: `/lead/${id}/whatsapp`, message: out.status === 'active' ? 'המספר שלנו מחובר. מעכשיו תורן עונה בו לבעלי העסקים, לדמו ולתמיכה.' : 'החיבור נשלח. כש-Meta תאשר את המספר, תורן יענה בו לבעלי העסקים, לדמו ולתמיכה.' };
+        if (out.ours) return { redirect: `/lead/${id}/whatsapp`, message: out.status === 'active' ? 'המספר שלנו מחובר. מעכשיו תורן עונה בו לבעלי העסקים, לדמו ולתמיכה.' : 'החיבור נשלח. כש־Meta תאשר את המספר, תורן יענה בו לבעלי העסקים, לדמו ולתמיכה.' };
         const store = (await liveOf(app, id)).state;
         return { redirect: `/lead/${id}/whatsapp`, message: out.status === 'active' ? (store === 'live' ? 'הוואטסאפ מחובר. תורן עונה בו מעכשיו.' : store === 'paused' ? 'הוואטסאפ מחובר. תורן מושהה בחנות, וכשמפעילים אותו שוב הוא עונה גם בו.' : 'הוואטסאפ מחובר. נשאר להפעיל את תורן, ואז הוא עונה בו.') : store === 'live' ? 'החיבור נשלח. המספר מחכה לאישור של Meta, ותורן יתחיל לענות לבד כשהוא מאושר.' : 'החיבור נשלח. המספר מחכה לאישור של Meta, ואחרי האישור נשאר רק להפעיל את תורן.' };
       } catch (e: any) {

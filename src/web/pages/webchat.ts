@@ -33,9 +33,9 @@ const publicBase = (app: App) => String(app.env.PUBLIC_BASE_URL || '').replace(/
 // for the store's own platform with a copy button, and the line itself, the sites it may show on and the reviews'
 // place are under "עוד אפשרויות". Once the chat opened on the site, the card says so and has the switch.
 const PLATFORM_STEPS: Record<string, { name: string; steps: string[]; dev: string }> = {
-  shopify: { name: 'Shopify', steps: ['בניהול של Shopify נכנסים ל-Online Store ואז ל-Themes.', 'ליד התבנית לוחצים על שלוש הנקודות, ואז Edit code.', 'פותחים את הקובץ theme.liquid, מדביקים את השורה ממש לפני </body>, ולוחצים Save.'], dev: 'ב-Shopify: Online Store > Themes > ... > Edit code, בקובץ layout/theme.liquid לפני </body>.' },
-  woocommerce: { name: 'WooCommerce', steps: ['בניהול של וורדפרס מתקינים את התוסף WPCode.', 'נכנסים ל-Code Snippets ואז ל-Header & Footer.', 'מדביקים את השורה בתיבה Footer, ולוחצים Save Changes.'], dev: 'בוורדפרס: עם WPCode (Code Snippets > Header & Footer > Footer), או ב-footer של התבנית.' },
-  wix: { name: 'Wix', steps: ['בהגדרות האתר ב-Wix נכנסים ל-Custom Code.', 'לוחצים Add Custom Code ומדביקים את השורה.', 'בוחרים All pages ו-Body - end, ולוחצים Apply.'], dev: 'ב-Wix: Settings > Custom Code > Add Custom Code, All pages, Body - end.' },
+  shopify: { name: 'Shopify', steps: ['בניהול של Shopify נכנסים ל־Online Store ואז ל־Themes.', 'ליד התבנית לוחצים על שלוש הנקודות, ואז Edit code.', 'פותחים את הקובץ theme.liquid, מדביקים את השורה ממש לפני </body>, ולוחצים Save.'], dev: 'ב־Shopify: Online Store > Themes > ... > Edit code, בקובץ layout/theme.liquid לפני </body>.' },
+  woocommerce: { name: 'WooCommerce', steps: ['בניהול של וורדפרס מתקינים את התוסף WPCode.', 'נכנסים ל־Code Snippets ואז ל־Header & Footer.', 'מדביקים את השורה בתיבה Footer, ולוחצים Save Changes.'], dev: 'בוורדפרס: עם WPCode (Code Snippets > Header & Footer > Footer), או ב־footer של התבנית.' },
+  wix: { name: 'Wix', steps: ['בהגדרות האתר ב־Wix נכנסים ל־Custom Code.', 'לוחצים Add Custom Code ומדביקים את השורה.', 'בוחרים All pages ו־Body - end, ולוחצים Apply.'], dev: 'ב־Wix: Settings > Custom Code > Add Custom Code, All pages, Body - end.' },
 };
 
 // How the chat looks (the owner, 2026-11-09: "design the website widget better. make it according to the website's

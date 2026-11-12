@@ -216,9 +216,9 @@ function forwardSteps(st: MailState, storeId: number, storeName: string, main = 
   const subject = `העברה של המייל של ${storeName} לתורן`;
   const forDev = [
     `שלום, אפשר עזרה עם המייל של ${storeName}?`,
-    `צריך שכל מייל שמגיע ל-${st.from || 'המייל של החנות'} יעבור אוטומטית (Forwarding) גם לכתובת ${st.address}, וישאר גם בתיבה הרגילה.`,
-    ...(p === 'gmail' ? ['אם זה Google Workspace והאפשרות להעביר לא מופיעה ב-Gmail: Admin console, Apps, Google Workspace, Gmail, End User Access, ולסמן Allow users to automatically forward incoming email.'] : []),
-    ...(p === 'outlook' ? ['אם זה Microsoft 365 של העסק, העברה לכתובת חיצונית חסומה כברירת מחדל: ב-security.microsoft.com/antispam, ב-Anti-spam outbound policy, משנים את Automatic forwarding rules ל-On - Forwarding is enabled.'] : []),
+    `צריך שכל מייל שמגיע ${st.from ? `ל־${st.from}` : 'למייל של החנות'} יעבור אוטומטית (Forwarding) גם לכתובת ${st.address}, וישאר גם בתיבה הרגילה.`,
+    ...(p === 'gmail' ? ['אם זה Google Workspace והאפשרות להעביר לא מופיעה ב־Gmail: Admin console, Apps, Google Workspace, Gmail, End User Access, ולסמן Allow users to automatically forward incoming email.'] : []),
+    ...(p === 'outlook' ? ['אם זה Microsoft 365 של העסק, העברה לכתובת חיצונית חסומה כברירת מחדל: ב־security.microsoft.com/antispam, ב־Anti-spam outbound policy, משנים את Automatic forwarding rules ל־On - Forwarding is enabled.'] : []),
     'אם נשלח לכתובת קוד אישור, הוא מופיע אצלי בתורן. תודה',
   ].join('\n');
   const open = (url: string, label: string) => `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">${icon('ext')}${esc(label)}</a>`;
@@ -274,7 +274,7 @@ export async function mailCard(app: App, r: DashReq, store: { id: number; name: 
     <h3 class="small mt16">הכתובת של תורן</h3><p class="small muted m0">לכאן המייל של החנות עובר.</p>${addressBox(`fwd-${st.account!.id}`, st.address, false)}
     ${ro ? '' : `<div class="row mt16">${form(`<button class="btn sm ghost" type="submit">${icon('refresh')}לחבר מייל אחר</button>`, { do: 'change' })}${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לא ייענו.' })}</div>`}
   </details>`;
-    return `${head}<p class="m0">${st.from ? `מייל שמגיע ל-<bdi class="ltr">${esc(st.from)}</bdi> עובר לתורן.` : 'המייל של החנות עובר לתורן.'} ${answers}</p>
+    return `${head}<p class="m0">${st.from ? `מייל שמגיע ל־<bdi class="ltr">${esc(st.from)}</bdi> עובר לתורן.` : 'המייל של החנות עובר לתורן.'} ${answers}</p>
   ${channelSwitch(r, id, 'email', off, (await liveOf(app, id)).state)}
   ${more}</section>`;
   }
@@ -302,17 +302,17 @@ export async function mailCard(app: App, r: DashReq, store: { id: number; name: 
     // Pressing the link is Google's own way ("לוחצים על קישור האימות"). Pasting the code in Gmail's settings is in
     // guides only, and the Hebrew name of its button ("אימות") is UNVERIFIED, so the code is folded under the link.
     const first = c.link
-      ? `<li><b>מאשרים את ההעברה</b><span>הכפתור פותח את הדף של Gmail, ושם מאשרים.</span><div class="mt8"><a class="btn${main ? ' primary' : ''} big" href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">${icon('check')}ללחוץ כאן לאישור</a></div>${c.code ? `<details class="mt12"><summary class="small">הכפתור לא עובד? יש גם קוד</summary><p class="small mt8 m0">מדביקים אותו ב-Gmail, בתיבה שליד הכתובת של תורן, ולוחצים "אימות".</p>${codeBox}</details>` : ''}</li>`
-      : `<li><b>מדביקים את הקוד ב-Gmail</b><span>בתיבה שליד הכתובת של תורן, ולוחצים "אימות".</span>${codeBox}</li>`;
-    return `${head}${stepTag(STEP_OF.confirm)}<h3 class="q1">מייל האישור מ-Gmail הגיע</h3>
-  <ol class="steps mt12">${first}<li><b>חוזרים ל-Gmail ומרעננים את הדף</b><span>מסמנים "העברת עותק של הודעות נכנסות אל", ולוחצים למטה "שמירת השינויים".</span></li></ol>
+      ? `<li><b>מאשרים את ההעברה</b><span>הכפתור פותח את הדף של Gmail, ושם מאשרים.</span><div class="mt8"><a class="btn${main ? ' primary' : ''} big" href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">${icon('check')}ללחוץ כאן לאישור</a></div>${c.code ? `<details class="mt12"><summary class="small">הכפתור לא עובד? יש גם קוד</summary><p class="small mt8 m0">מדביקים אותו ב־Gmail, בתיבה שליד הכתובת של תורן, ולוחצים "אימות".</p>${codeBox}</details>` : ''}</li>`
+      : `<li><b>מדביקים את הקוד ב־Gmail</b><span>בתיבה שליד הכתובת של תורן, ולוחצים "אימות".</span>${codeBox}</li>`;
+    return `${head}${stepTag(STEP_OF.confirm)}<h3 class="q1">מייל האישור מ־Gmail הגיע</h3>
+  <ol class="steps mt12">${first}<li><b>חוזרים ל־Gmail ומרעננים את הדף</b><span>מסמנים "העברת עותק של הודעות נכנסות אל", ולוחצים למטה "שמירת השינויים".</span></li></ol>
   ${ro ? '' : form(`<button class="btn mt16" type="submit">${icon('check')}סיימתי</button>`, { do: 'done' })}
   ${again}</section>`;
   }
 
   // forward: Gmail goes on by itself once its mail comes; the others say they are done.
   const steps = forwardSteps(st, id, storeName, main);
-  const done = ro ? '' : st.provider === 'gmail' ? form(`<button class="linkbtn small" type="submit">כבר אישרתי ב-Gmail</button>`, { do: 'done' }, 'mt12') : form(`<button class="btn mt16" type="submit">${icon('check')}סיימתי</button>`, { do: 'done' });
+  const done = ro ? '' : st.provider === 'gmail' ? form(`<button class="linkbtn small" type="submit">כבר אישרתי ב־Gmail</button>`, { do: 'done' }, 'mt12') : form(`<button class="btn mt16" type="submit">${icon('check')}סיימתי</button>`, { do: 'done' });
   return `${head}${stepTag(STEP_OF.forward)}<h3 class="q1">מעבירים את המייל של החנות לתורן</h3>
   <p class="small muted m0">${esc(PROVIDER_HE[st.provider!])}${st.from ? ` · <bdi class="ltr">${esc(st.from)}</bdi>` : ''}</p>
   ${steps}${done}${again}</section>`;

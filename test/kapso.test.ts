@@ -155,7 +155,8 @@ test('connecting through Kapso: one customer per store, a setup link with coexis
     await s.get(`/lead/${a}/whatsapp/kapso?phone_number_id=${PHONE_ID}`);
     assert.equal(k.state.webhooks.length, 1);
     assert.ok(k.calls.some((c) => c.method === 'PATCH'));
-    assert.match(await (await s.get('/')).text(), /מחובר, <bdi class="ltr">\+972500000888<\/bdi>/);
+    // The number as it is said here, 050-000-0888 (core/urls.ts localPhone; the audit of 2026-11-12, P2-16).
+    assert.match(await (await s.get('/')).text(), /מחובר, <bdi class="ltr">050-000-0888<\/bdi>/);
   } finally {
     await s.close();
   }

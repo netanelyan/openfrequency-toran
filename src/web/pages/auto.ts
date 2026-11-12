@@ -99,7 +99,7 @@ function sourceLines(platform: keyof typeof PLATFORM, s: Source | null): string[
 }
 
 const CONSENT_HE: Record<string, string> = {
-  shopify: 'ב־Shopify זה הסימון בקופה של קבלת עדכונים ומבצעים, במייל או ב-SMS (הסכמה ל־SMS נחשבת גם לוואטסאפ). כדאי שהנוסח שלו יגיד שאולי תכתבו גם בוואטסאפ.',
+  shopify: 'ב־Shopify זה הסימון בקופה של קבלת עדכונים ומבצעים, במייל או ב־SMS (הסכמה ל־SMS נחשבת גם לוואטסאפ). כדאי שהנוסח שלו יגיד שאולי תכתבו גם בוואטסאפ.',
   woocommerce: 'ב־WooCommerce אין סימון כזה בקופה הרגילה, אז תורן מכיר הסכמה רק מתוסף ששומר אותה על ההזמנה, למשל Mailchimp for WooCommerce.',
   wix: 'ב־Wix ההסכמה נקראת מאיש הקשר של הלקוח, אם הוא נרשם לדיוור במייל או בטלפון.',
 };

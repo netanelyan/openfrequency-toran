@@ -267,7 +267,7 @@ export async function schedule(app: App) {
   // A customer waiting on the queue: first, so nothing the other steps do can hold it back.
   await step(app, 'queue', async () => {
     const old = await app.db.one<{ n: number; at: string | null }>(`SELECT COUNT(*)::int AS n, MIN(run_at) AS at FROM jobs WHERE status = 'queued' AND kind = ANY($1::text[]) AND run_at < now() - interval '${QUEUE_ALERT_MINUTES} minutes'`, [MESSAGE_KINDS]);
-    if (old?.n) await alertOperator(app, 'queue_old', 'הודעות של לקוחות מחכות בתור', `${old.n} הודעות מחכות יותר מ-${QUEUE_ALERT_MINUTES} דקות, הוותיקה מ-${old.at}. כדאי לבדוק שה-worker של תורן רץ, ולהסתכל בדף התור.`, { everyMinutes: 30 });
+    if (old?.n) await alertOperator(app, 'queue_old', 'הודעות של לקוחות מחכות בתור', `${old.n} הודעות מחכות יותר מ־${QUEUE_ALERT_MINUTES} דקות, הוותיקה מ־${old.at}. כדאי לבדוק שה־worker של תורן רץ, ולהסתכל בדף התור.`, { everyMinutes: 30 });
   });
   await step(app, 'rescrape', async () => {
     const due = await app.db.query<{ id: number }>(
@@ -376,7 +376,7 @@ export async function runOne(app: App, job: Job, { boot = BOOT, deadline = deadl
   } catch (e: any) {
     app.log(`[job ${job.id} ${job.kind}] ${cleanLine(e?.stack || e?.message || e, 800)}`);
     // Kapso out of credit refuses every send of every store on it: said to the operator at once (TORAN-READINESS.md P1-25).
-    if (/Kapso refused [^(]*\(402|insufficient_credits/.test(String(e?.message || e))) await alertOperator(app, 'kapso_credits', 'תורן: נגמר הקרדיט ב-Kapso', 'Kapso מסרב לשלוח (insufficient_credits), אז הודעות של חנויות בוואטסאפ לא יוצאות. להוסיף קרדיט בלוח של Kapso.', { everyMinutes: 60 }).catch(() => {});
+    if (/Kapso refused [^(]*\(402|insufficient_credits/.test(String(e?.message || e))) await alertOperator(app, 'kapso_credits', 'תורן: נגמר הקרדיט ב־Kapso', 'Kapso מסרב לשלוח (insufficient_credits), אז הודעות של חנויות בוואטסאפ לא יוצאות. להוסיף קרדיט בלוח של Kapso.', { everyMinutes: 60 }).catch(() => {});
     const last = await fail(app.db, job, String(e?.message || e));
     // A customer's message that failed every attempt: kept in its conversation for the owner, and said to the operator.
     if (last && MESSAGE_KINDS.includes(job.kind)) await lostMessage(app, job, String(e?.message || e)).catch((x) => app.log(`[job ${job.id}] the lost message could not be kept: ${x?.message || x}`));

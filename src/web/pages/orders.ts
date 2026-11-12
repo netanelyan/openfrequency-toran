@@ -26,20 +26,20 @@ export const STEPS: Record<OrderPlatform, string[]> = {
   // the first version, Install app is in the app's ⋮ menu in the list, and after the install Shopify opens the app's
   // placeholder page (example.com's).
   shopify: [
-    'נכנסים ל-dev.shopify.com/dashboard עם החשבון של החנות, ולוחצים Create app.',
+    'נכנסים ל־dev.shopify.com/dashboard עם החשבון של החנות, ולוחצים Create app.',
     'נותנים לאפליקציה שם, למשל תורן, ובשדה Scopes כותבים read_orders (קריאה של הזמנות). לוחצים Create app ואז Release.',
     'ברשימה של Apps, בתפריט ⋮ שליד האפליקציה, לוחצים Install app, בוחרים את החנות ולוחצים Install. אם נפתח אחרי זה דף ריק, סוגרים אותו.',
-    'ב-Settings של האפליקציה יש שני קודים, Client ID ו-Client secret. מעתיקים ומדביקים אותם כאן.',
+    'ב־Settings של האפליקציה יש שני קודים, Client ID ו־Client secret. מעתיקים ומדביקים אותם כאן.',
   ],
   woocommerce: [
-    'בניהול של וורדפרס נכנסים ל-WooCommerce, ל"הגדרות", ללשונית "מתקדם" ואז REST API.',
+    'בניהול של וורדפרס נכנסים ל־WooCommerce, ל"הגדרות", ללשונית "מתקדם" ואז REST API.',
     'מוסיפים מפתח, ובהרשאות בוחרים "קריאה" (Read).',
-    'וורדפרס מראה שני קודים, Consumer key ו-Consumer secret, פעם אחת בלבד. מעתיקים ומדביקים אותם כאן.',
+    'וורדפרס מראה שני קודים, Consumer key ו־Consumer secret, פעם אחת בלבד. מעתיקים ומדביקים אותם כאן.',
   ],
   wix: [
-    'נכנסים ל-manage.wix.com/account/api-keys ויוצרים מפתח.',
+    'נכנסים ל־manage.wix.com/account/api-keys ויוצרים מפתח.',
     'בוחרים את האתר של החנות, ובהרשאות מסמנים קריאה של הזמנות (Read Orders).',
-    'מעתיקים את המפתח. את הקוד של האתר (Site ID) רואים בכתובת של הדשבורד ב-Wix, אחרי /dashboard/.',
+    'מעתיקים את המפתח. את הקוד של האתר (Site ID) רואים בכתובת של הדשבורד ב־Wix, אחרי /dashboard/.',
   ],
 };
 
@@ -47,7 +47,7 @@ const field = (name: string, label: string, { hint = '', placeholder = '', requi
   `<label class="f mt8">${esc(label)}${hint ? `<small>${esc(hint)}</small>` : ''}<input type="text" name="${name}" dir="ltr" autocomplete="off" spellcheck="false" maxlength="400"${placeholder ? ` placeholder="${esc(placeholder)}"` : ''}${required ? ' required' : ''}></label>`;
 
 export const FIELDS: Record<OrderPlatform, string> = {
-  shopify: field('client_id', 'Client ID') + field('client_secret', 'Client secret') + field('shop', 'הכתובת של החנות ב-myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false }),
+  shopify: field('client_id', 'Client ID') + field('client_secret', 'Client secret') + field('shop', 'הכתובת של החנות ב־myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false }),
   woocommerce: field('key', 'Consumer key', { placeholder: 'ck_...' }) + field('secret', 'Consumer secret', { placeholder: 'cs_...' }),
   wix: field('api_key', 'המפתח') + field('site_id', 'הקוד של האתר (Site ID)', { placeholder: '00000000-0000-0000-0000-000000000000' }),
 };
@@ -57,8 +57,8 @@ export const FIELDS: Record<OrderPlatform, string> = {
  * folded under the Dev Dashboard steps, for the few who have one.
  */
 const oldShopifyApp = (r: DashReq, id: number) => `<details class="mt12"><summary class="small">יש לכם אפליקציה של Shopify מלפני 2026?</summary>
-<ol class="m0 mt8"><li>בניהול של Shopify נכנסים להגדרות, ל"אפליקציות וערוצי מכירה" ול"פיתוח אפליקציות", ופותחים את האפליקציה.</li><li>מוודאים שבהרשאות של Admin API מסומן read_orders, ומעתיקים את ה-Admin API access token.</li></ol>
-<form method="post" action="/lead/${id}/orders" class="mt8">${csrfField(r.ctx)}${field('token', 'Admin API access token', { placeholder: 'shpat_...' })}${field('shop', 'הכתובת של החנות ב-myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false })}<button class="btn sm mt12" type="submit">${icon('check')}לחבר</button></form></details>`;
+<ol class="m0 mt8"><li>בניהול של Shopify נכנסים להגדרות, ל"אפליקציות וערוצי מכירה" ול"פיתוח אפליקציות", ופותחים את האפליקציה.</li><li>מוודאים שבהרשאות של Admin API מסומן read_orders, ומעתיקים את ה־Admin API access token.</li></ol>
+<form method="post" action="/lead/${id}/orders" class="mt8">${csrfField(r.ctx)}${field('token', 'Admin API access token', { placeholder: 'shpat_...' })}${field('shop', 'הכתובת של החנות ב־myshopify', { hint: 'אפשר להשאיר ריק, ותורן ימצא אותה לבד', placeholder: 'my-store.myshopify.com', required: false })}<button class="btn sm mt12" type="submit">${icon('check')}לחבר</button></form></details>`;
 
 /**
  * The store's own tracking page (src/tracking.ts; the owner, 2026-11-09: "or the website's own tracking"), folded under
@@ -88,7 +88,7 @@ export async function ordersPanel(app: App, r: DashReq, s: { id: number; platfor
   ${may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/orders/off`, 'לנתק', { cls: 'btn sm danger', confirm: 'לנתק? שאלות על הזמנות יגיעו שוב אליכם. כדאי למחוק את המפתח גם ב-' + name + '.' })}</div>` : ''}</section>`;
   }
   const broken = a ? `<div class="banner warn">${icon('alert')}<div><p>${name} הפסיק לקבל את המפתח, אז שאלות על הזמנות מגיעות שוב אליכם. אפשר להדביק כאן מפתח חדש.</p></div></div>` : '';
-  const intro = `<p class="m0">כשלקוח שואל איפה ההזמנה שלו, תורן יכול לבדוק ב-${name} ולענות לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. בשביל זה צריך מפתח שרק קורא הזמנות. תורן עונה על הזמנה רק למי שכותב מהטלפון או מהמייל שבהזמנה, או כותב לו את הטלפון שבה, כדי שלקוח אחד לא יראה הזמנה של מישהו אחר.</p>`;
+  const intro = `<p class="m0">כשלקוח שואל איפה ההזמנה שלו, תורן יכול לבדוק ב־${name} ולענות לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. בשביל זה צריך מפתח שרק קורא הזמנות. תורן עונה על הזמנה רק למי שכותב מהטלפון או מהמייל שבהזמנה, או כותב לו את הטלפון שבה, כדי שלקוח אחד לא יראה הזמנה של מישהו אחר.</p>`;
   if (!secretsReady(app.env)) return `${head}${intro}<p class="small muted mt12 m0">החיבור להזמנות עוד לא פתוח אצלנו. כתבו לנו ונחבר יחד.</p>${writeUs ? `<div class="row mt8">${writeUs}</div>` : ''}</section>`;
   if (!may) return `${head}${broken}${intro}<p class="small muted mt12 m0">את המפתח מחבר מי שפתח את החשבון.</p></section>`;
   return `${head}${broken}${intro}

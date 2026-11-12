@@ -176,7 +176,8 @@ test('connecting: only the WhatsApp Business app number (coexistence), the token
     assert.deepEqual(g.calls.map((c) => `${c.method} ${c.path}`), ['GET oauth/access_token', `POST ${WABA}/subscribed_apps`, `GET ${PHONE_ID}`, 'GET debug_token']);
 
     const settings = await (await s.get('/settings')).text();
-    assert.match(settings, /מחובר, <bdi class="ltr">\+972500000777<\/bdi>/);
+    // The number as it is said here (core/urls.ts localPhone; the audit of 2026-11-12, P2-16).
+    assert.match(settings, /מחובר, <bdi class="ltr">050-000-0777<\/bdi>/);
     // Another store of another workspace cannot take the number.
     const b = (await s.app.db.one<{ id: number }>("SELECT id FROM stores WHERE domain = 'shaked-jewelry.example'"))!.id;
     await s.app.db.query('UPDATE stores SET workspace_id = 2 WHERE id = $1', [b]);
@@ -237,9 +238,10 @@ test('waiting for Meta: the dashboard says so, the worker checks again, and the 
     g.state.status = 'PENDING';
     const r = await (await connect(s, a)).json();
     assert.equal(r.ok, true);
-    assert.match(r.message, /ממתין לאישור של Meta/);
-    assert.match(await (await s.get('/')).text(), /ממתין לאישור של Meta/);
-    assert.match(await (await s.get(`/lead/${a}/whatsapp`)).text(), /<span class="end chip sig">ממתין לאישור של Meta<\/span>/);
+    // One wording for the one state: "מחכה לאישור של Meta", and what is left after it (the audit of 2026-11-12, P1-1).
+    assert.match(r.message, /המספר מחכה לאישור של Meta/);
+    assert.match(await (await s.get('/')).text(), /מחכה לאישור של Meta/);
+    assert.match(await (await s.get(`/lead/${a}/whatsapp`)).text(), /<span class="end chip sig">מחכה לאישור של Meta<\/span>/);
     const id = (await s.app.db.one<any>("SELECT id FROM channel_accounts WHERE channel = 'whatsapp'")).id;
     // Ten minutes later, Meta says CONNECTED.
     await s.app.db.query("UPDATE channel_accounts SET meta = meta || '{\"checked_at\":\"2000-01-01T00:00:00Z\"}'::jsonb WHERE id = $1", [id]);
@@ -254,7 +256,8 @@ test('waiting for Meta: the dashboard says so, the worker checks again, and the 
     await webhook(s, { object: 'whatsapp_business_account', entry: [{ id: WABA, changes: [{ field: 'account_update', value: { event: 'ACCOUNT_RESTRICTION' } }] }] });
     await drain(s.app, { kinds: ['wa_check'] });
     assert.equal((await s.app.db.one<any>('SELECT status FROM channel_accounts WHERE id = $1', [id])).status, 'error');
-    assert.match(await (await s.get('/settings')).text(), /Meta עצרה את המספר/);
+    // Meta's own reason stays on the row, for us (the audit of 2026-11-12, P1-14).
+    assert.match(await (await s.get('/settings')).text(), /Meta הגבילה את המספר/);
   } finally {
     await s.close();
   }
