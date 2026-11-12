@@ -13,9 +13,9 @@ import { notifyOwners } from './notify-client.ts';
 //
 //   Today     a line at the top while the stop lasts (pages/customer.ts), gone once the operator lifts it
 //   email     one, to the workspace's owners, when the stop starts (the job owner_paused, asked for once a month with
-//             the operator's alert): through accounts as conversation_waiting, the kind an owner already gets when a
-//             customer waits for them (accounts takes only Toran's two kinds), and Toran's own mail when accounts could
-//             not decide, as the waiting digest does (owners/waiting.ts)
+//             the operator's alert): through accounts as the notice ai_paused, which reaches every owner whatever they
+//             chose on /notifications (accounts docs/contracts/notify.json, since 2026-11-11), and Toran's own mail when
+//             accounts could not decide, as the waiting digest does (owners/waiting.ts)
 //
 // Never a cost, a cap or a share: the words are the terms' own, "שימוש חריג מאוד, הרבה מעבר לחבילה".
 
@@ -52,7 +52,7 @@ export async function pausedNotice(app: App, workspaceId: number, month: string)
   const link = `${String(app.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '')}/chats?state=waiting`;
   const text = `${copy.text}\n\n${link}`;
   const told = (sent: number, by: string) => event(db, stores[0].id, 'owner_paused', { workspace: String(workspaceId), month, sent, by });
-  const r = await notifyOwners(app, workspaceId, 'conversation_waiting', copy.title, text, link);
+  const r = await notifyOwners(app, workspaceId, 'ai_paused', copy.title, text, link);
   if (r.ok) {
     await told(r.sent, 'accounts');
     return { sent: r.sent };

@@ -20,7 +20,7 @@
           "product": "teder | toran"
         }
       },
-      "notes": "Decide on `allowed` alone; `access` says why. `access` is one of paid, comp, due, unpaid, cancelled, off: a reader must accept every one of them (due is new on 2026-10-29). `plan` is in every 200 answer: Teder's is { name: full | small, slideshows, redos }, Toran's { name: store | big, conversations } (Toran's since 2026-11-08; a reader must accept a plan it does not know). The instants are the ends of Israel days, in UTC.",
+      "notes": "Decide on `allowed` alone; `access` says why. `access` is one of paid, comp, due, unpaid, cancelled, off: a reader must accept every one of them (due is new on 2026-10-29). `plan` is in every 200 answer: Teder's is { name: full | small, slideshows, redos }, Toran's { name: store | big, conversations } (Toran's since 2026-11-08; a reader must accept a plan it does not know). `monthlyIls` is in every 200 answer since 2026-11-11: what a month of the product costs this workspace before VAT, in shekels to the agora, the base a product weighs what it spends on the workspace against (Teder: its AI cost, 30% alerts the operator and 50% stops the AI until the next month). It is the subscription's price, with the VAT taken out when it was recorded with it included, or the plan's list price when the product is complimentary or no price above 0 is recorded; a reader must accept an answer without it (an older accounts) and take the plan's list price then. The instants are the ends of Israel days, in UTC.",
       "answers": [
         {
           "case": "paid (Teder, the small plan)",
@@ -38,7 +38,8 @@
               "name": "small",
               "slideshows": 15,
               "redos": 4
-            }
+            },
+            "monthlyIls": 490
           },
           "nullable": [
             "paidThrough",
@@ -62,7 +63,8 @@
               "name": "full",
               "slideshows": 40,
               "redos": 10
-            }
+            },
+            "monthlyIls": 790
           },
           "nullable": [
             "paidThrough",
@@ -86,7 +88,8 @@
               "name": "full",
               "slideshows": 40,
               "redos": 10
-            }
+            },
+            "monthlyIls": 790
           },
           "nullable": [
             "paidThrough",
@@ -110,7 +113,8 @@
               "name": "full",
               "slideshows": 40,
               "redos": 10
-            }
+            },
+            "monthlyIls": 790
           },
           "nullable": [
             "paidThrough",
@@ -134,7 +138,33 @@
               "name": "full",
               "slideshows": 40,
               "redos": 10
-            }
+            },
+            "monthlyIls": 790
+          },
+          "nullable": [
+            "paidThrough",
+            "cancelAt",
+            "graceUntil"
+          ]
+        },
+        {
+          "case": "paid, a price agreed with VAT included: monthlyIls is the price before VAT (590 ₪ with VAT, 500 before it)",
+          "status": 200,
+          "body": {
+            "workspace": 7,
+            "product": "teder",
+            "enabled": true,
+            "access": "paid",
+            "allowed": true,
+            "paidThrough": "2026-11-21T21:59:59.999Z",
+            "cancelAt": null,
+            "graceUntil": null,
+            "plan": {
+              "name": "small",
+              "slideshows": 15,
+              "redos": 4
+            },
+            "monthlyIls": 500
           },
           "nullable": [
             "paidThrough",
@@ -157,7 +187,8 @@
             "plan": {
               "name": "big",
               "conversations": 1500
-            }
+            },
+            "monthlyIls": 1190
           },
           "nullable": [
             "paidThrough",
@@ -180,7 +211,8 @@
             "plan": {
               "name": "store",
               "conversations": 300
-            }
+            },
+            "monthlyIls": 590
           },
           "nullable": [
             "paidThrough",

@@ -261,14 +261,14 @@ test('past 50% the owner is told, as the terms promise: one email through accoun
     assert.match(line, /href="\/chats\?state=waiting"/);
     assert.doesNotMatch(line, /₪|\$|%|\d+\.\d\d/, 'never a cost or a share');
 
-    // The email: once, through accounts, as the kind an owner gets when customers wait for them, by the worker.
+    // The email: once, through accounts, as the notice ai_paused that every owner gets whatever they chose, by the worker.
     assert.equal(await drain(s.app, { kinds: ['owner_paused'] }), 1);
     assert.deepEqual((await s.app.db.one<any>("SELECT status, result FROM jobs WHERE kind = 'owner_paused'")), { status: 'done', result: { sent: 1 } });
     assert.equal(s.accounts.notified.length, 1);
     const mail = s.accounts.notified[0];
     assert.equal(mail.workspace, WS);
     assert.equal(mail.product, 'toran');
-    assert.equal(mail.kind, 'conversation_waiting');
+    assert.equal(mail.kind, 'ai_paused');
     assert.equal(mail.link, 'https://toran.openfrequency.co.il/chats?state=waiting');
     assert.match(mail.subject, new RegExp(`^עד ${until} תורן מעביר אליכם כל שאלה של לקוח בכלי חרס של נורית$`));
     assert.match(mail.text, /שימוש חריג מאוד/);
