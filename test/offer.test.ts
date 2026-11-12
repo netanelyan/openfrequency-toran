@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ROOT } from '../src/core/paths.ts';
 import { ACCOUNTS_PLANS, forgetFounders, foundersOffer, getOffer, PLANS_OFFER, setOffer } from '../src/offer.ts';
 import { PLANS } from '../src/plans.ts';
+import { foundersLine, plansMain } from '../src/pitch/page.ts';
 import { testApp } from './helpers.ts';
 
 // What the pitch pages quote (src/offer.ts): the plans openfrequency-accounts sells and bills, not a settings row typed
@@ -59,8 +60,12 @@ test('the pages quote the plans; a row saved before them is not a price; a price
 });
 
 test("the founders' offer is read from accounts' public counter, kept ten minutes, and anything else is no offer", async () => {
-  const env = { OF_ACCOUNTS_URL: 'https://accounts.example' };
+  const env = { OF_ACCOUNTS_URL: 'https://accounts.openfrequency.co.il' };
   const answer = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+  forgetFounders();
+  let asked = 0;
+  assert.equal(await foundersOffer({ OF_ACCOUNTS_URL: 'https://accounts.test' }, (async () => (asked++, new Response('{}'))) as unknown as typeof fetch), null);
+  assert.equal(asked, 0, 'a name that cannot resolve is not asked');
   forgetFounders();
   assert.deepEqual(await foundersOffer(env, answer({ spots: 10, left: 8 })), { spots: 10, left: 8 });
   assert.deepEqual(await foundersOffer(env, answer({ spots: 10, left: 0 })), { spots: 10, left: 8 }, 'kept');
@@ -73,6 +78,17 @@ test("the founders' offer is read from accounts' public counter, kept ten minute
   forgetFounders();
   assert.equal(await foundersOffer(env, (async () => { throw new Error('ECONNREFUSED'); }) as unknown as typeof fetch), null);
   forgetFounders();
-  assert.equal(await foundersOffer({ OF_ACCOUNTS_URL: 'http://accounts.example' }, answer({ spots: 10, left: 8 })), null, 'https only');
+  assert.equal(await foundersOffer({ OF_ACCOUNTS_URL: 'http://accounts.openfrequency.co.il' }, answer({ spots: 10, left: 8 })), null, 'https only');
   forgetFounders();
+});
+
+test("the pitch page says the founders' offer under the setup fee only while spots are left", () => {
+  const o = { ...PLANS_OFFER };
+  assert.equal(foundersLine(o, { spots: 10, left: 8 }), ' ל־8 העסקים הבאים שמצטרפים אין דמי הקמה.');
+  assert.equal(foundersLine(o, { spots: 10, left: 1 }), ' לעסק הבא שמצטרף אין דמי הקמה.');
+  assert.equal(foundersLine(o, { spots: 10, left: 0 }), '', 'full: nothing');
+  assert.equal(foundersLine(o, null), '', 'accounts did not answer: nothing');
+  assert.equal(foundersLine({ ...o, setup: 0 }, { spots: 10, left: 8 }), '', 'no setup fee to waive');
+  assert.match(plansMain(o, { OF_ACCOUNTS_URL: 'https://accounts.openfrequency.co.il' }, '', { spots: 10, left: 8 }), /ועוד 990 ₪ דמי הקמה, פעם אחת\. ל־8 העסקים הבאים שמצטרפים אין דמי הקמה\./);
+  assert.match(plansMain(o, { OF_ACCOUNTS_URL: 'https://accounts.openfrequency.co.il' }, ''), /<span class="num">1,190<\/span>/, 'both plans, from the plans');
 });

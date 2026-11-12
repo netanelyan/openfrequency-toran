@@ -2,8 +2,9 @@ import type { App } from '../app.ts';
 import { a11yHead, a11yWidget, accessibilityLink, iconLinks, ofMark, toranMark } from '../brand.ts';
 import { brandColor, displayName, inkOn, readableShade } from '../ingest/brand.ts';
 import { esc } from '../web/ui.ts';
+import { prefixed } from '../core/hebrew.ts';
 import { money } from '../agent/tools.ts';
-import { getOffer, offerReady, ofWhatsapp, PAGE_ABOUT, PAGE_DOWN, type Offer } from '../offer.ts';
+import { foundersOffer, getOffer, offerReady, ofWhatsapp, PAGE_ABOUT, PAGE_DOWN, type Founders, type Offer } from '../offer.ts';
 import { toranOnSale } from '../ops/signupSwitch.ts';
 import { PLANS, type PlanKey } from '../plans.ts';
 import { accountsLinks } from '../web/accounts.ts';
@@ -40,6 +41,8 @@ export type PitchData = {
   pages: { shipping: boolean; returns: boolean; titles: string[] };
   shelf: ShelfItem[];
   offer: Offer;
+  /** accounts' founders' spots, when its public counter answered (offer.ts foundersOffer); null says nothing of it. */
+  founders?: Founders | null;
   gaps: Gap[];
   public: boolean;
 };
@@ -76,10 +79,17 @@ export async function pitchData(app: App, slug: string): Promise<PitchData | nul
     pages: { shipping: kinds.has('shipping'), returns: kinds.has('returns'), titles: [...new Set(policies.map((p) => p.title.trim()).filter(Boolean))] },
     shelf: shelf.length >= SHELF_MIN ? shelf : [],
     offer: await getOffer(app.db),
+    founders: await foundersOffer(app.env),
     gaps,
     public: isPublic(store, gaps),
   };
 }
+
+/**
+ * The founders' offer under the setup fee, while spots are left (accounts' src/accounts/founders.js: no setup fee for the
+ * next workspaces that sign up), only as accounts' public counter says it; nothing when it did not answer.
+ */
+export const foundersLine = (o: Offer, f: Founders | null | undefined) => (o.setup && o.setup > 0 && f && f.left > 0 ? ` ${f.left === 1 ? 'לעסק הבא שמצטרף' : `${prefixed('ל', String(f.left))} העסקים הבאים שמצטרפים`} אין דמי הקמה.` : '');
 
 /** The store's colour for its page, darkened until white text on it passes 4.5:1. Graphite only in the owner's preview of a page held for its colour. */
 export function themeCss(d: PitchData): string {
@@ -117,11 +127,11 @@ export function waLink(env: Record<string, string | undefined>, code: string, na
  * the setup fee. A part not decided yet is a [placeholder] in the owner's view (`ph`); the public page is held back
  * until all of it is set (pitch/ready.ts), so `ph` null never meets a gap.
  */
-export function priceFigure(o: Offer, ph: ((label: string) => string) | null): string {
+export function priceFigure(o: Offer, ph: ((label: string) => string) | null, founders: Founders | null = null): string {
   const gap = (label: string) => (ph ? ph(label) : '');
   const figure = o.monthly != null && o.monthly > 0 ? `<span class="num">${esc(o.monthly.toLocaleString('he-IL'))}</span><span class="cur">₪</span>` : gap('[המחיר]');
   const vat = o.vat === 'included' ? 'כולל מע״מ.' : o.vat === 'excluded' ? 'לא כולל מע״מ.' : gap('[כולל או לא כולל מע״מ]');
-  const setup = o.setup == null ? gap('[דמי הקמה, אם יש]') : o.setup > 0 ? `בחודש הראשון יש גם ${esc(`${o.setup.toLocaleString('he-IL')} ₪`)} דמי הקמה, פעם אחת.` : 'אין דמי הקמה.';
+  const setup = o.setup == null ? gap('[דמי הקמה, אם יש]') : o.setup > 0 ? `בחודש הראשון יש גם ${esc(`${o.setup.toLocaleString('he-IL')} ₪`)} דמי הקמה, פעם אחת.${foundersLine(o, founders)}` : 'אין דמי הקמה.';
   return `<p class="figure">${figure}<span class="per">לחודש</span></p>\n        <p class="price-notes">${vat} ${setup}</p>`;
 }
 
@@ -130,7 +140,7 @@ export function priceFigure(o: Offer, ph: ((label: string) => string) | null): s
  * conversations a month and "להצטרף" to accounts' sign-up with the plan chosen; the big plan only when its price is set.
  * Trying it first on WhatsApp stays under them.
  */
-export function plansMain(o: Offer, env: Record<string, string | undefined>, tryBtn: string): string {
+export function plansMain(o: Offer, env: Record<string, string | undefined>, tryBtn: string, founders: Founders | null = null): string {
   const join = (plan: PlanKey) => `${accountsLinks(env).home}/signup?p=toran&plan=${plan}`;
   const vat = o.vat === 'included' ? 'כולל מע״מ' : 'לא כולל מע״מ';
   const card = (plan: PlanKey, monthly: number, main: boolean) => `<div class="plan${main ? ' main' : ''}">
@@ -138,7 +148,7 @@ export function plansMain(o: Offer, env: Record<string, string | undefined>, try
           <p class="figure"><span class="num">${esc(monthly.toLocaleString('he-IL'))}</span><span class="cur">₪</span><span class="per">לחודש</span></p>
           <a class="join${main ? '' : ' quiet'}" href="${esc(join(plan))}" rel="noopener">להצטרף בחבילת ${esc(PLANS[plan].he)}</a>
         </div>`;
-  const setup = o.setup && o.setup > 0 ? `ועוד ${esc(`${o.setup.toLocaleString('he-IL')} ₪`)} דמי הקמה, פעם אחת.` : 'אין דמי הקמה.';
+  const setup = o.setup && o.setup > 0 ? `ועוד ${esc(`${o.setup.toLocaleString('he-IL')} ₪`)} דמי הקמה, פעם אחת.${foundersLine(o, founders)}` : 'אין דמי הקמה.';
   return `<div class="price-main">
         <p class="price-name">${toranMark(36, { label: null })}<b>תורן</b></p>
         <div class="plans">${card('store', o.monthly!, true)}${o.bigMonthly && o.bigMonthly > 0 ? card('big', o.bigMonthly, false) : ''}</div>
@@ -276,9 +286,9 @@ ${iconLinks()}
   <section class="price" data-depth="50" aria-labelledby="price-h">
     <h2 id="price-h">אם תחברו אותו למספר של החנות</h2>
     <div class="glass price-card">
-      ${onSale ? plansMain(d.offer, env, greenBtn('לנסות אותו קודם בוואטסאפ', 'try')) : `<div class="price-main">
+      ${onSale ? plansMain(d.offer, env, greenBtn('לנסות אותו קודם בוואטסאפ', 'try'), d.founders ?? null) : `<div class="price-main">
         <p class="price-name">${toranMark(36, { label: null })}<b>תורן</b></p>
-        ${priceFigure(d.offer, owner ? ph : null)}
+        ${priceFigure(d.offer, owner ? ph : null, d.founders ?? null)}
         ${greenBtn('לכתוב לתורן')}
       </div>`}
       <div class="price-incl">

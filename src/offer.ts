@@ -71,8 +71,15 @@ let founders: { at: number; value: Founders | null } | null = null;
 export async function foundersOffer(env: Record<string, string | undefined>, fetchImpl: typeof fetch = fetch): Promise<Founders | null> {
   if (founders && Date.now() - founders.at < FOUNDERS_MS) return founders.value;
   const base = String(env.OF_ACCOUNTS_URL || '').trim().replace(/\/+$/, '');
+  let host = '';
+  try {
+    host = new URL(base).hostname;
+  } catch {
+    host = '';
+  }
   let value: Founders | null = null;
-  if (/^https:\/\//.test(base)) {
+  // Never a name that cannot resolve (the tests' and a laptop's accounts.test): nothing to ask there.
+  if (/^https:\/\//.test(base) && host && !/(^localhost$|\.(test|example|invalid|localhost)$)/.test(host)) {
     try {
       const r = await fetchImpl(`${base}/public/founders.json`, { redirect: 'error', signal: AbortSignal.timeout(2000) });
       const b: any = r.ok ? await r.json() : null;
