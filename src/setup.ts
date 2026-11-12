@@ -216,7 +216,7 @@ export async function setupOf(app: App, workspaceId: number): Promise<Setup> {
       const href = at('/settings#email');
       const st = await mailState(app, s.id);
       if (st.step === 'done') return { status: 'done', detail: '', href };
-      if (st.on) return { status: 'working', detail: st.step === 'confirm' ? 'מייל האישור מ-Gmail הגיע. מאשרים אותו בהגדרות, בלחיצה אחת.' : 'באמצע. ממשיכים מאיפה שעצרתם.', href };
+      if (st.on) return { status: 'working', detail: st.step === 'confirm' ? 'מייל האישור מ־Gmail הגיע. מאשרים אותו בהגדרות, בלחיצה אחת.' : 'באמצע. ממשיכים מאיפה שעצרתם.', href };
       return { status: 'todo', detail: 'בוחרים איזה מייל יש לחנות, ותורן מראה איך מעבירים אותו אליו.', href };
     });
   }

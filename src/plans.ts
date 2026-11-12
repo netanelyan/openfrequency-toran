@@ -72,7 +72,7 @@ export function usageOf(plan: PlanKey, byMonth: Map<string, number> | undefined,
   } else if (plan === 'big' && thisMonth > cap) {
     note = `החודש עברתם את ${cap.toLocaleString('en-US')} השיחות של החבילה הגדולה. כתבו לנו בוואטסאפ, ונבנה חבילה לפי החנות.`;
   } else if (plan === 'big' && lastMonth < small && lastMonth > 0) {
-    note = `בחודש שעבר היו פחות מ-${small} שיחות. אם גם החודש ייגמר מתחת ל-${small}, החנות תחזור לחבילת חנות.`;
+    note = `בחודש שעבר היו פחות מ־${small} שיחות. אם גם החודש ייגמר מתחת ל־${small}, החנות תחזור לחבילת חנות.`;
   }
   return { plan, cap, month, thisMonth, lastMonth, note };
 }

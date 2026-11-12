@@ -238,7 +238,7 @@ async function execute(app: App, action: any, author: string): Promise<string> {
       status = 'failed';
       line = 'לא הצלחתי לשלוח את ההודעה ללקוח. אפשר לענות לו ישירות מתיבת השיחות.';
     } else {
-      line = `נשלח. תורן לא יענה בשיחה הזאת ב-${PAUSE_HOURS} השעות הקרובות, כדי שתוכלו להמשיך בה.`;
+      line = `נשלח. תורן לא יענה בשיחה הזאת ב־${PAUSE_HOURS} השעות הקרובות, כדי שתוכלו להמשיך בה.`;
       if (action.params.remember) {
         const question = await questionOf(app, id);
         if (question) {
@@ -250,7 +250,7 @@ async function execute(app: App, action: any, author: string): Promise<string> {
   } else if (action.kind === 'pause') {
     await app.db.query(`UPDATE conversations SET agent_paused_until = now() + interval '${PAUSE_HOURS} hours' WHERE id = $1 AND store_id = $2`, [id, action.store_id]);
     await audit(app.db, { actor: author, action: 'pause_agent', storeId: action.store_id, detail: { conversationId: id, via: 'assistant' } });
-    line = `תורן לא יענה בשיחה הזאת ב-${PAUSE_HOURS} השעות הקרובות.`;
+    line = `תורן לא יענה בשיחה הזאת ב־${PAUSE_HOURS} השעות הקרובות.`;
   } else {
     await resumeAgent(app, id, author);
     line = 'תורן חוזר לענות בשיחה הזאת מההודעה הבאה של הלקוח.';

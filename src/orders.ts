@@ -399,8 +399,8 @@ const HE = {
   platform: 'אפשר לחבר הזמנות רק בחנות של Shopify, WooCommerce או Wix.',
   refused: 'החנות לא קיבלה את המפתח. כדאי לבדוק שהעתקתם אותו עד הסוף ושיש לו הרשאה לקרוא הזמנות.',
   // Shopify's shop_not_permitted: the client credentials grant works only for a store in the app's own organization.
-  org: 'Shopify לא נתנה לאפליקציה גישה לחנות הזו. צריך ליצור את האפליקציה ב-Dev Dashboard מאותו חשבון שהחנות שייכת אליו, ולהתקין אותה על החנות.',
-  install: 'Shopify לא נתנה גישה עם הפרטים האלה. כדאי לבדוק שהאפליקציה מותקנת על החנות (ב-Dev Dashboard, "Install app"), ושהעתקתם את ה-Client ID וה-Client secret שלה עד הסוף.',
+  org: 'Shopify לא נתנה לאפליקציה גישה לחנות הזו. צריך ליצור את האפליקציה ב־Dev Dashboard מאותו חשבון שהחנות שייכת אליו, ולהתקין אותה על החנות.',
+  install: 'Shopify לא נתנה גישה עם הפרטים האלה. כדאי לבדוק שהאפליקציה מותקנת על החנות (ב־Dev Dashboard, "Install app"), ושהעתקתם את ה־Client ID וה־Client secret שלה עד הסוף.',
   away: 'לא הצלחנו להגיע לחנות כדי לבדוק את המפתח. אפשר לנסות שוב בעוד כמה דקות.',
   other: 'המפתח הזה של חנות Shopify אחרת, לא של האתר הזה. צריך את הפרטים של האפליקציה שמותקנת על החנות של האתר.',
 };
@@ -414,19 +414,19 @@ export async function credsOf(app: App, platform: OrderPlatform, origin: string,
     const clientSecret = str(form.client_secret);
     let shop = shopOf(str(form.shop));
     if (!str(form.shop)) shop = shopOf(str((await shopMeta(app.fetcher, origin)).myshopify_domain));
-    if (!shop) throw new OrderConnectError('no myshopify address', 'צריך גם את הכתובת של החנות ב-myshopify, למשל my-store.myshopify.com. רואים אותה בניהול של Shopify, בהגדרות, תחת דומיינים.');
+    if (!shop) throw new OrderConnectError('no myshopify address', 'צריך גם את הכתובת של החנות ב־myshopify, למשל my-store.myshopify.com. רואים אותה בניהול של Shopify, בהגדרות, תחת דומיינים.');
     if (token) {
-      if (!/^shp[a-z]{2}_[A-Za-z0-9]{16,}$/.test(token)) throw new OrderConnectError('not a Shopify Admin API token', 'זה לא נראה כמו טוקן של Shopify. הוא מתחיל ב-shpat_ ומופיע באפליקציה, תחת API credentials.');
+      if (!/^shp[a-z]{2}_[A-Za-z0-9]{16,}$/.test(token)) throw new OrderConnectError('not a Shopify Admin API token', 'זה לא נראה כמו טוקן של Shopify. הוא מתחיל ב־shpat_ ומופיע באפליקציה, תחת API credentials.');
       return { token, shop };
     }
-    if (!/^[A-Za-z0-9]{20,64}$/.test(clientId)) throw new OrderConnectError('not a Shopify Client ID', 'זה לא נראה כמו Client ID של Shopify. מעתיקים אותו מהאפליקציה ב-Dev Dashboard, בהגדרות (Settings).');
-    if (!/^(shpss_)?[A-Za-z0-9_-]{20,}$/.test(clientSecret)) throw new OrderConnectError('not a Shopify Client secret', 'צריך גם את ה-Client secret, מאותו מקום בהגדרות של האפליקציה ב-Dev Dashboard.');
+    if (!/^[A-Za-z0-9]{20,64}$/.test(clientId)) throw new OrderConnectError('not a Shopify Client ID', 'זה לא נראה כמו Client ID של Shopify. מעתיקים אותו מהאפליקציה ב־Dev Dashboard, בהגדרות (Settings).');
+    if (!/^(shpss_)?[A-Za-z0-9_-]{20,}$/.test(clientSecret)) throw new OrderConnectError('not a Shopify Client secret', 'צריך גם את ה־Client secret, מאותו מקום בהגדרות של האפליקציה ב־Dev Dashboard.');
     return { clientId, clientSecret, shop };
   }
   if (platform === 'woocommerce') {
     const key = str(form.key);
     const secret = str(form.secret);
-    if (!/^ck_[A-Za-z0-9]{20,}$/.test(key) || !/^cs_[A-Za-z0-9]{20,}$/.test(secret)) throw new OrderConnectError('not a WooCommerce key pair', 'צריך את שני החלקים של המפתח: Consumer key שמתחיל ב-ck_, ו-Consumer secret שמתחיל ב-cs_.');
+    if (!/^ck_[A-Za-z0-9]{20,}$/.test(key) || !/^cs_[A-Za-z0-9]{20,}$/.test(secret)) throw new OrderConnectError('not a WooCommerce key pair', 'צריך את שני החלקים של המפתח: Consumer key שמתחיל ב־ck_, ו־Consumer secret שמתחיל ב־cs_.');
     return { key, secret };
   }
   const apiKey = str(form.api_key);
