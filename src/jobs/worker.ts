@@ -155,6 +155,12 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       if (/^9725\d{8}$/.test(String(p.whatsapp || ''))) await app.db.query('UPDATE stores SET contact_whatsapp = $2 WHERE id = $1', [store.id, p.whatsapp]);
       // The site proven with the store's own key (domainProof.ts): the key is the store's order key now, a step done.
       if (workspaceId) await takeOrderKey(app, store.id, p.by || 'owner');
+      // Added on the shared lead list (ops/leadsAdmin.ts addLead): listed there whatever its score, with its
+      // description, and nothing built until the operator says Toran, Teder, both or neither.
+      if (p.added === true && !workspaceId) {
+        await app.db.query('UPDATE stores SET added_at = now(), updated_at = now() WHERE id = $1', [store.id]);
+        return { storeId: store.id, stats: r.stats, ingested: false, why: 'added to the lead list: nothing is built until the operator chooses' };
+      }
       if (!canIngest(store.platform)) return { storeId: store.id, stats: r.stats, ingested: false, why: `the platform is ${store.platform}: Toran reads ${INGESTIBLE_EN} stores` };
       return { storeId: store.id, ...(await ingestAndBuild(app, store.id, say)) };
     }
@@ -197,6 +203,15 @@ export async function runJob(app: App, job: Job): Promise<unknown> {
       return pausedNotice(app, Number(p.workspace), String(p.month || ''));
     case 'looks':
       return await readLooks(app, Number(p.storeId));
+    // The sample chat made again, from the shared lead page (ops/leadsAdmin.ts 'sample'): the questions asked of the
+    // store's own agent again and read again (pitch/build.ts), and the page approves itself when nothing is missing. A
+    // page already sent keeps its chat when no new one passes, so the link the store has still opens.
+    case 'pitch': {
+      await say('בונה את שיחת הדוגמה מחדש');
+      const sent = await app.db.one('SELECT 1 FROM stores WHERE id = $1 AND sent_at IS NOT NULL', [Number(p.storeId)]);
+      const b = await buildPitch(app, Number(p.storeId), { keep: Boolean(sent) });
+      return { storeId: p.storeId, sample: b.chat.length ? 'built' : 'none', turnedDown: b.turnedDown.length };
+    }
     case 'ingest':
     case 'rescrape':
       return { storeId: p.storeId, ...(await ingestAndBuild(app, Number(p.storeId), say, job.kind === 'rescrape')) };

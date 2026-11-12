@@ -1,6 +1,6 @@
 {
   "name": "admin-leads",
-  "doc": "The shared lead dashboard on accounts' /admin/leads (the owner, 2026-11-08: \"make the shared lead dashboard be in the admin dashboard, not in one of the products\"). Toran keeps the outreach and talks to Teder about the same store (its src/ops/leadsAdmin.ts, tederLeads.ts); accounts shows one list for both products and one page a lead, and every button is handed to Toran. The other buttons of a lead (they answered, the next step, later, not interested, a customer) are toran-ops' POST /internal/ops/<toran|teder>/<id>/<action>, as on the dashboard. A demo's state is none, building, review (built, waiting for the operator's look), ready (up, its pageUrl set), failed or removed; where is new, ready, sent, talking or closed. Each row says what can be built for it now (build: toran, also again once its page is built; teder, when it has no demo or one that failed or was removed; both, while neither has one and nothing is being built) and which demo the operator chose to make for it on this dashboard (chosen: toran, teder or both, null when none was; the owner, 2026-11-11: \"each leads should have a button for generating a demo for teder/toran/both. the message that is suggested being sent to the phone number on whatsapp should be according to that\"). What the lead goes on with is chosen whatever is built (build.go: for both, toran and teder, can, whether it can be chosen, and makes, the demos choosing it would make now, empty when it lacks none; POST go-both, go-toran or go-teder keeps the choice as it is said and makes only those; the owner, 2026-11-12: \"i dont see a button for going on with teder/toran/both for each lead\"). On one lead, send.options puts the chosen one first when it can go, else both when both can. Each of bothText, toranText and tederText is that message when it is due (null when not): the approved template's words when it goes from our number (pitchable), else the text to copy and send by hand, each demo's link in it; copy is the chat or the mail to open it in, with no text in it. ok false is a refusal in Toran's own words (error, in Hebrew), which accounts shows as it is.",
+  "doc": "The shared lead dashboard on accounts' /admin/leads (the owner, 2026-11-08: \"make the shared lead dashboard be in the admin dashboard, not in one of the products\"), and everything about a lead is done there (the owner, 2026-11-12: \"i want https://accounts.openfrequency.co.il/admin/leads to have everything i need for creating and doing leads ... it MUST not send me to old fronts like https://accounts.openfrequency.co.il/admin/teder/leads\"): nothing here links to Toran's or Teder's own operator pages, only to the store's site and to the demos' own public pages. Toran keeps the outreach and talks to Teder about the same store (its src/ops/leadsAdmin.ts, tederLeads.ts); accounts shows one list for both products and one page a lead, and every button is handed to Toran. A store is said in a few words (the owner: \"i want each store to have a short description, so that i will know if i should build toran/teder/both/neither for that store\"): about, its line in its own words from its home page (null when it says nothing its name does not), and facts, what Toran found of it: products (read from the store, else counted when it was found; productsAtLeast when that count stopped), priceMin and priceMax once read, the kinds most of its products are, and its own Instagram, TikTok and Facebook. Nothing in them is guessed or written by a model. A demo's state is none, building, review (built, waiting for the operator's look), ready (up, its pageUrl set), failed or removed; idea is what Teder's demo is about, null for Toran's. where is new, ready, sent, talking or closed. Each row says what can be built for it now (build: toran, also again once its page is built; teder, when it has no demo or one that failed or was removed; both, while neither has one and nothing is being built) and which demo the operator chose to make for it on this dashboard (chosen: toran, teder or both, null when none was; the owner, 2026-11-11: \"each leads should have a button for generating a demo for teder/toran/both. the message that is suggested being sent to the phone number on whatsapp should be according to that\"). What the lead goes on with is chosen whatever is built (build.go: for both, toran and teder, can, whether it can be chosen, and makes, the demos choosing it would make now, empty when it lacks none; POST go-both, go-toran or go-teder keeps the choice as it is said and makes only those; go-none is neither: the store is skipped, and Teder's lead of it marked not relevant; the owner, 2026-11-12: \"i dont see a button for going on with teder/toran/both for each lead\"). On one lead, send.options puts the chosen one first when it can go, else both when both can. Each of bothText, toranText and tederText is that message when it is due (null when not): the approved template's words when it goes from our number (pitchable), else the text to copy and send by hand, each demo's link in it; copy is the chat or the mail to open it in, with no text in it. review is Toran's page as it is checked on the lead's page (null before it is built): what holds it back (gaps, each key name, color, products, sample, price, of_number or demo_number, with Toran's line), whether it is approved or held back by hand since it was built, whether it is being built now, the name and colour it shows and the colours found on the site, the sample chat and what its last build turned down. ok false is a refusal in Toran's own words (error, in Hebrew), which accounts shows as it is.",
   "servedBy": ["toran"],
   "calledBy": ["accounts"],
   "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
@@ -9,10 +9,10 @@
       "method": "GET",
       "path": "/internal/leads",
       "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
-      "request": { "query": { "where": "new | ready | sent | talking | closed, or nothing for all", "q": "a part of the name or the domain" } },
+      "request": { "query": { "where": "new | ready | sent | talking | closed, or nothing for all", "q": "a part of the name or the domain", "all": "1: the stores discovery found that did not pass the score too, to choose one by hand" } },
       "answers": [
         {
-          "case": "the list: Toran's stores that are leads, each with its Teder lead, and Teder's leads Toran has no store for; teder.ok false when Teder did not answer (then every teder state is none and tederOnly is empty)",
+          "case": "the list: Toran's stores that are leads (and those Teder has a lead of), each with its Teder lead and its description, Teder's leads whose Toran store is gone, the stores added by their address in the last day that are not on the list yet, and discovery: the run going now, the sources that can run, and the last run's numbers; teder.ok false when Teder did not answer (then every teder state is none and tederOnly is empty)",
           "status": 200,
           "body": {
             "ok": true,
@@ -25,12 +25,14 @@
                 "domain": "nurit-ceramics.co.il",
                 "url": "https://nurit-ceramics.co.il/",
                 "platform": "shopify",
+                "about": "קרמיקה בעבודת יד מהסטודיו בקיבוץ",
+                "facts": { "products": 14, "productsAtLeast": false, "priceMin": 45, "priceMax": 500, "currency": "ILS", "kinds": ["ספלים", "קערות"], "social": { "instagram": "https://www.instagram.com/nurit.ceramics/", "tiktok": null, "facebook": null } },
                 "score": 72,
                 "qualified": true,
                 "where": "ready",
                 "contact": { "whatsapp": "972500000123", "email": null, "phone": null },
-                "toran": { "state": "ready", "pageUrl": "https://toran.openfrequency.co.il/s/nurit-c1", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "url": "https://accounts.openfrequency.co.il/admin/toran/lead/12", "error": null },
-                "teder": { "state": "ready", "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "url": "https://teder.openfrequency.co.il/demos/14", "error": null },
+                "toran": { "state": "ready", "pageUrl": "https://toran.openfrequency.co.il/s/nurit-c1", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "error": null, "idea": null },
+                "teder": { "state": "ready", "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "error": null, "idea": "הסיפור של הקרמיקה" },
                 "build": { "toran": true, "teder": false, "both": false, "toranWhyNot": null, "go": { "both": { "can": true, "makes": [] }, "toran": { "can": true, "makes": [] }, "teder": { "can": true, "makes": [] } } },
                 "chosen": "both",
                 "updatedAt": "2026-11-08T10:00:00.000Z"
@@ -42,12 +44,15 @@
                 "name": "חנות הכלים",
                 "domain": "kelim.example",
                 "where": "sent",
-                "teder": { "state": "ready", "pageUrl": "https://teder.openfrequency.co.il/s/kelim-b2c3d4", "sentAt": "2026-11-07T09:00:00.000Z", "reminderSentAt": null, "reminderDue": false, "url": "https://teder.openfrequency.co.il/demos/21", "error": null },
-                "leadUrl": "https://teder.openfrequency.co.il/leads?tab=sent#lead-9"
+                "teder": { "state": "ready", "pageUrl": "https://teder.openfrequency.co.il/s/kelim-b2c3d4", "sentAt": "2026-11-07T09:00:00.000Z", "reminderSentAt": null, "reminderDue": false, "error": null, "idea": "איך מטפלים בכלי ברזל" }
               }
-            ]
+            ],
+            "adding": [
+              { "url": "https://new-store.example/", "state": "reading", "error": null, "at": "2026-11-12T10:00:00.000Z" }
+            ],
+            "discovery": { "running": null, "sources": ["storecensus", "crawl", "seeds"], "last": { "source": "storecensus", "at": "2026-11-11T08:00:00.000Z", "found": 6, "fit": 4, "looked": 40 } }
           },
-          "nullable": ["platform", "whatsapp", "email", "phone", "pageUrl", "sentAt", "reminderSentAt", "url", "error", "toranWhyNot", "chosen"]
+          "nullable": ["platform", "about", "products", "priceMin", "priceMax", "instagram", "tiktok", "facebook", "whatsapp", "email", "phone", "pageUrl", "sentAt", "reminderSentAt", "error", "idea", "toranWhyNot", "chosen", "running", "last", "at"]
         },
         { "case": "no token, or the wrong one", "status": 401, "body": { "error": "bad_token" } },
         { "case": "OF_INTERNAL_TOKEN unset or short here", "status": 503, "body": { "error": "not_configured" } }
@@ -59,7 +64,7 @@
       "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
       "answers": [
         {
-          "case": "one lead: the row as the list has it, its status and notes, what can be built, the message due and how it can go (send.options: both, toran, teder, the first of them the main one; empty when none can go from our number), the texts, and the links to Toran's page and Teder's lead",
+          "case": "one lead: the row as the list has it, its status and notes, what can be built, the message due and how it can go (send.options: both, toran, teder, the first of them the main one; empty when none can go from our number), the texts, its Toran page as it is checked here (review), its page's numbers (stats), when its owner asked to take the page down, and its score's parts",
           "status": 200,
           "body": {
             "ok": true,
@@ -69,12 +74,14 @@
               "domain": "nurit-ceramics.co.il",
               "url": "https://nurit-ceramics.co.il/",
               "platform": "shopify",
+              "about": "קרמיקה בעבודת יד מהסטודיו בקיבוץ",
+              "facts": { "products": 14, "productsAtLeast": false, "priceMin": 45, "priceMax": 500, "currency": "ILS", "kinds": ["ספלים"], "social": { "instagram": null, "tiktok": null, "facebook": null } },
               "score": 72,
               "qualified": true,
               "where": "ready",
               "contact": { "whatsapp": "972500000123", "email": null, "phone": null },
-              "toran": { "state": "ready", "pageUrl": "https://toran.openfrequency.co.il/s/nurit-c1", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "url": "https://accounts.openfrequency.co.il/admin/toran/lead/12", "error": null },
-              "teder": { "state": "none", "pageUrl": null, "sentAt": null, "reminderSentAt": null, "reminderDue": false, "url": null, "error": null },
+              "toran": { "state": "ready", "pageUrl": "https://toran.openfrequency.co.il/s/nurit-c1", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "error": null, "idea": null },
+              "teder": { "state": "none", "pageUrl": null, "sentAt": null, "reminderSentAt": null, "reminderDue": false, "error": null, "idea": null },
               "build": { "toran": true, "teder": true, "both": false, "toranWhyNot": null, "go": { "both": { "can": true, "makes": ["teder"] }, "toran": { "can": true, "makes": [] }, "teder": { "can": true, "makes": ["teder"] } } },
               "chosen": "toran",
               "updatedAt": "2026-11-08T10:00:00.000Z",
@@ -82,8 +89,23 @@
               "notes": "",
               "demoCode": "DEMO-ABC123",
               "opens": 0,
+              "stats": { "opens": 0, "visitors": 0, "depth": 0, "clicks": 0, "lastOpen": null },
               "demoStartedAt": null,
               "tederOk": true,
+              "takedownAskedAt": null,
+              "scoreParts": [{ "factor": "platform", "he": "פלטפורמה", "points": 20, "max": 20, "evidence": "Shopify" }],
+              "review": {
+                "gaps": [],
+                "approved": true,
+                "held": false,
+                "building": false,
+                "name": "כלי חרס של נורית",
+                "color": "#0a7d4f",
+                "colorsFound": ["#0a7d4f"],
+                "chat": [{ "role": "customer", "text": "היי, יש לכם עציץ תלוי? כמה זה עולה?" }, { "role": "agent", "text": "כן, הוא עולה 79 ₪." }],
+                "turnedDown": [{ "product": "ספל חול", "why": "המחיר בתשובה הוא של מוצר אחר." }],
+                "builtAt": "2026-11-08T09:00:00.000Z"
+              },
               "send": {
                 "stage": "first",
                 "pitchable": true,
@@ -94,11 +116,10 @@
                 "toranText": "היי, כאן OpenFrequency. בנינו לכלי חרס של נורית תורן.",
                 "tederText": "היי, כאן OpenFrequency. בנינו את תדר, שמכין לחנויות אונליין מצגות בעברית לטיקטוק ולאינסטגרם.",
                 "copy": { "href": "https://wa.me/972500000123", "label": "להעתיק ולפתוח וואטסאפ" }
-              },
-              "links": { "toranPage": "https://accounts.openfrequency.co.il/admin/toran/lead/12", "toranReview": "https://accounts.openfrequency.co.il/admin/toran/lead/12/review", "tederLead": null }
+              }
             }
           },
-          "nullable": ["platform", "whatsapp", "email", "phone", "pageUrl", "sentAt", "reminderSentAt", "url", "error", "demoCode", "demoStartedAt", "toranWhyNot", "chosen", "stage", "main", "waitingUntil", "bothText", "toranText", "tederText", "copy", "toranReview", "tederLead"]
+          "nullable": ["platform", "about", "products", "priceMin", "priceMax", "instagram", "tiktok", "facebook", "whatsapp", "email", "phone", "pageUrl", "sentAt", "reminderSentAt", "error", "idea", "demoCode", "demoStartedAt", "toranWhyNot", "chosen", "stats", "lastOpen", "takedownAskedAt", "review", "name", "color", "builtAt", "stage", "main", "waitingUntil", "bothText", "toranText", "tederText", "copy"]
         },
         { "case": "no such lead (or a customer's store, which is not a lead)", "status": 404, "body": { "ok": false, "error": "אין ליד כזה" } },
         { "case": "no token, or the wrong one", "status": 401, "body": { "error": "bad_token" } },
@@ -109,12 +130,38 @@
       "method": "POST",
       "path": "/internal/leads/<id>/<action>",
       "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
-      "request": { "body": { "by": "the superadmin's name, else the email", "notes": "notes only: the lead's notes as they are now", "reason": "skip only, may be empty", "product": "mark-sent and mark-reminded only: which demo the message sent by hand was for, toran, teder or both (toran when missing)" } },
+      "request": { "body": { "by": "the superadmin's name, else the email", "notes": "notes only: the lead's notes as they are now", "reason": "skip and go-none: may be empty; lost: not_interested, opted_out, price, has_solution, no_answer, not_fit or other", "product": "mark-sent and mark-reminded only: which demo the message sent by hand was for, toran, teder or both (toran when missing)", "name": "brand only: the store's name on its Toran page, or empty to keep it", "color": "brand only: its colour, #rrggbb, or empty to keep it", "days": "later only: 1 or 7" } },
       "answers": [
-        { "case": "done: Toran's line for it (actions: build-toran, build-teder, build-both, send-both, send-toran, send-teder, mark-sent, mark-reminded, notes, skip)", "status": 200, "body": { "ok": true, "message": "ההערות נשמרו." } },
+        { "case": "done: Toran's line for it (actions: build-toran, build-teder, build-both, send-both, send-toran, send-teder, mark-sent, mark-reminded, notes, skip, go-none, approve-toran, hold-toran, brand, sample, replied, later, lost, reopen, teder-approve, teder-redo, teder-other, teder-remove, takedown)", "status": 200, "body": { "ok": true, "message": "ההערות נשמרו." } },
         { "case": "gone on with a product (go-both, go-toran, go-teder): the choice kept as it is said, and only what it still lacks made; ready is true when nothing was left to make or to wait for, so its message can go now", "status": 200, "body": { "ok": true, "message": "ממשיכים עם תורן. ההודעה מוכנה לשליחה.", "ready": true } },
+        { "case": "deleted (delete): the store is out of Toran, with its page, its conversations and what was read of its site, and Teder's lead of it is marked not relevant; gone is true, so the lead's page is no more", "status": 200, "body": { "ok": true, "message": "החנות נמחקה מתורן, עם הדף, השיחות וכל מה שנקרא מהאתר.", "gone": true } },
         { "case": "refused by Toran's rules: its own line, and nothing was done", "status": 400, "body": { "ok": false, "error": "עוד לא הזמן לתזכורת." } },
         { "case": "no such lead, or no such action", "status": 404, "body": { "ok": false, "error": "אין פעולה כזו" } },
+        { "case": "no token, or the wrong one", "status": 401, "body": { "error": "bad_token" } },
+        { "case": "OF_INTERNAL_TOKEN unset or short here", "status": 503, "body": { "error": "not_configured" } }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/leads/add",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+      "request": { "body": { "url": "the store's address, as the operator typed it", "by": "the superadmin's name, else the email" } },
+      "answers": [
+        { "case": "being read: the store is read and scored as discovery reads one, then listed whatever its score, with nothing built; until then it is in the list's adding", "status": 200, "body": { "ok": true, "message": "קוראים את האתר. בעוד דקה החנות תופיע ברשימה, עם התיאור שלה." } },
+        { "case": "already here: listed again, and id is its lead", "status": 200, "body": { "ok": true, "message": "החנות כבר ברשימה.", "id": 12 } },
+        { "case": "refused: not a site's address, or one of our customers' sites", "status": 400, "body": { "ok": false, "error": "זו לא כתובת של אתר." } },
+        { "case": "no token, or the wrong one", "status": 401, "body": { "error": "bad_token" } },
+        { "case": "OF_INTERNAL_TOKEN unset or short here", "status": 503, "body": { "error": "not_configured" } }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/leads/discover",
+      "auth": "Authorization: Bearer <OF_INTERNAL_TOKEN>, from this machine only, never through Caddy",
+      "request": { "body": { "source": "storecensus (Shopify's directory of Israeli stores, each run from the page after the last one's; the default), crawl (the links between stores), brave (Brave's search, with its key) or seeds (the seeds file)", "by": "the superadmin's name, else the email" } },
+      "answers": [
+        { "case": "a run started (or the one going on of that source): what it finds joins the list", "status": 200, "body": { "ok": true, "message": "מחפשים חנויות. מה שיימצא יופיע ברשימה בעוד כמה דקות, עם התיאור של כל חנות." } },
+        { "case": "refused: Brave's search without its key", "status": 400, "body": { "ok": false, "error": "חסר המפתח של החיפוש של Brave (BRAVE_API_KEY)." } },
         { "case": "no token, or the wrong one", "status": 401, "body": { "error": "bad_token" } },
         { "case": "OF_INTERNAL_TOKEN unset or short here", "status": 503, "body": { "error": "not_configured" } }
       ]

@@ -11,10 +11,16 @@ import { tederSite } from './sources.ts';
 //   GET  /internal/leads/list    every Teder lead, for the shared lead list on accounts' /admin (ops/leadsAdmin.ts)
 //   POST /internal/leads/demo    Toran's store as Teder's lead, and its Teder demo built
 //   POST /internal/leads/mark    the Teder lead marked sent, when one message from our number carried both demos
+//   POST /internal/leads/stage   the Teder lead moved by hand: they answered, joined, not relevant, or back to the list
+//   POST /internal/leads/demo-act  its demo approved, written again, written on another topic, or taken down
+//
+// The last two are the shared lead dashboard's, so nothing about a lead needs Teder's own pages (the owner, 2026-11-12:
+// accounts' /admin/leads "MUST not send me to old fronts like https://accounts.openfrequency.co.il/admin/teder/leads").
 //
 // Nothing here throws: a Teder that does not answer is { error } in the operator's words, and the page says so.
 
-export type TederDemo = { id: number; status: string; building: boolean; pageUrl: string | null; error: string | null; reviewUrl: string };
+/** topic: the idea the demo is about, as Teder's lead card shows it ("רעיון לטיקטוק ולאינסטגרם שלהם"); null before it is chosen. */
+export type TederDemo = { id: number; status: string; building: boolean; pageUrl: string | null; error: string | null; topic?: string | null; reviewUrl: string };
 export type TederLead = { id: number; stage: string; sentAt: string | null; reminderSentAt: string | null; reminderDue: boolean; whatsapp: string | null; demo: TederDemo | null; leadUrl: string };
 
 const MIN_TOKEN = 32;
@@ -76,3 +82,17 @@ export async function tederMark(app: App, s: { id: number; domain: string }, sta
   if (b.ok !== true) return { error: String(b.error || 'תדר לא סימן') };
   return { message: String(b.message || 'סומן') };
 }
+
+export type TederMove = 'replied' | 'joined' | 'irrelevant' | 'back';
+export type TederDemoAct = 'approve' | 'redo' | 'other' | 'remove';
+
+/** The Teder lead moved, or its demo worked (POST /internal/leads/stage, /demo-act): { message, lead } or { error }. */
+async function leadDo(app: App, path: '/internal/leads/stage' | '/internal/leads/demo-act', s: { id: number; domain: string }, body: Record<string, string>, refused: string): Promise<{ message: string; lead: TederLead | null } | { error: string }> {
+  const b = await ask(app, 'POST', path, { toran: String(s.id), domain: s.domain, ...body });
+  if (!b) return { error: TEDER_DOWN };
+  if (b.ok !== true) return { error: String(b.error || refused) };
+  return { message: String(b.message || 'נעשה'), lead: b.lead || null };
+}
+
+export const tederMove = (app: App, s: { id: number; domain: string }, stage: TederMove, by: string) => leadDo(app, '/internal/leads/stage', s, { stage, by }, 'תדר לא הזיז את הליד');
+export const tederDemoAct = (app: App, s: { id: number; domain: string }, act: TederDemoAct, by: string) => leadDo(app, '/internal/leads/demo-act', s, { act, by }, 'תדר לא עשה את זה');

@@ -1346,3 +1346,38 @@ said "on sale, instead of" of a whole range. The link question came from the pro
   lead at its message.
 
 **Tested** (test/guard.test.ts, test/agent.test.ts, test/pitch.test.ts, test/leads-admin.test.ts, test/contracts.test.ts).
+
+## 2026-11-12: everything about a lead is on accounts' /admin/leads, each store said in a few words
+
+**What happened.** The owner: "you dont understand. i want https://accounts.openfrequency.co.il/admin/leads to have
+everything i need for creating and doing leads. i want each store to have a short description, so that i will know if
+i should build toran/teder/both/neither for that store. it MUST not send me to old fronts like
+https://accounts.openfrequency.co.il/admin/teder/leads?tab=new#lead-40". The shared list linked out for half of the
+work: Toran's page was checked on Toran's own review page, Teder's demo and lead on Teder's pages, a store was added
+by its address and discovery was run on Toran's settings page, and a row said nothing about the store but its name.
+
+**Decision.**
+- A store is said in a few words on its row and its page (ops/leadsAdmin.ts `aboutOf`): its line in its own words
+  (leads/about.ts, the home page's description or title, null when it says nothing its name does not), then what
+  Toran found: its platform, its products (read, else counted when it was found), their prices and the kinds most of
+  them are, its own Instagram, TikTok and Facebook, and a way to reach it. Nothing in it is written by a model or
+  guessed. The lead's page adds the parts of its score.
+- The button has a fourth choice, neither (go-none): the store is skipped, and Teder's lead of it marked not relevant.
+- Creating leads is on the list: a store added by its address (POST /internal/leads/add) is read and scored as
+  discovery reads one, listed whatever its score (stores.added_at, migration 078), and nothing is built for it until
+  the operator chooses. Discovery runs from the list too (POST /internal/leads/discover), Shopify's directory from the
+  page after the last run's. "גם חנויות שלא עברו את הסף" lists what discovery found under the score.
+- Toran's page is checked on the lead's page: what holds it back (pitch/ready.ts), each with its fix there (the name and
+  the colour over the site's, the sample chat made again on its own job, `pitch`, which keeps a sent page's chat when
+  no new one passes), approve and hold it, its numbers, its sample chat and what its build turned down.
+- Where it stands is the lead's own buttons now (replied, later, lost, reopen), and Teder's lead moves to match, so a
+  store that answered gets no Teder reminder. "לא מעוניינים" closes the lead.
+- Teder's demo is worked there through Teder's own rules (its POST /internal/leads/stage and /demo-act, the
+  teder-leads contract): again, on another topic, approved, taken down. Its idea shows as on Teder's card.
+- A take-down takes Teder's demo down with Toran's page; a delete marks Teder's lead not relevant first, so it does not
+  stay on the list as Teder's alone. A store Teder has a lead of is listed even when its score fell.
+- Nothing in the admin-leads contract links to Toran's or Teder's operator pages any more (no `links`, no demo `url`,
+  no `leadUrl`). The /admin page's tools lose Toran's review, follow-ups and stores and Teder's leads.
+
+**Tested** (test/leads-admin.test.ts, test/contracts.test.ts; Teder's test/leads-internal.test.js; accounts'
+test/leads.test.js and test/contracts.test.js).

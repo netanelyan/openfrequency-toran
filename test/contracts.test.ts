@@ -212,6 +212,8 @@ const REMIND = 'pay-remind /internal/pay/remind';
 const LL = 'admin-leads /internal/leads';
 const LO = 'admin-leads /internal/leads/<id>';
 const LA = 'admin-leads /internal/leads/<id>/<action>';
+const LADD = 'admin-leads /internal/leads/add';
+const LDISC = 'admin-leads /internal/leads/discover';
 /** accounts' payment reminder (its src/web/daily.js), the contract's example unless a case changes it. */
 const remindAsk = (s: S, over: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
   fetch(`${s.base}/internal/pay/remind`, { method: 'POST', headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json', ...headers }, body: JSON.stringify({ ...contracts['pay-remind'].routes[0].request!.body, ...over }) }).then(got);
@@ -348,15 +350,20 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
 
   // The shared lead dashboard on accounts' /admin/leads (ops/leadsAdmin.ts). Teder is the stand-in here, which has no
   // leads: every teder state is none, tederOnly empty, teder.ok false.
-  [`${LL} :: the list: Toran's stores that are leads, each with its Teder lead, and Teder's leads Toran has no store for; teder.ok false when Teder did not answer (then every teder state is none and tederOnly is empty)`]: async (s) => {
-    await readyStore(s, 'list-ready.example');
+  [`${LL} :: the list: Toran's stores that are leads (and those Teder has a lead of), each with its Teder lead and its description, Teder's leads whose Toran store is gone, the stores added by their address in the last day that are not on the list yet, and discovery: the run going now, the sources that can run, and the last run's numbers; teder.ok false when Teder did not answer (then every teder state is none and tederOnly is empty)`]: async (s) => {
+    const read = await readyStore(s, 'list-ready.example');
+    // What Toran read of it, and what it found when it found it: the description's facts.
+    await s.app.db.query('UPDATE stores SET signals = $2::jsonb WHERE id = $1', [read, JSON.stringify({ description: 'כלי חרס בעבודת יד מהסטודיו בקיבוץ', social: { instagram: 'https://www.instagram.com/list.ready/' } })]);
+    await s.app.db.query("INSERT INTO products (store_id, ext_id, title, url, handle, price_min, price_max, available, product_type) VALUES ($1, 'p1', 'ספל חרס', 'https://list-ready.example/products/mug', 'mug', 89, 89, true, 'ספלים')", [read]);
+    await s.app.db.query("INSERT INTO jobs (kind, payload, status, last_error) VALUES ('add_store', $1::jsonb, 'failed', 'האתר לא נכנס כליד: לא נמצאה חנות')", [JSON.stringify({ url: 'https://not-a-store.example/', added: true })]);
+    await s.app.db.query("INSERT INTO discovery_runs (source, finished_at, stats) VALUES ('storecensus', now(), $1::jsonb)", [JSON.stringify({ candidates: 40, leads: 6, qualified: 4 })]);
     await store(s, 'list-new.example');
     await store(s, 'list-sent.example', { status: 'sent', approved_at: ago(200), page_built_at: ago(200), sent_at: ago(100), followup_due_at: ago(4) });
     return { 'all': await ask(s, 'GET', '/internal/leads'), 'ready only, searched': await ask(s, 'GET', '/internal/leads?where=ready&q=list') };
   },
   [`${LL} :: no token, or the wrong one`]: (s) => badToken((token) => ask(s, 'GET', '/internal/leads', token)),
   [`${LL} :: OF_INTERNAL_TOKEN unset or short here`]: (s) => unsetHere(s, () => ask(s, 'GET', '/internal/leads')),
-  [`${LO} :: one lead: the row as the list has it, its status and notes, what can be built, the message due and how it can go (send.options: both, toran, teder, the first of them the main one; empty when none can go from our number), the texts, and the links to Toran's page and Teder's lead`]: async (s) => {
+  [`${LO} :: one lead: the row as the list has it, its status and notes, what can be built, the message due and how it can go (send.options: both, toran, teder, the first of them the main one; empty when none can go from our number), the texts, its Toran page as it is checked here (review), its page's numbers (stats), when its owner asked to take the page down, and its score's parts`]: async (s) => {
     const ready = await readyStore(s, 'one-ready.example');
     const sent = await store(s, 'one-sent.example', { status: 'sent', approved_at: ago(200), page_built_at: ago(200), sent_at: ago(10), followup_due_at: new Date(Date.now() + 86_400_000).toISOString(), contact_whatsapp: '972500000317' });
     return { 'ready to send': await ask(s, 'GET', `/internal/leads/${ready}`), 'sent, its reminder not due yet': await ask(s, 'GET', `/internal/leads/${sent}`) };
@@ -373,9 +380,20 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
     const id = await readyStore(s, 'one-unset.example');
     return unsetHere(s, () => ask(s, 'GET', `/internal/leads/${id}`));
   },
-  [`${LA} :: done: Toran's line for it (actions: build-toran, build-teder, build-both, send-both, send-toran, send-teder, mark-sent, mark-reminded, notes, skip)`]: async (s) => {
+  [`${LA} :: done: Toran's line for it (actions: build-toran, build-teder, build-both, send-both, send-toran, send-teder, mark-sent, mark-reminded, notes, skip, go-none, approve-toran, hold-toran, brand, sample, replied, later, lost, reopen, teder-approve, teder-redo, teder-other, teder-remove, takedown)`]: async (s) => {
     const id = await readyStore(s, 'act-done.example');
-    return { 'notes': await ask(s, 'POST', `/internal/leads/${id}/notes`, INTERNAL_TOKEN, { by: 'Admin', notes: 'לחזור אליהם בחמישי' }), 'marked sent by hand': await ask(s, 'POST', `/internal/leads/${id}/mark-sent`, INTERNAL_TOKEN, { by: 'Admin' }) };
+    const none = await readyStore(s, 'act-none-of-them.example');
+    return {
+      'notes': await ask(s, 'POST', `/internal/leads/${id}/notes`, INTERNAL_TOKEN, { by: 'Admin', notes: 'לחזור אליהם בחמישי' }),
+      'marked sent by hand': await ask(s, 'POST', `/internal/leads/${id}/mark-sent`, INTERNAL_TOKEN, { by: 'Admin' }),
+      'its page held back': await ask(s, 'POST', `/internal/leads/${id}/hold-toran`, INTERNAL_TOKEN, { by: 'Admin' }),
+      'its name': await ask(s, 'POST', `/internal/leads/${id}/brand`, INTERNAL_TOKEN, { by: 'Admin', name: 'כלי חרס' }),
+      'neither': await ask(s, 'POST', `/internal/leads/${none}/go-none`, INTERNAL_TOKEN, { by: 'Admin' }),
+    };
+  },
+  [`${LA} :: deleted (delete): the store is out of Toran, with its page, its conversations and what was read of its site, and Teder's lead of it is marked not relevant; gone is true, so the lead's page is no more`]: async (s) => {
+    const id = await readyStore(s, 'act-delete.example');
+    return { 'deleted': await ask(s, 'POST', `/internal/leads/${id}/delete`, INTERNAL_TOKEN, { by: 'Admin' }) };
   },
   [`${LA} :: gone on with a product (go-both, go-toran, go-teder): the choice kept as it is said, and only what it still lacks made; ready is true when nothing was left to make or to wait for, so its message can go now`]: async (s) => {
     const id = await readyStore(s, 'act-go.example');
@@ -397,6 +415,29 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
     const id = await readyStore(s, 'act-unset.example');
     return unsetHere(s, () => ask(s, 'POST', `/internal/leads/${id}/notes`, INTERNAL_TOKEN, { by: 'Admin' }));
   },
+  [`${LADD} :: being read: the store is read and scored as discovery reads one, then listed whatever its score, with nothing built; until then it is in the list's adding`]: async (s) => ({ 'a new address': await ask(s, 'POST', '/internal/leads/add', INTERNAL_TOKEN, { url: 'new-store.example', by: 'Admin' }) }),
+  [`${LADD} :: already here: listed again, and id is its lead`]: async (s) => {
+    await store(s, 'add-known.example', { qualified: false, score: 30 });
+    return { 'known, not on the list': await ask(s, 'POST', '/internal/leads/add', INTERNAL_TOKEN, { url: 'https://www.add-known.example/about', by: 'Admin' }) };
+  },
+  [`${LADD} :: refused: not a site's address, or one of our customers' sites`]: async (s) => {
+    await customerStore(s, 78, 'add-customer.example');
+    return { 'not an address': await ask(s, 'POST', '/internal/leads/add', INTERNAL_TOKEN, { url: 'not a site', by: 'Admin' }), "a customer's": await ask(s, 'POST', '/internal/leads/add', INTERNAL_TOKEN, { url: 'add-customer.example', by: 'Admin' }) };
+  },
+  [`${LADD} :: no token, or the wrong one`]: (s) => badToken((token) => ask(s, 'POST', '/internal/leads/add', token, { url: 'token.example' })),
+  [`${LADD} :: OF_INTERNAL_TOKEN unset or short here`]: (s) => unsetHere(s, () => ask(s, 'POST', '/internal/leads/add', INTERNAL_TOKEN, { url: 'unset.example' })),
+  [`${LDISC} :: a run started (or the one going on of that source): what it finds joins the list`]: async (s) => ({ "Shopify's directory": await ask(s, 'POST', '/internal/leads/discover', INTERNAL_TOKEN, { by: 'Admin' }) }),
+  [`${LDISC} :: refused: Brave's search without its key`]: async (s) => {
+    const was = s.app.env.BRAVE_API_KEY;
+    delete s.app.env.BRAVE_API_KEY;
+    try {
+      return { 'no key': await ask(s, 'POST', '/internal/leads/discover', INTERNAL_TOKEN, { source: 'brave', by: 'Admin' }) };
+    } finally {
+      if (was !== undefined) s.app.env.BRAVE_API_KEY = was;
+    }
+  },
+  [`${LDISC} :: no token, or the wrong one`]: (s) => badToken((token) => ask(s, 'POST', '/internal/leads/discover', token, {})),
+  [`${LDISC} :: OF_INTERNAL_TOKEN unset or short here`]: (s) => unsetHere(s, () => ask(s, 'POST', '/internal/leads/discover', INTERNAL_TOKEN, {})),
 };
 
 /** The cases Toran cannot be made to give, and why. */

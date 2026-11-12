@@ -66,7 +66,9 @@ test('one list for both products: merged by Toran\'s id, else the domain; Teder-
     const one = await get(`/internal/leads/${ready}`);
     assert.equal(one.lead.send.stage, 'first');
     assert.match(one.lead.send.toranText, /merged-by-id|merged/);
-    assert.ok(one.lead.links.toranPage.endsWith(`/admin/toran/lead/${ready}`));
+    assert.equal(one.lead.links, undefined, 'no links to the products\' own pages');
+    assert.doesNotMatch(JSON.stringify(one), /\/admin\/(?:toran|teder)\b|\/demos\/\d|leads\?tab=/, 'nothing points at an old front');
+    assert.doesNotMatch(JSON.stringify(all), /\/admin\/(?:toran|teder)\b|\/demos\/\d|leads\?tab=/);
 
     // Teder down: the list still answers, every teder state none.
     s.app.env.TEDER_SITE_INTERNAL = 'http://127.0.0.1:9';
@@ -100,7 +102,7 @@ test("a lead's buttons: notes saved, a store skipped leaves the list's open stag
 /** Teder for one store: what it has of it (nothing at first), that lead on its list, a demo built on asking, each mark kept. */
 async function tederFor(domain: string, toranId: () => number) {
   const answer = (p: string) => CONTRACT.routes.find((r: any) => r.path === p).answers[0].body;
-  const state: { lead: any; built: number; marked: any[] } = { lead: null, built: 0, marked: [] };
+  const state: { lead: any; built: number; marked: any[]; moved: any[]; acted: any[] } = { lead: null, built: 0, marked: [], moved: [], acted: [] };
   const srv = createServer(async (req, res) => {
     let raw = '';
     for await (const c of req) raw += c;
@@ -119,6 +121,18 @@ async function tederFor(domain: string, toranId: () => number) {
     if (p === '/internal/leads/mark') {
       state.marked.push(JSON.parse(raw));
       return out(200, answer('/internal/leads/mark'));
+    }
+    if (p === '/internal/leads/stage') {
+      const b = JSON.parse(raw);
+      state.moved.push(b);
+      if (state.lead) state.lead = { ...state.lead, stage: b.stage === 'back' ? 'new' : b.stage };
+      return out(200, answer('/internal/leads/stage'));
+    }
+    if (p === '/internal/leads/demo-act') {
+      const b = JSON.parse(raw);
+      state.acted.push(b);
+      if (state.lead?.demo && b.act === 'remove') state.lead = { ...state.lead, demo: { ...state.lead.demo, status: 'removed', pageUrl: null } };
+      return out(200, answer('/internal/leads/demo-act'));
     }
     return out(404, { error: 'not_found' });
   });
@@ -286,6 +300,179 @@ test('going on with Teder or both while Teder does not answer: refused in its wo
     }
     assert.equal((await s.app.db.one<{ demo_for: string | null }>('SELECT demo_for FROM stores WHERE id = $1', [id]))!.demo_for, null);
     assert.equal((await s.app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM jobs WHERE kind = 'ingest'"))!.n, 0);
+  } finally {
+    await s.close();
+  }
+});
+
+// The owner, 2026-11-12: "i want https://accounts.openfrequency.co.il/admin/leads to have everything i need for creating
+// and doing leads. i want each store to have a short description, so that i will know if i should build
+// toran/teder/both/neither for that store. it MUST not send me to old fronts".
+test('a store in a few words: its own line, its products and prices once read, the count when found, its own profiles; nothing made up', async () => {
+  const s = await serve();
+  const get = (p: string) => fetch(`${s.base}${p}`, { headers: { authorization: `Bearer ${INTERNAL_TOKEN}` } }).then((r) => r.json());
+  s.app.env.TEDER_SITE_INTERNAL = 'http://127.0.0.1:9';
+  try {
+    const signals = { description: 'פופים, הדומים וספות נפתחות לסלון | משלוח חינם', title: 'פופי', productCount: 250, productCountCapped: true, social: { instagram: 'https://www.instagram.com/pofi/', tiktok: 'javascript:alert(1)' } };
+    const read = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified, signals) VALUES ('pofi.example', 'https://pofi.example/', 'פופי', 'shopify', 'seed', 'pofi-c1', 70, true, $1::jsonb) RETURNING id", [JSON.stringify(signals)]))!.id;
+    const found = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified, signals) VALUES ('found.example', 'https://found.example/', 'found', 'woocommerce', 'seed', 'found-c1', 60, true, $1::jsonb) RETURNING id", [JSON.stringify({ title: 'found | Home', productCount: 40 })]))!.id;
+    for (const [i, title, type, lo, hi] of [[1, 'פוף עגול', 'פופים', 299, 349], [2, 'פוף מרובע', 'פופים', 249, 249], [3, 'ספה נפתחת', 'ספות', 1999, 4999], [4, 'משלוח אקספרס', '', 30, 30], [5, 'מתנה', '', 0, 0]] as const) {
+      await s.app.db.query('INSERT INTO products (store_id, ext_id, title, url, handle, price_min, price_max, available, product_type) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8)', [read, `p${i}`, title, `https://pofi.example/products/p${i}`, `p${i}`, lo, hi, type]);
+    }
+    const list = await get('/internal/leads');
+    const row = (id: number) => list.leads.find((x: any) => x.id === id);
+    assert.equal(row(read).about, 'פופים, הדומים וספות נפתחות לסלון | משלוח חינם');
+    assert.deepEqual(row(read).facts, { products: 5, productsAtLeast: false, priceMin: 249, priceMax: 4999, currency: 'ILS', kinds: ['פופים', 'ספות'], social: { instagram: 'https://www.instagram.com/pofi/', tiktok: null, facebook: null } }, 'what Toran read wins over the count when found; the prices are of what it sells (no shipping line, nothing free); a profile that is not an https address is left out');
+    assert.equal(row(found).about, null, 'a title that is only its name says nothing more');
+    assert.deepEqual([row(found).facts.products, row(found).facts.productsAtLeast, row(found).facts.priceMin, row(found).facts.kinds], [40, false, null, []], 'not read yet: the count when it was found');
+  } finally {
+    await s.close();
+  }
+});
+
+test("everything a lead needs, on the lead's page: neither, Toran's page checked and fixed, where it stands with Teder moved to match, Teder's demo worked, taken down, deleted", async () => {
+  const s = await serve();
+  let id = 0;
+  const teder = await tederFor('every.example', () => id);
+  s.app.env.TEDER_SITE_INTERNAL = teder.base;
+  const auth = { authorization: `Bearer ${INTERNAL_TOKEN}` };
+  const get = (p: string) => fetch(`${s.base}${p}`, { headers: auth }).then((r) => r.json());
+  const post = (p: string, body: Record<string, unknown> = {}) => fetch(`${s.base}${p}`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ by: 'Admin', ...body }) }).then(async (r) => ({ status: r.status, json: await r.json() }));
+  const col = async (c: string) => (await s.app.db.one<any>(`SELECT ${c} AS v FROM stores WHERE id = $1`, [id]))?.v;
+  try {
+    id = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified, status, page_built_at, contact_whatsapp, brand) VALUES ('every.example', 'https://every.example/', NULL, 'shopify', 'seed', 'every-c1', 60, true, 'page_ready', now(), '972500000405', '{\"colors\": [\"#b4532a\", \"nothing\"]}'::jsonb) RETURNING id"))!.id;
+    teder.state.lead = teder.ready;
+
+    // Toran's page is checked here: it waits for a name and a sample chat, and says so; approving is refused until then.
+    let one = (await get(`/internal/leads/${id}`)).lead;
+    assert.deepEqual(one.review.gaps.map((g: any) => g.key).sort(), ['name', 'products', 'sample']);
+    assert.deepEqual([one.review.approved, one.review.held, one.review.color, one.review.colorsFound], [false, false, '#b4532a', ['#b4532a']]);
+    const refused = await post(`/internal/leads/${id}/approve-toran`);
+    assert.equal(refused.status, 400);
+    assert.match(refused.json.error, /^עוד אי אפשר לאשר: .*אין שם לחנות/);
+    // The name and the colour are fixed here, over what the site said; a colour that is not one is refused.
+    assert.equal((await post(`/internal/leads/${id}/brand`, { color: 'red' })).status, 400);
+    assert.equal((await post(`/internal/leads/${id}/brand`, { name: 'כל מה שצריך', color: '#0A7D4F' })).status, 200);
+    assert.deepEqual(await col('brand_override'), { name: 'כל מה שצריך', colors: ['#0a7d4f'] });
+    one = (await get(`/internal/leads/${id}`)).lead;
+    assert.deepEqual([one.name, one.review.name, one.review.color], ['כל מה שצריך', 'כל מה שצריך', '#0a7d4f']);
+    // The sample chat made again, on its own job; the page is being built meanwhile.
+    assert.equal((await post(`/internal/leads/${id}/sample`)).status, 200);
+    assert.equal((await s.app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM jobs WHERE kind = 'pitch' AND (payload->>'storeId')::int = $1", [id]))!.n, 1);
+    assert.equal((await get(`/internal/leads/${id}`)).lead.review.building, true);
+    await s.app.db.query("UPDATE jobs SET status = 'done' WHERE kind = 'pitch'");
+
+    // Nothing missing: approved here, then held back, which keeps it back until it is built again.
+    await s.app.db.query("INSERT INTO products (store_id, ext_id, title, url, handle, price_min, price_max, available) VALUES ($1, 'e1', 'כוס', 'https://every.example/products/cup', 'cup', 50, 50, true)", [id]);
+    await s.app.db.query("INSERT INTO pitches (store_id, sample_chat, built_at) VALUES ($1, $2::jsonb, now())", [id, JSON.stringify([{ role: 'customer', text: 'יש כוס?' }, { role: 'agent', text: 'כן, 50 ₪.' }, { role: 'customer', text: 'ומשלוח?' }, { role: 'agent', text: 'תוך 3 ימים.' }])]);
+    assert.deepEqual(await post(`/internal/leads/${id}/approve-toran`), { status: 200, json: { ok: true, message: 'הדף של תורן אושר, ואפשר לשלוח אותו.' } });
+    assert.equal((await post(`/internal/leads/${id}/approve-toran`)).status, 400, 'once');
+    assert.equal((await post(`/internal/leads/${id}/hold-toran`)).status, 200);
+    one = (await get(`/internal/leads/${id}`)).lead;
+    assert.deepEqual([one.review.approved, one.review.held, one.review.chat.length], [false, true, 4]);
+    await post(`/internal/leads/${id}/approve-toran`);
+
+    // They answered: Toran's lead talks, and Teder's lead says so too, so no Teder reminder goes.
+    assert.equal((await post(`/internal/leads/${id}/replied`)).status, 200);
+    assert.ok(await col('replied_at'));
+    assert.deepEqual(teder.state.moved.map((m) => m.stage), ['replied']);
+    assert.equal((await get('/internal/leads')).leads.find((x: any) => x.id === id).where, 'talking');
+    // Not interested: closed on both; a reason is a must.
+    assert.equal((await post(`/internal/leads/${id}/lost`, { reason: 'whatever' })).status, 400);
+    assert.equal((await post(`/internal/leads/${id}/lost`, { reason: 'price' })).status, 200);
+    assert.equal((await get('/internal/leads')).leads.find((x: any) => x.id === id).where, 'closed', '"לא מעוניינים" closes the lead');
+    assert.deepEqual(teder.state.moved.map((m) => m.stage), ['replied', 'irrelevant']);
+    // Back on the list, on both.
+    assert.equal((await post(`/internal/leads/${id}/reopen`)).status, 200);
+    assert.deepEqual([await col('lost_at'), teder.state.moved.map((m) => m.stage)], [null, ['replied', 'irrelevant', 'back']]);
+
+    // Teder's demo worked from here: another topic.
+    assert.deepEqual(await post(`/internal/leads/${id}/teder-other`), { status: 200, json: { ok: true, message: 'תדר: בונים את הדמו על נושא אחר.' } });
+    assert.deepEqual(teder.state.acted.map((a) => [a.act, a.toran]), [['other', String(id)]]);
+
+    // Taken down when they ask: Toran's page and Teder's demo with it, and nobody writes to them.
+    const down = await post(`/internal/leads/${id}/takedown`);
+    assert.equal(down.status, 200);
+    assert.match(down.json.message, /העמוד של תורן הוסר.*גם הדמו של תדר הורד/);
+    assert.deepEqual([Boolean(await col('taken_down_at')), await col('status'), teder.state.acted.at(-1).act], [true, 'skipped', 'remove']);
+    assert.equal((await post(`/internal/leads/${id}/reopen`)).status, 400, 'a page taken down on their word stays down');
+
+    // Deleted: Teder's lead marked not relevant first, then the store is out of Toran.
+    const gone = await post(`/internal/leads/${id}/delete`);
+    assert.deepEqual([gone.status, gone.json.gone], [200, true]);
+    assert.equal(await col('id'), undefined);
+    assert.equal(teder.state.moved.at(-1).stage, 'irrelevant');
+    assert.equal((await get(`/internal/leads/${id}`)).ok, false);
+  } finally {
+    await teder.close();
+    await s.close();
+  }
+});
+
+test('neither: skipped, closed on the list, Teder\'s lead not relevant; a store Teder has a lead of is listed even when its score fell', async () => {
+  const s = await serve();
+  let id = 0;
+  const teder = await tederFor('neither.example', () => id);
+  s.app.env.TEDER_SITE_INTERNAL = teder.base;
+  const auth = { authorization: `Bearer ${INTERNAL_TOKEN}` };
+  const get = (p: string) => fetch(`${s.base}${p}`, { headers: auth }).then((r) => r.json());
+  try {
+    // Not qualified any more, and nothing built or sent: listed because Teder has a lead of it.
+    id = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified) VALUES ('neither.example', 'https://neither.example/', 'neither', 'shopify', 'seed', 'neither-c1', 30, false) RETURNING id"))!.id;
+    teder.state.lead = teder.ready;
+    let list = await get('/internal/leads');
+    assert.ok(list.leads.some((x: any) => x.id === id), 'listed with its Teder lead');
+    assert.equal(list.tederOnly.length, 0);
+    const none = await fetch(`${s.base}/internal/leads/${id}/go-none`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ by: 'Admin' }) }).then((r) => r.json());
+    assert.deepEqual(none, { ok: true, message: 'לא ממשיכים עם החנות הזו, לא עם תורן ולא עם תדר. היא עברה לסגורים, ולא כותבים לה.' });
+    assert.equal((await s.app.db.one<{ status: string }>('SELECT status FROM stores WHERE id = $1', [id]))!.status, 'skipped');
+    assert.deepEqual(teder.state.moved.map((m) => m.stage), ['irrelevant']);
+    list = await get('/internal/leads?where=closed');
+    assert.ok(list.leads.some((x: any) => x.id === id));
+  } finally {
+    await teder.close();
+    await s.close();
+  }
+});
+
+test('creating leads from the list: a store added by its address is read and listed whatever its score, with nothing built; more found by a discovery run, each from the page after the last', async () => {
+  const s = await serve();
+  s.app.env.TEDER_SITE_INTERNAL = 'http://127.0.0.1:9';
+  const auth = { authorization: `Bearer ${INTERNAL_TOKEN}` };
+  const post = (p: string, body: Record<string, unknown>) => fetch(`${s.base}${p}`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ by: 'Admin', ...body }) }).then(async (r) => ({ status: r.status, json: await r.json() }));
+  const get = (p: string) => fetch(`${s.base}${p}`, { headers: auth }).then((r) => r.json());
+  try {
+    const added = await post('/internal/leads/add', { url: 'brand-new.example' });
+    assert.deepEqual(added, { status: 200, json: { ok: true, message: 'קוראים את האתר. בעוד דקה החנות תופיע ברשימה, עם התיאור שלה.' } });
+    const job = (await s.app.db.one<any>("SELECT payload, max_attempts FROM jobs WHERE kind = 'add_store'"))!;
+    assert.deepEqual([job.payload.url, job.payload.added, job.max_attempts], ['https://brand-new.example/', true, 1]);
+    assert.deepEqual((await get('/internal/leads')).adding.map((a: any) => [a.url, a.state]), [['https://brand-new.example/', 'reading']]);
+    // Refused by detection: said on the list with its reason, for a day.
+    await s.app.db.query("UPDATE jobs SET status = 'failed', last_error = 'האתר לא נכנס כליד: לא נמצאה חנות' WHERE kind = 'add_store'");
+    assert.deepEqual((await get('/internal/leads')).adding.map((a: any) => [a.state, a.error]), [['failed', 'האתר לא נכנס כליד: לא נמצאה חנות']]);
+    // One Toran knows but did not list (its score is low): listed now.
+    const low = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified) VALUES ('low.example', 'https://low.example/', 'low', 'shopify', 'storecensus', 'low-c1', 20, false) RETURNING id"))!.id;
+    assert.ok(!(await get('/internal/leads')).leads.some((x: any) => x.id === low));
+    assert.deepEqual(await post('/internal/leads/add', { url: 'https://www.low.example/collections/all' }), { status: 200, json: { ok: true, message: 'החנות כבר ברשימה.', id: low } });
+    assert.ok((await get('/internal/leads')).leads.some((x: any) => x.id === low), 'added by hand: listed whatever its score');
+    for (const bad of ['', 'not a site', 'javascript:alert(1)']) assert.equal((await post('/internal/leads/add', { url: bad })).status, 400, bad);
+    // A lead deleted since is read again: its domain was still marked seen, with no store.
+    await s.app.db.query("INSERT INTO seen_domains (domain, verdict) VALUES ('deleted.example', 'lead'), ('not-a-store.example', 'rejected')");
+    await post('/internal/leads/add', { url: 'deleted.example' });
+    await post('/internal/leads/add', { url: 'not-a-store.example' });
+    assert.deepEqual((await s.app.db.query<{ domain: string }>("SELECT domain FROM seen_domains WHERE domain IN ('deleted.example', 'not-a-store.example') ORDER BY domain")).map((r) => r.domain), ['not-a-store.example'], 'a site that is not a store stays refused');
+
+    // Discovery: Shopify's directory from page 1, then from the page after the last run's.
+    assert.equal((await post('/internal/leads/discover', {})).status, 200);
+    const first = (await s.app.db.one<any>("SELECT id, payload FROM jobs WHERE kind = 'discover' ORDER BY id DESC LIMIT 1"))!;
+    assert.deepEqual(first.payload, { source: 'storecensus', from: 1 });
+    assert.equal((await get('/internal/leads')).discovery.running, 'storecensus');
+    await s.app.db.query("UPDATE jobs SET status = 'done' WHERE id = $1", [first.id]);
+    await post('/internal/leads/discover', {});
+    assert.equal((await s.app.db.one<any>("SELECT payload FROM jobs WHERE kind = 'discover' ORDER BY id DESC LIMIT 1"))!.payload.from, 4);
+    delete s.app.env.BRAVE_API_KEY;
+    assert.equal((await post('/internal/leads/discover', { source: 'brave' })).status, 400);
+    assert.ok(!(await get('/internal/leads')).discovery.sources.includes('brave'), 'Brave is offered only with its key');
   } finally {
     await s.close();
   }

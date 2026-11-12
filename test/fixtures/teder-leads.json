@@ -9,7 +9,7 @@
     { "case": "not from this machine, or through Caddy", "status": 403, "body": { "error": "forbidden" } },
     { "case": "no token, or a wrong one", "status": 401, "body": { "error": "bad_token" } },
     { "case": "another method than the route's", "status": 405, "body": { "error": "method_not_allowed" } },
-    { "case": "a request that is not one: a toran id that is not [A-Za-z0-9_.:-]{1,64}, no toran id and no domain, a store with no domain, a stage that is not first or reminder, a body that is not a JSON object", "status": 400, "body": { "error": "bad_request" } }
+    { "case": "a request that is not one: a toran id that is not [A-Za-z0-9_.:-]{1,64}, no toran id and no domain, a store with no domain, a stage or an act that is not one of the route's, a body that is not a JSON object", "status": 400, "body": { "error": "bad_request" } }
   ],
   "routes": [
     {
@@ -29,11 +29,11 @@
               "reminderSentAt": null,
               "reminderDue": false,
               "whatsapp": "972500000123",
-              "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "reviewUrl": "https://teder.openfrequency.co.il/demos/14" },
-              "leadUrl": "https://teder.openfrequency.co.il/leads?tab=ready#lead-7"
+              "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "topic": "הסיפור של הקרמיקה", "reviewUrl": "https://accounts.openfrequency.co.il/admin/teder/demos/14" },
+              "leadUrl": "https://accounts.openfrequency.co.il/admin/teder/leads?tab=ready#lead-7"
             }
           },
-          "nullable": ["sentAt", "reminderSentAt", "whatsapp", "demo", "pageUrl", "error"]
+          "nullable": ["sentAt", "reminderSentAt", "whatsapp", "demo", "pageUrl", "error", "topic"]
         },
         { "case": "Teder has no such store", "status": 200, "body": { "ok": true, "lead": null } }
       ]
@@ -56,15 +56,15 @@
                 "reminderSentAt": null,
                 "reminderDue": false,
                 "whatsapp": "972500000123",
-                "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "reviewUrl": "https://teder.openfrequency.co.il/demos/14" },
-                "leadUrl": "https://teder.openfrequency.co.il/leads?tab=ready#lead-7",
+                "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "topic": "הסיפור של הקרמיקה", "reviewUrl": "https://accounts.openfrequency.co.il/admin/teder/demos/14" },
+                "leadUrl": "https://accounts.openfrequency.co.il/admin/teder/leads?tab=ready#lead-7",
                 "toranId": "12",
                 "domain": "nurit-ceramics.co.il",
                 "name": "כלי חרס של נורית"
               }
             ]
           },
-          "nullable": ["sentAt", "reminderSentAt", "whatsapp", "demo", "pageUrl", "error", "toranId", "name"]
+          "nullable": ["sentAt", "reminderSentAt", "whatsapp", "demo", "pageUrl", "error", "topic", "toranId", "name"]
         }
       ]
     },
@@ -78,7 +78,7 @@
         }
       },
       "answers": [
-        { "case": "the store is a lead now and its demo is being built (or an earlier demo of its domain was linked)", "status": 200, "body": { "ok": true, "message": "בונים את הדמו. זה לוקח כמה דקות.", "lead": { "id": 7, "stage": "new", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "whatsapp": "972500000123", "demo": { "id": 14, "status": "new", "building": true, "pageUrl": null, "error": null, "reviewUrl": "https://teder.openfrequency.co.il/demos/14" }, "leadUrl": "https://teder.openfrequency.co.il/leads?tab=new#lead-7" } } },
+        { "case": "the store is a lead now and its demo is being built (or an earlier demo of its domain was linked)", "status": 200, "body": { "ok": true, "message": "בונים את הדמו. זה לוקח כמה דקות.", "lead": { "id": 7, "stage": "new", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "whatsapp": "972500000123", "demo": { "id": 14, "status": "new", "building": true, "pageUrl": null, "error": null, "topic": null, "reviewUrl": "https://accounts.openfrequency.co.il/admin/teder/demos/14" }, "leadUrl": "https://accounts.openfrequency.co.il/admin/teder/leads?tab=new#lead-7" } } },
         { "case": "refused: one of our customers' sites, a store that asked not to be written to, one that already has a demo, or one being built now", "status": 200, "body": { "ok": false, "error": "לחנות הזו כבר יש דמו" } }
       ]
     },
@@ -87,8 +87,28 @@
       "path": "/internal/leads/mark",
       "request": { "body": { "toran": "12", "domain": "nurit-ceramics.co.il", "stage": "first", "by": "Demo" } },
       "answers": [
-        { "case": "marked as \"שלחתי\" marks it, via whatsapp", "status": 200, "body": { "ok": true, "message": "סומן שנשלח", "lead": { "id": 7, "stage": "sent", "sentAt": "2026-11-08T10:05:00.000Z", "reminderSentAt": null, "reminderDue": false, "whatsapp": "972500000123", "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "reviewUrl": "https://teder.openfrequency.co.il/demos/14" }, "leadUrl": "https://teder.openfrequency.co.il/leads?tab=sent#lead-7" } } },
+        { "case": "marked as \"שלחתי\" marks it, via whatsapp", "status": 200, "body": { "ok": true, "message": "סומן שנשלח", "lead": { "id": 7, "stage": "sent", "sentAt": "2026-11-08T10:05:00.000Z", "reminderSentAt": null, "reminderDue": false, "whatsapp": "972500000123", "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "topic": "הסיפור של הקרמיקה", "reviewUrl": "https://accounts.openfrequency.co.il/admin/teder/demos/14" }, "leadUrl": "https://accounts.openfrequency.co.il/admin/teder/leads?tab=sent#lead-7" } } },
         { "case": "refused: no such lead, its demo is not up (first), no reminder to send or not its time yet (reminder)", "status": 200, "body": { "ok": false, "error": "אפשר לסמן \"שלחתי\" רק כשהדמו מוכן" } }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/leads/stage",
+      "doc": "The shared lead dashboard on accounts' /admin moves the lead as Teder's /leads does by hand (the owner, 2026-11-12: /admin/leads \"to have everything i need for creating and doing leads\").",
+      "request": { "body": { "toran": "12", "domain": "nurit-ceramics.co.il", "stage": "replied", "by": "Demo" } },
+      "answers": [
+        { "case": "moved: replied (ענו), joined (הצטרפו), irrelevant (לא רלוונטי), or back (להחזיר לרשימה) from irrelevant to where it was by what happened to it", "status": 200, "body": { "ok": true, "message": "סומן שענו", "lead": { "id": 7, "stage": "replied", "sentAt": "2026-11-08T10:05:00.000Z", "reminderSentAt": null, "reminderDue": false, "whatsapp": "972500000123", "demo": { "id": 14, "status": "approved", "building": false, "pageUrl": "https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3", "error": null, "topic": "הסיפור של הקרמיקה", "reviewUrl": "https://accounts.openfrequency.co.il/admin/teder/demos/14" }, "leadUrl": "https://accounts.openfrequency.co.il/admin/teder/leads?tab=replied#lead-7" } } },
+        { "case": "refused: no such lead, or it is marked so already (back: it is not irrelevant)", "status": 200, "body": { "ok": false, "error": "החנות כבר מסומנת כך" } }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/internal/leads/demo-act",
+      "doc": "The shared lead dashboard works the lead's demo as Teder's /demos/<id> does: the same buttons, the same rules.",
+      "request": { "body": { "toran": "12", "domain": "nurit-ceramics.co.il", "act": "other", "by": "Demo" } },
+      "answers": [
+        { "case": "done: approve (a demo built before demos approved themselves, status ready), redo (written again), other (written on another topic), remove (taken down: its page no longer opens, and the lead is new again)", "status": 200, "body": { "ok": true, "message": "בונים את הדמו על נושא אחר", "lead": { "id": 7, "stage": "new", "sentAt": null, "reminderSentAt": null, "reminderDue": false, "whatsapp": "972500000123", "demo": { "id": 14, "status": "building", "building": true, "pageUrl": null, "error": null, "topic": null, "reviewUrl": "https://accounts.openfrequency.co.il/admin/teder/demos/14" }, "leadUrl": "https://accounts.openfrequency.co.il/admin/teder/leads?tab=new#lead-7" } } },
+        { "case": "refused: no such lead, no demo, one being built now, one taken down (redo, other, remove), or one that is not waiting to be approved (approve)", "status": 200, "body": { "ok": false, "error": "הדמו הזה נבנה עכשיו" } }
       ]
     }
   ]
