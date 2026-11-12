@@ -377,6 +377,10 @@ const RUN: Record<string, (s: S) => Promise<Record<string, Got>>> = {
     const id = await readyStore(s, 'act-done.example');
     return { 'notes': await ask(s, 'POST', `/internal/leads/${id}/notes`, INTERNAL_TOKEN, { by: 'Admin', notes: 'לחזור אליהם בחמישי' }), 'marked sent by hand': await ask(s, 'POST', `/internal/leads/${id}/mark-sent`, INTERNAL_TOKEN, { by: 'Admin' }) };
   },
+  [`${LA} :: gone on with a product (go-both, go-toran, go-teder): the choice kept as it is said, and only what it still lacks made; ready is true when nothing was left to make or to wait for, so its message can go now`]: async (s) => {
+    const id = await readyStore(s, 'act-go.example');
+    return { 'Toran, its page up': await ask(s, 'POST', `/internal/leads/${id}/go-toran`, INTERNAL_TOKEN, { by: 'Admin' }) };
+  },
   [`${LA} :: refused by Toran's rules: its own line, and nothing was done`]: async (s) => {
     const id = await readyStore(s, 'act-refused.example');
     return { 'a reminder before the first message': await ask(s, 'POST', `/internal/leads/${id}/mark-reminded`, INTERNAL_TOKEN, { by: 'Admin' }) };

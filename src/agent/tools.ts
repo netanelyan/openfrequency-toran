@@ -148,10 +148,22 @@ function effective(p: P): P {
 
 const stockWord = (a: boolean) => (a ? 'במלאי' : 'אזל מהמלאי');
 
+// A sale is said of what is on sale. A range whose options are not all on sale says so, and which ones are is
+// get_product's: "Grow: 249 ₪ עד 389 ₪ (במבצע, במקום 498 ₪)" went to a customer word for word, when only the 389 ₪
+// option was 498 ₪ before (the owner, 2026-11-12, on a demo: "something with the grow is not it").
+export const SOME_ON_SALE = 'חלק מהאפשרויות במבצע';
 function priceLine(p: P, currency: string): string {
-  const range = p.price_min != null && p.price_max != null && p.price_max !== p.price_min ? `${money(p.price_min, currency)} עד ${money(p.price_max, currency)}` : money(p.price_min, currency);
-  const sale = p.compare_at_max != null && p.price_max != null && p.compare_at_max > p.price_max ? ` (במבצע, במקום ${money(p.compare_at_max, currency)})` : '';
-  return `${range}${sale}`;
+  const ranged = p.price_min != null && p.price_max != null && p.price_max !== p.price_min;
+  const range = ranged ? `${money(p.price_min, currency)} עד ${money(p.price_max, currency)}` : money(p.price_min, currency);
+  const priced = (p.variants || []).filter((v: any) => v?.price != null);
+  // One price, or no options to tell by: the product's own sale.
+  if (!ranged || !priced.length) return p.compare_at_max != null && p.price_max != null && p.compare_at_max > p.price_max ? `${range} (במבצע, במקום ${money(p.compare_at_max, currency)})` : range;
+  const was = priced.map((v: any) => (v.compare_at != null && Number(v.compare_at) > Number(v.price) ? Number(v.compare_at) : null));
+  if (was.every((w) => w == null)) return range;
+  if (was.some((w) => w == null)) return `${range} (${SOME_ON_SALE})`;
+  const lo = Math.min(...(was as number[]));
+  const hi = Math.max(...(was as number[]));
+  return `${range} (במבצע, במקום ${lo === hi ? money(hi, currency) : `${money(lo, currency)} עד ${money(hi, currency)}`})`;
 }
 
 export async function loadProducts(db: Db, storeId: number): Promise<P[]> {

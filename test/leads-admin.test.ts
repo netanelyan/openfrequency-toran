@@ -139,7 +139,7 @@ test("a demo made from the list (the owner, 2026-11-11): each row says what can 
   try {
     id = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified, contact_whatsapp) VALUES ('pick.example', 'https://pick.example/', 'pick', 'shopify', 'seed', 'pick-c1', 60, true, '972500000403') RETURNING id"))!.id;
     // Nothing yet: either one, or both at once.
-    assert.deepEqual([(await row()).build, (await row()).chosen], [{ toran: true, teder: true, both: true, toranWhyNot: null }, null]);
+    assert.deepEqual([(await row()).build, (await row()).chosen], [{ toran: true, teder: true, both: true, toranWhyNot: null, go: { both: { can: true, makes: ['toran', 'teder'] }, toran: { can: true, makes: ['toran'] }, teder: { can: true, makes: ['teder'] } } }, null]);
 
     // Teder's alone, then Toran's too: the choice becomes both.
     assert.equal((await post(`/internal/leads/${id}/build-teder`, { by: 'Admin' })).status, 200);
@@ -196,6 +196,97 @@ test("a demo made from the list (the owner, 2026-11-11): each row says what can 
     assert.deepEqual(teder.state.marked.map((m) => m.stage), ['first', 'first']);
   } finally {
     await teder.close();
+    await s.close();
+  }
+});
+
+// The owner, 2026-11-12: "i dont see a button for going on with teder/toran/both for each lead". A lead whose Toran page
+// was up offered Teder alone, and never both again: the choice is now what the lead goes on with, whatever is built.
+test('going on with Toran, Teder or both: each can be chosen whatever is built, only what is missing is made, and the line says whether the message can go', async () => {
+  const s = await serve();
+  let id = 0;
+  const teder = await tederFor('go.example', () => id);
+  s.app.env.TEDER_SITE_INTERNAL = teder.base;
+  const auth = { authorization: `Bearer ${INTERNAL_TOKEN}` };
+  const get = (p: string) => fetch(`${s.base}${p}`, { headers: auth }).then((r) => r.json());
+  const post = (p: string) => fetch(`${s.base}${p}`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ by: 'Admin' }) }).then(async (r) => ({ status: r.status, json: await r.json() }));
+  const row = async () => (await get('/internal/leads')).leads.find((x: any) => x.id === id);
+  const chosen = async () => (await s.app.db.one<{ demo_for: string | null }>('SELECT demo_for FROM stores WHERE id = $1', [id]))!.demo_for;
+  const ingests = async () => (await s.app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM jobs WHERE kind = 'ingest' AND (payload->>'storeId')::int = $1", [id]))!.n;
+  try {
+    // Toran's page is up and approved, Teder has nothing: the first demo the owner opened was such a store.
+    id = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified, status, page_built_at, approved_at, contact_whatsapp) VALUES ('go.example', 'https://go.example/', 'go', 'shopify', 'seed', 'go-c1', 60, true, 'page_ready', now(), now(), '972500000404') RETURNING id"))!.id;
+    assert.deepEqual((await row()).build.go, { both: { can: true, makes: ['teder'] }, toran: { can: true, makes: [] }, teder: { can: true, makes: ['teder'] } }, "both can still be chosen: it makes Teder's");
+
+    // Toran alone: nothing to make, the message can go.
+    assert.deepEqual(await post(`/internal/leads/${id}/go-toran`), { status: 200, json: { ok: true, message: 'ממשיכים עם תורן. ההודעה מוכנה לשליחה.', ready: true } });
+    assert.deepEqual([await chosen(), teder.state.built, await ingests()], ['toran', 0, 0], "Toran's page is not read again");
+
+    // Both: Teder's demo made, Toran's kept; the choice is both as said, not merged.
+    const both = await post(`/internal/leads/${id}/go-both`);
+    assert.equal(both.status, 200);
+    assert.equal(both.json.ready, false);
+    assert.match(both.json.message, /^ממשיכים עם תורן ותדר\. תדר: /);
+    assert.deepEqual([await chosen(), teder.state.built, await ingests()], ['both', 1, 0]);
+
+    // Teder's demo up: both again makes nothing more, and the message can go.
+    teder.state.lead = teder.ready;
+    assert.deepEqual((await row()).build.go.both, { can: true, makes: [] });
+    assert.deepEqual(await post(`/internal/leads/${id}/go-both`), { status: 200, json: { ok: true, message: 'ממשיכים עם תורן ותדר. ההודעה מוכנה לשליחה.', ready: true } });
+    assert.equal(teder.state.built, 1);
+    // Teder alone, as said: the lead's page leads with Teder's message.
+    assert.equal((await post(`/internal/leads/${id}/go-teder`)).json.ready, true);
+    assert.equal(await chosen(), 'teder');
+    s.app.env.META_OUTREACH_PHONE_ID = '1234567890';
+    assert.equal((await get(`/internal/leads/${id}`)).lead.send.main, 'teder');
+    delete s.app.env.META_OUTREACH_PHONE_ID;
+
+    // Toran's page held back for a look: chosen, and the line says what it waits for.
+    await s.app.db.query('UPDATE stores SET approved_at = NULL WHERE id = $1', [id]);
+    assert.deepEqual(await post(`/internal/leads/${id}/go-toran`), { status: 200, json: { ok: true, message: 'ממשיכים עם תורן. הדף של תורן מחכה לבדיקה.', ready: false } });
+
+    // A site Toran cannot read: Teder only; Toran and both are refused, and nothing changes.
+    await s.app.db.query("UPDATE stores SET platform = 'other', demo_for = 'teder' WHERE id = $1", [id]);
+    assert.deepEqual((await row()).build.go, { both: { can: false, makes: [] }, toran: { can: false, makes: [] }, teder: { can: true, makes: [] } });
+    const no = await post(`/internal/leads/${id}/go-both`);
+    assert.deepEqual([no.status, no.json.ok], [400, false]);
+    assert.match(no.json.error, /אפשר להמשיך רק עם תדר/);
+    assert.equal(await chosen(), 'teder');
+
+    // Nothing built yet: both makes both, Teder's first.
+    await s.app.db.query("UPDATE stores SET platform = 'shopify', page_built_at = NULL, approved_at = NULL, demo_for = NULL WHERE id = $1", [id]);
+    teder.state.lead = null;
+    const fresh = await post(`/internal/leads/${id}/go-both`);
+    assert.deepEqual([fresh.status, fresh.json.ready, teder.state.built, await ingests(), await chosen()], [200, false, 2, 1, 'both']);
+    assert.match(fresh.json.message, /תדר: .*תורן קורא את האתר ובונה את הדף/);
+    // While Toran reads the site, both makes nothing twice.
+    teder.state.lead = teder.ready;
+    assert.deepEqual((await row()).build.go.both, { can: true, makes: [] });
+    assert.deepEqual(await post(`/internal/leads/${id}/go-both`), { status: 200, json: { ok: true, message: 'ממשיכים עם תורן ותדר. תורן עוד בונה את הדף.', ready: false } });
+    assert.deepEqual([teder.state.built, await ingests()], [2, 1]);
+  } finally {
+    await teder.close();
+    await s.close();
+  }
+});
+
+test('going on with Teder or both while Teder does not answer: refused in its words, and nothing is made or chosen', async () => {
+  const s = await serve();
+  s.app.env.TEDER_SITE_INTERNAL = 'http://127.0.0.1:9';
+  s.app.log = () => {};
+  const auth = { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json' };
+  try {
+    const id = (await s.app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified) VALUES ('down.example', 'https://down.example/', 'down', 'shopify', 'seed', 'down-c1', 60, true) RETURNING id"))!.id;
+    const list = await fetch(`${s.base}/internal/leads`, { headers: auth }).then((r) => r.json());
+    assert.deepEqual(list.leads.find((x: any) => x.id === id).build.go, { both: { can: false, makes: [] }, toran: { can: true, makes: ['toran'] }, teder: { can: false, makes: [] } });
+    for (const p of ['both', 'teder']) {
+      const r = await fetch(`${s.base}/internal/leads/${id}/go-${p}`, { method: 'POST', headers: auth, body: JSON.stringify({ by: 'Admin' }) }).then(async (x) => ({ status: x.status, json: await x.json() }));
+      assert.deepEqual([r.status, r.json.ok], [400, false], p);
+      assert.match(r.json.error, /תדר לא ענה/);
+    }
+    assert.equal((await s.app.db.one<{ demo_for: string | null }>('SELECT demo_for FROM stores WHERE id = $1', [id]))!.demo_for, null);
+    assert.equal((await s.app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM jobs WHERE kind = 'ingest'"))!.n, 0);
+  } finally {
     await s.close();
   }
 });

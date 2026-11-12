@@ -233,3 +233,46 @@ test('every handoff line kept in English reads in Hebrew for the owner and the o
   }
   assert.equal(summaryHe('הלקוח רוצה החזר'), 'הלקוח רוצה החזר', 'a Hebrew line stays as it is');
 });
+
+// The owner, 2026-11-12, on the first demo they opened (a supplements store): "something with the grow is not it. make sure it catches
+// things like that". The search gave four products with "Grow" in their names and a hat at 99 ₪; the reply priced one
+// Grow at the hat's 99 ₪ on a line of its own, "name: price", which the sentences split at the colon.
+const growSearch = `- [id 1] Grow: 249 ₪ עד 389 ₪ (חלק מהאפשרויות במבצע), במלאי, 3 options. https://vitamins.example/products/grow
+- [id 2] Grow & Shine: 249 ₪ עד 389 ₪ (חלק מהאפשרויות במבצע), במלאי, 2 options. https://vitamins.example/products/grow-shine
+- [id 3] Grow - חודש: 124.50 ₪, במלאי. https://vitamins.example/products/grow-month
+- [id 4] Grow - (חודש): 124.50 ₪, במלאי. https://vitamins.example/products/grow-month-copy
+- [id 5] כובע Wellness-Club: 99 ₪ (במבצע, במקום 129 ₪), במלאי. https://vitamins.example/products/hat`;
+const growAsked = 'היי, יש לכם Grow? כמה זה עולה?';
+
+test('a price on a "name: price" line is held to the name before the colon: the hat\'s 99 ₪ does not price Grow', () => {
+  const allowGrow = buildAllow({ toolTexts: [growSearch], customerTexts: [growAsked] });
+  const r = guardReply('היי, יש כמה אפשרויות של Grow:\nGrow - חודש: 99 ₪\nGrow - (חודש): 124.50 ₪\nיש גם מארז Grow & Shine שעולה 249 ₪ עד 389 ₪. איזה מהם מעניין אתכם?', allowGrow, { asked: growAsked });
+  assert.deepEqual(r.redactions.map((x) => [x.rule, x.sentence]), [['price', '99 ₪'], ['continuation', 'Grow - חודש:']]);
+  assert.ok(r.needsHandoff);
+  assert.doesNotMatch(r.text, /99 ₪/);
+  assert.doesNotMatch(r.text, /\n /, 'the honest line in its place starts its line, with no space before it');
+  // Each name with its own price passes, line by line and inside a sentence; the hat's own price is the hat's.
+  for (const ok of ['Grow - חודש: 124.50 ₪\nGrow & Shine: 249 ₪ עד 389 ₪', 'הכובע: 99 ₪', 'Grow - חודש עולה 124.50 ₪, והכובע 99 ₪.']) {
+    assert.deepEqual(guardReply(ok, allowGrow, { asked: growAsked }).redactions, [], ok);
+  }
+  // A list's own opening line ends in a colon on a line of its own: it is no name for the line under it.
+  assert.deepEqual(guardReply('יש שני מוצרים כאלה:\n124.50 ₪ לבקבוק אחד.', allowGrow, { asked: growAsked }).redactions, []);
+  // "Some options are on sale" backs the word "sale" for that product.
+  assert.deepEqual(guardReply('Grow עולה 249 ₪ עד 389 ₪, וחלק מהאפשרויות במבצע.', allowGrow, { asked: growAsked }).redactions, []);
+});
+
+test('a reply that has the link does not offer to send one (the owner, 2026-11-12: "it should not ask")', () => {
+  const pouf = buildAllow({ toolTexts: ['- [id 9] הדום לפוף: 299 ₪, במלאי, 9 options. https://pouf.example/products/pouf'], customerTexts: [] });
+  const say = (t: string) => guardReply(t, pouf, { asked: 'היי, יש לכם הדום לפוף? כמה זה עולה?' });
+  // The demo's own reply: the offer comes off its question, and the question before it stays.
+  const r = say('כן, יש הדום לפוף. הוא עולה 299 ₪, ויש לו 9 אפשרויות לבחירה. רוצים שאבדוק איזה צבעים יש, או שאשלח קישור?\nhttps://pouf.example/products/pouf');
+  assert.equal(r.text, 'כן, יש הדום לפוף. הוא עולה 299 ₪, ויש לו 9 אפשרויות לבחירה. רוצים שאבדוק איזה צבעים יש?\nhttps://pouf.example/products/pouf');
+  assert.deepEqual(r.redactions, [], 'nothing about the store was wrong: no cut, no hand-off');
+  // A question that was only the offer goes.
+  assert.equal(say('הוא עולה 299 ₪. https://pouf.example/products/pouf רוצים שאשלח לכם את הקישור?').text, 'הוא עולה 299 ₪. https://pouf.example/products/pouf');
+  assert.equal(say('It is 299 ₪: https://pouf.example/products/pouf Want me to send you the link?').text, 'It is 299 ₪: https://pouf.example/products/pouf');
+  // With no link in the reply, the offer is a fair question and stays.
+  assert.equal(say('הוא עולה 299 ₪. רוצים שאשלח קישור?').text, 'הוא עולה 299 ₪. רוצים שאשלח קישור?');
+  // A link and another question: nothing comes off.
+  assert.equal(say('הוא עולה 299 ₪. https://pouf.example/products/pouf באיזה צבע?').text, 'הוא עולה 299 ₪. https://pouf.example/products/pouf באיזה צבע?');
+});

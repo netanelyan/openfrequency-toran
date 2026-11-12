@@ -1311,3 +1311,38 @@ store and everything keyed by it, as a deleted workspace's stores go, and also i
 asks for proof again. The usage rows stay, without the store. Our company store is never deleted from there.
 
 **Tested** (test/claims.test.ts, test/erase.test.ts, test/isolation.test.ts).
+
+## 2026-11-12: a demo's sample chat is read the way the store's owner will; a lead goes on with Toran, Teder or both
+
+**What happened.** The owner opened the first demo page: a supplements store's, about "Grow". The answer listed four products with
+"Grow" in their names, and priced "Grow - חודש" at 99 ₪, which is a hat's price. It also said "249 ₪ עד 389 ₪
+(במבצע, במקום 498 ₪)", although only the 389 ₪ option had been 498 ₪. The owner: "something with the grow is not it.
+make sure it catches things like that". On the next demo (a furniture store's), the answer asked "או שאשלח קישור?" with the link
+already under it. The owner: "it should not ask".
+
+**Why it passed.** The guard holds a price to the product a sentence names. But "Grow - חודש: 99 ₪" splits at the
+colon into two sentences, so the price had no name beside it. The sale note came from search_products' own line, which
+said "on sale, instead of" of a whole range. The link question came from the prompt's own example ("רוצים שאשלח
+קישור?"), next to the rule that a product's answer carries its link.
+
+**Decision.**
+- A price on a "name: price" line is held to the name before its colon (guard.ts `ofItsProduct`'s label).
+- A range says it is on sale only as its options are: "(חלק מהאפשרויות במבצע)", or "(במבצע, במקום X עד Y)" when
+  every option is (tools.ts `priceLine`). Which options are on sale is get_product's to say.
+- A reply that has a link never offers to send one: the offer comes off its question, or the question goes (guard.ts
+  `noLinkOffer`). The prompt's example now has the link and asks which size. It adds one rule: never offer what the
+  answer already gives, nor to check what the tools already show.
+- Before a demo page goes up, a model reads its sample chat the way the store's owner will (src/pitch/review.ts, the
+  agent's model at medium effort, one call per chat tried). It reads the first answer as soon as it comes, so a muddled
+  one moves on to the next product, and then the whole chat. A chat it turns down is not shown, and the reason is on
+  the review page. When the review itself fails, the chat stays off the page. A product whose short name other titles
+  also hold ("Grow") is asked about last.
+- `npm run pitch -- --check [--rebuild]` reads every page built before this, and rebuilds the ones turned down. A page
+  already sent keeps its chat when no new one passes, so the link a store has keeps opening.
+- What a lead goes on with is the operator's choice whatever is built (the owner: "i dont see a button for going on
+  with teder/toran/both for each lead"). Before, the button offered only what was missing, so a lead whose Toran page
+  was up could no longer be taken on with both. Now go-both, go-toran and go-teder keep the choice as said and make only
+  what it lacks (ops/leadsAdmin.ts, build.go in the admin-leads contract). A choice with nothing left to make opens the
+  lead at its message.
+
+**Tested** (test/guard.test.ts, test/agent.test.ts, test/pitch.test.ts, test/leads-admin.test.ts, test/contracts.test.ts).

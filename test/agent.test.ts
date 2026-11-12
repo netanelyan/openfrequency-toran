@@ -49,6 +49,22 @@ test('product search finds Hebrew words under their prefixes, and shows the rows
   await app.db.close();
 });
 
+// The owner, 2026-11-12, on a supplements store's demo: "Grow: 249 ₪ עד 389 ₪ (במבצע, במקום 498 ₪)" went to a customer word for word,
+// when only the 389 ₪ option had been 498 ₪. A range says a sale only of the options that have one.
+test('a price range says it is on sale only as its options are: some of them, or all of them with what they were', async () => {
+  const { app, ctx, id } = await storeApp();
+  const set = (variants: any[]) =>
+    app.db.query("UPDATE products SET variants = $2::jsonb, price_min = 249, price_max = 389, compare_at_max = $3 WHERE store_id = $1 AND title = 'קערת זית גדולה'", [id, JSON.stringify(variants), Math.max(0, ...variants.map((v) => v.compare_at || 0)) || null]);
+  const line = async () => /קערת זית גדולה: ([^\n]*?), במלאי/.exec((await runTool(ctx, 'search_products', { query: 'קערת זית גדולה' })).content)?.[1];
+  await set([{ id: 1, title: 'חודשיים', price: 249, compare_at: null, available: true }, { id: 2, title: '3 חודשים', price: 309, compare_at: 373.5, available: true }, { id: 3, title: '4 חודשים', price: 389, compare_at: 498, available: true }]);
+  assert.equal(await line(), '249 ₪ עד 389 ₪ (חלק מהאפשרויות במבצע)');
+  await set([{ id: 1, title: 'זוג', price: 249, compare_at: 300, available: true }, { id: 2, title: 'רביעייה', price: 389, compare_at: 498, available: true }]);
+  assert.equal(await line(), '249 ₪ עד 389 ₪ (במבצע, במקום 300 ₪ עד 498 ₪)');
+  await set([{ id: 1, title: 'זוג', price: 249, compare_at: null, available: true }, { id: 2, title: 'רביעייה', price: 389, compare_at: null, available: true }]);
+  assert.equal(await line(), '249 ₪ עד 389 ₪');
+  await app.db.close();
+});
+
 test('product search in English of a store whose products are named in Hebrew asks for one more search in Hebrew, never "not carried" (docs/models.md, q10)', async () => {
   const { app, ctx } = await storeApp();
   const en = await runTool(ctx, 'search_products', { query: 'big olive bowl' });

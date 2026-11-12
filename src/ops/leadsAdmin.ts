@@ -23,8 +23,8 @@ import { tederBuild, tederList, tederMark, tederState, type TederLead } from './
 //   GET  /internal/leads?where=&q=        the list: Toran's stores that are leads, each with its Teder lead (by Toran's
 //                                         id, else the domain), and Teder's leads Toran has no store for
 //   GET  /internal/leads/<id>             one lead: both demos, which message is due and how it can go, the texts
-//   POST /internal/leads/<id>/<action>    build-toran, build-teder, build-both, send-both, send-toran, send-teder,
-//                                         mark-sent, mark-reminded, notes, skip
+//   POST /internal/leads/<id>/<action>    go-both, go-toran, go-teder, build-toran, build-teder, build-both,
+//                                         send-both, send-toran, send-teder, mark-sent, mark-reminded, notes, skip
 //
 // The rest of a lead's buttons (they answered, the next step, later, not interested, a customer) are /internal/ops' own
 // (ops/api.ts), which the dashboard already uses. Toran keeps the outreach and its rules (ops/outreach.ts, ops/both.ts):
@@ -36,6 +36,12 @@ import { tederBuild, tederList, tederMark, tederState, type TederLead } from './
 // phone number on whatsapp should be according to that"). What the operator asks to make is kept (stores.demo_for,
 // migration 077), and the lead's page leads with that one's message: Toran's, Teder's, or the one with both. Each
 // message due is given as the store will read it, and "שלחתי" after one sent by hand marks the demo it was for.
+//
+// The choice is what the lead goes on with, whatever is built already (the owner, 2026-11-12: "i dont see a button for
+// going on with teder/toran/both for each lead"): the button offered only what was missing, so a lead whose Toran page
+// was up could no longer be taken on with both. go-both, go-toran and go-teder keep the choice as it is said and make
+// only what it still lacks, nothing when it lacks nothing; build.go says, for each, whether it can be chosen and what
+// it would make now. build-* stay as they were (build-toran is also "read the site again").
 
 export type Where = 'new' | 'ready' | 'sent' | 'talking' | 'closed';
 export const WHERE: Where[] = ['new', 'ready', 'sent', 'talking', 'closed'];
@@ -77,18 +83,28 @@ function tederDemo(l: TederLead | null): Demo {
 const toranStageOf = (s: any, d: Demo): Stage | null => (d.state !== 'ready' ? null : !s.sent_at ? 'first' : !s.followup_sent_at && d.reminderDue ? 'reminder' : null);
 const tederStageOf = (t: TederLead | null, d: Demo): Stage | null => (!t || d.state !== 'ready' ? null : t.stage === 'demo_ready' ? 'first' : t.reminderDue ? 'reminder' : null);
 
+/** What going on with a product would do now: whether it can be chosen, and the demos it would make first. */
+type Go = { can: boolean; makes: ('toran' | 'teder')[] };
+
 /**
  * What can be built for the store now: Toran's page (also again, once it is built), Teder's demo (none yet, or one
- * that failed or was removed), and both at once while neither has one and nothing is being built.
+ * that failed or was removed), and both at once while neither has one and nothing is being built. go: each choice of
+ * what the lead goes on with (go-both, go-toran, go-teder), whatever is built already.
  */
 function buildOf(s: any, t: TederLead | null, tederOk: boolean, building: boolean) {
   const toran = canIngest(s.platform) && !s.taken_down_at;
   const teder = tederOk && (!t?.demo || ['removed', 'failed'].includes(t.demo.status));
+  const makes = { toran: toran && !s.page_built_at && !building, teder };
+  const go = (p: Product): Go => {
+    const can = !s.taken_down_at && (p === 'teder' || toran) && (p === 'toran' || tederOk);
+    return { can, makes: can ? (['toran', 'teder'] as const).filter((q) => (p === 'both' || p === q) && makes[q]) : [] };
+  };
   return {
     toran,
     teder,
     both: toran && teder && !s.page_built_at && !building && !t?.demo,
     toranWhyNot: canIngest(s.platform) ? null : `תורן קורא כרגע רק חנויות ${INGESTIBLE_HE}.`,
+    go: { both: go('both'), toran: go('toran'), teder: go('teder') },
   };
 }
 
@@ -230,11 +246,48 @@ export async function leadOne(app: App, id: number) {
   };
 }
 
-const ACTIONS = ['build-toran', 'build-teder', 'build-both', 'send-both', 'send-toran', 'send-teder', 'mark-sent', 'mark-reminded', 'notes', 'skip'] as const;
+const ACTIONS = ['go-both', 'go-toran', 'go-teder', 'build-toran', 'build-teder', 'build-both', 'send-both', 'send-toran', 'send-teder', 'mark-sent', 'mark-reminded', 'notes', 'skip'] as const;
 type Action = (typeof ACTIONS)[number];
+
+/**
+ * Going on with a product (go-both, go-toran, go-teder): the choice kept as it is said, and only what it still lacks
+ * made, Teder's first (a Teder that does not answer stops it before anything is made). ready: nothing was left to make
+ * and nothing is being made, so its message can go now.
+ */
+async function goOn(app: App, s: any, p: Product, by: string, ingest: () => Promise<void>, teder: () => Promise<string>): Promise<{ message: string; ready: boolean }> {
+  const st = p === 'toran' ? { lead: null } : await tederState(app, s);
+  if ('error' in st) throw new OpsError(st.error);
+  const run = await building(app, [s.id]);
+  const b = buildOf(s, st.lead, true, run.has(s.id)).go[p];
+  if (!b.can) throw new OpsError(s.taken_down_at ? 'העמוד של החנות הוסר, ולא כותבים להם יותר.' : `תורן קורא כרגע רק חנויות ${INGESTIBLE_HE}. אפשר להמשיך רק עם תדר.`);
+  const made: string[] = [];
+  if (b.makes.includes('teder')) made.push(`תדר: ${await teder()}`);
+  if (b.makes.includes('toran')) {
+    await ingest();
+    made.push('תורן קורא את האתר ובונה את הדף. זה לוקח דקה או שתיים.');
+  }
+  await app.db.query('UPDATE stores SET demo_for = $2, updated_at = now() WHERE id = $1', [s.id, p]);
+  await audit(app.db, { actor: by, action: 'lead_go', storeId: s.id, detail: { product: p, makes: b.makes, from: 'admin' } });
+  const what = { both: 'עם תורן ותדר', toran: 'עם תורן', teder: 'עם תדר' }[p];
+  if (made.length) return { message: `ממשיכים ${what}. ${made.join(' ')}`, ready: false };
+  // Nothing to make: what is still being built or waits to be looked at, else the message can go now.
+  const pending: string[] = [];
+  if (p !== 'teder') {
+    if (run.has(s.id)) pending.push('תורן עוד בונה את הדף');
+    else if (!s.approved_at) pending.push('הדף של תורן מחכה לבדיקה');
+  }
+  if (p !== 'toran' && !st.lead?.demo?.pageUrl) pending.push('הדמו של תדר עוד לא מוכן');
+  return pending.length ? { message: `ממשיכים ${what}. ${pending.join(', ו')}.`, ready: false } : { message: `ממשיכים ${what}. ההודעה מוכנה לשליחה.`, ready: true };
+}
 
 /** One button of the lead's page: the operator's line when done, OpsError with the reason when not. */
 export async function leadAct(app: App, id: number, action: Action, b: { by?: unknown; notes?: unknown; reason?: unknown; product?: unknown }): Promise<string> {
+  return (await leadDo(app, id, action, b)).message;
+}
+
+/** leadAct's line, and for going on with a product whether its message can go now. */
+export async function leadDo(app: App, id: number, action: Action, b: { by?: unknown; notes?: unknown; reason?: unknown; product?: unknown }): Promise<{ message: string; ready?: boolean }> {
+  const said = (message: string) => ({ message });
   const s = await app.db.one<any>(`SELECT * FROM stores WHERE id = $1 AND ${LEADS_SQL}`, [id]);
   if (!s) throw new OpsError('אין ליד כזה');
   const by = String(b.by || 'operator').slice(0, 120);
@@ -253,41 +306,45 @@ export async function leadAct(app: App, id: number, action: Action, b: { by?: un
   // The demo the operator asked to make here, kept for the lead's message; asking for the other one too makes it both.
   const choose = (p: 'toran' | 'teder') => app.db.query("UPDATE stores SET demo_for = CASE WHEN demo_for IS NULL OR demo_for = $2 THEN $2 ELSE 'both' END WHERE id = $1", [s.id, p]);
   switch (action) {
+    case 'go-both':
+    case 'go-toran':
+    case 'go-teder':
+      return goOn(app, s, action.slice(3) as Product, by, ingest, teder);
     case 'build-toran':
       await ingest();
       // Reading a built page again is not a choice of Toran.
       if (!s.page_built_at) await choose('toran');
-      return s.page_built_at ? 'תורן קורא את האתר מחדש ובונה את הדף מחדש.' : 'תורן קורא את האתר ובונה את הדף. זה לוקח דקה או שתיים.';
+      return said(s.page_built_at ? 'תורן קורא את האתר מחדש ובונה את הדף מחדש.' : 'תורן קורא את האתר ובונה את הדף. זה לוקח דקה או שתיים.');
     case 'build-teder': {
       const msg = await teder();
       await choose('teder');
-      return `תדר: ${msg}`;
+      return said(`תדר: ${msg}`);
     }
     case 'build-both': {
       const msg = await teder();
       await choose('teder');
       await ingest();
       await choose('toran');
-      return `בונים את שניהם: תורן קורא את האתר ובונה את הדף, ותדר: ${msg}`;
+      return said(`בונים את שניהם: תורן קורא את האתר ובונה את הדף, ותדר: ${msg}`);
     }
     case 'send-toran':
-      return sendNow(app, 'toran', String(s.id), by);
+      return said(await sendNow(app, 'toran', String(s.id), by));
     case 'send-teder':
-      return sendTeder(app, s.id, by);
+      return said(await sendTeder(app, s.id, by));
     case 'send-both':
-      return sendBoth(app, s.id, by);
+      return said(await sendBoth(app, s.id, by));
     case 'mark-sent':
-      return markByHand(app, s, 'first', productOf(b.product) || 'toran', by);
+      return said(await markByHand(app, s, 'first', productOf(b.product) || 'toran', by));
     case 'mark-reminded':
-      return markByHand(app, s, 'reminder', productOf(b.product) || 'toran', by);
+      return said(await markByHand(app, s, 'reminder', productOf(b.product) || 'toran', by));
     case 'notes':
       await app.db.query('UPDATE stores SET notes = $2, updated_at = now() WHERE id = $1', [s.id, String(b.notes ?? '').slice(0, 4000)]);
-      return 'ההערות נשמרו.';
+      return said('ההערות נשמרו.');
     case 'skip':
       await app.db.query("UPDATE stores SET status = 'skipped', skipped_at = now(), notes = CASE WHEN $2 <> '' THEN COALESCE(notes || E'\\n', '') || $2 ELSE notes END, updated_at = now() WHERE id = $1", [s.id, String(b.reason ?? '').slice(0, 300)]);
       await event(app.db, s.id, 'skipped', { reason: b.reason || null, by });
       await audit(app.db, { actor: by, action: 'skip', storeId: s.id, detail: { from: 'admin' } });
-      return 'דילגת על החנות. היא לא תופיע יותר ברשימה של מי לכתוב לו.';
+      return said('דילגת על החנות. היא לא תופיע יותר ברשימה של מי לכתוב לו.');
   }
 }
 
@@ -349,7 +406,7 @@ export function leadsAdminRoutes(app: App): Route<Req>[] {
       if (!b || typeof b !== 'object') return { status: 400, json: { ok: false, error: 'bad' } };
       if (!(await app.db.one(`SELECT 1 FROM stores WHERE id = $1 AND ${LEADS_SQL}`, [Number(m[1])]))) return { status: 404, json: { ok: false, error: 'אין ליד כזה' } };
       try {
-        return { json: { ok: true, message: await leadAct(app, Number(m[1]), action, b) } };
+        return { json: { ok: true, ...(await leadDo(app, Number(m[1]), action, b)) } };
       } catch (e) {
         if (e instanceof OpsError) return { status: 400, json: { ok: false, error: e.message } };
         throw e;

@@ -4,7 +4,9 @@ import { seedDemo } from '../src/demoSeed.ts';
 import { getOffer, setOffer, priceSentence, PLANS_OFFER } from '../src/offer.ts';
 import { pitchGaps } from '../src/pitch/ready.ts';
 import { pitchData, pitchPage, priceFigure, shelfRows, themeCss, type PitchData } from '../src/pitch/page.ts';
-import { buildPitch } from '../src/pitch/build.ts';
+import { ambiguous, buildPitch, candidates } from '../src/pitch/build.ts';
+import { REVIEW_PROMPT, reviewStored } from '../src/pitch/review.ts';
+import { defaultScript } from '../src/agent/llm/scripted.ts';
 import { contrast, displayName } from '../src/ingest/brand.ts';
 import { testApp } from './helpers.ts';
 
@@ -287,4 +289,120 @@ test('every pitch page says what Toran connects to (the store platforms it reads
   assert.match(html, /נבדוק אם אפשר ומה זה דורש, ונגיד לכם לפני שמתחייבים למשהו\./);
   assert.match(html, /מגיעה אליכם במייל ובתיבה של תורן/);
   assert.doesNotMatch(html, / style="/, 'no inline style: the page\'s CSP allows none');
+});
+
+// The owner, 2026-11-12, on the first demo they opened: "something with the grow is not it. make sure it catches things
+// like that", and on the next: "asks if they want a url but sends it in the same message. it should not ask".
+test('a sample chat is read the way the store\'s owner will before it goes up: one turned down moves to the next product, and the page says why', async () => {
+  const reviewed: string[] = [];
+  let reviews = 0;
+  const app = await testApp({
+    script: (req, call) => {
+      if (req.system[0]?.text === REVIEW_PROMPT) {
+        reviews++;
+        const chat = String(req.messages[0].content);
+        reviewed.push(/CUSTOMER: (היי, יש לכם .+?\?)/.exec(chat)?.[1] || '');
+        assert.match(chat, /THE PRODUCT:\n"""\n.+\n/, 'the reviewer reads the product as the store lists it');
+        assert.match(chat, /THE STORE'S DATA THE ASSISTANT HAD:\n"""\n.*\[id \d+\]/s, 'and the tool results the answers stand on');
+        return [{ type: 'text', text: reviews === 1 ? '{"ok": false, "why": "התשובה מונה כמה מוצרים בשם דומה, ולא ברור מה המחיר."}' : '{"ok": true}' }];
+      }
+      return defaultScript(req, call);
+    },
+  });
+  Object.assign(app.env, ENV, { TORAN_PITCH_REVIEW: 'on' });
+  try {
+    const s = await seedDemo(app, { conversation: false });
+    const p = await app.db.one<any>('SELECT sample_chat FROM pitches WHERE store_id = $1', [s.storeId]);
+    assert.equal(p.sample_chat.length, 4, 'the next product made it');
+    assert.notEqual(reviewed[0], p.sample_chat[0].text, 'the product turned down is not the one on the page');
+    assert.equal(reviewed.filter((q) => q === reviewed[0]).length, 1, 'a first answer turned down is not asked a second question');
+    assert.equal(reviews, 3, 'the first answer alone, then the next product\'s first answer and its whole chat');
+    const ev = await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'page_built' ORDER BY id DESC LIMIT 1", [s.storeId]);
+    assert.deepEqual(ev.data.turnedDown.map((t: any) => t.why), ['התשובה מונה כמה מוצרים בשם דומה, ולא ברור מה המחיר.']);
+    const cost = await app.db.one<any>("SELECT COUNT(*)::int AS n FROM usage WHERE store_id = $1 AND tag = 'pitch_review'", [s.storeId]);
+    assert.equal(cost.n, 3, 'each review is counted in the store\'s cost');
+  } finally {
+    await app.db.close();
+  }
+});
+
+test('a chat the review never passes, or a review that fails, leaves the page waiting with no sample chat', async () => {
+  for (const answer of ['{"ok": false, "why": "מציע לשלוח קישור שכבר נמצא בתשובה."}', 'not json', null]) {
+    const app = await testApp({
+      script: (req, call) => {
+        if (req.system[0]?.text !== REVIEW_PROMPT) return defaultScript(req, call);
+        if (answer === null) throw new Error('overloaded');
+        return [{ type: 'text', text: answer }];
+      },
+    });
+    Object.assign(app.env, ENV, { TORAN_PITCH_REVIEW: 'on' });
+    try {
+      const s = await seedDemo(app, { conversation: false });
+      const p = await app.db.one<any>('SELECT sample_chat FROM pitches WHERE store_id = $1', [s.storeId]);
+      assert.deepEqual(p.sample_chat, [], String(answer));
+      const store = await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [s.storeId]);
+      assert.ok((await pitchGaps(app, store)).some((g) => g.key === 'sample'));
+      assert.equal(store.approved_at, null, 'and it is not public');
+      const ev = await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'page_built' ORDER BY id DESC LIMIT 1", [s.storeId]);
+      assert.ok(ev.data.turnedDown.length >= 1);
+      assert.ok(ev.data.turnedDown.every((t: any) => t.why), 'each with its reason');
+    } finally {
+      await app.db.close();
+    }
+  }
+});
+
+test('a product whose short name other products hold too is asked about last: "Grow" is in "Grow & Shine" and "Grow - חודש"', () => {
+  const p = (id: number, title: string, variants = 2) => ({ id, title, available: true, price_min: 100, image: 'x.jpg', variants: Array.from({ length: variants }, (_, i) => ({ id: i })) }) as any;
+  const all = [p(1, 'Grow', 3), p(2, 'Grow & Shine'), p(3, 'Grow - חודש', 1), p(4, 'Shine Bright')];
+  assert.equal(ambiguous(all[0], all), true);
+  assert.equal(ambiguous(all[1], all), false);
+  assert.equal(ambiguous(all[2], all), true, '"Grow - חודש" is asked as "Grow"');
+  assert.deepEqual(candidates(all).map((x: any) => x.title), ['Grow & Shine', 'Shine Bright', 'Grow', 'Grow - חודש']);
+});
+
+test('a page built before the review is read again as it is: the product today, its search line and the shipping page; a rebuild of a sent page keeps its chat when no new one passes', async () => {
+  let verdict = '{"ok": false, "why": "מונה ארבעה מוצרים בשם Grow."}';
+  let seen = '';
+  const app = await testApp({
+    script: (req, call) => {
+      if (req.system[0]?.text !== REVIEW_PROMPT) return defaultScript(req, call);
+      seen = String(req.messages[0].content);
+      return [{ type: 'text', text: verdict }];
+    },
+  });
+  Object.assign(app.env, ENV);
+  try {
+    // Built with the review off, as every page before 2026-11-12 was.
+    const s = await seedDemo(app, { conversation: false });
+    const before = await app.db.one<any>('SELECT product_id, sample_chat FROM pitches WHERE store_id = $1', [s.storeId]);
+    assert.equal(before.sample_chat.length, 4);
+    app.env.TORAN_PITCH_REVIEW = 'on';
+    assert.deepEqual(await reviewStored(app, s.storeId), { ok: false, why: 'מונה ארבעה מוצרים בשם Grow.' });
+    assert.match(seen, /THE STORE'S DATA THE ASSISTANT HAD:\n"""\n.*- \[id \d+\] /s, 'the search line the agent gets for the product');
+    assert.match(seen, /From the store's shipping page: /, 'and the shipping page the second answer stood on');
+    assert.ok(seen.includes(before.sample_chat[1].text), 'the chat as the page shows it');
+
+    // Sent, and no new chat passes: it keeps the one it had, and says so.
+    const r = await buildPitch(app, s.storeId, { keep: true });
+    assert.deepEqual([r.chat.length, r.kept], [0, true]);
+    const after = await app.db.one<any>('SELECT product_id, sample_chat FROM pitches WHERE store_id = $1', [s.storeId]);
+    assert.deepEqual(after.sample_chat, before.sample_chat);
+    const ev = await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'page_built' ORDER BY id DESC LIMIT 1", [s.storeId]);
+    assert.equal(ev.data.sample, 'kept');
+    // Not sent: no chat is better than one turned down.
+    await buildPitch(app, s.storeId);
+    assert.deepEqual((await app.db.one<any>('SELECT sample_chat FROM pitches WHERE store_id = $1', [s.storeId])).sample_chat, []);
+    assert.equal(await reviewStored(app, s.storeId), null, 'nothing to read');
+
+    // A chat that passes is rebuilt in place; a product gone from the site is turned down without asking.
+    verdict = '{"ok": true}';
+    const again = await buildPitch(app, s.storeId);
+    assert.equal(again.chat.length, 4);
+    assert.deepEqual(await reviewStored(app, s.storeId), { ok: true, why: null });
+    await app.db.query('UPDATE products SET gone_at = now() WHERE id = $1', [again.productId]);
+    assert.deepEqual(await reviewStored(app, s.storeId), { ok: false, why: 'המוצר של שיחת הדוגמה כבר לא באתר.' });
+  } finally {
+    await app.db.close();
+  }
 });

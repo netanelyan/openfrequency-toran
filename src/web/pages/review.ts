@@ -88,6 +88,9 @@ async function editPage(app: App, r: DashReq, id: number) {
   if (!s.page_built_at) throw new ActionError('לחנות הזאת עוד אין דף. קודם צריך לבנות אותו.', 400);
   const q = (r.url.searchParams.get('q') || '').trim();
   const pitch = await app.db.one<any>('SELECT sample_chat, built_at FROM pitches WHERE store_id = $1', [id]);
+  // What the last build turned down, and why (pitch/review.ts): said under the chat, so a rebuild is a choice made knowing.
+  const built = await app.db.one<any>("SELECT data FROM events WHERE store_id = $1 AND kind = 'page_built' ORDER BY at DESC, id DESC LIMIT 1", [id]);
+  const turnedDown: { product: string; why: string }[] = Array.isArray(built?.data?.turnedDown) ? built.data.turnedDown : [];
   const where = `store_id = $1 AND gone_at IS NULL ${q ? 'AND lower(title) LIKE $2' : ''}`;
   const args = q ? [id, `%${q.toLowerCase()}%`] : [id];
   const found = (await app.db.one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM products WHERE ${where}`, args))?.n || 0;
@@ -133,7 +136,8 @@ ${gaps.length ? `<div class="banner bad">${icon('alert')}<div><b>הדף לא נ�
 <div class="cols edit">
   <div class="grid12">
     <section class="panel"><header><h2>שיחת הדוגמה</h2><span class="end">${postButton(r.ctx, `/lead/${id}/sample`, 'לבנות מחדש', { cls: 'btn sm', iconName: 'refresh' })}</span></header>${chatBubbles(pitch?.sample_chat || [])}
-      <p class="small muted mt8 m0">את התשובות כתב תורן מהנתונים של החנות${pitch?.built_at ? `, ${esc(ago(pitch.built_at))}` : ''}.</p></section>
+      <p class="small muted mt8 m0">את התשובות כתב תורן מהנתונים של החנות${pitch?.built_at ? `, ${esc(ago(pitch.built_at))}` : ''}.</p>
+      ${turnedDown.length ? `<details class="mt8"><summary class="small">${turnedDown.length === 1 ? 'שיחה אחת לא עלתה לדף' : `${turnedDown.length} שיחות לא עלו לדף`}</summary><ul class="small mt8">${turnedDown.map((t) => `<li><b>${esc(t.product)}</b>: ${esc(t.why)}</li>`).join('')}</ul></details>` : ''}</section>
     <section class="panel" id="products"><header><h2>מוצרים</h2><span class="end small muted">${total?.n || 0} בסך הכול${q ? `, ${found} מתאימים לחיפוש` : ''}</span></header>
       <form class="inline-form" method="get" action="/lead/${id}/review"><input type="search" name="q" value="${esc(q)}" placeholder="חיפוש מוצר" aria-label="חיפוש מוצר"><button class="btn" type="submit" aria-label="לחפש">${icon('search')}</button></form>
       ${productRows.length ? `<div class="scrollx mt12"><table class="table stack"><thead><tr><th>מוצר</th><th>מחיר באתר</th><th>תיקון</th></tr></thead><tbody>${productRows.join('')}</tbody></table></div>` : `<p class="muted mt12 m0">${q ? 'אין מוצר שהשם שלו כולל את זה.' : 'לא נקראו מוצרים מהאתר.'}</p>`}

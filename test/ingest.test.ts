@@ -301,7 +301,7 @@ test('a Cashcow store: the products from its one sitemap, the policies under /pa
     const v = await verifyPrices(app, id, 4);
     assert.deepEqual([v.checked, v.mismatches.length], [4, 0]);
     const ctx = { db: app.db, storeId: id, origin: `https://www.${CASHCOW_DOMAIN}`, currency: 'ILS' };
-    assert.match((await runTool(ctx, 'search_products', { query: 'רכבת' })).content, /רכבת עץ: 162 ₪ עד 220\.50 ₪ \(במבצע, במקום 245 ₪\), במלאי, 4 options/);
+    assert.match((await runTool(ctx, 'search_products', { query: 'רכבת' })).content, /רכבת עץ: 162 ₪ עד 220\.50 ₪ \(במבצע, במקום 180 ₪ עד 245 ₪\), במלאי, 4 options/);
   } finally {
     await app.db.close();
   }

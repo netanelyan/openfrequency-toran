@@ -188,7 +188,7 @@ export function buildAllow({ toolTexts, customerTexts, factTexts = [], ownLinks 
       // A product's own name backs its words ("סט מתנה"); a sale price the tool marks backs "sale". Its description
       // backs nothing: "50% הנחה" in a product's text is the store's marketing, not an offer to this customer.
       for (const c of promiseConcepts(p.title)) promiseWords.add(c);
-      if (/\((?:במבצע, )?במקום /.test(p.text)) promiseWords.add('sale');
+      if (/\((?:במבצע, )?במקום |\(חלק מהאפשרויות במבצע\)/.test(p.text)) promiseWords.add('sale');
     }
     for (const n of numbersIn(stripMeta(rest))) otherNumbers.add(n);
   }
@@ -236,17 +236,22 @@ function moneyOf(plain: string, allow: Allow): string[] {
   return [...new Set([...captured(MONEY_AFTER, plain), ...captured(MONEY_BEFORE, plain), ...captured(PRICE_THEN, plain)])].filter((n) => !budget.has(n));
 }
 
-/** A price is its product's: a sentence that names products the tools listed takes its money from their lines, or from no product's. */
-function ofItsProduct(plain: string, money: string[], allow: Allow): boolean {
+/**
+ * A price is its product's: a sentence that names products the tools listed takes its money from their lines, or from no
+ * product's. `label` is the name a line put before a colon ("Grow - חודש: 99 ₪"), which the sentences split from its
+ * price: the line names the product, so its price is held to it (the owner, 2026-11-12, on a demo where a hat's 99 ₪
+ * priced Grow that way: "something with the grow is not it").
+ */
+function ofItsProduct(plain: string, money: string[], allow: Allow, label = ''): boolean {
   if (!money.length || !allow.products.length) return true;
-  const said = termsOf(plain);
+  const said = termsOf(label ? `${label} ${plain}` : plain);
   const named = allow.products.filter((p) => [...p.terms].some((t) => said.has(t)));
   if (!named.length) return true;
   return money.every((n) => named.some((p) => p.numbers.has(n)) || allow.otherNumbers.has(n));
 }
 
-/** The rule a sentence breaks, or null. */
-export function violation(sentence: string, allow: Allow): string | null {
+/** The rule a sentence breaks, or null. `label`: what the same line said before a colon, when the sentence follows one. */
+export function violation(sentence: string, allow: Allow, label = ''): string | null {
   const s = sentence;
   if (hostsIn(s).some((h) => !linkAllowed(h, allow.hosts))) return 'link';
   if (SUPERLATIVE.test(s)) return 'superlative';
@@ -265,7 +270,7 @@ export function violation(sentence: string, allow: Allow): string | null {
   if (PERCENT.test(s) && (bad.length || percents.some((n) => !allow.toolNumbers.has(n)))) return 'promise';
   if (CURRENCY.test(s) || MONEY_WORD.test(s)) {
     if (bad.length || notTools.length) return 'price';
-    if (!ofItsProduct(plain, money, allow)) return 'price';
+    if (!ofItsProduct(plain, money, allow, label)) return 'price';
   }
   // No tool ever gives a quantity in stock, only in or out: "only 3 left" is invented, whatever number it uses.
   if (LEFT_N.test(s)) return 'stock';
@@ -370,6 +375,35 @@ function demoTruth(text: string, english: boolean): string {
   const real = english ? REAL_EN : REAL;
   const kept = out.join('').replace(/[ \t]{2,}/g, ' ').trim();
   return kept.includes(real) ? kept : `${kept ? `${kept} ` : ''}${real}`;
+}
+
+// An offer to send a link, in a reply that already has one: "רוצים שאבדוק איזה צבעים יש, או שאשלח קישור?" above the
+// product's own link (the owner, 2026-11-12, on a demo: "asks if they want a url but sends it in the same message. it
+// should not ask"). The offer comes off its question ("או שאשלח קישור"), or the question goes when it was only that.
+// Hebrew letters are not \w, so no \b beside them.
+const LINK_WORD = String.raw`(?:ה)?(?:קישור|לינק)`;
+const LINK_OFFER = new RegExp(
+  String.raw`(?:ש?אשלח|לשלוח|נשלח)\s+(?:(?:לך|לכם|לכן)\s+)?(?:את\s+)?${LINK_WORD}|(?:רוצים|רוצה|תרצו|תרצה)\s+(?:את\s+)?${LINK_WORD}|\bsend\s+(?:you\s+)?(?:the|a)\s+link\b|\b(?:want|like)\s+(?:the|a)\s+link\b`,
+  'i',
+);
+const OR_LINK_OFFER = new RegExp(String.raw`(?:,\s*|\s+)(?:או|or)\s+[^?]*?(?:קישור|לינק|\blink\b)[^?]*`, 'i');
+const HAS_LINK = /https?:\/\//i;
+function noLinkOffer(out: string[]) {
+  if (!HAS_LINK.test(out.join(''))) return;
+  for (let i = out.length - 1; i >= 0; i--) {
+    const s = out[i];
+    if (!/\?\s*$/.test(s)) continue;
+    // The question is what comes after the sentence's own link, when it has one ("https://... רוצים שאשלח קישור?").
+    const links = [...s.matchAll(/https?:\/\/\S+/gi)];
+    const at = links.length ? links[links.length - 1].index! + links[links.length - 1][0].length : 0;
+    const head = s.slice(0, at);
+    const ask = s.slice(at);
+    if (!LINK_OFFER.test(ask)) continue;
+    const kept = ask.replace(OR_LINK_OFFER, '');
+    if (kept !== ask && !LINK_OFFER.test(kept) && kept.replace(/[\s?.!,]/g, '')) out[i] = head + kept;
+    else if (head.trim()) out[i] = head + (s.endsWith('\n') ? '\n' : '');
+    else out.splice(i, 1);
+  }
 }
 
 /** Nothing left after a quiet cut, and nothing asked: a greeting back ("במה אפשר לעזור?" read as a call centre, P2-29). */
@@ -536,9 +570,12 @@ export function guardReply(text: string, allow: Allow, { company = false, demo =
   let dropContinuation = false;
   let handoffReason: string | null = null;
   let prev = '';
+  let last = ''; // the sentence just before, as written: a label when it ends in a colon on this sentence's line
   for (const sentence of splitSentences(text)) {
     const trimmed = sentence.trim();
     const before = prev;
+    const label = /:[ \t]*$/.test(last) && !/^[ \t]*\n/.test(sentence) ? last.trim() : '';
+    last = sentence;
     if (trimmed) prev = trimmed;
     if (dropContinuation) {
       if (/^([-•*]|\d+[.)])\s/.test(trimmed) || !trimmed) {
@@ -547,7 +584,7 @@ export function guardReply(text: string, allow: Allow, { company = false, demo =
       }
       dropContinuation = false;
     }
-    const lexical = trimmed ? violation(trimmed, allow) : null;
+    const lexical = trimmed ? violation(trimmed, allow, label) : null;
     const claim = !lexical && trimmed && allow.claims && !verified?.has(trimmed) ? claimViolation(trimmed, allow.claims, before) : null;
     const rule = lexical || (claim ? 'claim' : null);
     if (!rule) {
@@ -569,7 +606,8 @@ export function guardReply(text: string, allow: Allow, { company = false, demo =
     if (lines[rule]) out.push(`${lead}${lines[rule]}${sentence.endsWith('\n') ? '\n' : ' '}`);
   }
   handOverOnce(out, placed, english, redactions);
-  let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
+  noLinkOffer(out);
+  let result = undash(out.join('').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim());
   // Nothing left: the honest line when the customer asked something, a greeting back when they did not.
   if (!result) result = handoffReason || askedAbout('claim', asked) ? checkingLine(english, company, demo) : greeting(english, company);
   if (demo && !company) result = demoTruth(result, english);
