@@ -30,7 +30,7 @@ export const REVIEW_PROMPT = `You review a short sample chat before it goes on a
 Read the answers the way the store's owner will, and reject the chat if any answer has one of these:
 - A price, an option or a stock fact that does not match THE PRODUCT or THE STORE'S DATA below, or that belongs to another product than the one it is said of.
 - A muddle about which product or option is meant: near-identical names listed side by side, a list where one answer or a short choice would do, the same range said twice, a sale said of options that are not on sale.
-- An offer of what the same answer already gives (asking whether to send a link that is right there), or an offer to check what the answer could simply say.
+- An offer of what the same answer already gives (asking whether to send a link that is right there), or an offer to check what the answer could simply say. An offer of an order link for an option the customer asked about, in an answer that has no link, is a fair next step and fine.
 - Something wrong, odd or embarrassing for the store, or an answer that does not answer what was asked.
 - Hebrew that is not how a person from an Israeli store texts: stiff, translated, awkward, a broken word, or a code or an English option name a customer would not understand.
 
