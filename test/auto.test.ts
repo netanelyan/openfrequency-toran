@@ -14,6 +14,7 @@ import { categoryOf, emailText, firstName, KINDS, LEGACY, MESSAGES, templateRequ
 import { shopifyOrderRead, shopifySign, wixCheckoutRead, wixOrderRead, wooSign } from '../src/auto/platforms.ts';
 import { AutoError, record, saveSetting, sendDue } from '../src/auto/send.ts';
 import { approvedFor, submitTemplates } from '../src/auto/templates.ts';
+import { submittedHe } from '../src/web/pages/auto.ts';
 import { customer } from './helpers.ts';
 import { serve } from './serve.ts';
 
@@ -196,7 +197,9 @@ test('the messages: every template has words on both sides of each variable, the
       const b = (req.components[1] as any).buttons;
       assert.deepEqual(req.components.slice(1), [{ type: 'BUTTONS', buttons: [{ type: 'URL', text: 'הגדרות הודעות', url: 'https://toran.test/u/{{1}}', example: [b[0].example[0]] }] }]);
       assert.match(b[0].example[0], /^https:\/\/toran\.test\/u\/[\w-]{24}$/);
-      assert.match(mail, /\n\nכלי חרס\n\nלא רוצים לקבל מאיתנו תזכורות כאלה\? אפשר להפסיק כאן:\nhttps:\/\/toran\.test\/u\/t$/);
+      // What the link stops, in the kind's own words: a review request is no reminder (the audit's P2-29).
+      const what = key === 'cart' ? 'תזכורות כאלה' : 'הודעות כאלה';
+      assert.ok(mail.endsWith(`\n\nכלי חרס\n\nלא רוצים לקבל מאיתנו ${what}? אפשר להפסיק כאן:\nhttps://toran.test/u/t`), `${key}: ends with its way out`);
     } else {
       assert.equal(req.components.length, 1, `${key}: a body and nothing else`);
       // An update on an order: its own quiet line, to stop order updates (the owner, 2026-11-06).
@@ -611,7 +614,7 @@ test('the link in a reminder: a quiet page in the store\'s colour, stop and undo
     assert.match(html, /<html lang="he" dir="rtl">/);
     assert.match(html, /<meta name="robots" content="noindex/);
     assert.ok(html.includes(`<bdi>${name}</bdi>`), 'the store\'s name');
-    assert.match(html, /לא לקבל יותר תזכורות מ(-)?<bdi>[^<]+<\/bdi>\?/);
+    assert.match(html, /לא לקבל יותר תזכורות מ(־)?<bdi>[^<]+<\/bdi>\?/);
     assert.match(html, new RegExp(`<form method="post" action="/u/${token}"><input type="hidden" name="do" value="stop"><button class="stop-btn" type="submit">כן, להפסיק</button>`));
     assert.ok(html.includes(`href="/u/${token}/theme.css"`));
     assert.match(await (await page(s, `/u/${token}/theme.css`)).text(), /^:root\{--store:#[0-9a-f]{6};--store-ink:#[0-9a-f]{6}\}$/);
@@ -621,7 +624,7 @@ test('the link in a reminder: a quiet page in the store\'s colour, stop and undo
     res = await page(s, `/u/${token}`, form('do=stop'));
     assert.deepEqual([res.status, res.headers.get('location')], [303, `/u/${token}`]);
     html = await (await page(s, `/u/${token}`)).text();
-    assert.match(html, /סגור, לא נשלח לכם יותר תזכורות מ(-)?<bdi>[^<]+<\/bdi>\./);
+    assert.match(html, /סגור, לא נשלח לכם יותר תזכורות מ(־)?<bdi>[^<]+<\/bdi>\./);
     assert.match(html, /עדכונים על הזמנות שעשיתם \(תשלום ומשלוח\) ימשיכו להגיע\./);
     assert.match(html, /name="do" value="undo"><button class="grey" type="submit">בעצם כן, להמשיך לקבל<\/button>/);
     assert.deepEqual(await app.db.query("SELECT channel, address, scope, state FROM auto_consent WHERE store_id = $1 AND source = 'link' ORDER BY channel", [id]), [
@@ -650,7 +653,7 @@ test('the link in a reminder: a quiet page in the store\'s colour, stop and undo
     res = await page(s, `/u/${token}`, form('do=undo'));
     assert.deepEqual([res.status, res.headers.get('location')], [303, `/u/${token}?kept=1`]);
     html = await (await page(s, `/u/${token}?kept=1`)).text();
-    assert.match(html, /בסדר, התזכורות מ(-)?<bdi>[^<]+<\/bdi> ימשיכו להגיע\./);
+    assert.match(html, /בסדר, התזכורות מ(־)?<bdi>[^<]+<\/bdi> ימשיכו להגיע\./);
     assert.match(html, /כן, להפסיק/);
     assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, orders: true, marketing: true, source: 'shopify:sms_marketing_consent' });
     assert.equal((await consentOf(app.db, id, 'email', DANA)).marketing, true);
@@ -780,14 +783,14 @@ test('order updates: a second choice on the customer\'s page; stopped there, pay
     // From an order update: they lead, as the one main button, and the form keeps where she came from.
     html = await (await page(s, `/u/${token}?about=orders`)).text();
     assert.ok(html.indexOf('stop-orders') < html.indexOf('לא לקבל יותר תזכורות'), 'the order updates first');
-    assert.match(html, /<h1>לא לקבל יותר עדכונים על הזמנות מ(-)?<bdi>[^<]+<\/bdi>\?<\/h1>/);
+    assert.match(html, /<h1>לא לקבל יותר עדכונים על הזמנות מ(־)?<bdi>[^<]+<\/bdi>\?<\/h1>/);
     assert.ok(html.includes(`<form method="post" action="/u/${token}?about=orders"><input type="hidden" name="do" value="orders-off"><button class="stop-btn" type="submit">כן, להפסיק</button></form>`));
 
     // Stop them: recorded as 'orders' out for the phone and the email; the reminders untouched.
     let res = await page(s, `/u/${token}?about=orders`, form('do=orders-off'));
     assert.deepEqual([res.status, res.headers.get('location')], [303, `/u/${token}?about=orders`]);
     html = await (await page(s, `/u/${token}?about=orders`)).text();
-    assert.match(html, /סגור, לא נשלח לכם עדכונים על הזמנות מ(-)?<bdi>[^<]+<\/bdi>\./);
+    assert.match(html, /סגור, לא נשלח לכם עדכונים על הזמנות מ(־)?<bdi>[^<]+<\/bdi>\./);
     assert.match(html, /name="do" value="orders-on"><button class="grey" type="submit">בעצם כן, להחזיר אותם<\/button>/);
     assert.deepEqual(await consentOf(app.db, id, 'whatsapp', CUSTOMER), { updates: true, orders: false, marketing: true, source: 'shopify:sms_marketing_consent' });
     assert.equal((await consentOf(app.db, id, 'email', DANA)).orders, false, 'on every channel');
@@ -831,4 +834,53 @@ test('order updates by email carry their own quiet line to the page, opened on t
   } finally {
     await done(s);
   }
+});
+
+// ---- what the owner reads about a template that did not go through (the pre-launch audit, 2026-11-12: P1-14, P2-12, P2-17)
+
+test("a template Meta refused, one never sent, one in a state the page has no word for: the owner reads what to do, never Meta's code or ours", async () => {
+  const { s, app, id, wa } = await shop();
+  try {
+    const row = (name: string, message: string, status: string, why: string | null) => app.db.query("INSERT INTO wa_templates (account_id, store_id, name, message, asked, status, why, body) VALUES ($1, $2, $3, $4, 'UTILITY', $5, $6, 'x')", [wa, id, name, message, status, why]);
+    await row('toran_order_paid', 'paid', 'REJECTED', 'INVALID_FORMAT');
+    await row('toran_payment_pending', 'pending', 'error', 'PUBLIC_BASE_URL is not set to an https address, so the button has nowhere to go');
+    await row('toran_payment_failed', 'failed', 'PENDING_DELETION', null);
+    const page = await (await s.get('/settings')).text();
+    for (const code of ['INVALID_FORMAT', 'PUBLIC_BASE_URL', 'nowhere to go', 'PENDING_DELETION']) assert.ok(!page.includes(code), code);
+    assert.match(page, /Meta לא אישרה את ההודעה הזו\. כתבו לנו ונבדוק למה\./);
+    assert.match(page, /ההודעה לא נשלחה לאישור של Meta\. אפשר לנסות שוב, ואם זה חוזר, כתבו לנו\./);
+    assert.match(page, /<span class="chip warn">לא פעילה אצל Meta<\/span>/);
+    // The review link's hint reads right to left: "https://" never turns into "//:https".
+    assert.match(page, /מתחיל ב־<bdi dir="ltr">https:\/\/<\/bdi>/);
+    // A review request's way out is not a reminder's.
+    assert.match(page, /להפסיק לקבל מכם הודעות כאלה\./);
+    assert.match(page, /להפסיק לקבל מכם תזכורות כאלה\./);
+  } finally {
+    await done(s);
+  }
+});
+
+test('how many templates went to Meta, counted in Hebrew', () => {
+  assert.equal(submittedHe({ sent: 7, refused: 0 }), 'ההודעות נשלחו לאישור של Meta. כשהן מאושרות, אפשר להפעיל אותן בוואטסאפ.');
+  assert.equal(submittedHe({ sent: 1, refused: 1 }), 'הודעה אחת נשלחה לאישור של Meta, ואחת לא נשלחה. אפשר לנסות שוב, ואם זה חוזר, כתבו לנו.');
+  assert.equal(submittedHe({ sent: 5, refused: 2 }), '5 הודעות נשלחו לאישור של Meta, ו־2 לא נשלחו. אפשר לנסות שוב, ואם זה חוזר, כתבו לנו.');
+  assert.equal(submittedHe({ sent: 0, refused: 1 }), 'ההודעה לא נשלחה לאישור של Meta. אפשר לנסות שוב, ואם זה חוזר, כתבו לנו.');
+  assert.equal(submittedHe({ sent: 0, refused: 7 }), 'ההודעות לא נשלחו לאישור של Meta. אפשר לנסות שוב, ואם זה חוזר, כתבו לנו.');
+});
+
+test('the review link it asks for reads right: "שמתחיל ב־https." and nothing left dangling after it', async () => {
+  const { s, app, id } = await shop({ whatsapp: false });
+  try {
+    await assert.rejects(saveSetting(app, id, 'review', { whatsapp: false, email: true, link: 'http://g.example/review' }, 'owner'), (e: any) => e instanceof AutoError && /שמתחיל ב־https\. למשל/.test(e.he) && !/https:\/\/\./.test(e.he));
+  } finally {
+    await done(s);
+  }
+});
+
+test('an email to a store with a Latin name takes the maqaf; the WhatsApp template body stays as Meta approved it', () => {
+  const v = { name: 'דנה', order: '#1042', link: 'https://x.example/' };
+  assert.match(emailText('paid', 'Kli Shop', v).subject, /על הזמנה #1042 ב־Kli Shop$/);
+  assert.match(emailText('paid', 'Kli Shop', v).text, /ב־Kli Shop\. תודה שקניתם אצלנו\./);
+  assert.match(waText('paid', 'Kli Shop', v).text, /ב-Kli Shop\./, 'the body Meta has');
+  assert.equal(emailText('paid', 'כלי חרס', v).subject, 'קיבלנו את התשלום על הזמנה #1042 בכלי חרס');
 });

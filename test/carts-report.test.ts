@@ -76,8 +76,9 @@ test('a cart counts as recovered by its checkout or its person within the window
     assert.ok(now, 'this month is there');
     const all = months.reduce((a, m) => ({ reminded: a.reminded + m.reminded, recovered: a.recovered + m.recovered, ils: a.ils + (m.money.ILS || 0) }), { reminded: 0, recovered: 0, ils: 0 });
     assert.deepEqual(all, { reminded: 5, recovered: 3, ils: 250 + 90 + 40 });
-    assert.equal(moneyHe({ ILS: 1240.4, USD: 80 }), '₪1,240 + $80');
-    assert.equal(cartLine({ month: '2026-11', reminded: 12, recovered: 3, money: { ILS: 1240 } }), '12 עגלות קיבלו תזכורת, 3 חזרו והזמינו, ₪1,240');
+    // The sign after the number, as every price Toran shows ("249 ₪"; the audit's P2-17).
+    assert.equal(moneyHe({ ILS: 1240.4, USD: 80 }), '1,240 ₪ + 80 $');
+    assert.equal(cartLine({ month: '2026-11', reminded: 12, recovered: 3, money: { ILS: 1240 } }), '12 עגלות קיבלו תזכורת, 3 חזרו והזמינו, 1,240 ₪');
     assert.equal(cartLine({ month: '2026-11', reminded: 1, recovered: 0, money: {} }), 'עגלה אחת קיבלה תזכורת, עוד אף אחת לא חזרה להזמין');
   } finally {
     setNow(null);
@@ -102,10 +103,10 @@ test('the owner sees the carts\' month on Today and on the automatic messages, a
     await placed(db, id, T0 - day, { checkout: 'a', total: 320 });
     await reminder(db, id, T0 - 2 * day, { checkout: 'b', phone: '972500000122', total: 80 });
     const today = await (await s.get('/')).text();
-    assert.match(today, /עגלות שחזרו החודש<\/span><span class="cnt ok">1 · ₪320<\/span>/);
+    assert.match(today, /עגלות שחזרו החודש<\/span><span class="cnt ok">1 · 320 ₪<\/span>/);
     const settings = await (await s.get('/settings')).text();
     assert.match(settings, /id="carts">מה העגלות החזירו/);
-    assert.match(settings, /2 עגלות קיבלו תזכורת, אחת חזרה והזמינה, ₪320/);
+    assert.match(settings, /2 עגלות קיבלו תזכורת, אחת חזרה והזמינה, 320 ₪/);
   } finally {
     setNow(null);
     await s.close();

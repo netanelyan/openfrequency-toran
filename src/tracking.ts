@@ -32,7 +32,7 @@ export function cleanTrackingPage(input: string): string | null {
   } catch {
     throw new TrackingPageError('not a URL', 'זו לא נראית כתובת של דף. מעתיקים אותה מהדפדפן, למשל https://my-store.co.il/track');
   }
-  if (u.protocol !== 'https:') throw new TrackingPageError('not https', 'הכתובת צריכה להתחיל ב-https://');
+  if (u.protocol !== 'https:') throw new TrackingPageError('not https', 'הכתובת צריכה להתחיל ב־https, למשל https://my-store.co.il/track');
   if (u.username || u.password || !u.hostname.includes('.') || /\s/.test(s)) throw new TrackingPageError('not a public address', 'זו לא נראית כתובת של דף באתר. מעתיקים אותה מהדפדפן, למשל https://my-store.co.il/track');
   return s;
 }

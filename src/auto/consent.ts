@@ -4,6 +4,7 @@ import type { Db } from '../db/index.ts';
 import { event } from '../db/log.ts';
 import { toIntl } from '../core/urls.ts';
 import { now } from '../core/clock.ts';
+import { prefixed } from '../core/hebrew.ts';
 
 // What a store's customer agreed to hear, per channel and address (auto_consent, migration 017):
 //
@@ -165,7 +166,9 @@ export async function undoOrdersFromLink(app: App, l: StopLink) {
 /** A whole message that asks to stop: "הסר", "הסירו אותי", "STOP", "unsubscribe". */
 export const OPT_OUT = /^\s*(?:הסר|הסירו|הסירו אותי|תסירו אותי|להסיר|הסרה|stop|unsubscribe)\s*[.!]*\s*$/i;
 
-export const optOutReply = (store: string) => `בסדר, לא נשלח לכם יותר הודעות אוטומטיות מ${/^[֐-׿]/.test(store) ? '' : '-'}${store}. אם תכתבו לנו כאן, נענה כרגיל.`;
+// A plain reply in the conversation the customer just opened, no template: the maqaf before a Latin name, as everywhere
+// (core/hebrew.ts prefixed; the pre-launch audit, 2026-11-12, P2-18).
+export const optOutReply = (store: string) => `בסדר, לא נשלח לכם יותר הודעות אוטומטיות ${prefixed('מ', store)}. אם תכתבו לנו כאן, נענה כרגיל.`;
 
 /** The customer asked to stop: every automatic message to this address on this channel, from now on. */
 export async function optOut(app: App, storeId: number, channel: Channel, raw: string, word: string, conversationId: number | null) {

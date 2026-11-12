@@ -97,7 +97,7 @@ export async function saveSetting(app: App, storeId: number, kind: Kind, input: 
     const wa = await storeWa(app, storeId);
     if (!wa) throw new AutoError('no store WhatsApp', 'בשביל וואטסאפ צריך לחבר קודם את המספר של החנות.');
     const t = await approvedFor(app, wa.id, kind);
-    if (!t.ok) throw new AutoError(`templates not approved: ${t.missing.join(', ')}`, 'אי אפשר להפעיל בוואטסאפ לפני ש-Meta מאשרת את התבניות של ההודעה הזו. רואים כאן למטה איפה כל תבנית עומדת.');
+    if (!t.ok) throw new AutoError(`templates not approved: ${t.missing.join(', ')}`, 'אי אפשר להפעיל בוואטסאפ לפני ש־Meta מאשרת את התבניות של ההודעה הזו. רואים כאן למטה איפה כל תבנית עומדת.');
   }
   if (input.email && !(await storeEmail(app, storeId))) throw new AutoError('no store email', 'בשביל מייל צריך לחבר קודם את המייל של החנות.');
   const def = KINDS[kind].delay;
@@ -105,7 +105,7 @@ export async function saveSetting(app: App, storeId: number, kind: Kind, input: 
   let link: string | null = null;
   if (kind === 'review') {
     link = input.link ? httpsLink(input.link) : null;
-    if ((input.whatsapp || input.email) && !link) throw new AutoError('no review link', 'צריך לינק לדף שבו כותבים ביקורת, שמתחיל ב-https://. למשל הדף של החנות בגוגל.');
+    if ((input.whatsapp || input.email) && !link) throw new AutoError('no review link', 'צריך לינק לדף שבו כותבים ביקורת, שמתחיל ב־https. למשל הדף של החנות בגוגל.');
   }
   const prev = (await settingsOf(app, storeId))[kind];
   const on = input.whatsapp || input.email;

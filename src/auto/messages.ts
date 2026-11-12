@@ -1,3 +1,5 @@
+import { prefixed } from '../core/hebrew.ts';
+
 // Toran's automatic messages, what each one says, and the WhatsApp template it goes out as (docs/customer.md,
 // docs/connecting-channels.md). Four kinds, each turned on by the store's owner in Settings and off until then:
 //
@@ -51,7 +53,13 @@ export const KINDS: Record<Kind, KindDef> = {
 export const kindOf = (m: MessageKey): Kind => (KIND_KEYS.find((k) => KINDS[k].messages.includes(m)) as Kind);
 export const isKind = (k: unknown): k is Kind => (KIND_KEYS as readonly string[]).includes(String(k));
 
-/** "ב" before a Hebrew name, "ב-" before anything else ("ב-Kli Shop"). */
+/**
+ * "ב" before a Hebrew name, "ב-" before anything else ("ב-Kli Shop"), in a WhatsApp template's body only. The bodies
+ * go to Meta per store under fixed names and are approved as they are (templates.ts), and what the page shows must be
+ * what Meta sends: another mark there means a new name and a new review. The email's subject and text, which no one
+ * approves, take the maqaf as every other Hebrew line does (core/hebrew.ts prefixed; the pre-launch audit, 2026-11-12,
+ * P2-18).
+ */
 const pre = (letter: string, name: string) => (/^[֐-׿]/.test(name) ? `${letter}${name}` : `${letter}-${name}`);
 
 type Vars = { name: string; order: string; link: string };
@@ -76,8 +84,8 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
     body: (s) => `שלום {{1}}, נשארו לכם מוצרים בעגלה ${pre('ב', s)}. אפשר להמשיך מאיפה שעצרתם כאן: {{2}}\nיש שאלה על מוצר או על המשלוח? אפשר לכתוב לנו כאן.`,
     vars: ['name', 'link'],
     needs: ['link'],
-    subject: (s) => `נשארו לכם מוצרים בעגלה ${pre('ב', s)}`,
-    email: (s, v) => `שלום ${v.name},\n\nנשארו לכם מוצרים בעגלה ${pre('ב', s)}. אפשר להמשיך מאיפה שעצרתם כאן:\n${v.link}\n\nיש שאלה על מוצר או על המשלוח? אפשר לענות למייל הזה.`,
+    subject: (s) => `נשארו לכם מוצרים בעגלה ${prefixed('ב', s)}`,
+    email: (s, v) => `שלום ${v.name},\n\nנשארו לכם מוצרים בעגלה ${prefixed('ב', s)}. אפשר להמשיך מאיפה שעצרתם כאן:\n${v.link}\n\nיש שאלה על מוצר או על המשלוח? אפשר לענות למייל הזה.`,
   },
   paid: {
     he: 'התשלום התקבל',
@@ -85,8 +93,8 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
     body: (s) => `שלום {{1}}, קיבלנו את התשלום על הזמנה {{2}} ${pre('ב', s)}. תודה שקניתם אצלנו. ${ASK}`,
     vars: ['name', 'order'],
     needs: ['order'],
-    subject: (s, v) => `קיבלנו את התשלום על הזמנה ${v.order} ${pre('ב', s)}`,
-    email: (s, v) => `שלום ${v.name},\n\nקיבלנו את התשלום על הזמנה ${v.order} ${pre('ב', s)}. תודה שקניתם אצלנו.\n\nאם יש שאלה על ההזמנה, אפשר לענות למייל הזה.`,
+    subject: (s, v) => `קיבלנו את התשלום על הזמנה ${v.order} ${prefixed('ב', s)}`,
+    email: (s, v) => `שלום ${v.name},\n\nקיבלנו את התשלום על הזמנה ${v.order} ${prefixed('ב', s)}. תודה שקניתם אצלנו.\n\nאם יש שאלה על ההזמנה, אפשר לענות למייל הזה.`,
   },
   pending: {
     he: 'התשלום מחכה',
@@ -94,8 +102,8 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
     body: (s) => `שלום {{1}}, הזמנה {{2}} ${pre('ב', s)} התקבלה, והתשלום עליה עוד לא הושלם. ההזמנה תצא אחרי שהתשלום יעבור. ${ASK}`,
     vars: ['name', 'order'],
     needs: ['order'],
-    subject: (s, v) => `הזמנה ${v.order} ${pre('ב', s)} מחכה לתשלום`,
-    email: (s, v) => `שלום ${v.name},\n\nהזמנה ${v.order} ${pre('ב', s)} התקבלה, והתשלום עליה עוד לא הושלם. ההזמנה תצא אחרי שהתשלום יעבור.\n\nאם יש שאלה, אפשר לענות למייל הזה.`,
+    subject: (s, v) => `הזמנה ${v.order} ${prefixed('ב', s)} מחכה לתשלום`,
+    email: (s, v) => `שלום ${v.name},\n\nהזמנה ${v.order} ${prefixed('ב', s)} התקבלה, והתשלום עליה עוד לא הושלם. ההזמנה תצא אחרי שהתשלום יעבור.\n\nאם יש שאלה, אפשר לענות למייל הזה.`,
   },
   failed: {
     he: 'התשלום לא עבר',
@@ -103,8 +111,8 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
     body: (s) => `שלום {{1}}, התשלום על הזמנה {{2}} ${pre('ב', s)} לא עבר. אפשר לנסות שוב כאן: {{3}}\nאם משהו לא מסתדר, כתבו לנו כאן ונעזור.`,
     vars: ['name', 'order', 'link'],
     needs: ['order', 'link'],
-    subject: (s, v) => `התשלום על הזמנה ${v.order} ${pre('ב', s)} לא עבר`,
-    email: (s, v) => `שלום ${v.name},\n\nהתשלום על הזמנה ${v.order} ${pre('ב', s)} לא עבר. אפשר לנסות שוב כאן:\n${v.link}\n\nאם משהו לא מסתדר, אפשר לענות למייל הזה ונעזור.`,
+    subject: (s, v) => `התשלום על הזמנה ${v.order} ${prefixed('ב', s)} לא עבר`,
+    email: (s, v) => `שלום ${v.name},\n\nהתשלום על הזמנה ${v.order} ${prefixed('ב', s)} לא עבר. אפשר לנסות שוב כאן:\n${v.link}\n\nאם משהו לא מסתדר, אפשר לענות למייל הזה ונעזור.`,
   },
   shipped: {
     he: 'ההזמנה יצאה',
@@ -112,8 +120,8 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
     body: (s) => `שלום {{1}}, הזמנה {{2}} ${pre('מ', s)} יצאה אליכם. אפשר לעקוב אחרי המשלוח כאן: {{3}}\n${ASK}`,
     vars: ['name', 'order', 'link'],
     needs: ['order', 'link'],
-    subject: (s, v) => `הזמנה ${v.order} ${pre('מ', s)} יצאה אליכם`,
-    email: (s, v) => `שלום ${v.name},\n\nהזמנה ${v.order} ${pre('מ', s)} יצאה אליכם.${v.link ? ` אפשר לעקוב אחרי המשלוח כאן:\n${v.link}` : ''}\n\nאם יש שאלה, אפשר לענות למייל הזה.`,
+    subject: (s, v) => `הזמנה ${v.order} ${prefixed('מ', s)} יצאה אליכם`,
+    email: (s, v) => `שלום ${v.name},\n\nהזמנה ${v.order} ${prefixed('מ', s)} יצאה אליכם.${v.link ? ` אפשר לעקוב אחרי המשלוח כאן:\n${v.link}` : ''}\n\nאם יש שאלה, אפשר לענות למייל הזה.`,
   },
   delivered: {
     he: 'ההזמנה נמסרה',
@@ -121,8 +129,8 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
     body: (s) => `שלום {{1}}, לפי חברת המשלוחים הזמנה {{2}} ${pre('מ', s)} נמסרה. אם משהו לא הגיע כמו שצריך, כתבו לנו כאן.`,
     vars: ['name', 'order'],
     needs: ['order'],
-    subject: (s, v) => `הזמנה ${v.order} ${pre('מ', s)} נמסרה`,
-    email: (s, v) => `שלום ${v.name},\n\nלפי חברת המשלוחים הזמנה ${v.order} ${pre('מ', s)} נמסרה. אם משהו לא הגיע כמו שצריך, אפשר לענות למייל הזה.`,
+    subject: (s, v) => `הזמנה ${v.order} ${prefixed('מ', s)} נמסרה`,
+    email: (s, v) => `שלום ${v.name},\n\nלפי חברת המשלוחים הזמנה ${v.order} ${prefixed('מ', s)} נמסרה. אם משהו לא הגיע כמו שצריך, אפשר לענות למייל הזה.`,
   },
   review: {
     he: 'בקשה לביקורת',
@@ -130,8 +138,8 @@ export const MESSAGES: Record<MessageKey, MessageDef> = {
     body: (s) => `שלום {{1}}, מקווים שהזמנה {{2}} ${pre('מ', s)} הגיעה בשלום. נשמח לשמוע מה דעתכם כאן: {{3}}\nתודה שקניתם אצלנו.`,
     vars: ['name', 'order', 'link'],
     needs: ['order', 'link'],
-    subject: (s) => `איך היה ${pre('ב', s)}?`,
-    email: (s, v) => `שלום ${v.name},\n\nמקווים שהזמנה ${v.order} ${pre('מ', s)} הגיעה בשלום. נשמח לשמוע מה דעתכם כאן:\n${v.link}\n\nתודה שקניתם אצלנו.`,
+    subject: (s) => `איך היה ${prefixed('ב', s)}?`,
+    email: (s, v) => `שלום ${v.name},\n\nמקווים שהזמנה ${v.order} ${prefixed('מ', s)} הגיעה בשלום. נשמח לשמוע מה דעתכם כאן:\n${v.link}\n\nתודה שקניתם אצלנו.`,
   },
 };
 
@@ -142,7 +150,13 @@ export const SETTINGS_BUTTON = 'הגדרות הודעות';
 /** The settings page's address for a token: PUBLIC_BASE_URL, or this machine in development (as pitch links are). */
 export const publicBase = (env: Record<string, string | undefined>) => String(env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '') || `http://localhost:${env.PORT || 4710}`;
 export const stopUrl = (env: Record<string, string | undefined>, token: string) => `${publicBase(env)}/u/${token}`;
-const STOP_EMAIL = 'לא רוצים לקבל מאיתנו תזכורות כאלה? אפשר להפסיק כאן:';
+/**
+ * What a marketing message's quiet way out stops, in its own words: a cart reminder is a reminder, a review request is
+ * not ("תזכורות" under a review request was the pre-launch audit's P2-29, 2026-11-12). Email only: the WhatsApp
+ * template's button says "הגדרות הודעות" and stays as Meta approved it.
+ */
+export const STOP_WHAT: Partial<Record<Kind, string>> = { cart: 'תזכורות כאלה', review: 'הודעות כאלה' };
+const stopEmail = (k: Kind) => `לא רוצים לקבל מאיתנו ${STOP_WHAT[k] || 'הודעות כאלה'}? אפשר להפסיק כאן:`;
 /** The order updates' quiet line (payment and shipping): the same page, where the customer may stop them apart (the owner, 2026-11-06). */
 const ORDERS_EMAIL = 'לא רוצים לקבל מאיתנו עדכונים על הזמנות? אפשר להפסיק כאן:';
 
@@ -180,7 +194,7 @@ export function waText(m: MessageKey, store: string, v: Vars, { legacy = false }
 /** What one message says by email: its subject and text, signed with the store's name; a marketing one ends with the link to stop. */
 export function emailText(m: MessageKey, store: string, v: Vars, stop = ''): { subject: string; text: string } {
   const d = MESSAGES[m];
-  const tail = stop ? `\n\n${KINDS[kindOf(m)].marketing ? STOP_EMAIL : ORDERS_EMAIL}\n${stop}` : '';
+  const tail = stop ? `\n\n${KINDS[kindOf(m)].marketing ? stopEmail(kindOf(m)) : ORDERS_EMAIL}\n${stop}` : '';
   return { subject: d.subject(store, v), text: `${d.email(store, v)}\n\n${store}${tail}` };
 }
 

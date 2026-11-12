@@ -77,8 +77,11 @@ export async function submitTemplates(app: App, storeId: number, by: string, { o
     const prev = have.get(req.name);
     if (prev && ['APPROVED', 'PENDING', 'IN_APPEAL'].includes(prev.status)) continue;
     let row: { meta_id: string | null; status: string; category: string | null; why: string | null };
+    // A reason, ours or Meta's, is kept on the row and in the log for the operator; the owner's page says what to do in
+    // Hebrew instead (web/pages/auto.ts templateNote; the pre-launch audit, 2026-11-12, P1-14).
     if (categoryOf(m) === 'MARKETING' && !base.startsWith('https://')) {
       row = { meta_id: null, status: 'error', category: null, why: 'PUBLIC_BASE_URL is not set to an https address, so the button has nowhere to go' };
+      app.log(`[templates] store ${storeId} ${req.name}: not submitted, ${row.why}`);
       refused++;
     } else {
       try {
@@ -89,7 +92,10 @@ export async function submitTemplates(app: App, storeId: number, by: string, { o
         // A template of this name is already on the account (from an earlier try): what Meta says about it stands.
         const there = /already exists|2388024/i.test(String(e?.message || '')) ? await readTemplate(app, a, req.name).catch(() => null) : null;
         row = there || { meta_id: null, status: 'error', category: null, why: String(e?.message || e).slice(0, 300) };
-        if (!there) refused++;
+        if (!there) {
+          app.log(`[templates] store ${storeId} ${req.name}: refused, ${row.why}`);
+          refused++;
+        }
       }
     }
     await app.db.query(
@@ -119,6 +125,8 @@ export async function checkTemplates(app: App, accountId: number) {
     const t = await readTemplate(app, a, r.name).catch(() => null);
     if (t) await app.db.query('UPDATE wa_templates SET status = $3, category = COALESCE($4, category), why = $5, checked_at = now() WHERE account_id = $1 AND name = $2', [a.id, r.name, t.status, t.category, t.why]);
     else await app.db.query('UPDATE wa_templates SET checked_at = now() WHERE account_id = $1 AND name = $2', [a.id, r.name]);
+    // Meta decided, with a reason: ours to read (the owner's page says what to do instead, web/pages/auto.ts).
+    if (t?.why && !['PENDING', 'IN_APPEAL'].includes(t.status)) app.log(`[templates] store ${a.store_id} ${r.name}: ${t.status}, ${t.why}`);
   }
   return { checked: rows.length };
 }
@@ -129,6 +137,7 @@ export type TemplateUpdate = { waba: string; name: string; status: string | null
 export async function templateStatus(app: App, u: TemplateUpdate) {
   const rows = await app.db.query<{ account_id: number; store_id: number }>("UPDATE wa_templates t SET status = COALESCE($3, t.status), category = COALESCE($4, t.category), why = CASE WHEN $3::text IS NULL THEN t.why ELSE $5 END, checked_at = now() FROM channel_accounts a WHERE a.id = t.account_id AND a.meta->>'waba_id' = $1 AND t.name = $2 RETURNING t.account_id, t.store_id", [u.waba, u.name, u.status ? u.status.toUpperCase() : null, u.category ? u.category.toUpperCase() : null, u.reason && u.reason !== 'NONE' ? u.reason.slice(0, 300) : null]);
   for (const r of rows) await event(app.db, r.store_id, 'wa_template_status', { name: u.name, status: u.status, category: u.category });
+  if (rows.length && u.reason && u.reason !== 'NONE') app.log(`[templates] ${u.name} on ${u.waba}: ${u.status || 'no status'}, ${u.reason.slice(0, 300)}`);
   return { updated: rows.length };
 }
 

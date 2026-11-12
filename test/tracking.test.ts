@@ -36,3 +36,7 @@ test('WooCommerce: the tracking plugins\' meta, with only a web address taken as
     { status: null, company: 'x', number: 'X00001', url: null },
   ]);
 });
+
+test('the tracking page\'s "https only" reads right to left: no address part at the end of the line to turn into "//:https"', () => {
+  assert.throws(() => cleanTrackingPage('http://my-store.co.il/track'), (e: any) => e instanceof TrackingPageError && e.he === 'הכתובת צריכה להתחיל ב־https, למשל https://my-store.co.il/track');
+});

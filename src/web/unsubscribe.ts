@@ -35,8 +35,8 @@ async function storeOf(app: App, l: StopLink): Promise<Store> {
   return { name: displayName(s?.brand_override?.name, s?.brand?.name, s?.name) || s?.domain || '', color: readableShade(brandColor(brand) || '#4a4a52'), logo };
 }
 
-/** "מ" before a Hebrew name, "מ-" before anything else ("מ-Kli Shop"), the name isolated for bidi. */
-const from = (name: string) => `${/^[֐-׿]/.test(name) ? 'מ' : 'מ-'}<bdi>${esc(name)}</bdi>`;
+/** "מ" before a Hebrew name, "מ־" before anything else ("מ־Kli Shop", the maqaf as everywhere: the pre-launch audit, 2026-11-12, P2-18), the name isolated for bidi. */
+const from = (name: string) => `${/^[֐-׿]/.test(name) ? 'מ' : 'מ־'}<bdi>${esc(name)}</bdi>`;
 const initialOf = (name: string) => (name.trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase();
 
 function page(title: string, body: string, theme: string | null): string {

@@ -55,17 +55,20 @@ export const monthNow = (t = now()) => new Intl.DateTimeFormat('en-CA', { timeZo
 
 const SIGN: Record<string, string> = { ILS: '₪', USD: '$', EUR: '€', GBP: '£' };
 
-/** "₪1,240" (and "$80" beside it in another currency), or '' with no money. */
+/**
+ * "1,240 ₪" (and "80 $" beside it in another currency), or '' with no money: the sign after the number, as every other
+ * price Toran shows ("249 ₪", offer.ts; "₪1,240" here was the audit's P2-17).
+ */
 export const moneyHe = (money: Record<string, number>) =>
   Object.entries(money)
     .sort(([a], [b]) => (a === 'ILS' ? -1 : b === 'ILS' ? 1 : a.localeCompare(b)))
-    .map(([c, v]) => `${SIGN[c] || `${c} `}${Math.round(v).toLocaleString('en-US')}`)
+    .map(([c, v]) => `${Math.round(v).toLocaleString('en-US')} ${SIGN[c] || c}`)
     .join(' + ');
 
 const MONTH_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 export const monthHe = (m: string) => MONTH_HE[Number(m.slice(5, 7)) - 1] || m;
 
-/** One month in words: "12 עגלות קיבלו תזכורת, 3 חזרו והזמינו, ₪1,240". */
+/** One month in words: "12 עגלות קיבלו תזכורת, 3 חזרו והזמינו, 1,240 ₪". */
 export function cartLine(m: CartMonth): string {
   const money = moneyHe(m.money);
   const reminded = m.reminded === 1 ? 'עגלה אחת קיבלה תזכורת' : `${m.reminded} עגלות קיבלו תזכורת`;
