@@ -499,6 +499,29 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   return { sent: true, why: null, said: SAID_HE.sent };
 }
 
+/**
+ * Why Meta did not deliver a pitch, in the operator's words, as a line under it in our inbox. Meta's codes
+ * (developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes): 131049, Meta's own limit on the marketing
+ * messages one person gets; 131026, a number that cannot get it (no WhatsApp, or an old app); 130472, a number in one of
+ * Meta's tests that gets no marketing messages. Anything else, with Meta's own words.
+ */
+export function notDeliveredHe(error: string | null | undefined): string {
+  const e = String(error || '');
+  const code = /\b(1\d{5})\b/.exec(e)?.[1];
+  const why =
+    code === '131049' ? 'Meta עצרה אותה כדי לא להציף את הנמען בהודעות שיווקיות. זו מגבלה של Meta על כל אדם, ואפשר לנסות שוב בעוד כמה ימים.'
+    : code === '131026' ? 'המספר לא יכול לקבל אותה: אולי אין בו וואטסאפ, או שהאפליקציה בו ישנה.'
+    : code === '130472' ? 'המספר נמצא בניסוי של Meta שלא מקבל הודעות שיווקיות, אז היא לא נשלחה אליו.'
+    : `Meta לא מסרה אותה${e ? ` (${cleanLine(e, 200)})` : ''}.`;
+  return `ההודעה הזו לא הגיעה לנמען. ${why}`;
+}
+
+/** The line under a kept pitch that Meta did not deliver, once. */
+async function noteNotDelivered(app: App, eventId: number | string, conversationId: number, error: string | null | undefined) {
+  await app.db.query("INSERT INTO messages (conversation_id, role, text, author, auto) VALUES ($1, 'system', $2, 'אוטומטי', 'outreach_failed')", [conversationId, notDeliveredHe(error)]);
+  await mark(app, eventId, { noted: true });
+}
+
 /** A pitch as it reads in the chat: its words, and its buttons under them as the store sees them. */
 export const pitchShown = (t: OutreachTemplate, vars: string[]) => `${outreachFilled(t, vars)}\n\n${[t.url.text, ...(t.url2 ? [t.url2.text] : []), t.stop].map((b) => `[${b}]`).join(' ')}`;
 
@@ -530,6 +553,10 @@ async function keepPitch(app: App, k: { eventId: number | string; phone: string;
  */
 export async function keepSentPitches(app: App): Promise<{ kept: number; seen: number; noStore: number; noTemplate: number; noSupport: number }> {
   const out = { kept: 0, seen: 0, noStore: 0, noTemplate: 0, noSupport: 0 };
+  // Kept already, not delivered, and no line yet (kept before the line was written): the line now.
+  for (const e of await app.db.query<{ id: number; data: any }>("SELECT id, data FROM events WHERE kind = 'outreach_wa' AND data->>'state' = 'undelivered' AND data->>'kept' IS NOT NULL AND data->>'noted' IS NULL ORDER BY id")) {
+    await noteNotDelivered(app, e.id, Number(e.data.kept), e.data.error);
+  }
   const sent = await app.db.query<{ id: number; data: any }>("SELECT id, data FROM events WHERE kind = 'outreach_wa' AND data->>'state' IN ('sent', 'undelivered') AND data->>'kept' IS NULL ORDER BY id");
   const named = new Map([...Object.values(OUTREACH_TEMPLATES), ...Object.values(OUTREACH_TEMPLATES).map((t) => t.previous!).filter(Boolean), TORAN_LAUNCH].map((t) => [t.name, t]));
   for (const e of sent) {
@@ -547,8 +574,12 @@ export async function keepSentPitches(app: App): Promise<{ kept: number; seen: n
     }
     const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
     const c = await keepPitch(app, { eventId: e.id, phone: String(e.data.phone || ''), storeName: name, text: pitchShown(t, [le(name)]), by: String(e.data.by || 'operator'), sentId: e.data.id || null });
-    if (c) out.kept++;
-    else out.noSupport++;
+    if (!c) {
+      out.noSupport++;
+      continue;
+    }
+    out.kept++;
+    if (e.data.state === 'undelivered') await noteNotDelivered(app, e.id, c, e.data.error);
   }
   return out;
 }
@@ -563,6 +594,7 @@ export async function pitchNotDelivered(app: App, s: { id: string; error: string
   if (!r) return false;
   const error = masked(cleanLine(s.error || 'no reason given', 200));
   await mark(app, r.id, { state: 'undelivered', error });
+  if (r.data?.kept && !r.data?.noted) await noteNotDelivered(app, r.id, Number(r.data.kept), error).catch(() => {});
   app.log(`[outreach] !!! ${r.data?.template} to …${String(r.data?.phone || '').slice(-4)} FAILED: Meta took it and then could not deliver it (${error})`);
   return true;
 }

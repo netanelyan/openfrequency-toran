@@ -460,6 +460,16 @@ test('a pitch from our number is in our own inbox, in the conversation its answe
     assert.match(before.text, /^היי, כאן OpenFrequency\. בנינו לפופי תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי[^]*\[לנסות את תורן\] \[הסירו אותי\]$/);
     assert.deepEqual([before.author, before.meta.name], ['נתנאל', 'פופי']);
 
+    // Meta took one and could not deliver it: a line under it says so, in the operator's words, once.
+    const sentId = (await app.db.one<any>("SELECT data->>'id' AS id FROM events WHERE kind = 'outreach_wa' AND data->>'phone' = $1", [PHONE]))!.id;
+    assert.equal(await outreach.pitchNotDelivered(app, { id: sentId, error: '131049: This message was not delivered to maintain healthy ecosystem engagement.' }), true);
+    const line = (await app.db.one<any>("SELECT role, text FROM messages WHERE conversation_id = $1 AND role = 'system'", [c.id]))!;
+    assert.match(line.text, /^ההודעה הזו לא הגיעה לנמען\. Meta עצרה אותה כדי לא להציף את הנמען בהודעות שיווקיות/);
+    assert.equal(outreach.notDeliveredHe('131026: Message undeliverable'), 'ההודעה הזו לא הגיעה לנמען. המספר לא יכול לקבל אותה: אולי אין בו וואטסאפ, או שהאפליקציה בו ישנה.');
+    assert.match(outreach.notDeliveredHe('132000: something else'), /^ההודעה הזו לא הגיעה לנמען\. Meta לא מסרה אותה \(132000: something else\)\.$/);
+    await outreach.keepSentPitches(app);
+    assert.equal((await app.db.query("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'system'", [c.id])).length, 1, 'once');
+
     // From a number of its own (META_OUTREACH_PHONE_ID) the answers come there: nothing kept here.
     app.env.META_OUTREACH_PHONE_ID = app.env.META_DEMO_PHONE_ID;
     assert.equal((await outreach.sendPitch(app, pitch({ phone: '972500000558' }))).sent, true);
