@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { seedDemo } from '../src/demoSeed.ts';
-import { getOffer, setOffer, priceSentence, OFFER_DEFAULT } from '../src/offer.ts';
+import { getOffer, setOffer, priceSentence, PLANS_OFFER } from '../src/offer.ts';
 import { pitchGaps } from '../src/pitch/ready.ts';
 import { pitchData, pitchPage, priceFigure, shelfRows, themeCss, type PitchData } from '../src/pitch/page.ts';
 import { buildPitch } from '../src/pitch/build.ts';
@@ -82,6 +82,9 @@ test('a page is held for each missing field: price, the two numbers, the colour,
 test('the owner\'s preview of a held page shows each gap as a visible placeholder and says why', async () => {
   const { app, store } = await seeded();
   try {
+    // A price of our own, set on purpose and not whole yet (offer.ts: the plans are the price otherwise).
+    await setOffer(app.db, { monthly: null, vat: null, setup: null, city: 'אשדוד', override: true });
+    await app.db.query('UPDATE stores SET approved_at = NULL WHERE id = $1', [store.id]);
     const d = (await pitchData(app, store.slug))!;
     assert.equal(d.public, false);
     const html = pitchPage(d, { env: app.env, owner: true });
@@ -100,7 +103,7 @@ test('the price sentence comes from the one offer, with VAT said and the setup f
   assert.equal(priceSentence({ ...OFFER, vat: 'included', setup: 1500 }, plain), 'זה 199 ₪ לחודש, כולל מע״מ, ועוד 1,500 ₪ דמי הקמה, פעם אחת.');
   const { app } = await seeded();
   try {
-    assert.deepEqual(await getOffer(app.db), OFFER_DEFAULT, 'no price until one is set: nothing is assumed');
+    assert.deepEqual(await getOffer(app.db), PLANS_OFFER, 'none of our own set: the plans accounts sells and bills (offer.ts)');
   } finally {
     await app.db.close();
   }
@@ -227,8 +230,12 @@ test('nobody approves a page by hand: it approves itself once nothing is missing
   const { app, s, store } = await seeded();
   try {
     const approved = async () => Boolean((await app.db.one<any>('SELECT approved_at FROM stores WHERE id = $1', [store.id])).approved_at);
-    assert.equal(await approved(), false, 'built without a price: held');
-    assert.equal((await pitchData(app, s.slug))!.public, false);
+    // Built with the plans as the price: up at once. A price of our own that is not whole holds it.
+    assert.equal(await approved(), true, 'built with the plans as the price: approved by itself');
+    await setOffer(app.db, { ...OFFER, vat: null, override: true });
+    await app.db.query('UPDATE stores SET approved_at = NULL WHERE id = $1', [store.id]);
+    assert.equal((await pitchData(app, s.slug))!.public, false, 'a price of our own with no VAT yet: held');
+    assert.equal(await approved(), false);
     await setOffer(app.db, OFFER);
     const d = await pitchData(app, s.slug);
     assert.equal(d!.public, true, 'the price set: the page is up the next time it is opened');

@@ -46,10 +46,12 @@ test('the funnel: review, approve, send by hand, the one reminder (never on Shab
   try {
     await s.login();
     const id = s.seeded.storeId;
+    // The plans are the price (offer.ts), so a built page approves itself; a price of our own that is not whole yet
+    // holds it for the review queue.
+    await setOffer(s.app.db, { ...TEST_OFFER, vat: null });
+    await s.app.db.query('UPDATE stores SET approved_at = NULL WHERE id = $1', [id]);
     assert.match(await (await s.get('/review')).text(), /כלי חרס של נורית/);
     const token = await s.csrf();
-    // The plans are the price (offer.ts); a price of our own that is not whole yet holds the page.
-    await setOffer(s.app.db, { ...TEST_OFFER, vat: null });
     const held = await s.post(`/lead/${id}/approve`, { _csrf: token }, { 'x-tn-ajax': '1' });
     assert.equal((await held.json()).ok, false, 'a price of our own with no VAT yet: the page cannot be approved');
     assert.match(await (await s.get('/review')).text(), /המחיר עוד לא נקבע/);
@@ -80,6 +82,9 @@ test('the pitch page: noindex, the store\'s colours, the demo link with its code
   const s = await serve();
   try {
     const id = s.seeded.storeId;
+    // Held (a price of our own not whole yet, offer.ts) and not approved: nobody outside sees it.
+    await setOffer(s.app.db, { ...TEST_OFFER, vat: null });
+    await s.app.db.query('UPDATE stores SET approved_at = NULL WHERE id = $1', [id]);
     assert.equal((await s.get(`/s/${s.seeded.slug}`)).status, 404, 'not approved yet: nobody outside sees it');
     await setOffer(s.app.db, TEST_OFFER);
     await s.app.db.query("UPDATE stores SET status = 'sent', approved_at = now() WHERE id = $1", [id]);

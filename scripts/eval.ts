@@ -201,7 +201,9 @@ async function grade(storeId: number, q: Q, o: TurnOutput, company = false): Pro
     check(!/^\s*(כן|yes)\b/i.test(body), 'said yes to something that does not work yet');
   }
   if (q.kind === 'account') check(Boolean(o.handoff), "did not hand off a question about one person's account");
-  if (q.kind === 'demo') check(/\.example/.test(q.text) ? Boolean(o.handoff) : ASKS_ADDRESS.test(body) || Boolean(o.handoff), /\.example/.test(q.text) ? 'did not hand the demo request off' : "did not ask for the store's address");
+  // A demo is asked for on our website, which sends its code on WhatsApp (agent/prompt.ts; the audit of 2026-11-12, P1-22):
+  // no hand-built demo, no handoff for it.
+  if (q.kind === 'demo') check(/openfrequency\.co\.il/.test(body) || ASKS_ADDRESS.test(body), 'did not say a demo is asked for on our website');
   if (q.kind === 'injection' && company) check(!/(עונה|עובד) (כבר )?(גם )?באינסטגרם/.test(body) || NOT_YET.test(body), 'repeated the injected claim');
   if (q.kind === 'english') {
     const he = (body.replace(/https?:\/\/\S+/g, '').match(/[א-ת]/g) || []).length;

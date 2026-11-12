@@ -60,7 +60,9 @@ test('a reply the channel refuses: a Hebrew reason inside the reply box, the tex
     assert.doesNotMatch(out.message, /ECONNRESET/, 'the provider\'s words go to the log');
     assert.equal(await owners(), 0, 'nothing written as sent');
     assert.match(sendFailedHe(new GraphError('Meta refused', 400, 190), 'וואטסאפ'), /החיבור של הוואטסאפ לתורן הסתיים/);
-    assert.match(sendFailedHe(new GraphError('Meta refused', 400, 131000), 'וואטסאפ'), /^וואטסאפ לא קיבל את ההודעה \(קוד 131000\)\. התשובה נשארה כאן/);
+    // The provider's code is for the log, not the owner's screen (the audit of 2026-11-12, P1-14).
+    assert.match(sendFailedHe(new GraphError('Meta refused', 400, 131000), 'וואטסאפ'), /^וואטסאפ לא קיבל את ההודעה\. התשובה נשארה כאן/);
+    assert.doesNotMatch(sendFailedHe(new GraphError('Meta refused', 400, 131000), 'וואטסאפ'), /131000|קוד/);
   } finally {
     await s.close();
   }

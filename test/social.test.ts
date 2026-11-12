@@ -400,12 +400,12 @@ test('without the Instagram app\'s settings, or the public address, the page say
   try {
     delete s.app.env.META_IG_APP_SECRET;
     const html = await (await s.get(`/lead/${a}/instagram`)).text();
-    assert.match(html, /החיבור עוד לא פתוח בשרת/);
+    assert.match(html, /החיבור עוד לא פתוח אצלנו/);
     assert.ok(!/instagram\/connect/.test(html));
     const r = await s.post(`/lead/${a}/instagram/connect`, { _csrf: await s.csrf(`/lead/${a}/instagram`) }, { 'x-tn-ajax': '1' });
     assert.equal((await r.json()).ok, false);
     delete s.app.env.PUBLIC_BASE_URL;
-    assert.match(await (await s.get(`/lead/${a}/messenger`)).text(), /החיבור עוד לא פתוח בשרת/);
+    assert.match(await (await s.get(`/lead/${a}/messenger`)).text(), /החיבור עוד לא פתוח אצלנו/);
   } finally {
     await s.close();
   }
