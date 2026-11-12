@@ -454,8 +454,8 @@ test('a pitch from our number is in our own inbox, in the conversation its answe
     // One sent before this, as the event of the time kept it (no conversation): brought in once, in the words of then.
     const lead = (await app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug) VALUES ('pofi.example', 'https://pofi.example/', 'פופי', 'shopify', 'seed', 'pofi-c1') RETURNING id"))!.id;
     await app.db.query("INSERT INTO events (store_id, kind, data) VALUES (NULL, 'outreach_wa', $1::jsonb)", [JSON.stringify({ product: 'toran', stage: 'first', phone: OTHER, ref: `toran:${lead}`, by: 'נתנאל', template: 'toran_pitch', state: 'sent', id: 'wamid.before' })]);
-    assert.equal(await outreach.keepSentPitches(app), 1);
-    assert.equal(await outreach.keepSentPitches(app), 0, 'once');
+    assert.deepEqual(await outreach.keepSentPitches(app), { kept: 1, seen: 1, noStore: 0, noTemplate: 0, noSupport: 0 });
+    assert.deepEqual(await outreach.keepSentPitches(app), { kept: 0, seen: 0, noStore: 0, noTemplate: 0, noSupport: 0 }, 'once');
     const before = (await app.db.one<any>('SELECT m.text, m.author, c.meta FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.peer = $1', [OTHER]))!;
     assert.match(before.text, /^היי, כאן OpenFrequency\. בנינו לפופי תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי[^]*\[לנסות את תורן\] \[הסירו אותי\]$/);
     assert.deepEqual([before.author, before.meta.name], ['נתנאל', 'פופי']);

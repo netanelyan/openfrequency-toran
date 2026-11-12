@@ -523,24 +523,34 @@ async function keepPitch(app: App, k: { eventId: number | string; phone: string;
 }
 
 /**
- * The pitches sent from our one number before they were kept in our inbox: each in its conversation, as keepPitch keeps
- * a new one, with the store's name from the lead's own row (ref toran:<id> or store:<id>) and the words of the template
- * it went as. Returns how many were kept; one whose store or template is not known is left as it is.
+ * The pitches sent from our number before they were kept in our inbox: each in its conversation, as keepPitch keeps a
+ * new one, with the store's name from the lead's own row (ref toran:<id> or store:<id>) and the words of the template it
+ * went as; one Meta took and then could not deliver too (state undelivered), since it went from here. Says how many it
+ * kept, and why it left any (no lead row, a template it does not know, no support account on our number).
  */
-export async function keepSentPitches(app: App): Promise<number> {
-  const sent = await app.db.query<{ id: number; data: any }>("SELECT id, data FROM events WHERE kind = 'outreach_wa' AND data->>'state' = 'sent' AND data->>'kept' IS NULL ORDER BY id");
+export async function keepSentPitches(app: App): Promise<{ kept: number; seen: number; noStore: number; noTemplate: number; noSupport: number }> {
+  const out = { kept: 0, seen: 0, noStore: 0, noTemplate: 0, noSupport: 0 };
+  const sent = await app.db.query<{ id: number; data: any }>("SELECT id, data FROM events WHERE kind = 'outreach_wa' AND data->>'state' IN ('sent', 'undelivered') AND data->>'kept' IS NULL ORDER BY id");
   const named = new Map([...Object.values(OUTREACH_TEMPLATES), ...Object.values(OUTREACH_TEMPLATES).map((t) => t.previous!).filter(Boolean), TORAN_LAUNCH].map((t) => [t.name, t]));
-  let kept = 0;
   for (const e of sent) {
+    out.seen++;
     const t = named.get(String(e.data?.template || ''));
     const id = /^(?:toran|store):(\d+)$/.exec(String(e.data?.ref || ''))?.[1];
-    const s = id ? await app.db.one<any>('SELECT name, brand, brand_override, domain, slug FROM stores WHERE id = $1', [Number(id)]) : null;
-    if (!t || !s) continue;
+    const s = id ? await app.db.one<any>('SELECT name, brand, brand_override, domain FROM stores WHERE id = $1', [Number(id)]) : null;
+    if (!t) {
+      out.noTemplate++;
+      continue;
+    }
+    if (!s) {
+      out.noStore++;
+      continue;
+    }
     const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
     const c = await keepPitch(app, { eventId: e.id, phone: String(e.data.phone || ''), storeName: name, text: pitchShown(t, [le(name)]), by: String(e.data.by || 'operator'), sentId: e.data.id || null });
-    if (c) kept++;
+    if (c) out.kept++;
+    else out.noSupport++;
   }
-  return kept;
+  return out;
 }
 
 /**
