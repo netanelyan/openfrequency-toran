@@ -14,7 +14,7 @@ import { openConversation } from '../channels/conversations.ts';
 import { capFor, STOP_SHARE, watchHour } from './spend.ts';
 import { storeAllowed } from '../billing/entitlement.ts';
 import { displayName } from '../ingest/brand.ts';
-import { botLine, botName, markIntroduced, OPENING_NOTE, openingOf } from './intro.ts';
+import { botLine, botName, LEAD_OPENING_NOTE, leadLine, markIntroduced, OPENING_NOTE, openingOf, type LeadOf } from './intro.ts';
 import { notifyWaiting } from '../owners/waiting.ts';
 import { addressOf, emojiOn } from './voice.ts';
 import { contactsIn } from '../orders.ts';
@@ -80,7 +80,9 @@ export class DuplicateTurn extends Error {
 // (the files an email carried), shown to the model and never stored as the customer's words. demo overrides what the
 // channel implies (isDemoTurn).
 // photos: the ids of this message's files (channels/files.ts) the model is shown, kept images of a kind it reads.
-export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; footerText?: string; channel?: string; context?: string; demo?: boolean; photos?: number[] };
+// facts: the app's own records given with the turn (the LEAD block of a store we wrote to, ops/leadReply.ts), which
+// back the reply's links and claims for the guard as a tool's result does. lead: that store, for the bot's first line.
+export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; footerText?: string; channel?: string; context?: string; demo?: boolean; photos?: number[]; facts?: string[]; lead?: LeadOf | null };
 export type ToolRecord = { name: string; input: unknown; ok: boolean; result: string };
 export type TurnOutput = { reply: string; rawReply: string; tools: ToolRecord[]; redactions: Redaction[]; handoff: { reason: string; summary: string } | null; miss: boolean; rounds: number; usd: number; apiUsd: number; tokens: { in: number; out: number; cacheRead: number; cacheWrite: number }; agentMessageId: number | null };
 
@@ -198,7 +200,7 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // The customer's photos come with their words, and the model sees them (on a backend that can: the API).
   const photos = canSee(app.llm.backend) ? await photosOf(app, input.conversationId, input.photos) : [];
   const userBlocks: Block[] = [
-    { type: 'text', text: serverContext(new Date(), input.channel, [input.context, opening ? OPENING_NOTE : ''].filter(Boolean).join(' ') || undefined, demo) },
+    { type: 'text', text: serverContext(new Date(), input.channel, [input.context, opening ? (opening === 'first' && input.lead ? LEAD_OPENING_NOTE : OPENING_NOTE) : ''].filter(Boolean).join(' ') || undefined, demo) },
     ...photos,
     { type: 'text', text: String(input.text || '').trim() ? forModel(stripForgedContext(input.text)) : photos.length ? '(a photo, with no words)' : '(no words)' },
   ];
@@ -300,8 +302,9 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
     handoff ??= { reason: 'unknown', summary: summaryHe(`no answer after ${rounds} rounds: ${cleanLine(input.text, 160)}`) };
   }
 
-  // A company's "works today" list sits in its prompt, not in a tool result: it backs a claim as a tool would.
-  const factTexts = company ? [String(store.config?.company?.status || '')].filter(Boolean) : [];
+  // A company's "works today" list sits in its prompt, not in a tool result: it backs a claim as a tool would, and so
+  // do the app's records given with the turn (a store we wrote to: our message to it and the links to what we built).
+  const factTexts = [...(company ? [String(store.config?.company?.status || '')] : []), ...(input.facts || [])].filter(Boolean);
   // A link may point to what the tools gave or to the store itself: its site and its WhatsApp (guard.ts, PRA-AI-002).
   const ownLinks = [store.url, store.domain, store.contact_whatsapp ? `https://wa.me/${String(store.contact_whatsapp).replace(/\D/g, '')}` : ''].filter(Boolean);
   const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts, ownLinks });
@@ -336,7 +339,9 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const given = contactsIn([...past.customerTexts, input.text]);
   const reach = input.channel === 'web' && handoff && !demo && !ASKS_REACH.test(g.text) && !given.phones.length && !given.emails.length ? reachLine(english, voice?.plural) : '';
   const answer = reach ? `${g.text} ${reach}` : g.text;
-  const said = opening ? `${botLine(opening, botName(store), storeName, english)}\n\n${answer}` : answer;
+  // A store we wrote to hears, first, what answers it: the Toran we built for it (intro.ts leadLine).
+  const line = opening === 'first' && input.lead ? leadLine(input.lead, botName(store), storeName, english) : opening ? botLine(opening, botName(store), storeName, english) : '';
+  const said = line ? `${line}\n\n${answer}` : answer;
   // footerText: the demo's own line with its count (channels/demo.ts, "דמו של תורן (3/10)").
   const reply = input.footer === false ? said : `${said}\n\n${input.footerText || DEMO_FOOTER}`;
 

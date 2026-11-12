@@ -65,8 +65,10 @@ type Stage = 'first' | 'reminder';
 const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
 const https = (v: unknown) => (typeof v === 'string' && /^https:\/\/\S+$/.test(v) ? v : null);
 
+// A store that answered us (replied_at, set when it wrote back to a pitch, ops/leadReply.ts, or by the operator's "ענו")
+// is talked with, never sent the reminder: neither demo's is due then (outreach.ts refuses it too, as 'replied').
 function toranDemo(app: App, s: any, building: boolean): Demo {
-  const due = s.sent_at && !s.followup_sent_at && ['sent', 'opened', 'demo_started'].includes(s.status) && s.followup_due_at && new Date(s.followup_due_at).getTime() <= now();
+  const due = s.sent_at && !s.followup_sent_at && !s.replied_at && ['sent', 'opened', 'demo_started'].includes(s.status) && s.followup_due_at && new Date(s.followup_due_at).getTime() <= now();
   const state: DemoState = s.taken_down_at ? 'removed' : !s.page_built_at ? (building ? 'building' : 'none') : !s.approved_at ? 'review' : 'ready';
   return {
     state,
@@ -87,10 +89,10 @@ function toranDemo(app: App, s: any, building: boolean): Demo {
 const cutOff = (d: TederDemo | null | undefined) => Boolean(d && ['new', 'building'].includes(d.status) && !d.building);
 const CUT_OFF_HE = 'הבנייה של הדמו נעצרה באמצע. אפשר לבנות אותו שוב.';
 
-function tederDemo(l: TederLead | null): Demo {
+function tederDemo(l: TederLead | null, replied = false): Demo {
   const d = l?.demo;
   const state: DemoState = !d ? 'none' : d.status === 'removed' ? 'removed' : d.status === 'failed' || cutOff(d) ? 'failed' : d.pageUrl ? 'ready' : d.building ? 'building' : 'review';
-  return { state, pageUrl: d?.pageUrl || null, sentAt: l?.sentAt || null, reminderSentAt: l?.reminderSentAt || null, reminderDue: Boolean(l?.reminderDue), error: cutOff(d) ? CUT_OFF_HE : d?.error || null, idea: state === 'removed' ? null : d?.topic || null };
+  return { state, pageUrl: d?.pageUrl || null, sentAt: l?.sentAt || null, reminderSentAt: l?.reminderSentAt || null, reminderDue: !replied && Boolean(l?.reminderDue), error: cutOff(d) ? CUT_OFF_HE : d?.error || null, idea: state === 'removed' ? null : d?.topic || null };
 }
 
 /**
@@ -192,7 +194,7 @@ function aboutOf(s: any, name: string, stock: Stock | undefined) {
 
 function rowOf(app: App, s: any, t: TederLead | null, building: boolean, tederOk: boolean, stock?: Stock) {
   const toran = toranDemo(app, s, building);
-  const teder = tederDemo(t);
+  const teder = tederDemo(t, Boolean(s.replied_at));
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
   return {
     id: Number(s.id),
@@ -324,7 +326,7 @@ export async function leadOne(app: App, id: number) {
   const options = pitchable ? PRODUCTS.filter((p) => stages[p]) : [];
   if (row.chosen && options.includes(row.chosen)) options.unshift(...options.splice(options.indexOf(row.chosen), 1));
   const stage = toranStage || tederStage || null;
-  const waiting = s.sent_at && !s.followup_sent_at && !row.toran.reminderDue && s.followup_due_at && !s.taken_down_at ? iso(s.followup_due_at) : null;
+  const waiting = s.sent_at && !s.followup_sent_at && !s.replied_at && !row.toran.reminderDue && s.followup_due_at && !s.taken_down_at ? iso(s.followup_due_at) : null;
   // Each message due, as the store will read it: from our number the approved template's words (its buttons open the
   // demos), else the text the operator copies to send from their own WhatsApp, with each demo's link in it.
   const toranUrl = row.toran.pageUrl || '';

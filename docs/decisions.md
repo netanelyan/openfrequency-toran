@@ -1434,6 +1434,11 @@ copy. A press that comes anyway (a page left open) is refused with Toran's line,
 כשהוא מוכן." (or Teder's). Marking by hand that a message went ("שלחתי") stays open: it only records what the operator
 did from their own phone.
 
+A Teder demo still marked new or building with nothing building it (a restart cut its build off; Teder builds only
+when asked and says whether a build runs) is a failed one on the lead's page, with "הבנייה של הדמו נעצרה באמצע. אפשר
+לבנות אותו שוב." and the button to build it again (Teder's build starts a cut-off one again), so it never holds the
+lead's message for good.
+
 **Tested** (test/leads-admin.test.ts).
 
 ## 2026-11-12: "לא מעוניין" to a pitch kept in our inbox is the way out again
@@ -1448,7 +1453,50 @@ lead answers (the owner: "How does our toran answer after a lead answers? Make s
 our support), never ours. "הסר" and "הסירו אותי" are the way out always, as before.
 
 **Tested** (test/outreach.test.ts, with our support's store set, as on the server).
-A Teder demo still marked new or building with nothing building it (a restart cut its build off; Teder builds only
-when asked and says whether a build runs) is a failed one on the lead's page, with "הבנייה של הדמו נעצרה באמצע. אפשר
-לבנות אותו שוב." and the button to build it again (Teder's build starts a cut-off one again), so it never holds the
-lead's message for good.
+
+## 2026-11-12: a store we wrote to is answered as one, and its answer is marked and told
+
+**What happened.** The owner: "How does our toran answer after a lead answers? Make sure the behavior is defined. Make
+sure it sells itself." A trace found our support answering a lead as anyone. It did not see our pitch (the history
+drops a first message that is ours), knew neither the store nor its demo, sent it to the website's demo form, and
+opened with "כאן שוב" (the kept pitch read as a person who answered). The inbox showed the chat as "תיקנתם". A voice
+note got no answer, the lead was never marked answered nor the operator told unless Toran handed off, and the reminder
+could still go to a store that answered.
+
+**Decision** (ops/leadReply.ts; channels/demo.ts `supportTurn`; agent/prompt.ts "# A store we wrote to"; agent/intro.ts
+`leadLine`).
+- A number we sent a pitch to in the last 30 days, that did not ask us to stop, is answered as a store we wrote to. The
+  turn's SERVER CONTEXT has a LEAD block: the store's name, our message as they got it, the link to their store's Toran
+  and whether they wrote to it, Teder's slideshow, and the product pages to start from. The block also backs the
+  reply's links and claims for the guard, as a tool's result does.
+- How to answer them is static, in the company prompt, so the cached prompt stays one: go on from our message, never
+  ask for their address or send them to the demo form, answer as Toran answers a store's customers (exact, warm,
+  short), one next step and at most one question, only the offered product's plans for a price, one line with the link
+  for "not now", a handoff for a person, a discount or a change to what we built.
+- The first line is code: "כאן תורן, הבוט של OpenFrequency. זה אותו תורן שבנינו ל<החנות>, ועכשיו אני עונה לכם כמו
+  שאענה ללקוחות שלכם." For Teder's slideshow alone: "את המצגת הכין תדר, ואני עונה כאן על השאלות." Our kept pitch is not
+  a person answering (no "כאן שוב") and not an answer of ours in the inbox (the chat is "ענה לבד" while only Toran
+  answered).
+- Their first answer to a pitch, once, after our reply went: the lead marked answered (replied_at, and the next step
+  tomorrow, as the operator's "ענו" marks it), our mirror of Teder's demo too, Teder's own lead moved to answered only
+  from demo_ready, sent or opened; an `outreach_reply` event; the operator told by the store's name, with the
+  conversation's link (`lead_reply:<pitch>`).
+- A reminder to a number that wrote to our support since the first pitch is refused ('replied', in the operator's
+  words). Writing to its own Toran on the demo is trying the demo: the one reminder still goes then. On /admin/leads a
+  store that answered is talking, with no reminder due or waiting.
+- A voice note or a file with no words to our support gets one line in code, with the bot's line before it when it
+  opens the conversation, and waits for us as a handoff: "קיבלתי את ההקלטה, אבל אני לא יכול לשמוע הקלטות. מישהו מהצוות
+  שלנו יקשיב לה ויענה כאן, ואם נוח לכתוב את השאלה, אני עונה עליה מיד." A photo there is a screenshot or a question,
+  never a product to look for.
+- The pitch's event keeps the store's name and the pages it was sent: the approved words before the new ones carry no
+  address. An older event finds them through its ref.
+
+**Alternatives.** The lead's facts in the cached company block (a prompt per lead, no cache). The pitch replayed as the
+history's first message (the API takes a person's message first, and a pitch older than a conversation's week is in
+another conversation). A reminder blocked after any message on our number (a lead that tried its demo would never get
+the one reminder the owner chose).
+
+**Cost.** The LEAD block rides only on a lead's turns, a few hundred tokens each, under our support's cap. No model
+call is added, and the voice-note line costs none.
+
+**Tested** (test/lead-reply.test.ts, with a model that records what it was asked).

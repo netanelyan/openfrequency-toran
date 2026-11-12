@@ -27,9 +27,11 @@ export const WAITING_SQL = `(EXISTS (SELECT 1 FROM messages h WHERE h.conversati
   OR (COALESCE(c.agent_paused_until > now(), false) AND EXISTS (SELECT 1 FROM messages h WHERE h.conversation_id = c.id AND h.role = 'customer' AND h.automated IS NULL AND h.id > ${handledUpto})))`;
 
 // "טיפלתי בזה" (settled_upto) is the owner's too, never Toran's "ענה לבד" (the audit of 2026-11-12, P1-4): Today, the
-// results and the month's email count it with the owner's answers.
+// results and the month's email count it with the owner's answers. Our own pitch, kept in our support's conversation
+// with the store we wrote to (ops/outreach.ts keepPitch, auto 'outreach'), is not an answer: a conversation where only
+// Toran answered after it is Toran's alone.
 export const STATE_SQL = `(CASE WHEN ${WAITING_SQL} THEN 'waiting'
-  WHEN c.settled_upto > 0 OR EXISTS (SELECT 1 FROM messages o WHERE o.conversation_id = c.id AND o.role = 'owner') THEN 'fixed'
+  WHEN c.settled_upto > 0 OR EXISTS (SELECT 1 FROM messages o WHERE o.conversation_id = c.id AND o.role = 'owner' AND o.auto IS DISTINCT FROM 'outreach') THEN 'fixed'
   ELSE 'alone' END)`;
 
 export const stateChip = (s: InboxState) => `<span class="chip ${STATE_HE[s][1]}">${STATE_HE[s][0]}</span>`;

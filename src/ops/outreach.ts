@@ -47,6 +47,9 @@ import { toranOnSale } from './signupSwitch.ts';
 //   - a pitch goes once per number, product and stage (first, reminder), and only to the store's own listed
 //     WhatsApp (the lead's contact_whatsapp, read from its website), never to a number found anywhere else
 //
+// What happens when they answer is ops/leadReply.ts: our support answers them as a store we wrote to, the lead is
+// marked answered, the operator is told, and the reminder no longer goes (wroteSinceFirst).
+//
 // META_OUTREACH_PHONE_ID moves the pitches to a number of their own with no other change; until it is set they go
 // from the demo number. META_WABA_ID lets the template's own status and score be read; without it only the number's
 // rating is, and a paused or disabled template is caught on the send itself (Meta's codes below).
@@ -264,6 +267,10 @@ export const TORAN_LAUNCH: OutreachTemplate = {
 
 export const templateOf = (product: Product, stage: Stage): OutreachTemplate => (stage === 'launch' ? TORAN_LAUNCH : OUTREACH_TEMPLATES[`${product}_${stage}`]);
 
+/** A template by the name Meta approved it under: the six, the words approved before them, and Toran's opening. */
+export const templateNamed = (name: string): OutreachTemplate | undefined =>
+  [...Object.values(OUTREACH_TEMPLATES), ...Object.values(OUTREACH_TEMPLATES).map((t) => t.previous!).filter(Boolean), TORAN_LAUNCH].find((t) => t.name === name);
+
 /** The template as the store reads it, filled in. */
 export const outreachFilled = (t: OutreachTemplate, vars: string[] = t.example) => t.body.replace(/\{\{(\d+)\}\}/g, (_, i) => vars[Number(i) - 1] ?? '');
 
@@ -323,7 +330,7 @@ const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '');
 /** Any run of 8 digits or more (a phone, a Meta id) as its last four, for a log line. */
 const masked = (s: string) => s.replace(/\d{8,}/g, (d) => `…${d.slice(-4)}`);
 
-export type Why = 'stopped' | 'already' | 'cap' | 'quiet' | 'quality' | 'no_line' | 'bad_page' | 'bad_phone' | 'failed' | 'not_on_sale';
+export type Why = 'stopped' | 'already' | 'replied' | 'cap' | 'quiet' | 'quality' | 'no_line' | 'bad_page' | 'bad_phone' | 'failed' | 'not_on_sale';
 export type Outcome = { sent: boolean; why: Why | null; said: string };
 
 /** What the operator reads for each outcome, on the dashboard, on Toran's pages and on Teder's /leads. */
@@ -331,6 +338,7 @@ export const SAID_HE: Record<Why | 'sent', string> = {
   sent: 'נשלח בוואטסאפ מהמספר שלנו.',
   stopped: 'המספר הזה ביקש שנסיר אותו, אז לא נשלח כלום ולא נשלח אליו יותר.',
   already: 'ההודעה הזו כבר נשלחה למספר הזה.',
+  replied: 'כבר כתבו לנו מהמספר הזה אחרי ההודעה הראשונה, אז תזכורת לא יוצאת. עונים להם מהשיחה איתם בתורן, עד 24 שעות מההודעה האחרונה שלהם.',
   cap: 'הגענו היום למכסת ההודעות ללידים, אז לא נשלח כלום. מחר אפשר שוב.',
   quiet: 'עכשיו לילה, שבת או חג, אז לא שולחים ללידים. ההודעה לא נשלחה ולא סומנה, ואפשר לשלוח כשייגמר.',
   quality: 'Meta הורידה את הדירוג של המספר או של התבנית, אז עצרנו את ההודעות ללידים כדי לא לסכן את המספר. שום דבר לא נשלח. זה חוזר כשהדירוג חוזר לירוק.',
@@ -413,6 +421,18 @@ export const outreachLive = async (app: App) => Boolean(await outreachPhoneId(ap
 export const stoppedNumber = async (app: App, phone: string) => Boolean(await app.db.one('SELECT 1 FROM outreach_stops WHERE phone = $1', [digits(phone)]));
 
 /**
+ * Whether this number wrote to our support since our first pitch to it went (a message of theirs in a conversation on
+ * our own number's support account, status 'line'): a store that answered us is talked with, inside the 24 hours each of
+ * its messages opens, and is never sent the reminder template (the owner, 2026-11-12: "make sure the behavior is
+ * defined"). Writing to its own Toran on the demo is trying the demo, not answering us: the one reminder still goes then.
+ */
+export async function wroteSinceFirst(app: App, phone: string): Promise<boolean> {
+  const first = await app.db.one<{ at: Date | string | null }>("SELECT MIN(at) AS at FROM events WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'stage' = 'first' AND data->>'state' IN ('sent', 'undelivered')", [digits(phone)]);
+  if (!first?.at) return false;
+  return Boolean(await app.db.one("SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id JOIN channel_accounts a ON a.id = c.account_id WHERE a.status = 'line' AND c.channel = 'whatsapp' AND c.peer = $1 AND m.role = 'customer' AND m.at > $2 LIMIT 1", [digits(phone), new Date(first.at).toISOString()]));
+}
+
+/**
  * One pitch: the template to the store's WhatsApp, unless a limit holds it. Never throws: the outcome says why, in the
  * operator's words (said).
  */
@@ -432,6 +452,7 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   const slug2 = t.url2 ? slugOf(String(p.url2 || '')) : null;
   if (t.url2 && !slug2) return no('bad_page');
   const name = cleanLine(p.name, 80) || 'החנות';
+  const page = p.stage === 'launch' ? LAUNCH_PAGE : p.url;
   const same = `kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'product' = ANY($2::text[]) AND data->>'stage' = $3 AND (data->>'state' = 'sent' OR (data->>'state' = 'sending' AND at > now() - interval '${SENDING_MINUTES} minutes'))`;
   const products = productsOf(p.product);
   const day = israelDate(now());
@@ -439,6 +460,7 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   try {
     if (await stoppedNumber(app, phone)) return no('stopped');
     if (await app.db.one(`SELECT 1 FROM events WHERE ${same}`, [phone, products, p.stage])) return no('already');
+    if (p.stage === 'reminder' && (await wroteSinceFirst(app, phone))) return no('replied');
     const cap = dailyCap(app.env);
     const today = (await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE kind = 'outreach_wa' AND data->>'day' = $1 AND (data->>'state' IN ('sent', 'undelivered') OR (data->>'state' = 'sending' AND at > now() - interval '2 minutes'))", [day]))?.n || 0;
     if (today >= cap) {
@@ -469,15 +491,15 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
     await qualityStop(app, q.why);
     return no('quality');
   }
-  // Asked and recorded in one statement, so two presses at once send one.
+  // Asked and recorded in one statement, so two presses at once send one. The store's name and the pages it was sent
+  // are kept with it: their answer is read with them (ops/leadReply.ts), whatever the template's words carried.
   claim = await app.db
-    .one<{ id: number }>(`INSERT INTO events (store_id, kind, data) SELECT NULL, 'outreach_wa', $4::jsonb WHERE NOT EXISTS (SELECT 1 FROM events WHERE ${same}) RETURNING id`, [phone, products, p.stage, J({ product: p.product, stage: p.stage, phone, ref: p.ref, by: p.by, day, template: t.name, state: 'sending' })])
+    .one<{ id: number }>(`INSERT INTO events (store_id, kind, data) SELECT NULL, 'outreach_wa', $4::jsonb WHERE NOT EXISTS (SELECT 1 FROM events WHERE ${same}) RETURNING id`, [phone, products, p.stage, J({ product: p.product, stage: p.stage, phone, ref: p.ref, by: p.by, day, template: t.name, name, url: page, url2: p.url2 || null, state: 'sending' })])
     .catch(() => null);
   if (!claim) return no('already');
   try {
     // The quick reply comes after every URL button: index 1 after one, 2 after the two of the message with both demos.
     const urls = slug2 ? [slug, slug2] : [slug];
-    const page = p.stage === 'launch' ? LAUNCH_PAGE : p.url;
     const sent = await cloudSend(app.env, app.graph, phoneId, token, phone, { template: { name: t.name, sid: t.name, vars: pitchVars(t, name, page, p.url2), urls, payload: 'OUTREACH_STOP', payloadIndex: urls.length } });
     await mark(app, claim.id, { state: 'sent', id: sent.id || null });
     await usage(app.db, { kind: 'bsp', backend: 'meta_line', units: 1, usd: sent.usd, apiUsd: sent.usd, tag: 'wa_outreach' }).catch(() => {});
@@ -558,10 +580,9 @@ export async function keepSentPitches(app: App): Promise<{ kept: number; seen: n
     await noteNotDelivered(app, e.id, Number(e.data.kept), e.data.error);
   }
   const sent = await app.db.query<{ id: number; data: any }>("SELECT id, data FROM events WHERE kind = 'outreach_wa' AND data->>'state' IN ('sent', 'undelivered') AND data->>'kept' IS NULL ORDER BY id");
-  const named = new Map([...Object.values(OUTREACH_TEMPLATES), ...Object.values(OUTREACH_TEMPLATES).map((t) => t.previous!).filter(Boolean), TORAN_LAUNCH].map((t) => [t.name, t]));
   for (const e of sent) {
     out.seen++;
-    const t = named.get(String(e.data?.template || ''));
+    const t = templateNamed(String(e.data?.template || ''));
     const id = /^(?:toran|store):(\d+)$/.exec(String(e.data?.ref || ''))?.[1];
     const s = id ? await app.db.one<any>('SELECT name, brand, brand_override, domain FROM stores WHERE id = $1', [Number(id)]) : null;
     if (!t) {

@@ -16,7 +16,8 @@ import { PAGE_ABOUT, PAGE_DOWN } from '../offer.ts';
 import { J } from '../db/index.ts';
 import { ownerLine } from '../owners/line.ts';
 import { supportAccount } from '../company.ts';
-import { conversationOf, storeChannel } from './store.ts';
+import { conversationOf, storeChannel, type Account } from './store.ts';
+import { leadReplied, leadTurn, pitchFor } from '../ops/leadReply.ts';
 import { botLine, botName, markIntroduced } from '../agent/intro.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { displayName } from '../ingest/brand.ts';
@@ -31,6 +32,8 @@ import { displayName } from '../ingest/brand.ts';
 //   a message without a code from a phone with no live binding gets one short reply
 //   asking for the demo link, and nothing else; or, when our support is set up
 //   (src/company.ts), our support agent
+//   our support answers a store we wrote to first as one (supportTurn, ops/leadReply.ts): what we sent it and built
+//   for it ride in the turn, and its first answer marks the lead and tells the operator
 //   a business owner accounts verified, or a link code, goes to the owner's assistant
 //   (owners/line.ts), before any binding; an owner with Teder and no Toran store is
 //   answered there by our support, since Teder is managed on its dashboard only
@@ -98,6 +101,23 @@ async function held(app: App, conv: number, inbound: Inbound, storeId: number): 
 const supportOf = (app: App, adapter: ChannelAdapter, inbound: Inbound) => supportAccount(app, adapter, inbound.to || app.env.DEMO_WA_NUMBER || app.env.TWILIO_WHATSAPP_FROM);
 
 /**
+ * Our support answers. A number we sent a pitch to (ops/leadReply.ts pitchFor) is a store we wrote to first: the turn
+ * is told what we sent it and built for it, and its first answer to the pitch is marked and told to the operator once
+ * our reply went, so the store never waits on it.
+ */
+async function supportTurn(app: App, adapter: ChannelAdapter, inbound: Inbound, support: Account): Promise<RouteResult> {
+  const lead = await pitchFor(app, inbound.from).catch((e) => {
+    app.log(`[lead] …${String(inbound.from).slice(-4)}: the pitch it answers could not be read (${e?.message || e})`);
+    return null;
+  });
+  try {
+    return await storeChannel(app, adapter, inbound, support, lead ? leadTurn(lead) : {});
+  } finally {
+    if (lead && !lead.replied) await leadReplied(app, lead, support.id, String(inbound.text || '')).catch((e) => app.log(`[lead] …${String(inbound.from).slice(-4)}: its answer was not marked (${e?.message || e})`));
+  }
+}
+
+/**
  * A demo ends back into our support: the binding goes, one short line says so (kept in the support conversation, so
  * the inbox shows it), and a question that came with the message is our support's to answer. Null while our support
  * is not set up: the demo number says what it said before.
@@ -116,7 +136,7 @@ async function backToSupport(app: App, adapter: ChannelAdapter, inbound: Inbound
   }
   await app.db.query("INSERT INTO messages (conversation_id, role, text) VALUES ($1, 'agent', $2)", [conv, line]);
   await reply(app, adapter, inbound, line, support.store_id, conv);
-  const r = await storeChannel(app, adapter, inbound, support);
+  const r = await supportTurn(app, adapter, inbound, support);
   return { ...r, action: r.action === 'answered' ? 'demo_ended' : r.action, reply: r.reply ? `${line}\n\n${r.reply}` : line };
 }
 
@@ -200,7 +220,7 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
   if (!binding) {
     // Our demo number is our public number too: someone with no demo gets our own support, when it is set up.
     const support = await supportOf(app, adapter, inbound);
-    if (support) return storeChannel(app, adapter, inbound, support);
+    if (support) return supportTurn(app, adapter, inbound, support);
     await reply(app, adapter, inbound, msg.noBinding, null, null);
     await event(db, null, 'wa_unbound', {});
     return { action: 'no_binding', reply: msg.noBinding };

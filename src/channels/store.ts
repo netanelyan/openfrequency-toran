@@ -3,7 +3,8 @@ import { cleanLine } from '../core/hebrew.ts';
 import { J } from '../db/index.ts';
 import { event } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
-import { MAX_PHOTOS, runTurn } from '../agent/loop.ts';
+import { MAX_PHOTOS, runTurn, type TurnInput } from '../agent/loop.ts';
+import { botLine, botName, leadLine, markIntroduced, openingOf, type LeadOf } from '../agent/intro.ts';
 import { MAX_PHOTO_BYTES } from '../agent/images.ts';
 import type { RouteResult } from './demo.ts';
 import { hold, isPaused } from './owner.ts';
@@ -92,16 +93,19 @@ const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp
 
 /**
  * The line the agent is told about the files on a message: the photos it is shown with the message, and the names and
- * kinds of the rest, which it cannot open (the owner sees them in the inbox). seen: the ids it is shown.
+ * kinds of the rest, which it cannot open (the owner sees them in the inbox). seen: the ids it is shown. Our own support
+ * (company) sells no products: a photo there is a screenshot or a question, never one to look for in a catalogue.
  */
-export function filesContext(files: Attachment[], seen: number[] = []): string | undefined {
+export function filesContext(files: Attachment[], seen: number[] = [], { company = false }: { company?: boolean } = {}): string | undefined {
   if (!files.length) return undefined;
   const kind = (f: Attachment) => (f.type.startsWith('image/') || f.type === 'image' ? 'an image' : f.type === 'application/pdf' ? 'a PDF' : 'a file');
   const shown = files.filter((f) => f.id && seen.includes(f.id));
   const rest = files.filter((f) => !shown.includes(f));
   const parts: string[] = [];
-  if (shown.length) parts.push(`The customer sent ${shown.length === 1 ? 'a photo' : `${shown.length} photos`}, shown with their message: look at ${shown.length === 1 ? 'it' : 'them'}. A product in it: find it with search_products (what you see, in a few words) and compare with view_product_images before saying the store has it. Damage, a wrong item or anything about an order in a photo: say someone from the store will look at it, and call handoff.`);
-  if (rest.length) parts.push(`The customer attached ${rest.length}${shown.length ? ' more' : ''} file(s): ${rest.map((f) => `${cleanLine(f.name, 40)} (${kind(f)})`).join(', ')}. You cannot open ${rest.length === 1 ? 'it' : 'them'}; the store's owner sees ${rest.length === 1 ? 'it' : 'them'} in the inbox. If the question depends on ${rest.length === 1 ? 'it' : 'them'}, say someone from the store will look, and call handoff.`);
+  const one = shown.length === 1;
+  if (shown.length && company) parts.push(`The person sent ${one ? 'a photo' : `${shown.length} photos`}, shown with their message: look at ${one ? 'it' : 'them'}. A screenshot of their dashboard, of a message or of an error: say in a few words what you see. A problem in their own account, a bill or their store's conversations: say someone from our team will look at it, and call handoff.`);
+  else if (shown.length) parts.push(`The customer sent ${one ? 'a photo' : `${shown.length} photos`}, shown with their message: look at ${one ? 'it' : 'them'}. A product in it: find it with search_products (what you see, in a few words) and compare with view_product_images before saying the store has it. Damage, a wrong item or anything about an order in a photo: say someone from the store will look at it, and call handoff.`);
+  if (rest.length) parts.push(`The ${company ? 'person' : 'customer'} attached ${rest.length}${shown.length ? ' more' : ''} file(s): ${rest.map((f) => `${cleanLine(f.name, 40)} (${kind(f)})`).join(', ')}. You cannot open ${rest.length === 1 ? 'it' : 'them'}; ${company ? 'our team sees' : "the store's owner sees"} ${rest.length === 1 ? 'it' : 'them'} in the inbox. If the question depends on ${rest.length === 1 ? 'it' : 'them'}, say someone from ${company ? 'our team' : 'the store'} will look, and call handoff.`);
   return parts.join(' ');
 }
 
@@ -150,10 +154,40 @@ async function heldReply(app: App, adapter: ChannelAdapter, inbound: Inbound, st
   await app.db.query("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'system', $2, 'אוטומטי', 'held', $3::jsonb)", [conversationId, HELD_WEB, J(d.ok ? d.ids : [])]);
 }
 
-export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account): Promise<RouteResult> {
+/**
+ * What a turn is given besides the message, by whoever routes it here: a store we wrote to first, on our support
+ * (channels/demo.ts, ops/leadReply.ts), comes with the LEAD block (context), the facts it backs, and its first line.
+ */
+export type StoreTurn = Pick<TurnInput, 'context' | 'facts' | 'lead'>;
+
+/**
+ * A voice note or a file with no words, to our own support (src/company.ts), is answered in code with one line, with
+ * the bot's own line before it when it opens the conversation, and waits for us as a handoff. A store's own channels
+ * leave it to the store's owner and say nothing; our support answers people deciding whether to buy, and silence there
+ * reads as nobody home.
+ */
+export const NO_WORDS_HE = {
+  voice: 'קיבלתי את ההקלטה, אבל אני לא יכול לשמוע הקלטות. מישהו מהצוות שלנו יקשיב לה ויענה כאן, ואם נוח לכתוב את השאלה, אני עונה עליה מיד.',
+  other: 'קיבלתי, אבל אני לא יכול לפתוח את מה שנשלח. מישהו מהצוות שלנו יסתכל ויענה כאן, ואם נוח לכתוב את השאלה, אני עונה עליה מיד.',
+};
+
+async function noWords(app: App, adapter: ChannelAdapter, inbound: Inbound, store: any, conv: number, files: Attachment[], lead: LeadOf | null | undefined, own: { from?: string; replyTo?: string } | null): Promise<RouteResult> {
+  const voice = files.some((f) => /^audio\b/.test(String(f.type)));
+  await handOver(app, store.id, conv, 'attachment', `${files.length} files, no text`, voice ? 'שלחו הקלטה. תורן ענה שמישהו מהצוות יקשיב לה ויענה כאן, והיא מחכה לכם.' : 'שלחו קובץ בלי טקסט. תורן ענה שמישהו מהצוות יסתכל עליו ויענה כאן, והוא מחכה לכם.');
+  const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
+  const opening = await openingOf(app.db, conv);
+  const first = opening === 'first' && lead ? leadLine(lead, botName(store), storeName) : opening ? botLine(opening, botName(store), storeName) : null;
+  const said = `${first ? `${first}\n\n` : ''}${voice ? NO_WORDS_HE.voice : NO_WORDS_HE.other}`;
+  const d = await reply(app, adapter, inbound, said, store.id, conv, { who: 'agent', storeName, ...(own || {}) });
+  await app.db.query("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'agent', $2, 'אוטומטי', 'no_words', $3::jsonb)", [conv, said, J(d.ok ? d.ids : [])]);
+  if (opening) await markIntroduced(app.db, conv);
+  return { action: 'no_text', storeId: store.id, reply: said };
+}
+
+export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account, turn: StoreTurn = {}): Promise<RouteResult> {
   const { db } = app;
   const { tag } = LEDGER[adapter.channel];
-  const store = await db.one<any>('SELECT id, name, domain, brand, brand_override, agent_live_at, agent_paused_at, agent_off FROM stores WHERE id = $1', [account.store_id]);
+  const store = await db.one<any>('SELECT id, platform, name, domain, brand, brand_override, agent_name, agent_live_at, agent_paused_at, agent_off FROM stores WHERE id = $1', [account.store_id]);
   if (!store) return { action: 'unknown_account' };
   const conv = await threadFor(app, adapter, account, inbound);
   await remember(app, conv, inbound);
@@ -222,6 +256,7 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   const photos = photoIds(files);
   if (!text && !photos.length) {
     await hold(app, conv, inbound);
+    if (store.platform === 'company') return noWords(app, adapter, inbound, store, conv, files, turn.lead, own);
     await handOver(app, store.id, conv, 'attachment', `${files.length} files, no text`, 'הלקוח שלח קבצים בלי טקסט, ותורן לא ענה. הקבצים מחכים לכם.');
     return { action: 'no_text', storeId: store.id };
   }
@@ -242,8 +277,8 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
 
   await event(db, store.id, `${tag}_in`, { conversationId: conv, chars: text.length, preview: cleanLine(text, 60) });
   // An answer to an automatic message (auto/send.ts): the agent is told what the store sent.
-  const context = [filesContext(files, photos), await lastAuto(app, conv)].filter(Boolean).join('\n') || undefined;
-  const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context, photos });
+  const context = [filesContext(files, photos, { company: store.platform === 'company' }), await lastAuto(app, conv), turn.context].filter(Boolean).join('\n') || undefined;
+  const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context, photos, facts: turn.facts, lead: turn.lead });
   await setAttachments(app, inbound.id, files);
   // Each part's id is written down as it goes: a job run again after a failed send sends only what did not go out.
   const delivered = (ids: string[]) => (o.agentMessageId ? db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [o.agentMessageId, J(ids)]) : Promise.resolve());

@@ -69,10 +69,13 @@ test('nothing sends outreach but the pitches to leads: messages and mail go out 
   // every limit: the number that asked to stop, once a stage, the quiet hours, the day's cap, and Meta's quality.
   const pitch = readFileSync(path.join(ROOT, 'src/ops/outreach.ts'), 'utf8');
   assert.equal((pitch.match(/cloudSend\(/g) || []).length, 1);
-  // One page's button, or two for the message with both demos (Toran's, then Teder's), and the way out after them.
-  assert.match(pitch, /const urls = slug2 \? \[slug, slug2\] : \[slug\];\n\s*const page = p\.stage === 'launch' \? LAUNCH_PAGE : p\.url;\n\s*const sent = await cloudSend\(app\.env, app\.graph, phoneId, token, phone, \{ template: \{ name: t\.name, sid: t\.name, vars: pitchVars\(t, name, page, p\.url2\), urls, payload: 'OUTREACH_STOP', payloadIndex: urls\.length \} \}\)/);
+  // One page's button, or two for the message with both demos (Toran's, then Teder's), and the way out after them. The
+  // page is the pitch's own (Toran's opening: the website's Toran page), kept with the event before it goes.
+  assert.match(pitch, /const page = p\.stage === 'launch' \? LAUNCH_PAGE : p\.url;/);
+  assert.match(pitch, /const urls = slug2 \? \[slug, slug2\] : \[slug\];\n\s*const sent = await cloudSend\(app\.env, app\.graph, phoneId, token, phone, \{ template: \{ name: t\.name, sid: t\.name, vars: pitchVars\(t, name, page, p\.url2\), urls, payload: 'OUTREACH_STOP', payloadIndex: urls\.length \} \}\)/);
   const at = pitch.indexOf('cloudSend(app.env');
-  for (const rule of ['stoppedNumber(app, phone)', "SELECT 1 FROM events WHERE ${same}", 'customerQuiet(now())', 'dailyCap(app.env)', 'qualityOk(app, phoneId, token, t)']) assert.ok(pitch.indexOf(rule) > 0 && pitch.indexOf(rule) < at, `${rule} is checked before the pitch is sent`);
+  // A store that wrote to us since the first pitch gets no reminder template (ops/leadReply.ts): checked before it too.
+  for (const rule of ['stoppedNumber(app, phone)', "SELECT 1 FROM events WHERE ${same}", 'wroteSinceFirst(app, phone)', 'customerQuiet(now())', 'dailyCap(app.env)', 'qualityOk(app, phoneId, token, t)']) assert.ok(pitch.indexOf(rule) > 0 && pitch.indexOf(rule) < at, `${rule} is checked before the pitch is sent`);
 });
 
 test('no file in the repository names a real store (the pre-commit check, run as a test)', async () => {

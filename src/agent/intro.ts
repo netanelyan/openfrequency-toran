@@ -1,4 +1,5 @@
 import type { Db } from '../db/index.ts';
+import { le } from '../outreach.ts';
 
 // Who is talking, said to the customer in code, never left to the model (the owner, 2026-11-01: "the person has to know
 // that he speaks with a bot. then, when a person is involved, toran should say that").
@@ -9,6 +10,9 @@ import type { Db } from '../db/index.ts';
 //   a person answering from the inbox (channels/owner.ts ownerReply): their first message after the bot opens with
 //   "מכאן עונה לך בן אדם מהצוות של <store>.", and the conversation forgets that the bot introduced itself
 //   the bot answering again after a person: "כאן שוב <name>, הבוט של <store>."
+//   a store we wrote to first (ops/leadReply.ts), on our support: its first answer says what answers it, the Toran we
+//   built for it (leadLine). Our own pitch, kept in that conversation as the operator's message, is not a person
+//   answering there.
 //
 // conversations.introduced_at keeps whether the line was said (migration 043). A line the router sends itself in the
 // bot's name (the demo's welcome, channels/demo.ts) says it too, and marks it.
@@ -44,17 +48,35 @@ export function botLine(kind: Opening, name: string | null, store: string, engli
   return name ? `כאן ${name}, הבוט של ${store}.` : `כאן הבוט של ${store}.`;
 }
 
+/** A store we wrote to first (ops/leadReply.ts): what we offered it, and its name as our message said it. */
+export type LeadOf = { product: 'toran' | 'teder' | 'both'; name: string };
+
+/**
+ * The bot's first line to a store we wrote to, in place of the plain one (the owner, 2026-11-12: "make sure it sells
+ * itself"): who answers, as botLine says it, and then what answers. We built them a Toran: this is the same Toran,
+ * answering them as it will answer their customers. Teder's slideshow alone: Teder made it, and Toran answers here.
+ */
+export function leadLine(lead: LeadOf, name: string | null, store: string, english = false): string {
+  const who = botLine('first', name, store, english);
+  if (lead.product === 'teder') return `${who} ${english ? 'Teder made the slideshow, and I answer the questions here.' : 'את המצגת הכין תדר, ואני עונה כאן על השאלות.'}`;
+  return `${who} ${english ? `It's the same Toran we built for ${lead.name}, and now I'm answering you the way I'll answer your customers.` : `זה אותו תורן שבנינו ${le(lead.name)}, ועכשיו אני עונה לכם כמו שאענה ללקוחות שלכם.`}`;
+}
+
 export const personLine = (store: string, english = false) => (english ? `From here on, a person from ${store}'s team is answering.` : `מכאן עונה לך בן אדם מהצוות של ${store}.`);
 
 /** What the model is told when the app opens its reply, so it does not greet or introduce itself a second time. */
 export const OPENING_NOTE = "The app opens your reply with a line saying you are the store's bot, with your name if you have one. Do not greet or introduce yourself; start with the answer.";
+/** The same, before leadLine. */
+export const LEAD_OPENING_NOTE = "The app opens your reply with a line saying you are Toran, our bot, and saying what we built for their store. Do not greet, introduce yourself or repeat that line; start with the answer.";
 
 /**
  * Whether the bot's next answer here opens with its line: null when it already said it since the last person, and in a
  * conversation with nobody on the other end (no peer: the demo page's sample chat, which a page about the bot frames).
  */
 export async function openingOf(db: Db, conversationId: number): Promise<Opening | null> {
-  const c = await db.one<{ peer: string | null; introduced_at: string | null; person: boolean }>("SELECT peer, introduced_at, EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'owner') AS person FROM conversations WHERE id = $1", [conversationId]);
+  // Our pitch kept in our support's conversation (ops/outreach.ts keepPitch, auto 'outreach') is the operator's message,
+  // and no person answered there: the bot's first answer after it is a first one.
+  const c = await db.one<{ peer: string | null; introduced_at: string | null; person: boolean }>("SELECT peer, introduced_at, EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'owner' AND auto IS DISTINCT FROM 'outreach') AS person FROM conversations WHERE id = $1", [conversationId]);
   if (!c?.peer || c.introduced_at) return null;
   return c.person ? 'again' : 'first';
 }
