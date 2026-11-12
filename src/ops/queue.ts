@@ -82,7 +82,7 @@ export async function stuckRequests(app: App): Promise<Stuck[]> {
     `SELECT r.domain, r.phone, r.claimed_at, s.id, s.name, s.brand, s.brand_override, s.platform, s.page_built_at, s.approved_at, s.sent_at, s.status,
             (SELECT status FROM jobs WHERE dedupe_key = 'add:' || r.domain ORDER BY id DESC LIMIT 1) AS job
        FROM demo_requests r LEFT JOIN stores s ON s.domain = r.domain
-      WHERE r.product = 'toran' AND r.claimed_at > now() - interval '14 days' AND (s.id IS NULL OR (s.sent_at IS NULL AND (s.approved_at IS NULL OR s.page_built_at IS NULL)))
+      WHERE r.product = 'toran' AND r.claimed_at > now() - interval '14 days' AND r.delivered_at IS NULL AND (s.id IS NULL OR (s.sent_at IS NULL AND (s.approved_at IS NULL OR s.page_built_at IS NULL)))
       ORDER BY r.claimed_at`,
   );
   // A Teder request whose demo has no public page yet (teder_leads, as last read from Teder), its link not sent.

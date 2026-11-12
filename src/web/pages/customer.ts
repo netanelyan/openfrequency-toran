@@ -162,7 +162,7 @@ async function setupPage(app: App, r: DashReq, title: string, active: string) {
     : st?.verify
       ? `<div class="empty">${icon('alert')}<b>צריך לאמת שהאתר שלכם</b>${esc(st.detail)}${actions(mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('check')}לאמת את האתר</a>` : '')}</div>`
     : st?.status === 'attention'
-      ? `<div class="empty">${icon('alert')}<b>לא הצלחנו לקרוא את האתר</b>כדאי לבדוק שהכתובת נכונה ולנסות שוב. אם זה חוזר, כתבו לנו.${actions(mayStart(r) ? `<a class="btn sm primary" href="/start">${icon('refresh')}לנסות שוב</a>` : '')}</div>`
+      ? `<div class="empty">${icon('alert')}<b>לא הצלחנו לקרוא את האתר</b>${esc(st.detail)}${actions(mayStart(r) && st.retry !== false ? `<a class="btn sm primary" href="/start">${icon('refresh')}לנסות שוב</a>` : '')}</div>`
       : `<div class="empty">${icon('clock')}<b>החנות שלכם עוד בהקמה</b>${add ? 'כותבים את הכתובת של האתר, ותורן קורא ממנו את המוצרים ואת דפי המדיניות. אחר כך תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.' : 'כשהחנות תתחבר, תראו כאן את השיחות, מה תורן יודע על החנות ואת החבילה.'}${actions(add)}</div>`;
   // Every step below the box, as Teder's checklist and accounts' /setup show them: the box has the one main button, and
   // the business's WhatsApp is reachable from here before the store exists (the owner, 2026-11-09: "i dont see a place
@@ -182,7 +182,7 @@ async function readingBanner(app: App, r: DashReq): Promise<string> {
   // A read that failed, of a store that exists: "לנסות שוב" reads it again (the audit of 2026-11-12, P1-25: only
   // "כתבו לנו" was offered); proving the site goes to /start.
   const found = await setupStoreOf(app, Number(r.scope.workspaceId));
-  const again = st.status === 'attention' && !st.verify && found.store && canIngest(found.store.platform) && !r.ctx.readOnly ? postButton(r.ctx, `/lead/${found.store.id}/reread`, 'לנסות שוב', { cls: 'btn sm primary', iconName: 'refresh' }) : '';
+  const again = st.status === 'attention' && !st.verify && st.retry && found.store && canIngest(found.store.platform) && !r.ctx.readOnly ? postButton(r.ctx, `/lead/${found.store.id}/reread`, 'לנסות שוב', { cls: 'btn sm primary', iconName: 'refresh' }) : '';
   if (st.status === 'attention') return `<div class="banner warn">${icon('alert')}<div><b>${st.verify ? 'צריך לאמת שהאתר שלכם' : 'לא הצלחנו לקרוא את האתר'}</b><p>${esc(st.detail)}</p></div>${again}${writeUs(app)}</div>`;
   return '';
 }

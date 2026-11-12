@@ -221,7 +221,8 @@ test("/start with an operator's lead: it becomes the workspace's and is read aga
     await drain(s.app);
     const d = await steps(s, 12);
     assert.deepEqual([d.by.store.status, d.by.store.href], ['attention', `${BASE}/start`]);
-    assert.match(d.by.store.detail, /לא הצלחנו לקרוא את האתר/);
+    // Why, in the owner's words (ingest/readFailure.ts; the audit of 2026-11-12, P1-25): a site that is not a store.
+    assert.match(d.by.store.detail, /לא מצאנו באתר הזה מוצרים או עגלת קניות/);
     const today = await (await s.get('/')).text();
     assert.match(today, /לא הצלחנו לקרוא את האתר/);
     assert.match(today, /href="\/start"/);

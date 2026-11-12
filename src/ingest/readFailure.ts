@@ -27,7 +27,8 @@ const KINDS: [ReadFailure, RegExp][] = [
   ['platform', /Toran reads .+ stores|is not built yet/i],
   ['moved', /\bredirects to [a-z0-9.-]+\.[a-z]{2,}/i],
   ['blocked', /robots\.txt disallows|\bHTTP 40[13]\b/i],
-  ['no_answer', /timed out|network:|\bHTTP \d{3}\b|לא נמצא או לא ענה|is not fetched|redirect|ECONN|ENOTFOUND|EAI_AGAIN/i],
+  // A reading the worker stopped at its deadline (jobs/worker.ts): the site did not answer in time.
+  ['no_answer', /past its deadline|timed out|network:|\bHTTP \d{3}\b|לא נמצא או לא ענה|is not fetched|redirect|ECONN|ENOTFOUND|EAI_AGAIN/i],
 ];
 
 /** Which kind of failure the job's error is. */
