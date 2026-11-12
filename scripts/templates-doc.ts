@@ -19,10 +19,13 @@ after the person last wrote to us. Four sets:
 - **The payment reminder, \`payment_reminder\`**: accounts' reminders to pay for the new month, to a workspace owner's
   number accounts verified and to the number a workspace last paid from, from \`src/billing/remind.ts\`. Submitted, in
   review at Meta since 2026-11-04 (STATUS.md): see its section.
-- **The pitches to leads, \`toran_pitch\`, \`toran_pitch_reminder\`, \`teder_pitch\`, \`teder_pitch_reminder\`**, since
-  2026-11-08: the first message to a lead and its one reminder, from \`src/ops/outreach.ts\`. Approved
-  on 2026-11-08, with the combined openfrequency_pitch two; toran_launch, Toran's opening to its waitlist, is not
-  submitted yet: see their section.
+- **The pitches to leads, \`toran_pitch_2\`, \`toran_pitch_reminder_2\`, \`teder_pitch_2\`, \`teder_pitch_reminder_2\`**, and
+  the combined \`openfrequency_pitch_2\` two: the first message to a lead and its one reminder, from
+  \`src/ops/outreach.ts\`. Written 2026-11-12 with each demo's address in the words as well as on its button, and Toran
+  and Teder said as the website says them (the owner: "urls have to be present, in case buttons dont show. also, toran is
+  much more than a bot that answers about prices and quantity"). Each replaces the one without the \`_2\`, approved on
+  2026-11-08, which goes until Meta approves the new one (\`liveTemplate\`, asked by name with META_WABA_ID).
+  toran_launch, Toran's opening to its waitlist, is not submitted yet: see their section.
 - **A customer waits, \`toran_customer_waiting\`**: to a store owner's own number, when a customer of their store waits
   for their answer, from \`src/owners/notify.ts\`. **Not submitted yet**: written 2026-11-12 for the owner to submit; see
   its section.

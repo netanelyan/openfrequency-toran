@@ -60,7 +60,7 @@ test('the funnel: review, approve, send by hand, the one reminder (never on Shab
     assert.deepEqual((await ap.json()).ok, true);
     const lead = await (await s.get(`/lead/${id}`)).text();
     assert.match(lead, /id="first-msg"/);
-    assert.match(lead, /היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן שעונה ללקוחות שלכם/);
+    assert.match(lead, /היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן, שעונה ללקוחות שלכם בוואטסאפ, באינסטגרם/);
     assert.match(lead, /אם זה לא רלוונטי, אפשר לענות &quot;לא&quot; ולא נכתוב שוב/);
     await s.post(`/lead/${id}/sent`, { _csrf: token });
     const st = await s.app.db.one<any>('SELECT status, sent_at, followup_due_at FROM stores WHERE id = $1', [id]);

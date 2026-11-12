@@ -1,4 +1,5 @@
 import { le } from '../outreach.ts';
+import { TEDER_DOES, TEDER_WHAT, TORAN_DOES, TORAN_WHAT } from '../pitchWords.ts';
 
 // The messages the operator's dashboard prepares beyond outreach.ts's two (the first message, the one reminder). The
 // same line holds: a store gets one approach and one reminder, and after the reminder nothing more is sent unless they
@@ -53,21 +54,23 @@ ${o.url}
  * src/leads/messages.js TEDER_COLD_FIRST) word for word, without the slideshow's topic, which Toran is not told.
  */
 export const tederColdFirst = (o: { storeName: string; url: string }) =>
-  `היי, כאן OpenFrequency. בנינו את תדר, שמכין לחנויות אונליין מצגות בעברית לטיקטוק ולאינסטגרם. הוא קורא את האתר של החנות, וכותב ומעצב מצגות על נושאים מהתחום שלה. כל מצגת מחכה לאישור שלכם לפני שהיא עולה.
+  `היי, כאן OpenFrequency. בנינו את תדר, ש${TEDER_WHAT}.
 
-הכנו ${le(o.storeName)} מצגת אחת לדוגמה, כדי שתראו איך זה ייראה אצלכם:
+${TEDER_DOES}
+
+הכנו ${le(o.storeName)} מצגת אחת לדוגמה מהאתר שלכם:
 ${o.url}
 
 אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. אם לא, אפשר לענות "לא" ולא נכתוב שוב.`;
 
 /** The first message with both demos: the words of the template openfrequency_pitch (ops/outreach.ts), the two links in place of its buttons. */
 export const bothFirst = (o: { storeName: string; toranUrl: string; tederUrl: string }) =>
-  `היי, כאן OpenFrequency. הכנו ${le(o.storeName)} שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם.
+  `היי, כאן OpenFrequency. הכנו ${le(o.storeName)} שני דברים לנסות.
 
-את תורן אפשר לנסות עכשיו מהטלפון:
+תורן ${TORAN_WHAT}. ${TORAN_DOES} אפשר לכתוב לו עכשיו כמו לקוח:
 ${o.toranUrl}
 
-והמצגת כאן:
+תדר ${TEDER_WHAT}. ${TEDER_DOES} הכנו לכם מצגת אחת לדוגמה:
 ${o.tederUrl}
 
 אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. אם לא, אפשר לענות "לא" ולא נכתוב שוב.`;
@@ -75,8 +78,9 @@ ${o.tederUrl}
 /** The one reminder for both demos. */
 export const bothReminder = (o: { storeName: string; toranUrl: string; tederUrl: string }) =>
   `היי, יצא לכם להציץ במה שהכנו ${le(o.storeName)}?
-תורן: ${o.toranUrl}
-המצגת של תדר: ${o.tederUrl}
+
+תורן, שעונה ללקוחות שלכם בכל שעה: ${o.toranUrl}
+המצגת שתדר הכין מהאתר שלכם: ${o.tederUrl}
 
 זו ההודעה האחרונה שלנו בנושא.`;
 

@@ -1,4 +1,5 @@
 import { notOnShabbat, DAY } from './core/clock.ts';
+import { TORAN_DOES, TORAN_WHAT } from './pitchWords.ts';
 
 // The two messages to a lead: the first one with the pitch link, and at most one
 // reminder. The dashboard prepares them and copies them for the owner's own phone. Since
@@ -30,14 +31,18 @@ export const le = (name: string) => `${lePrefix(name)}${name}`;
 export const lePrefix = (name: string) => (/^ה/.test(name) ? 'בשביל ' : /^[א-ת]/.test(name) ? 'ל' : 'ל־');
 
 export function firstMessage(o: { storeName: string; url: string }): string {
-  return `היי, כאן OpenFrequency. בנינו ${le(o.storeName)} תורן שעונה ללקוחות שלכם על מחירים ומלאי, לפי מה שכתוב באתר שלכם. אפשר לנסות אותו עכשיו מהטלפון.
+  return `היי, כאן OpenFrequency. בנינו ${le(o.storeName)} תורן, ש${TORAN_WHAT}.
+
+${TORAN_DOES}
+
+אפשר לכתוב לו עכשיו מהטלפון, כמו לקוח:
 ${o.url}
 
 אם זה לא רלוונטי, אפשר לענות "לא" ולא נכתוב שוב.`;
 }
 
 export function reminderMessage(o: { storeName: string; url: string }): string {
-  return `היי, יצא לכם להציץ בעמוד שהכנו ${le(o.storeName)}?
+  return `היי, יצא לכם לנסות את תורן שבנינו ${le(o.storeName)}? הוא מחכה לכם כאן:
 ${o.url}
 
 זו ההודעה האחרונה שלנו בנושא.`;

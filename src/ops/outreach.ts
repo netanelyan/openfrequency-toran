@@ -10,6 +10,7 @@ import { cloudSend, GRAPH, GraphError, numberQuality, templateHealth } from '../
 import { ourLines, tokenOf } from '../channels/lines.ts';
 import { reply } from '../channels/send.ts';
 import { le } from '../outreach.ts';
+import { TEDER_DOES, TEDER_WHAT, TORAN_DOES, TORAN_WHAT } from '../pitchWords.ts';
 import { alertOperator } from './alert.ts';
 import { internalRefusal } from './internal.ts';
 import { toranOnSale } from './signupSwitch.ts';
@@ -63,7 +64,12 @@ export type OutreachTemplate = {
   category: 'MARKETING';
   language: 'he';
   body: string;
-  example: [string];
+  /** A sample of each body variable, in order: {{1}} the store's name with its "ל", then each page's address (links). */
+  example: string[];
+  /** How many of the body's variables are the demos' addresses, after the name: the buttons' pages, written out too. */
+  links?: 1 | 2;
+  /** The version Meta approved before this one, sent until this one is approved (liveTemplate). */
+  previous?: OutreachTemplate;
   /** The URL button: its text, the page's address up to the page's slug (the variable Meta appends), a sample slug. */
   url: UrlButton;
   /** A second URL button, after the first: the message with both demos (Teder's). Meta allows two URL buttons. */
@@ -88,7 +94,8 @@ const TEDER_PAGES = 'https://teder.openfrequency.co.il/s/';
  * first and the quick reply after it (index 1 when sending). {{1}} is the store's name with its "ל" (outreach.ts le():
  * "לכלי חרס של נורית", "ל־Nike", "בשביל הדס"), so the preposition is always right.
  */
-export const OUTREACH_TEMPLATES: Record<`${Product}_${PitchStage}`, OutreachTemplate> = {
+// The words approved on 2026-11-08: each template's `previous`, sent while Meta reviews the words that replace them.
+const APPROVED_2026_11_08: Record<`${Product}_${PitchStage}`, OutreachTemplate> = {
   toran_first: {
     name: 'toran_pitch',
     product: 'toran',
@@ -133,9 +140,6 @@ export const OUTREACH_TEMPLATES: Record<`${Product}_${PitchStage}`, OutreachTemp
     url: { text: 'לראות את המצגת', base: TEDER_PAGES, example: 'nurit-ceramics-a1b2c3' },
     stop: STOP_BUTTON,
   },
-  // One message, both demos: Toran's page and Teder's slideshow, each its own button (Meta: up to two URL buttons in a
-  // template, with quick replies beside them as a group of their own; developers.facebook.com/docs/whatsapp/
-  // business-management-api/message-templates/components, "Buttons"). The quick reply is third (index 2 when sending).
   both_first: {
     name: 'openfrequency_pitch',
     product: 'both',
@@ -162,6 +166,80 @@ export const OUTREACH_TEMPLATES: Record<`${Product}_${PitchStage}`, OutreachTemp
   },
 };
 
+const STORE_EX = 'לכלי חרס של נורית';
+const TORAN_EX = `${TORAN_PAGES}nurit-ceramics`;
+const TEDER_EX = `${TEDER_PAGES}nurit-ceramics-a1b2c3`;
+
+// What Toran and Teder are, said as the website says them (openfrequency-web site.config.json toran.today, the Teder
+// page), with each demo's address in the words as well as on its button (the owner, 2026-11-12: "urls have to be
+// present, in case buttons dont show. also, toran is much more than a bot that answers about prices and quantity,
+// showcase him correctly. same with teder, its for creating a nice community etc").
+const MORE = 'אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב.';
+const LAST = 'זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי".';
+
+/**
+ * The six templates, to be submitted exactly so (docs/whatsapp-templates.md is written from them by
+ * scripts/templates-doc.ts). Meta's rules for their shape (developers.facebook.com/docs/whatsapp/business-management-api/
+ * message-templates and its components page): a body may not start or end with a variable; a URL button takes one
+ * variable, at the end of its address; quick reply buttons and the others are kept in two groups, so the URL button is
+ * first and the quick reply after it (index 1 when sending). {{1}} is the store's name with its "ל" (outreach.ts le():
+ * "לכלי חרס של נורית", "ל־Nike", "בשביל הדס"), so the preposition is always right; {{2}} (and {{3}}) the demos' pages,
+ * as their buttons open them.
+ */
+export const OUTREACH_TEMPLATES: Record<`${Product}_${PitchStage}`, OutreachTemplate> = {
+  toran_first: {
+    ...APPROVED_2026_11_08.toran_first,
+    name: 'toran_pitch_2',
+    body: `היי, כאן OpenFrequency. בנינו {{1}} תורן, ש${TORAN_WHAT}.\n\n${TORAN_DOES}\n\nאפשר לכתוב לו עכשיו מהטלפון, כמו לקוח: {{2}}\n\n${MORE}`,
+    example: [STORE_EX, TORAN_EX],
+    links: 1,
+    previous: APPROVED_2026_11_08.toran_first,
+  },
+  toran_reminder: {
+    ...APPROVED_2026_11_08.toran_reminder,
+    name: 'toran_pitch_reminder_2',
+    body: `היי, יצא לכם לנסות את תורן שבנינו {{1}}? הוא מחכה לכם כאן: {{2}}\n\n${LAST}`,
+    example: [STORE_EX, TORAN_EX],
+    links: 1,
+    previous: APPROVED_2026_11_08.toran_reminder,
+  },
+  teder_first: {
+    ...APPROVED_2026_11_08.teder_first,
+    name: 'teder_pitch_2',
+    body: `היי, כאן OpenFrequency. בנינו את תדר, ש${TEDER_WHAT}.\n\n${TEDER_DOES}\n\nהכנו {{1}} מצגת אחת לדוגמה מהאתר שלכם: {{2}}\n\n${MORE}`,
+    example: [STORE_EX, TEDER_EX],
+    links: 1,
+    previous: APPROVED_2026_11_08.teder_first,
+  },
+  teder_reminder: {
+    ...APPROVED_2026_11_08.teder_reminder,
+    name: 'teder_pitch_reminder_2',
+    body: `היי, יצא לכם להציץ במצגת שהכנו {{1}}? היא מחכה לכם כאן: {{2}}\n\n${LAST}`,
+    example: [STORE_EX, TEDER_EX],
+    links: 1,
+    previous: APPROVED_2026_11_08.teder_reminder,
+  },
+  // One message, both demos: Toran's page and Teder's slideshow, each its own button (Meta: up to two URL buttons in a
+  // template, with quick replies beside them as a group of their own; developers.facebook.com/docs/whatsapp/
+  // business-management-api/message-templates/components, "Buttons"). The quick reply is third (index 2 when sending).
+  both_first: {
+    ...APPROVED_2026_11_08.both_first,
+    name: 'openfrequency_pitch_2',
+    body: `היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות.\n\nתורן ${TORAN_WHAT}. ${TORAN_DOES} אפשר לכתוב לו עכשיו כמו לקוח: {{2}}\n\nתדר ${TEDER_WHAT}. ${TEDER_DOES} הכנו לכם מצגת אחת לדוגמה: {{3}}\n\n${MORE}`,
+    example: [STORE_EX, TORAN_EX, TEDER_EX],
+    links: 2,
+    previous: APPROVED_2026_11_08.both_first,
+  },
+  both_reminder: {
+    ...APPROVED_2026_11_08.both_reminder,
+    name: 'openfrequency_pitch_reminder_2',
+    body: `היי, יצא לכם להציץ במה שהכנו {{1}}?\n\nתורן, שעונה ללקוחות שלכם בכל שעה: {{2}}\nהמצגת שתדר הכין מהאתר שלכם: {{3}}\n\n${LAST}`,
+    example: [STORE_EX, TORAN_EX, TEDER_EX],
+    links: 2,
+    previous: APPROVED_2026_11_08.both_reminder,
+  },
+};
+
 /**
  * Toran's opening, to the people who asked on the website's waitlist to hear when it opens (TORAN-READINESS.md P1-16):
  * they asked, so it may go, once, under every guardrail of a pitch (the way out, the quiet hours, the day's cap, Meta's
@@ -174,8 +252,9 @@ export const TORAN_LAUNCH: OutreachTemplate = {
   stage: 'launch',
   category: 'MARKETING',
   language: 'he',
-  body: 'היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב.',
-  example: ['לכלי חרס של נורית'],
+  body: 'היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה כאן: {{2}}\n\nלא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב.',
+  example: ['לכלי חרס של נורית', 'https://openfrequency.co.il/toran'],
+  links: 1,
   url: { text: 'להצטרף לתורן', base: 'https://openfrequency.co.il/', example: 'toran' },
   stop: STOP_BUTTON,
 };
@@ -184,6 +263,39 @@ export const templateOf = (product: Product, stage: Stage): OutreachTemplate => 
 
 /** The template as the store reads it, filled in. */
 export const outreachFilled = (t: OutreachTemplate, vars: string[] = t.example) => t.body.replace(/\{\{(\d+)\}\}/g, (_, i) => vars[Number(i) - 1] ?? '');
+
+/** The address Toran's opening sends to: the website's Toran page, where sign-up is. */
+export const LAUNCH_PAGE = 'https://openfrequency.co.il/toran';
+
+/** A template's body variables: the store's name with its "ל", then the pages its words carry (its buttons' pages). */
+export const pitchVars = (t: OutreachTemplate, storeName: string, url: string, url2?: string | null): string[] =>
+  [le(storeName), ...(t.links ? [url, ...(t.links > 1 ? [String(url2 || '')] : [])] : [])];
+
+// Which version of a template goes now: the newest once Meta approved it, else the one before (approved already), so
+// the pitches go on while Meta reviews new words. Read from Meta with the account's id (META_WABA_ID), kept ten minutes;
+// without the id, or when Meta does not answer, the one before.
+const approvedNow = new Map<string, { at: number; ok: boolean }>();
+
+export async function liveTemplate(app: App, t: OutreachTemplate, token?: string): Promise<OutreachTemplate> {
+  if (!t.previous) return t;
+  const waba = digits(app.env.META_WABA_ID);
+  if (!waba) return t.previous;
+  const kept = approvedNow.get(t.name);
+  if (kept && now() - kept.at < QUALITY_TTL_MS) return kept.ok ? t : t.previous;
+  let ok = false;
+  try {
+    let tok = token;
+    if (!tok) {
+      const phoneId = await outreachPhoneId(app);
+      tok = phoneId ? await tokenOf(app, phoneId) : '';
+    }
+    ok = Boolean(tok) && (await templateHealth(app.env, app.graph, waba, tok!, t.name))?.status === 'APPROVED';
+  } catch {
+    ok = false;
+  }
+  approvedNow.set(t.name, { at: now(), ok });
+  return ok ? t : t.previous;
+}
 
 // ---- the limits
 
@@ -231,7 +343,10 @@ const no = (why: Why): Outcome => ({ sent: false, why, said: SAID_HE[why] });
 
 const quality = new Map<string, { at: number; ok: boolean; why: string }>();
 /** For the tests: forget what Meta said. */
-export const forgetQuality = () => quality.clear();
+export const forgetQuality = () => {
+  quality.clear();
+  approvedNow.clear();
+};
 
 const goodScore = (s: string) => s === 'GREEN' || s === 'UNKNOWN' || s === '';
 
@@ -300,8 +415,9 @@ export const stoppedNumber = async (app: App, phone: string) => Boolean(await ap
  */
 export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   const phone = digits(p.phone);
-  const t = templateOf(p.product, p.stage);
-  const who = `${t.name} to …${phone.slice(-4)} (${p.product} ${p.ref})`;
+  const newest = templateOf(p.product, p.stage);
+  let t = newest;
+  let who = `${t.name} to …${phone.slice(-4)} (${p.product} ${p.ref})`;
   if (!PHONE.test(phone)) return no('bad_phone');
   // A pitch for Toran ("אפשר לנסות אותו עכשיו") goes only once Toran is sold (ops/signupSwitch.ts; TORAN-READINESS.md
   // P0-6): while the site says "בקרוב", Teder's pitch alone may go, and Toran's or the combined one may not.
@@ -342,6 +458,9 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
     app.log(`[outreach] !!! ${who} NOT SENT: ${masked(cleanLine(e?.message || e, 200))}`);
     return no('no_line');
   }
+  // The newest words once Meta approved them, else the ones before (liveTemplate).
+  t = await liveTemplate(app, newest, token);
+  who = `${t.name} to …${phone.slice(-4)} (${p.product} ${p.ref})`;
   const q = await qualityOk(app, phoneId, token, t);
   if (!q.ok) {
     await qualityStop(app, q.why);
@@ -355,7 +474,8 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   try {
     // The quick reply comes after every URL button: index 1 after one, 2 after the two of the message with both demos.
     const urls = slug2 ? [slug, slug2] : [slug];
-    const sent = await cloudSend(app.env, app.graph, phoneId, token, phone, { template: { name: t.name, sid: t.name, vars: [le(name)], urls, payload: 'OUTREACH_STOP', payloadIndex: urls.length } });
+    const page = p.stage === 'launch' ? LAUNCH_PAGE : p.url;
+    const sent = await cloudSend(app.env, app.graph, phoneId, token, phone, { template: { name: t.name, sid: t.name, vars: pitchVars(t, name, page, p.url2), urls, payload: 'OUTREACH_STOP', payloadIndex: urls.length } });
     await mark(app, claim.id, { state: 'sent', id: sent.id || null });
     await usage(app.db, { kind: 'bsp', backend: 'meta_line', units: 1, usd: sent.usd, apiUsd: sent.usd, tag: 'wa_outreach' }).catch(() => {});
   } catch (e: any) {
@@ -509,7 +629,8 @@ export function outreachTemplateDoc(): string {
         t.url2
           ? `| Buttons | two URL buttons: "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}), and "${t.url2.text}", to ${t.url2.base}{{1}} (sample ${t.url2.example}); then a quick reply, "${t.stop}" |`
           : `| Buttons | a URL button, "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}); then a quick reply, "${t.stop}" |`,
-        `| Variables (sample) | {{1}} = ${t.example[0]} |`,
+        `| Variables (sample) | ${t.example.map((e, i) => `{{${i + 1}}} = ${e}`).join('; ')} |`,
+        ...(t.previous ? [`| Replaces | ${t.previous.name}, sent until Meta approves this one |`] : []),
         '',
         'The body, exactly:',
         '',

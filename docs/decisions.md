@@ -1381,3 +1381,24 @@ by its address and discovery was run on Toran's settings page, and a row said no
 
 **Tested** (test/leads-admin.test.ts, test/contracts.test.ts; Teder's test/leads-internal.test.js; accounts'
 test/leads.test.js and test/contracts.test.js).
+
+## 2026-11-12: a pitch writes its demos' addresses out, and says what Toran and Teder really do
+
+**What happened.** The owner read the message with both demos as it goes to a store: "urls have to be present, in
+case buttons dont show. also, toran is much more than a bot that answers about prices and quantity, showcase him
+correctly. same with teder, its for creating a nice community etc".
+
+**Decision.**
+- The six pitch templates have new words (src/pitchWords.ts, said as the website says them): Toran answers on
+  WhatsApp, Instagram, Messenger, email and the site's chat at any hour, knows the products, prices, stock and
+  policies, finds a customer's order, reminds about an abandoned cart whoever agreed, passes on what it does not know
+  and remembers the answer; Teder writes and designs slideshows for TikTok, Instagram and Facebook on the store's field,
+  posts each only after approval, and grows an audience around the store. Each demo's address is in the words as well
+  as on its button ({{2}}, {{3}}).
+- They are new templates (`*_2`), since an approved one cannot change words without a new review. Until Meta approves
+  each, the one it replaces goes (ops/outreach.ts `liveTemplate`, asked by name with META_WABA_ID, kept ten minutes),
+  so no pitch waits for the review. The lead page shows the words that go now.
+- The messages copied by hand say the same words, from the same file.
+
+**Tested** (test/outreach.test.ts, including the words before going while the new ones are reviewed; test/both.test.ts,
+test/rules.test.ts, test/web.test.ts).

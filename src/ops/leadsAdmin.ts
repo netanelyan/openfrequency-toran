@@ -20,7 +20,7 @@ import { internalRefusal } from './internal.ts';
 import { later, markLost, markReminded, markReplied, markSent, OpsError, reopen, sendNow } from './actions.ts';
 import { sendBoth, sendTeder } from './both.ts';
 import { bothFirst, bothReminder, tederColdFirst, tederReminder } from './messages.ts';
-import { outreachFilled, outreachLive, templateOf } from './outreach.ts';
+import { liveTemplate, outreachFilled, outreachLive, pitchVars, templateOf } from './outreach.ts';
 import { tederBuild, tederDemoAct, tederList, tederMark, tederMove, tederState, type TederDemoAct, type TederLead, type TederMove } from './tederLeads.ts';
 import { LOST_REASONS } from './messages.ts';
 
@@ -323,11 +323,16 @@ export async function leadOne(app: App, id: number) {
     teder: { first: () => tederColdFirst({ storeName: name, url: tederUrl }), reminder: () => tederReminder({ storeName: name, url: tederUrl }) },
     both: { first: () => bothFirst({ storeName: name, toranUrl, tederUrl }), reminder: () => bothReminder({ storeName: name, toranUrl, tederUrl }) },
   };
-  const text = (p: Product) => {
+  // From our number, the words that go now: the newest once Meta approved them, else the ones before (liveTemplate),
+  // with each demo's address in them where the words carry it.
+  const text = async (p: Product) => {
     const at = stages[p];
-    return !at ? null : pitchable ? outreachFilled(templateOf(p, at), [le(name)]) : copied[p][at]();
+    if (!at) return null;
+    if (!pitchable) return copied[p][at]();
+    const t = await liveTemplate(app, templateOf(p, at));
+    return outreachFilled(t, pitchVars(t, name, p === 'teder' ? tederUrl : toranUrl, p === 'both' ? tederUrl : null));
   };
-  const texts = { bothText: text('both'), toranText: text('toran'), tederText: text('teder') };
+  const texts = { bothText: await text('both'), toranText: await text('toran'), tederText: await text('teder') };
   // The chat or the mail it goes by, with no text in it: accounts writes in the message shown. A mail's subject is
   // what we made for them, whichever demo it is.
   const target = contactTarget(s);

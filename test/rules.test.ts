@@ -70,7 +70,7 @@ test('nothing sends outreach but the pitches to leads: messages and mail go out 
   const pitch = readFileSync(path.join(ROOT, 'src/ops/outreach.ts'), 'utf8');
   assert.equal((pitch.match(/cloudSend\(/g) || []).length, 1);
   // One page's button, or two for the message with both demos (Toran's, then Teder's), and the way out after them.
-  assert.match(pitch, /const urls = slug2 \? \[slug, slug2\] : \[slug\];\n\s*const sent = await cloudSend\(app\.env, app\.graph, phoneId, token, phone, \{ template: \{ name: t\.name, sid: t\.name, vars: \[le\(name\)\], urls, payload: 'OUTREACH_STOP', payloadIndex: urls\.length \} \}\)/);
+  assert.match(pitch, /const urls = slug2 \? \[slug, slug2\] : \[slug\];\n\s*const page = p\.stage === 'launch' \? LAUNCH_PAGE : p\.url;\n\s*const sent = await cloudSend\(app\.env, app\.graph, phoneId, token, phone, \{ template: \{ name: t\.name, sid: t\.name, vars: pitchVars\(t, name, page, p\.url2\), urls, payload: 'OUTREACH_STOP', payloadIndex: urls\.length \} \}\)/);
   const at = pitch.indexOf('cloudSend(app.env');
   for (const rule of ['stoppedNumber(app, phone)', "SELECT 1 FROM events WHERE ${same}", 'customerQuiet(now())', 'dailyCap(app.env)', 'qualityOk(app, phoneId, token, t)']) assert.ok(pitch.indexOf(rule) > 0 && pitch.indexOf(rule) < at, `${rule} is checked before the pitch is sent`);
 });

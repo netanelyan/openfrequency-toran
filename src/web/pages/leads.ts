@@ -20,7 +20,7 @@ import { CHANNEL_HE, enabledChannels, messagingSql, storeAddress } from '../../c
 import { ago, csrfField, esc, icon, layout, PLATFORM_HE, postButton, scoreNum, stamp, STATUS_HE, STATUS_ORDER, statusChip, storeBadge, vbar, tokenNum } from '../ui.ts';
 import { INGESTIBLE_HE, canIngest } from '../../ingest/catalogue.ts';
 import { mailDomainPanel } from './mailDomain.ts';
-import { outreachFilled, outreachLive, templateOf } from '../../ops/outreach.ts';
+import { liveTemplate, outreachFilled, outreachLive, pitchVars, templateOf } from '../../ops/outreach.ts';
 import { OpsError, sendNow } from '../../ops/actions.ts';
 import { sendBoth, sendTeder } from '../../ops/both.ts';
 import { tederBuild, tederState } from '../../ops/tederLeads.ts';
@@ -135,13 +135,14 @@ async function leadPage(app: App, r: DashReq, id: number) {
 
   const parts = (s.score_breakdown || []).map((f: any) => `<li class="${f.points < 0 ? 'neg' : ''}"><span>${esc(FACTOR_HE[f.factor] || f.factor)}</span>${f.max ? vbar(f.points, f.max) : '<span></span>'}<b>${f.points}${f.max ? `/${f.max}` : ''}</b><span class="ev" dir="auto">${esc(f.evidence)}</span></li>`).join('');
 
-  const sendBox = () => {
+  const sendBox = async () => {
     if (s.taken_down_at) return '<p class="muted m0">העמוד הוסר, ולא כותבים להם יותר.</p>';
     if (!s.page_built_at) return `<p class="muted m0">עוד אין דף. ${canIngest(s.platform) ? 'אפשר לבנות אותו מכאן.' : `עם ${esc(PLATFORM_HE[s.platform] || s.platform)} זה עוד לא עובד, רק עם ${INGESTIBLE_HE}.`}</p>`;
     if (!s.approved_at) return `<p class="muted m0">הדף מחכה לבדיקה שלך לפני שאפשר לשלוח אותו. <a href="/lead/${id}/review">לבדיקה</a></p>`;
     if (!s.sent_at && pitchable && tederFirst) {
       // Both demos are up and neither went: one message with both is the main action; each alone stays beside it.
-      const text = outreachFilled(templateOf('both', 'first'), [le(name)]);
+      const t = await liveTemplate(app, templateOf('both', 'first'));
+      const text = outreachFilled(t, pitchVars(t, name, url!, teder!.demo!.pageUrl));
       return `<p class="m0"><b>שני הדמואים מוכנים: תורן ותדר.</b></p>
 <blockquote class="q mt8">${esc(text)}</blockquote>
 <p class="small muted mt8 m0">בהודעה שני כפתורים, "לנסות את תורן" ו"לראות את המצגת", וכפתור "הסירו אותי".</p>
@@ -201,7 +202,7 @@ ${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד 
 ${waBanner(await waAccountOf(app, id), id)}
 <div class="cols">
   <div class="grid12">
-    <section class="panel"><header><h2>שליחה</h2></header>${sendBox()}</section>
+    <section class="panel"><header><h2>שליחה</h2></header>${await sendBox()}</section>
     ${tederPanel()}
     <section class="panel"><header><h2>הציון</h2><span class="end">${scoreNum(s.score, s.qualified)}</span></header><ul class="parts">${parts}</ul></section>
     ${mailOn ? channelsPanel(r, id, mailAccount, storeAddress(s, app.mail!.domain), automatedMail, waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env)), social, mailAccount?.status === 'active' && app.mail?.domains ? `<h3 class="small mt16">לענות מכתובת של החנות</h3>${await mailDomainPanel(app, r, id, mailAccount.external_id)}` : '') : `<section class="panel" id="channels"><header><h2>ערוצים של החנות</h2></header><dl class="kv"><dt>וואטסאפ</dt><dd>${waLine(await waAccountOf(app, id).then((a) => (a && a.status !== 'off' ? a : null)), s, storeConnectReady(app.env))}</dd>${social}</dl></section>`}

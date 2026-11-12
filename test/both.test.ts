@@ -115,7 +115,7 @@ test("the lead page asks Teder about the same store; with nothing there, Teder's
   }
 });
 
-test('both demos up and neither sent: one message with both is the main action; it goes once, as openfrequency_pitch, and both are marked', async () => {
+test('both demos up and neither sent: one message with both is the main action; it goes once, as openfrequency_pitch_2, and both are marked', async () => {
   const { s, teder, meta, id, post } = await shop();
   try {
     teder.state.lead = route('/internal/leads/state').answers[0].body.lead;
@@ -126,7 +126,7 @@ test('both demos up and neither sent: one message with both is the main action; 
     assert.equal(r.status, 200, await r.clone().text());
     assert.match((await r.json()).message, /הודעה אחת עם שני הדמואים[^]*גם תדר סימן/);
     assert.equal(meta.sends.length, 1);
-    assert.equal(meta.sends[0].template.name, 'openfrequency_pitch');
+    assert.equal(meta.sends[0].template.name, 'openfrequency_pitch_2');
     assert.deepEqual(meta.sends[0].template.components.filter((c: any) => c.sub_type === 'url').map((c: any) => c.parameters[0].text), [(await s.app.db.one<any>('SELECT slug FROM stores WHERE id = $1', [id])).slug, 'nurit-ceramics-a1b2c3']);
     assert.ok((await s.app.db.one<any>('SELECT sent_at FROM stores WHERE id = $1', [id])).sent_at, "Toran's lead marked sent");
     assert.deepEqual(teder.state.marked, [{ toran: String(id), domain: (await s.app.db.one<any>('SELECT domain FROM stores WHERE id = $1', [id])).domain, stage: 'first', by: 'operator' }]);
@@ -142,7 +142,7 @@ test('both demos up and neither sent: one message with both is the main action; 
   }
 });
 
-test("Teder's message alone, after Toran's went: from our number as teder_pitch, Teder marked; Teder down says so and sends nothing", async () => {
+test("Teder's message alone, after Toran's went: from our number as teder_pitch_2, Teder marked; Teder down says so and sends nothing", async () => {
   const { s, teder, meta, id, post } = await shop();
   try {
     await s.app.db.query("UPDATE stores SET sent_at = now(), status = 'sent', followup_due_at = now() + interval '4 days' WHERE id = $1", [id]);
@@ -152,7 +152,7 @@ test("Teder's message alone, after Toran's went: from our number as teder_pitch,
     assert.match(page, new RegExp(`action="/lead/${id}/teder-send"[^]*לשלוח את תדר בוואטסאפ מהמספר שלנו`));
     const r = await post(`/lead/${id}/teder-send`);
     assert.equal(r.status, 200, await r.clone().text());
-    assert.equal(meta.sends.at(-1).template.name, 'teder_pitch');
+    assert.equal(meta.sends.at(-1).template.name, 'teder_pitch_2');
     assert.equal(teder.state.marked.at(-1).stage, 'first');
     await teder.close();
     const down = await post(`/lead/${id}/teder-send`);

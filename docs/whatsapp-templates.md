@@ -10,10 +10,13 @@ after the person last wrote to us. Four sets:
 - **The payment reminder, `payment_reminder`**: accounts' reminders to pay for the new month, to a workspace owner's
   number accounts verified and to the number a workspace last paid from, from `src/billing/remind.ts`. Submitted, in
   review at Meta since 2026-11-04 (STATUS.md): see its section.
-- **The pitches to leads, `toran_pitch`, `toran_pitch_reminder`, `teder_pitch`, `teder_pitch_reminder`**, since
-  2026-11-08: the first message to a lead and its one reminder, from `src/ops/outreach.ts`. Approved
-  on 2026-11-08, with the combined openfrequency_pitch two; toran_launch, Toran's opening to its waitlist, is not
-  submitted yet: see their section.
+- **The pitches to leads, `toran_pitch_2`, `toran_pitch_reminder_2`, `teder_pitch_2`, `teder_pitch_reminder_2`**, and
+  the combined `openfrequency_pitch_2` two: the first message to a lead and its one reminder, from
+  `src/ops/outreach.ts`. Written 2026-11-12 with each demo's address in the words as well as on its button, and Toran
+  and Teder said as the website says them (the owner: "urls have to be present, in case buttons dont show. also, toran is
+  much more than a bot that answers about prices and quantity"). Each replaces the one without the `_2`, approved on
+  2026-11-08, which goes until Meta approves the new one (`liveTemplate`, asked by name with META_WABA_ID).
+  toran_launch, Toran's opening to its waitlist, is not submitted yet: see their section.
 - **A customer waits, `toran_customer_waiting`**: to a store owner's own number, when a customer of their store waits
   for their answer, from `src/owners/notify.ts`. **Not submitted yet**: written 2026-11-12 for the owner to submit; see
   its section.
@@ -139,180 +142,199 @@ all four were APPROVED the same day. The combined two, the same way later that d
 29610503958636110 and openfrequency_pitch_reminder 1601974991130160, PENDING, MARKETING (Meta took the two URL buttons
 with the quick reply after them).
 
-### toran_pitch
+### toran_pitch_2
 
 | | |
 |---|---|
-| Name | toran_pitch |
+| Name | toran_pitch_2 |
 | Category | Marketing |
 | Language | Hebrew (he) |
 | Header, footer | none |
 | Buttons | a URL button, "לנסות את תורן", to https://toran.openfrequency.co.il/s/{{1}} (sample nurit-ceramics); then a quick reply, "הסירו אותי" |
-| Variables (sample) | {{1}} = לכלי חרס של נורית |
+| Variables (sample) | {{1}} = לכלי חרס של נורית; {{2}} = https://toran.openfrequency.co.il/s/nurit-ceramics |
+| Replaces | toran_pitch, sent until Meta approves this one |
 
 The body, exactly:
 
 ```
-היי, כאן OpenFrequency. בנינו {{1}} תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם. אפשר לנסות אותו עכשיו מהטלפון, בכפתור כאן למטה.
+היי, כאן OpenFrequency. בנינו {{1}} תורן, שעונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה.
+
+הוא מכיר את המוצרים, המחירים, המלאי והמדיניות מהאתר שלכם, בודק ללקוח איפה ההזמנה שלו, ושולח תזכורת על עגלה נטושה למי שהסכים לקבל. מה שהוא לא יודע עובר אליכם, ומה שאתם עונים הוא זוכר לפעם הבאה.
+
+אפשר לכתוב לו עכשיו מהטלפון, כמו לקוח: {{2}}
 
 אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב.
 ```
 
-As the store reads it: היי, כאן OpenFrequency. בנינו לכלי חרס של נורית תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם. אפשר לנסות אותו עכשיו מהטלפון, בכפתור כאן למטה. / אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב. [לנסות את תורן] [הסירו אותי]
+As the store reads it: היי, כאן OpenFrequency. בנינו לכלי חרס של נורית תורן, שעונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה. / הוא מכיר את המוצרים, המחירים, המלאי והמדיניות מהאתר שלכם, בודק ללקוח איפה ההזמנה שלו, ושולח תזכורת על עגלה נטושה למי שהסכים לקבל. מה שהוא לא יודע עובר אליכם, ומה שאתם עונים הוא זוכר לפעם הבאה. / אפשר לכתוב לו עכשיו מהטלפון, כמו לקוח: https://toran.openfrequency.co.il/s/nurit-ceramics / אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב. [לנסות את תורן] [הסירו אותי]
 
 Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
 
 ```sh
 curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
-  --data '{"name":"toran_pitch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. בנינו {{1}} תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם. אפשר לנסות אותו עכשיו מהטלפון, בכפתור כאן למטה.\n\nאם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+  --data '{"name":"toran_pitch_2","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. בנינו {{1}} תורן, שעונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה.\n\nהוא מכיר את המוצרים, המחירים, המלאי והמדיניות מהאתר שלכם, בודק ללקוח איפה ההזמנה שלו, ושולח תזכורת על עגלה נטושה למי שהסכים לקבל. מה שהוא לא יודע עובר אליכם, ומה שאתם עונים הוא זוכר לפעם הבאה.\n\nאפשר לכתוב לו עכשיו מהטלפון, כמו לקוח: {{2}}\n\nאם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית","https://toran.openfrequency.co.il/s/nurit-ceramics"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
-### toran_pitch_reminder
+### toran_pitch_reminder_2
 
 | | |
 |---|---|
-| Name | toran_pitch_reminder |
+| Name | toran_pitch_reminder_2 |
 | Category | Marketing |
 | Language | Hebrew (he) |
 | Header, footer | none |
 | Buttons | a URL button, "לנסות את תורן", to https://toran.openfrequency.co.il/s/{{1}} (sample nurit-ceramics); then a quick reply, "הסירו אותי" |
-| Variables (sample) | {{1}} = לכלי חרס של נורית |
+| Variables (sample) | {{1}} = לכלי חרס של נורית; {{2}} = https://toran.openfrequency.co.il/s/nurit-ceramics |
+| Replaces | toran_pitch_reminder, sent until Meta approves this one |
 
 The body, exactly:
 
 ```
-היי, יצא לכם להציץ בתורן שהכנו {{1}}? הוא מחכה לכם בכפתור כאן למטה.
+היי, יצא לכם לנסות את תורן שבנינו {{1}}? הוא מחכה לכם כאן: {{2}}
 
 זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי".
 ```
 
-As the store reads it: היי, יצא לכם להציץ בתורן שהכנו לכלי חרס של נורית? הוא מחכה לכם בכפתור כאן למטה. / זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי". [לנסות את תורן] [הסירו אותי]
+As the store reads it: היי, יצא לכם לנסות את תורן שבנינו לכלי חרס של נורית? הוא מחכה לכם כאן: https://toran.openfrequency.co.il/s/nurit-ceramics / זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי". [לנסות את תורן] [הסירו אותי]
 
 Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
 
 ```sh
 curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
-  --data '{"name":"toran_pitch_reminder","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ בתורן שהכנו {{1}}? הוא מחכה לכם בכפתור כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+  --data '{"name":"toran_pitch_reminder_2","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם לנסות את תורן שבנינו {{1}}? הוא מחכה לכם כאן: {{2}}\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית","https://toran.openfrequency.co.il/s/nurit-ceramics"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
-### teder_pitch
+### teder_pitch_2
 
 | | |
 |---|---|
-| Name | teder_pitch |
+| Name | teder_pitch_2 |
 | Category | Marketing |
 | Language | Hebrew (he) |
 | Header, footer | none |
 | Buttons | a URL button, "לראות את המצגת", to https://teder.openfrequency.co.il/s/{{1}} (sample nurit-ceramics-a1b2c3); then a quick reply, "הסירו אותי" |
-| Variables (sample) | {{1}} = לכלי חרס של נורית |
+| Variables (sample) | {{1}} = לכלי חרס של נורית; {{2}} = https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3 |
+| Replaces | teder_pitch, sent until Meta approves this one |
 
 The body, exactly:
 
 ```
-היי, כאן OpenFrequency. בנינו את תדר, שמכין לחנויות אונליין מצגות בעברית לטיקטוק ולאינסטגרם. הוא קורא את האתר של החנות, וכותב ומעצב מצגות על נושאים מהתחום שלה. כל מצגת מחכה לאישור שלכם לפני שהיא עולה.
+היי, כאן OpenFrequency. בנינו את תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק, לאינסטגרם ולפייסבוק, על נושאים מהתחום שלהן, ומפרסם כל מצגת רק אחרי שאישרתם אותה.
 
-הכנו {{1}} מצגת אחת לדוגמה, כדי שתראו איך זה ייראה אצלכם. היא בכפתור כאן למטה.
+מי שעוקב אחריכם רואה אתכם כמה פעמים בשבוע, וכל מצגת נגמרת בשקף ששולח לחנות. כך גדל סביב החנות קהל שמכיר אתכם.
+
+הכנו {{1}} מצגת אחת לדוגמה מהאתר שלכם: {{2}}
 
 אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב.
 ```
 
-As the store reads it: היי, כאן OpenFrequency. בנינו את תדר, שמכין לחנויות אונליין מצגות בעברית לטיקטוק ולאינסטגרם. הוא קורא את האתר של החנות, וכותב ומעצב מצגות על נושאים מהתחום שלה. כל מצגת מחכה לאישור שלכם לפני שהיא עולה. / הכנו לכלי חרס של נורית מצגת אחת לדוגמה, כדי שתראו איך זה ייראה אצלכם. היא בכפתור כאן למטה. / אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב. [לראות את המצגת] [הסירו אותי]
+As the store reads it: היי, כאן OpenFrequency. בנינו את תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק, לאינסטגרם ולפייסבוק, על נושאים מהתחום שלהן, ומפרסם כל מצגת רק אחרי שאישרתם אותה. / מי שעוקב אחריכם רואה אתכם כמה פעמים בשבוע, וכל מצגת נגמרת בשקף ששולח לחנות. כך גדל סביב החנות קהל שמכיר אתכם. / הכנו לכלי חרס של נורית מצגת אחת לדוגמה מהאתר שלכם: https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3 / אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב. [לראות את המצגת] [הסירו אותי]
 
 Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
 
 ```sh
 curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
-  --data '{"name":"teder_pitch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. בנינו את תדר, שמכין לחנויות אונליין מצגות בעברית לטיקטוק ולאינסטגרם. הוא קורא את האתר של החנות, וכותב ומעצב מצגות על נושאים מהתחום שלה. כל מצגת מחכה לאישור שלכם לפני שהיא עולה.\n\nהכנו {{1}} מצגת אחת לדוגמה, כדי שתראו איך זה ייראה אצלכם. היא בכפתור כאן למטה.\n\nאם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+  --data '{"name":"teder_pitch_2","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. בנינו את תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק, לאינסטגרם ולפייסבוק, על נושאים מהתחום שלהן, ומפרסם כל מצגת רק אחרי שאישרתם אותה.\n\nמי שעוקב אחריכם רואה אתכם כמה פעמים בשבוע, וכל מצגת נגמרת בשקף ששולח לחנות. כך גדל סביב החנות קהל שמכיר אתכם.\n\nהכנו {{1}} מצגת אחת לדוגמה מהאתר שלכם: {{2}}\n\nאם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית","https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
-### teder_pitch_reminder
+### teder_pitch_reminder_2
 
 | | |
 |---|---|
-| Name | teder_pitch_reminder |
+| Name | teder_pitch_reminder_2 |
 | Category | Marketing |
 | Language | Hebrew (he) |
 | Header, footer | none |
 | Buttons | a URL button, "לראות את המצגת", to https://teder.openfrequency.co.il/s/{{1}} (sample nurit-ceramics-a1b2c3); then a quick reply, "הסירו אותי" |
-| Variables (sample) | {{1}} = לכלי חרס של נורית |
+| Variables (sample) | {{1}} = לכלי חרס של נורית; {{2}} = https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3 |
+| Replaces | teder_pitch_reminder, sent until Meta approves this one |
 
 The body, exactly:
 
 ```
-היי, יצא לכם להציץ במצגת שהכנו {{1}}? היא מחכה לכם בכפתור כאן למטה.
+היי, יצא לכם להציץ במצגת שהכנו {{1}}? היא מחכה לכם כאן: {{2}}
 
 זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי".
 ```
 
-As the store reads it: היי, יצא לכם להציץ במצגת שהכנו לכלי חרס של נורית? היא מחכה לכם בכפתור כאן למטה. / זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי". [לראות את המצגת] [הסירו אותי]
+As the store reads it: היי, יצא לכם להציץ במצגת שהכנו לכלי חרס של נורית? היא מחכה לכם כאן: https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3 / זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי". [לראות את המצגת] [הסירו אותי]
 
 Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
 
 ```sh
 curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
-  --data '{"name":"teder_pitch_reminder","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ במצגת שהכנו {{1}}? היא מחכה לכם בכפתור כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+  --data '{"name":"teder_pitch_reminder_2","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ במצגת שהכנו {{1}}? היא מחכה לכם כאן: {{2}}\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית","https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
-### openfrequency_pitch
+### openfrequency_pitch_2
 
 | | |
 |---|---|
-| Name | openfrequency_pitch |
+| Name | openfrequency_pitch_2 |
 | Category | Marketing |
 | Language | Hebrew (he) |
 | Header, footer | none |
 | Buttons | two URL buttons: "לנסות את תורן", to https://toran.openfrequency.co.il/s/{{1}} (sample nurit-ceramics), and "לראות את המצגת", to https://teder.openfrequency.co.il/s/{{1}} (sample nurit-ceramics-a1b2c3); then a quick reply, "הסירו אותי" |
-| Variables (sample) | {{1}} = לכלי חרס של נורית |
+| Variables (sample) | {{1}} = לכלי חרס של נורית; {{2}} = https://toran.openfrequency.co.il/s/nurit-ceramics; {{3}} = https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3 |
+| Replaces | openfrequency_pitch, sent until Meta approves this one |
 
 The body, exactly:
 
 ```
-היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם. שניהם בכפתורים כאן למטה.
+היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות.
+
+תורן עונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה. הוא מכיר את המוצרים, המחירים, המלאי והמדיניות מהאתר שלכם, בודק ללקוח איפה ההזמנה שלו, ושולח תזכורת על עגלה נטושה למי שהסכים לקבל. מה שהוא לא יודע עובר אליכם, ומה שאתם עונים הוא זוכר לפעם הבאה. אפשר לכתוב לו עכשיו כמו לקוח: {{2}}
+
+תדר כותב ומעצב לחנויות מצגות בעברית לטיקטוק, לאינסטגרם ולפייסבוק, על נושאים מהתחום שלהן, ומפרסם כל מצגת רק אחרי שאישרתם אותה. מי שעוקב אחריכם רואה אתכם כמה פעמים בשבוע, וכל מצגת נגמרת בשקף ששולח לחנות. כך גדל סביב החנות קהל שמכיר אתכם. הכנו לכם מצגת אחת לדוגמה: {{3}}
 
 אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב.
 ```
 
-As the store reads it: היי, כאן OpenFrequency. הכנו לכלי חרס של נורית שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם. שניהם בכפתורים כאן למטה. / אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב. [לנסות את תורן] [לראות את המצגת] [הסירו אותי]
+As the store reads it: היי, כאן OpenFrequency. הכנו לכלי חרס של נורית שני דברים לנסות. / תורן עונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה. הוא מכיר את המוצרים, המחירים, המלאי והמדיניות מהאתר שלכם, בודק ללקוח איפה ההזמנה שלו, ושולח תזכורת על עגלה נטושה למי שהסכים לקבל. מה שהוא לא יודע עובר אליכם, ומה שאתם עונים הוא זוכר לפעם הבאה. אפשר לכתוב לו עכשיו כמו לקוח: https://toran.openfrequency.co.il/s/nurit-ceramics / תדר כותב ומעצב לחנויות מצגות בעברית לטיקטוק, לאינסטגרם ולפייסבוק, על נושאים מהתחום שלהן, ומפרסם כל מצגת רק אחרי שאישרתם אותה. מי שעוקב אחריכם רואה אתכם כמה פעמים בשבוע, וכל מצגת נגמרת בשקף ששולח לחנות. כך גדל סביב החנות קהל שמכיר אתכם. הכנו לכם מצגת אחת לדוגמה: https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3 / אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב. [לנסות את תורן] [לראות את המצגת] [הסירו אותי]
 
 Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
 
 ```sh
 curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
-  --data '{"name":"openfrequency_pitch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות: תורן, שעונה ללקוחות שלכם בוואטסאפ על מחירים ומלאי לפי מה שכתוב באתר שלכם, ומצגת לדוגמה של תדר, שכותב ומעצב לחנויות מצגות בעברית לטיקטוק ולאינסטגרם. שניהם בכפתורים כאן למטה.\n\nאם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+  --data '{"name":"openfrequency_pitch_2","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות.\n\nתורן עונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה. הוא מכיר את המוצרים, המחירים, המלאי והמדיניות מהאתר שלכם, בודק ללקוח איפה ההזמנה שלו, ושולח תזכורת על עגלה נטושה למי שהסכים לקבל. מה שהוא לא יודע עובר אליכם, ומה שאתם עונים הוא זוכר לפעם הבאה. אפשר לכתוב לו עכשיו כמו לקוח: {{2}}\n\nתדר כותב ומעצב לחנויות מצגות בעברית לטיקטוק, לאינסטגרם ולפייסבוק, על נושאים מהתחום שלהן, ומפרסם כל מצגת רק אחרי שאישרתם אותה. מי שעוקב אחריכם רואה אתכם כמה פעמים בשבוע, וכל מצגת נגמרת בשקף ששולח לחנות. כך גדל סביב החנות קהל שמכיר אתכם. הכנו לכם מצגת אחת לדוגמה: {{3}}\n\nאם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית","https://toran.openfrequency.co.il/s/nurit-ceramics","https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
-### openfrequency_pitch_reminder
+### openfrequency_pitch_reminder_2
 
 | | |
 |---|---|
-| Name | openfrequency_pitch_reminder |
+| Name | openfrequency_pitch_reminder_2 |
 | Category | Marketing |
 | Language | Hebrew (he) |
 | Header, footer | none |
 | Buttons | two URL buttons: "לנסות את תורן", to https://toran.openfrequency.co.il/s/{{1}} (sample nurit-ceramics), and "לראות את המצגת", to https://teder.openfrequency.co.il/s/{{1}} (sample nurit-ceramics-a1b2c3); then a quick reply, "הסירו אותי" |
-| Variables (sample) | {{1}} = לכלי חרס של נורית |
+| Variables (sample) | {{1}} = לכלי חרס של נורית; {{2}} = https://toran.openfrequency.co.il/s/nurit-ceramics; {{3}} = https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3 |
+| Replaces | openfrequency_pitch_reminder, sent until Meta approves this one |
 
 The body, exactly:
 
 ```
-היי, יצא לכם להציץ במה שהכנו {{1}}? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה.
+היי, יצא לכם להציץ במה שהכנו {{1}}?
+
+תורן, שעונה ללקוחות שלכם בכל שעה: {{2}}
+המצגת שתדר הכין מהאתר שלכם: {{3}}
 
 זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי".
 ```
 
-As the store reads it: היי, יצא לכם להציץ במה שהכנו לכלי חרס של נורית? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה. / זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי". [לנסות את תורן] [לראות את המצגת] [הסירו אותי]
+As the store reads it: היי, יצא לכם להציץ במה שהכנו לכלי חרס של נורית? / תורן, שעונה ללקוחות שלכם בכל שעה: https://toran.openfrequency.co.il/s/nurit-ceramics / המצגת שתדר הכין מהאתר שלכם: https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3 / זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי". [לנסות את תורן] [לראות את המצגת] [הסירו אותי]
 
 Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
 
 ```sh
 curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
-  --data '{"name":"openfrequency_pitch_reminder","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ במה שהכנו {{1}}? תורן והמצגת של תדר מחכים לכם בכפתורים כאן למטה.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+  --data '{"name":"openfrequency_pitch_reminder_2","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, יצא לכם להציץ במה שהכנו {{1}}?\n\nתורן, שעונה ללקוחות שלכם בכל שעה: {{2}}\nהמצגת שתדר הכין מהאתר שלכם: {{3}}\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על \"הסירו אותי\".","example":{"body_text":[["לכלי חרס של נורית","https://toran.openfrequency.co.il/s/nurit-ceramics","https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"לנסות את תורן","url":"https://toran.openfrequency.co.il/s/{{1}}","example":["https://toran.openfrequency.co.il/s/nurit-ceramics"]},{"type":"URL","text":"לראות את המצגת","url":"https://teder.openfrequency.co.il/s/{{1}}","example":["https://teder.openfrequency.co.il/s/nurit-ceramics-a1b2c3"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
 ### toran_launch
@@ -324,24 +346,26 @@ curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templat
 | Language | Hebrew (he) |
 | Header, footer | none |
 | Buttons | a URL button, "להצטרף לתורן", to https://openfrequency.co.il/{{1}} (sample toran); then a quick reply, "הסירו אותי" |
-| Variables (sample) | {{1}} = לכלי חרס של נורית |
+| Variables (sample) | {{1}} = לכלי חרס של נורית; {{2}} = https://openfrequency.co.il/toran |
 
 The body, exactly:
 
 ```
-היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.
+היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.
 
-המחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב.
+המחירים וההרשמה כאן: {{2}}
+
+לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב.
 ```
 
-As the store reads it: היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו לכלי חרס של נורית: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע. / המחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב. [להצטרף לתורן] [הסירו אותי]
+As the store reads it: היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו לכלי חרס של נורית: הוא עונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע. / המחירים וההרשמה כאן: https://openfrequency.co.il/toran / לא רלוונטי יותר? לוחצים על "הסירו אותי" ולא נכתוב שוב. [להצטרף לתורן] [הסירו אותי]
 
 Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
 
 ```sh
 curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
   -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
-  --data '{"name":"toran_launch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, במייל ובאתר, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה בכפתור כאן למטה. לא רלוונטי יותר? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"להצטרף לתורן","url":"https://openfrequency.co.il/{{1}}","example":["https://openfrequency.co.il/toran"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
+  --data '{"name":"toran_launch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה כאן: {{2}}\n\nלא רלוונטי יותר? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית","https://openfrequency.co.il/toran"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"להצטרף לתורן","url":"https://openfrequency.co.il/{{1}}","example":["https://openfrequency.co.il/toran"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
 ## A customer waits (to the store's owner)
