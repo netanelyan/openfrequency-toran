@@ -1500,3 +1500,32 @@ the one reminder the owner chose).
 call is added, and the voice-note line costs none.
 
 **Tested** (test/lead-reply.test.ts, with a model that records what it was asked).
+
+## 2026-11-13: Toran says hello like a person, and never talks about the conversation
+
+**Why.** The owner, with a screenshot of our support answering a store's WhatsApp Business greeting ("תודה שפניתם... ספרו לנו
+במה אפשר לעזור") with "כאן תורן, הבוט של OpenFrequency. זה אותו תורן שבנינו ל<החנות>, ועכשיו אני
+עונה לכם כמו שאענה ללקוחות שלכם." and then "זו הודעה אוטומטית מהחנות, אז אנחנו ממשיכים מההודעה שלנו. בנינו ל<החנות>
+את תורן...": "this should be more human. overall, toran should sound like a human". The bot still says it is a bot (the
+owner, 2026-11-01: "the person has to know that he speaks with a bot"), in the words a person would use.
+
+**What changed.**
+- The opening line (agent/intro.ts botLine): "היי, אני <name>, הבוט של <store>." (was "כאן <name>, הבוט של <store>."),
+  after a person "זה שוב <name>, הבוט של <store>.", in English "Hi, I'm <name>, <store>'s bot." The owner line's
+  DISCLOSURE and the payment reminders' HELLO say it the same way. The demo's welcome and the line shown on "מה תורן
+  יודע" follow botLine.
+- A store we wrote to (leadLine): "היי, אני תורן, הבוט שבנינו ל<החנות>. ככה אענה גם ללקוחות שלכם." Teder's slideshow
+  alone: "היי, אני תורן, הבוט של OpenFrequency. אפשר לשאול אותי על המצגת שתדר הכין לכם."
+- The company prompt's "# A store we wrote to": Toran speaks of the Toran at their link as itself ("אפשר לשאול אותי
+  כמו לקוח"); their business's automatic reply (a greeting or away message) is answered to the person who reads the chat
+  later, in one or two short sentences with the next step, never saying it was automatic; the examples in the first
+  person, one for an automatic greeting.
+- Both prompts' voice: talk about them and what they asked, never about the conversation (what you are doing or why,
+  what kind of message it was, the app or its context). The company prompt also says what we built once a reply.
+
+**Not changed.** The five owner-line templates' footer ("העוזר הדיגיטלי של OpenFrequency"): Meta approved those words.
+The store's name in the line is the one Toran shows for it (brand_override, else the site's): a store whose site gives a
+Latin name while it calls itself by a Hebrew one is renamed on its lead page's name and colour form.
+
+**Tested.** The tests that pin the lines (bot-intro, lead-reply, company, owners, pay, pay-remind, waiting, lines,
+onenumber, agent-web, the channels' golden file) now pin the new ones.

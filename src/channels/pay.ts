@@ -46,7 +46,7 @@ const RECEIPT_TIMEOUT_MS = 20_000;
 
 // The bot says it is a bot (docs/decisions.md, the owner: "the person has to know that he speaks with a bot"), without
 // the company's name: the owner, 2026-11-05, "No need to write OpenFrequency each time, in the payment message".
-const HELLO = 'כאן תורן, הבוט שלנו.';
+const HELLO = 'היי, אני תורן, הבוט שלנו.';
 
 const msg = {
   due: (business: string, total: string, summary: string, payHow: string) =>

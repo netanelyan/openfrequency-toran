@@ -92,7 +92,7 @@ test('the demo number on Meta: a code binds and Toran answers through the Cloud 
     assert.equal(sent.length, 1);
     assert.equal(sent[0].auth, `Bearer ${OURS}`, 'with the token our number was connected with');
     assert.equal(sent[0].body.to, CUSTOMER);
-    assert.match(sent[0].body.text.body, /^כאן הבוט של /, 'the welcome says a bot is answering');
+    assert.match(sent[0].body.text.body, /^היי, אני הבוט של /, 'the welcome says a bot is answering');
     assert.equal(s.app.wa.outbox!.length, seeded, 'nothing through Twilio or the simulator');
     assert.ok(!(await s.app.db.one("SELECT 1 FROM conversations c JOIN channel_accounts x ON x.id = c.account_id WHERE x.external_id = $1", [DEMO_ID])), 'not answered as the store that connected the number');
 
@@ -184,7 +184,7 @@ test('the owner line on Meta: linking, where Teder is managed (none of Teder\'s 
     const stranger = '972500000125';
     const sup = await write('כמה זה עולה?', stranger);
     assert.equal(sup.storeId, storeId);
-    assert.equal(g.from(OWNER_ID).at(-1)!.body.text.body, `כאן תורן, הבוט של שירות לי.\n\nתורן עולה 250 ₪ לחודש, לא כולל מע״מ.`, 'our support says it is a bot');
+    assert.equal(g.from(OWNER_ID).at(-1)!.body.text.body, `היי, אני תורן, הבוט של שירות לי.\n\nתורן עולה 250 ₪ לחודש, לא כולל מע״מ.`, 'our support says it is a bot');
     const conv = await app.db.one<any>('SELECT c.id, a.kind, a.status FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE c.store_id = $1 AND c.peer = $2', [storeId, stranger]);
     assert.deepEqual([conv.kind, conv.status], ['meta_line', 'line']);
     assert.ok((await ownerReply(app, conv.id, 'אני כאן, מה הכתובת של החנות?', 'operator')).ok);

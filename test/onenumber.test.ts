@@ -32,7 +32,7 @@ const META = { META_APP_ID: '1234567890', META_APP_SECRET: APP_SECRET, META_WA_C
 const COEXISTENCE = 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
 const PRICE = 'החבילה הקטנה עולה 250 ₪ לחודש, לא כולל מע״מ.';
 // Our support's first answer in a conversation opens with its line (src/agent/intro.ts).
-const OPENED = `כאן תורן, הבוט של שירות לי.
+const OPENED = `היי, אני תורן, הבוט של שירות לי.
 
 ${PRICE}`;
 

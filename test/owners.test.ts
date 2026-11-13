@@ -162,7 +162,7 @@ test('with TORAN_SUPPORT_STORE, a number nobody linked gets our support agent on
     assert.equal(r.storeId, storeId);
     const out = s.outbox.filter((m) => m.to === OTHER);
     assert.equal(out.length, 1);
-    assert.equal(out[0].text, `כאן תורן, הבוט של שירות לי.\n\nתורן עולה 250 ₪ לחודש, לא כולל מע״מ.`, 'our support says it is a bot');
+    assert.equal(out[0].text, `היי, אני תורן, הבוט של שירות לי.\n\nתורן עולה 250 ₪ לחודש, לא כולל מע״מ.`, 'our support says it is a bot');
     assert.equal(out[0].from, LINE, 'the answer goes out from the owner line');
     const conv = await s.app.db.one<any>('SELECT c.id, a.status, a.external_id FROM conversations c JOIN channel_accounts a ON a.id = c.account_id WHERE c.store_id = $1 AND c.peer = $2', [storeId, OTHER]);
     assert.deepEqual([conv.status, conv.external_id], ['line', LINE]);
@@ -193,7 +193,7 @@ test('an owner with Teder and no Toran store is our support\'s, like anyone: "א
     assert.equal(r.storeId, storeId, "our support's store answered");
     assert.equal(r.action, 'owner_line');
     assert.equal(s.teder.calls.length, 0, 'nothing was asked of Teder: nothing approved, nothing sent back');
-    assert.equal(s.toOwner().at(-1)!.text, 'כאן תורן, הבוט של שירות לי.\n\nאת המצגות מאשרים בלוח הבקרה של תדר.', "the support's own answer");
+    assert.equal(s.toOwner().at(-1)!.text, 'היי, אני תורן, הבוט של שירות לי.\n\nאת המצגות מאשרים בלוח הבקרה של תדר.', "the support's own answer");
     assert.equal(s.toOwner().at(-1)!.from, LINE);
     assert.ok(await s.app.db.one('SELECT 1 FROM conversations WHERE store_id = $1 AND peer = $2', [storeId, OWNER]), 'in our support inbox');
     assert.equal((await s.app.db.one<any>('SELECT COUNT(*)::int AS n FROM assistant_messages WHERE phone = $1', [OWNER])).n, 0, 'no chat with the assistant');

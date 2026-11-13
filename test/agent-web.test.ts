@@ -72,12 +72,12 @@ test("on the site chat the bot's first line is left out (the header says it), an
     assert.ok((await ownerReply(app, conv, 'כאן נורית, יש גם בירוק', 'owner')).ok);
     await app.db.query('UPDATE conversations SET agent_paused_until = NULL WHERE id = $1', [conv]);
     const back = await runTurn(app, { storeId: id, conversationId: conv, text: 'ובצהוב?', channel: 'web', footer: false });
-    assert.equal(back.reply, `כאן שוב הבוט של ${STORE}.\n\nיש בכחול.`, 'after a person, the visitor is told the bot is back');
+    assert.equal(back.reply, `זה שוב הבוט של ${STORE}.\n\nיש בכחול.`, 'after a person, the visitor is told the bot is back');
 
     // Every other channel keeps the first line.
     const wa = await conversationFor(app.db, id, 'whatsapp', '972500000562');
     const onWa = await runTurn(app, { storeId: id, conversationId: wa, text: 'יש בכחול?', channel: 'whatsapp', footer: false });
-    assert.equal(onWa.reply, `כאן הבוט של ${STORE}.\n\nיש בכחול.`);
+    assert.equal(onWa.reply, `היי, אני הבוט של ${STORE}.\n\nיש בכחול.`);
   } finally {
     await app.db.close();
   }

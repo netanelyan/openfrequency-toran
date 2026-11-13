@@ -252,7 +252,7 @@ test('the button comes back with the code unseen, and the pay flow answers it wi
     const r = await handleInbound(app, { ...m, at: Date.now() });
     assert.equal(r.action, 'pay');
     assert.deepEqual(asked, ['GET /internal/pay?code=PAY-AB2CD3']);
-    assert.match(r.reply!, /^כאן תורן, הבוט שלנו\.\n\nלתשלום על המנוי של Noa Shop: 932\.20 ₪, כולל מע״מ\.\nתדר, החבילה המלאה: 790 ₪ לחודש, לא כולל מע״מ\.\n\nפרטי ההעברה:\nהעברה בנקאית לחשבון 12-345-678901\n\nאחרי ההעברה שולחים לי כאן את האסמכתא, צילום מסך של האישור מהבנק\./);
+    assert.match(r.reply!, /^היי, אני תורן, הבוט שלנו\.\n\nלתשלום על המנוי של Noa Shop: 932\.20 ₪, כולל מע״מ\.\nתדר, החבילה המלאה: 790 ₪ לחודש, לא כולל מע״מ\.\n\nפרטי ההעברה:\nהעברה בנקאית לחשבון 12-345-678901\n\nאחרי ההעברה שולחים לי כאן את האסמכתא, צילום מסך של האישור מהבנק\./);
     assert.ok(!r.reply!.includes('PAY-'), 'the answer shows no code');
     assert.equal(meta.calls.length, 1, 'one answer, inside the 24 hours the press opened');
     assert.equal(meta.calls[0].body.to, PHONE);

@@ -249,7 +249,7 @@ test('a waiting customer reaches the owner\'s own WhatsApp too: a plain message 
     await s.digest();
     assert.equal(toPhone().length, 1);
     const id = (await s.app.db.one<{ id: number }>("SELECT id FROM conversations WHERE peer = 'dana@example.test'"))!.id;
-    assert.match(toPhone()[0].text, /^כאן תורן, הבוט של OpenFrequency\.\n\nלקוח של .+ מחכה לתשובה שלכם\.\nהוא כתב: "אפשר לאסוף מהמחסן\?"/);
+    assert.match(toPhone()[0].text, /^היי, אני תורן, הבוט של OpenFrequency\.\n\nלקוח של .+ מחכה לתשובה שלכם\.\nהוא כתב: "אפשר לאסוף מהמחסן\?"/);
     assert.ok(toPhone()[0].text.includes(`https://toran.example/chat/${id}`));
     // The same wait is not said again; a new customer is.
     await s.write('Dana <dana@example.test>', 'ועוד שאלה');

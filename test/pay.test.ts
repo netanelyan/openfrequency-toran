@@ -176,7 +176,7 @@ async function setup({ script }: { script?: Script } = {}) {
 }
 
 const BUTTON = (code: string) => `היי, אני רוצה לשלם על המנוי של קפה גינה. ${code}`;
-const WANT = `כאן תורן, הבוט שלנו.
+const WANT = `היי, אני תורן, הבוט שלנו.
 
 לתשלום על המנוי של קפה גינה: 1,746.40 ₪, כולל מע״מ.
 תדר, החבילה הקטנה: 490 ₪ לחודש
@@ -203,7 +203,7 @@ test('a PAY code: the amount with VAT, accounts\' lines, the transfer\'s details
     // The owner, 2026-11-05: "No need to write OpenFrequency each time, in the payment message". Only accounts' own
     // transfer details (the account's holder) may name it; our words never do. And after paying, the receipt.
     assert.doesNotMatch(r.reply!.replace(PAY_HOW, ''), /OpenFrequency/i);
-    assert.match(r.reply!, /^כאן תורן, הבוט שלנו\./, 'still says it is a bot');
+    assert.match(r.reply!, /^היי, אני תורן, הבוט שלנו\./, 'still says it is a bot');
     assert.match(r.reply!, /\n\nאחרי ההעברה שולחים לי כאן את האסמכתא, צילום מסך של האישור מהבנק\./);
     assert.deepEqual(s.meta.sent, [{ from: META_DEMO.META_DEMO_PHONE_ID, to: CUSTOMER, text: WANT }], 'one reply, from our number, to the phone that wrote');
     assert.deepEqual(s.accounts.calls, ['GET /internal/pay']);
@@ -232,9 +232,9 @@ test('nothing due: paid through a date, or with no date; no wait', async () => {
     s.accounts.code('PAY-PAID01', due('PAY-PAID01', { items: [], net: 0, vat: 0, total: 0, summary: [], paidThrough: '2026-12-31' }));
     const r = await s.write(CUSTOMER, BUTTON('PAY-PAID01'));
     assert.equal(r.action, 'pay_nothing_due');
-    assert.equal(r.reply, 'כאן תורן, הבוט שלנו.\n\nהמנוי של קפה גינה משולם עד 31.12.2026, אז כרגע אין מה לשלם.');
+    assert.equal(r.reply, 'היי, אני תורן, הבוט שלנו.\n\nהמנוי של קפה גינה משולם עד 31.12.2026, אז כרגע אין מה לשלם.');
     s.accounts.code('PAY-PAID02', due('PAY-PAID02', { items: [], total: 0, summary: [], paidThrough: null }));
-    assert.equal((await s.write(CUSTOMER, 'PAY-PAID02')).reply, 'כאן תורן, הבוט שלנו.\n\nעל המנוי של קפה גינה אין כרגע מה לשלם.');
+    assert.equal((await s.write(CUSTOMER, 'PAY-PAID02')).reply, 'היי, אני תורן, הבוט שלנו.\n\nעל המנוי של קפה גינה אין כרגע מה לשלם.');
     // No items is nothing owed, whatever else the answer says (a month due within 7 days would be an item).
     s.accounts.code('PAY-PAID03', due('PAY-PAID03', { items: [], paidThrough: '2026-11-21' }));
     assert.equal((await s.write(CUSTOMER, 'PAY-PAID03')).action, 'pay_nothing_due');
@@ -251,7 +251,7 @@ test('no transfer details in accounts: the amount, a person sends the details, a
     s.accounts.code('PAY-NODET1', due('PAY-NODET1', { payHow: null }));
     const r = await s.write(CUSTOMER, BUTTON('PAY-NODET1'));
     assert.equal(r.action, 'pay_no_details');
-    assert.equal(r.reply, 'כאן תורן, הבוט שלנו.\n\nלתשלום על המנוי של קפה גינה: 1,746.40 ₪, כולל מע״מ. את פרטי ההעברה ישלח לכם כאן נציג.');
+    assert.equal(r.reply, 'היי, אני תורן, הבוט שלנו.\n\nלתשלום על המנוי של קפה גינה: 1,746.40 ₪, כולל מע״מ. את פרטי ההעברה ישלח לכם כאן נציג.');
     const alert = await s.app.db.one<any>("SELECT data FROM events WHERE kind = 'operator_alert'");
     assert.equal(alert.data.key, 'pay_details:7');
     assert.match(alert.data.title, /קפה גינה רוצה לשלם/);
@@ -315,7 +315,7 @@ test('accounts\' own examples (test/fixtures/contracts/pay.json) are read as the
     for (const k of Object.keys(post.request.body)) assert.ok(k in body, `the receipt has ${k}`);
     assert.deepEqual(Object.keys(body.file).sort(), Object.keys(post.request.body.file).sort());
     s.accounts.code(none.code, none);
-    assert.equal((await s.write(CUSTOMER, none.code)).reply, `כאן תורן, הבוט שלנו.\n\nהמנוי של ${none.workspace.name} משולם עד 21.11.2026, אז כרגע אין מה לשלם.`);
+    assert.equal((await s.write(CUSTOMER, none.code)).reply, `היי, אני תורן, הבוט שלנו.\n\nהמנוי של ${none.workspace.name} משולם עד 21.11.2026, אז כרגע אין מה לשלם.`);
     // Each refusal the contract lists ends in its own line, never a crash.
     for (const a of get.answers.filter((x: any) => x.status !== 200)) {
       s.accounts.code('PAY-REF000', a.body, a.status);

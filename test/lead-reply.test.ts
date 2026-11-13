@@ -151,7 +151,7 @@ test('a store we wrote to answers: the turn knows our message and its Toran, its
     const r = await write(PHONE, 'כן, מעניין');
     assert.equal(r.action, 'answered');
     assert.equal(r.storeId, support, 'our support answers');
-    const line = 'כאן תורן, הבוט של OpenFrequency. זה אותו תורן שבנינו לכלי חרס של נורית, ועכשיו אני עונה לכם כמו שאענה ללקוחות שלכם.';
+    const line = 'היי, אני תורן, הבוט שבנינו לכלי חרס של נורית. ככה אענה גם ללקוחות שלכם.';
     assert.equal(r.reply, `${line}\n\nתורן כבר קרא את המוצרים והמדיניות מהאתר שלכם, ואפשר לכתוב לו עכשיו כמו לקוח: ${PAGE}`, 'the Toran we built for them, then the answer with its link kept');
     // What the model was told: the LEAD block, with our message as they got it and the link, and not to say the line.
     assert.match(asked[0], /LEAD \(the app's record, not the person's words\): they write from the store "כלי חרס של נורית" \(nurit\.example\), which we wrote to first/);
@@ -197,9 +197,9 @@ test('the bot opens after our kept pitch as after nothing, and after a person wh
     await app.db.query("INSERT INTO messages (conversation_id, role, text, author) VALUES ($1, 'owner', 'אני כאן, איך אפשר לעזור?', 'נתנאל')", [conv]);
     assert.equal(await openingOf(app.db, conv), 'again');
     // The lines: Toran's, with the store's "ל"; Teder's alone; in English for English.
-    assert.equal(leadLine({ product: 'both', name: 'הדס' }, 'תורן', 'OpenFrequency'), 'כאן תורן, הבוט של OpenFrequency. זה אותו תורן שבנינו בשביל הדס, ועכשיו אני עונה לכם כמו שאענה ללקוחות שלכם.');
-    assert.equal(leadLine({ product: 'teder', name: 'פופי' }, 'תורן', 'OpenFrequency'), 'כאן תורן, הבוט של OpenFrequency. את המצגת הכין תדר, ואני עונה כאן על השאלות.');
-    assert.match(leadLine({ product: 'toran', name: 'Nike' }, 'תורן', 'OpenFrequency', true), /^This is תורן, OpenFrequency's bot\. It's the same Toran we built for Nike/);
+    assert.equal(leadLine({ product: 'both', name: 'הדס' }, 'תורן', 'OpenFrequency'), 'היי, אני תורן, הבוט שבנינו בשביל הדס. ככה אענה גם ללקוחות שלכם.');
+    assert.equal(leadLine({ product: 'teder', name: 'פופי' }, 'תורן', 'OpenFrequency'), 'היי, אני תורן, הבוט של OpenFrequency. אפשר לשאול אותי על המצגת שתדר הכין לכם.');
+    assert.match(leadLine({ product: 'toran', name: 'Nike' }, 'תורן', 'OpenFrequency', true), /^Hi, I'm תורן, the bot we built for Nike\. This is how I'll answer your customers too\.$/);
   } finally {
     setNow(null);
     await app.db.close();
@@ -210,7 +210,7 @@ test('a number we never wrote to gets no LEAD block; a pitch eight days old is r
   const { app, asked, write } = await supportApp();
   try {
     const plain = await write(OTHER, 'מה זה תורן?');
-    assert.equal(plain.reply, 'כאן תורן, הבוט של OpenFrequency.\n\nאפשר לשאול אותי על תורן ועל תדר.');
+    assert.equal(plain.reply, 'היי, אני תורן, הבוט של OpenFrequency.\n\nאפשר לשאול אותי על תורן ועל תדר.');
     assert.doesNotMatch(asked[0], /LEAD/);
 
     // A pitch sent before the event kept its pages (no name, no url), eight days ago: past a conversation's week.
@@ -224,7 +224,7 @@ test('a number we never wrote to gets no LEAD block; a pitch eight days old is r
     await app.db.query("INSERT INTO messages (conversation_id, role, text, author, auto, at) VALUES ($1, 'owner', 'היי, כאן OpenFrequency.', 'נתנאל', 'outreach', now() - interval '8 days')", [old]);
     const r = await write(THIRD, 'קיבלתי הודעה מכם, מה זה?');
     assert.notEqual((await app.db.one<{ id: number }>("SELECT c.id FROM conversations c WHERE c.peer = $1 ORDER BY c.id DESC LIMIT 1", [THIRD]))!.id, old, 'a new conversation');
-    assert.match(r.reply!, /^כאן תורן, הבוט של OpenFrequency\. זה אותו תורן שבנינו לפופי,/);
+    assert.match(r.reply!, /^היי, אני תורן, הבוט שבנינו לפופי\. ככה אענה גם ללקוחות שלכם\./);
     assert.ok(r.reply!.endsWith('http://localhost:4710/s/pofi-c1'), 'its own page, found through the ref');
     assert.match(asked.at(-1)!, /they write from the store "פופי" \(pofi\.example\)/);
 
@@ -275,7 +275,7 @@ test('our support answers a voice note in code and keeps it for us; a photo ther
     assert.equal((await outreach.sendPitch(app, { product: 'toran', stage: 'first', phone: PHONE, name: 'כלי חרס של נורית', url: PAGE, ref: `store:${id}`, by: 'Demo' })).sent, true);
     const voice = await write(PHONE, '', { attachments: [{ name: 'audio', type: 'audio/ogg; codecs=opus', size: 0 }] });
     assert.equal(voice.action, 'no_text');
-    assert.equal(voice.reply, `כאן תורן, הבוט של OpenFrequency. זה אותו תורן שבנינו לכלי חרס של נורית, ועכשיו אני עונה לכם כמו שאענה ללקוחות שלכם.\n\n${NO_WORDS_HE.voice}`);
+    assert.equal(voice.reply, `היי, אני תורן, הבוט שבנינו לכלי חרס של נורית. ככה אענה גם ללקוחות שלכם.\n\n${NO_WORDS_HE.voice}`);
     assert.equal(asked.length, 0, 'no model call');
     const c = (await app.db.one<any>(`SELECT c.id, ${WAITING_SQL} AS waiting FROM conversations c WHERE c.peer = $1`, [PHONE]))!;
     assert.equal(c.waiting, true, 'it waits for us');
@@ -286,7 +286,7 @@ test('our support answers a voice note in code and keeps it for us; a photo ther
 
     // Someone we never wrote to: the plain line, then the same words; a file that is not a recording, its own.
     const other = await write(OTHER, '', { attachments: [{ name: 'contract.pdf', type: 'application/pdf', size: 10 }] });
-    assert.equal(other.reply, `כאן תורן, הבוט של OpenFrequency.\n\n${NO_WORDS_HE.other}`);
+    assert.equal(other.reply, `היי, אני תורן, הבוט של OpenFrequency.\n\n${NO_WORDS_HE.other}`);
 
     // A photo on our support is a screenshot or a question, never a product to search for.
     const photo = [{ id: 1, name: 'screen.png', type: 'image/png', size: 10 }];

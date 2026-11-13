@@ -52,7 +52,7 @@ test('the bot opens a conversation with its line once, the model is told not to 
   });
   const conv = await conversationFor(app.db, id, 'whatsapp', PHONE);
   const first = await runTurn(app, { storeId: id, conversationId: conv, text: 'יש בכחול?', channel: 'whatsapp', footer: false });
-  assert.equal(first.reply, `כאן הבוט של ${STORE}.\n\nיש בכחול. רוצים קישור?`);
+  assert.equal(first.reply, `היי, אני הבוט של ${STORE}.\n\nיש בכחול. רוצים קישור?`);
   assert.ok(asked[0].includes(OPENING_NOTE));
   const second = await runTurn(app, { storeId: id, conversationId: conv, text: 'ובאדום?', channel: 'whatsapp', footer: false });
   assert.equal(second.reply, 'יש בכחול. רוצים קישור?', 'said once');
@@ -61,7 +61,7 @@ test('the bot opens a conversation with its line once, the model is told not to 
   await app.db.query("UPDATE stores SET agent_name = 'נועה' WHERE id = $1", [id]);
   const other = await conversationFor(app.db, id, 'whatsapp', '972500000556');
   const named = await runTurn(app, { storeId: id, conversationId: other, text: 'hi, do you ship abroad?', channel: 'whatsapp', footer: false });
-  assert.match(named.reply, new RegExp(`^This is נועה, ${STORE}'s bot\\.\\n\\n`), 'in the customer\'s language');
+  assert.match(named.reply, new RegExp(`^Hi, I'm נועה, ${STORE}'s bot\\.\\n\\n`), 'in the customer\'s language');
 
   // The sample chat (no one on the other end) has no line.
   const sample = await runTurn(app, { storeId: id, conversationId: await conversationFor(app.db, id, 'cli', null), text: 'יש בכחול?' });
@@ -82,7 +82,7 @@ test('a person answering from the inbox is announced once, and the bot says it i
 
   await app.db.query('UPDATE conversations SET agent_paused_until = NULL WHERE id = $1', [conv]);
   const back = await runTurn(app, { storeId: id, conversationId: conv, text: 'ובאדום?', channel: 'whatsapp', footer: false });
-  assert.equal(back.reply, `כאן שוב הבוט של ${STORE}.\n\nיש בכחול.`);
+  assert.equal(back.reply, `זה שוב הבוט של ${STORE}.\n\nיש בכחול.`);
   await app.db.close();
 });
 
@@ -108,7 +108,7 @@ test('the owner names the bot on "מה תורן יודע", and a bad name is ref
     const ok = await s.post(`/lead/${a}/bot-name`, { _csrf: await s.csrf(`/lead/${a}/knowledge`), agent_name: 'נועה' });
     assert.equal(ok.status, 303);
     assert.equal((await s.app.db.one<{ agent_name: string }>('SELECT agent_name FROM stores WHERE id = $1', [a]))!.agent_name, 'נועה');
-    assert.match(await (await s.get(`/lead/${a}/knowledge`)).text(), /כאן נועה, הבוט של/);
+    assert.match(await (await s.get(`/lead/${a}/knowledge`)).text(), /היי, אני נועה, הבוט של/);
     await s.post(`/lead/${a}/bot-name`, { _csrf: await s.csrf(`/lead/${a}/knowledge`), agent_name: 'https://evil.example' });
     assert.equal((await s.app.db.one<{ agent_name: string }>('SELECT agent_name FROM stores WHERE id = $1', [a]))!.agent_name, 'נועה');
     assert.equal((await s.post(`/lead/${a}/bot-name`, { _csrf: await s.csrf(`/lead/${a}/knowledge`), agent_name: '' })).status, 303);
