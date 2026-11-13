@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { type Db, J } from '../db/index.ts';
 import { event, rememberPrivateName } from '../db/log.ts';
-import { leadKeys } from '../core/urls.ts';
+import { isIsraeliMobile, leadKeys } from '../core/urls.ts';
 import type { Detection } from './detect.ts';
 import type { Score } from './score.ts';
 
@@ -12,6 +12,10 @@ import type { Score } from './score.ts';
 // Discovery never overwrites what the owner did: a lead past `new` keeps its status,
 // and only its signals and score are refreshed. The contacts and the social profiles
 // (signals.social) it already has are kept: a new find fills only what is missing.
+//
+// A store's WhatsApp is the one its site links to, else its first Israeli mobile number (the owner, 2026-11-13: "if a
+// phone start with +9725 whatsapp is 99% available, so lets treat it as it is"). The score still reads only the one
+// linked (score.ts); a mobile with no WhatsApp gets Meta's 131026 on the send, shown in our inbox (ops/outreach.ts).
 
 export type SavedLead = { id: number; created: boolean; mergedBy: string | null };
 
@@ -32,6 +36,7 @@ export function makeSlug(domain: string): string {
  */
 export async function saveLead(db: Db, d: Detection, s: Score, source: string, detail: Record<string, unknown> = {}, workspaceId: number | null = null): Promise<SavedLead> {
   const keys = leadKeys({ domain: d.domain, email: d.email, whatsapp: d.whatsapp, phone: d.phone });
+  const whatsapp = d.whatsapp || d.home.phones.find(isIsraeliMobile) || null;
   const signals = {
     url: d.url,
     platformEvidence: d.platformEvidence,
@@ -70,7 +75,7 @@ export async function saveLead(db: Db, d: Detection, s: Score, source: string, d
            score = $3, score_breakdown = $4::jsonb, qualified = $5, reject_reason = $6, platform = $7,
            contact_email = COALESCE(contact_email, $8), contact_whatsapp = COALESCE(contact_whatsapp, $9), contact_phone = COALESCE(contact_phone, $10), updated_at = now()
          WHERE id = $1`,
-        [hit.store_id, J(signals), s.score, J(s.breakdown), s.qualified, s.reject, d.platform, d.email, d.whatsapp, d.phone],
+        [hit.store_id, J(signals), s.score, J(s.breakdown), s.qualified, s.reject, d.platform, d.email, whatsapp, d.phone],
       );
       for (const k of keys) await t.query('INSERT INTO lead_keys (key, store_id) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [k, hit.store_id]);
       await markSeen(t, d.domain, 'lead');
@@ -79,7 +84,7 @@ export async function saveLead(db: Db, d: Detection, s: Score, source: string, d
     const row = await t.one<{ id: number }>(
       `INSERT INTO stores (domain, url, name, platform, score, score_breakdown, qualified, reject_reason, signals, source, source_detail, contact_email, contact_whatsapp, contact_phone, slug, brand, workspace_id)
        VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10,$11::jsonb,$12,$13,$14,$15,$16::jsonb,$17) RETURNING id`,
-      [d.domain, d.url, d.name, d.platform, s.score, J(s.breakdown), s.qualified, s.reject, J(signals), source, J(detail), d.email, d.whatsapp, d.phone, makeSlug(d.domain), J({ name: d.name, logo: d.home.logo, themeColor: d.home.themeColor }), workspaceId],
+      [d.domain, d.url, d.name, d.platform, s.score, J(s.breakdown), s.qualified, s.reject, J(signals), source, J(detail), d.email, whatsapp, d.phone, makeSlug(d.domain), J({ name: d.name, logo: d.home.logo, themeColor: d.home.themeColor }), workspaceId],
     );
     const id = row!.id;
     for (const k of keys) await t.query('INSERT INTO lead_keys (key, store_id) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [k, id]);

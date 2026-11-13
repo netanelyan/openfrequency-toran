@@ -41,7 +41,7 @@ export async function sendTeder(app: App, storeId: number, by: string): Promise<
   const lead = await tederLeadOf(app, s);
   const stage = tederStage(lead);
   const phone = lead.whatsapp || s.contact_whatsapp;
-  if (!phone) throw new OpsError('אין לחנות הזו מספר וואטסאפ מהאתר שלה, אז מהמספר שלנו לא שולחים לה.');
+  if (!phone) throw new OpsError('אין באתר של החנות הזו וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לה.');
   const out = await sendPitch(app, { product: 'teder', stage, phone, name: displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain, url: lead.demo!.pageUrl!, ref: `store:${s.id}`, by });
   if (!out.sent) throw new OpsError(out.said);
   await event(app.db, s.id, 'teder_pitch', { stage, by });
@@ -59,7 +59,7 @@ export async function sendBoth(app: App, storeId: number, by: string): Promise<s
   const p = await pitchOf(app, 'toran', String(storeId));
   if ('error' in p) throw new OpsError(p.error);
   if (!p.url) throw new OpsError('אין לתורן עמוד באוויר לחנות הזו.');
-  if (!p.phone) throw new OpsError('אין לחנות הזו מספר וואטסאפ מהאתר שלה, אז מהמספר שלנו לא שולחים לה.');
+  if (!p.phone) throw new OpsError('אין באתר של החנות הזו וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לה.');
   const lead = await tederLeadOf(app, s);
   const stage = tederStage(lead);
   if (stage !== p.stage) throw new OpsError(stage === 'first' ? 'לתורן כבר נשלחה הודעה, ולתדר עוד לא: אפשר לשלוח את תדר לבד.' : 'לתדר כבר נשלחה הודעה, ולתורן עוד לא: אפשר לשלוח את תורן לבד.');

@@ -170,8 +170,8 @@ export async function sendTederDirect(app: App, id: string, by: string): Promise
 
 /**
  * The number a lead's pitch goes to, and which of the two it is (the first, or the one reminder), or why there is none.
- * A store's own listed WhatsApp (contact_whatsapp, from its website), or the number that asked for the demo on our
- * website; never a number found anywhere else.
+ * A store's own WhatsApp (contact_whatsapp, from its website: the number it links to, else its Israeli mobile), or the
+ * number that asked for the demo on our website; never a number found anywhere else.
  */
 export async function pitchOf(app: App, kind: Kind, id: string): Promise<{ stage: Stage; phone: string | null; name: string; url: string | null } | { error: string }> {
   const r = await row(app, kind, id);
@@ -208,7 +208,7 @@ export async function sendNow(app: App, kind: Kind, id: string, by: string): Pro
   }
   const p = await pitchOf(app, kind, id);
   if ('error' in p) throw new OpsError(p.error);
-  if (!p.phone) throw new OpsError('אין לליד הזה מספר וואטסאפ מהאתר שלו, אז מהמספר שלנו לא שולחים לו. אפשר לשלוח לו מייל.');
+  if (!p.phone) throw new OpsError('אין באתר של הליד הזה וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לו. אפשר לשלוח לו מייל.');
   if (!p.url) throw new OpsError('אין לליד הזה עמוד באוויר, אז אין מה לשלוח.');
   if (p.stage === 'reminder' && kind === 'toran' && r.followup_due_at && new Date(r.followup_due_at).getTime() > now()) throw new OpsError('עוד לא הזמן לתזכורת.');
   if (p.stage === 'reminder' && kind === 'teder' && r.reminder_due_at && new Date(r.reminder_due_at).getTime() > now()) throw new OpsError('עוד לא הזמן לתזכורת.');

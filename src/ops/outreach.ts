@@ -44,8 +44,9 @@ import { toranOnSale } from './signupSwitch.ts';
 //   - the number's quality and the template's, read from Meta before each send (cached ten minutes): anything but
 //     GREEN (or UNKNOWN, a number or template too new to rate), a template not APPROVED, or Meta's own "paused" or
 //     "disabled" on a send, and nothing more goes until it is GREEN again, with one alert to the operator a day
-//   - a pitch goes once per number, product and stage (first, reminder), and only to the store's own listed
-//     WhatsApp (the lead's contact_whatsapp, read from its website), never to a number found anywhere else
+//   - a pitch goes once per number, product and stage (first, reminder), and only to the store's own WhatsApp (the
+//     lead's contact_whatsapp, read from its website: the number it links to, else its Israeli mobile, leads/store.ts),
+//     never to a number found anywhere else
 //
 // What happens when they answer is ops/leadReply.ts: our support answers them as a store we wrote to, the lead is
 // marked answered, the operator is told, and the reminder no longer goes (wroteSinceFirst).
@@ -344,7 +345,7 @@ export const SAID_HE: Record<Why | 'sent', string> = {
   quality: 'Meta הורידה את הדירוג של המספר או של התבנית, אז עצרנו את ההודעות ללידים כדי לא לסכן את המספר. שום דבר לא נשלח. זה חוזר כשהדירוג חוזר לירוק.',
   no_line: 'המספר שלנו עוד לא מחובר ל-Meta, אז ההודעה לא נשלחה ולא סומנה. אפשר להעתיק אותה ולשלוח מהוואטסאפ שלך.',
   bad_page: 'אין לליד הזה עמוד באוויר, אז אין מה לשלוח.',
-  bad_phone: 'אין לליד הזה מספר וואטסאפ מהאתר שלו, אז מהמספר שלנו לא שולחים לו.',
+  bad_phone: 'אין באתר של הליד הזה וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לו.',
   failed: 'Meta לא קיבלה את ההודעה, ושום דבר לא סומן. אם זה חוזר, כנראה שהתבנית עוד לא אושרה (docs/whatsapp-templates.md).',
   not_on_sale: 'תורן עוד לא במכירה באתר (שם כתוב "בקרוב"), אז הודעה על תורן לא יוצאת וכלום לא סומן. כשפותחים את המכירה (TORAN_SIGNUP_OPEN), זה נפתח. הודעה על תדר לבד אפשר לשלוח.',
 };

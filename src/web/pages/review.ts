@@ -38,7 +38,7 @@ async function flagsFor(app: App, s: any): Promise<{ good: string[]; warn: strin
   if (pol.some((p) => p.kind === 'returns')) good.push('מדיניות החזרות');
   else warn.push('לא נמצא דף החזרות');
   if (!s.brand?.tone) warn.push('לא נמצאה דוגמה לטון הכתיבה של החנות');
-  if (!s.contact_whatsapp && !s.contact_email) warn.push('לא מצאתי באתר וואטסאפ או מייל, אז אין לאן לשלוח');
+  if (!s.contact_whatsapp && !s.contact_email) warn.push('לא מצאתי באתר וואטסאפ, מספר נייד או מייל, אז אין לאן לשלוח');
   for (const w of ingest?.data?.warnings || []) if (/currency/.test(w)) warn.push(`מטבע: ${w}`);
   return { good, warn };
 }

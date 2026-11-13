@@ -230,3 +230,36 @@ test('signals.social is kept on the lead, and a later find fills a missing netwo
     await app.db.close();
   }
 });
+
+test("a store's WhatsApp is the one its site links to, else its first Israeli mobile; a landline is not one", async () => {
+  const app = await testApp();
+  try {
+    const save = async (domain: string, body: string) => {
+      const url = `https://${domain}/`;
+      const home = readHome(`<html lang="he"><body><p>חנות</p>${body}</body></html>`, url);
+      const d = { input: domain, url, domain, name: domain, platform: 'shopify', platformEvidence: '', productCount: 14, productCountSource: 'products.json', productCountCapped: false, newestProductAt: null, catalogHebrewRatio: null, catalogSample: [], home, rendered: false, email: null, whatsapp: home.whatsappNumbers[0] || null, phone: home.phones.find((p) => p !== home.whatsappNumbers[0]) || home.phones[0] || null, franchiseOf: null, errors: [] } as Detection;
+      const { id } = await saveLead(app.db, d, { score: 80, breakdown: [], qualified: true, reject: null }, 'seed');
+      return app.db.one<any>('SELECT contact_whatsapp, contact_phone FROM stores WHERE id = $1', [id]);
+    };
+    const mobile = await save('mobile.example', '<a href="tel:03-123-4567">משרד</a><a href="tel:052-000-0901">נייד</a>');
+    assert.equal(mobile!.contact_whatsapp, '972520000901', 'the mobile, past the landline before it');
+    assert.equal(mobile!.contact_phone, '97231234567', 'the phone kept as found');
+    const linked = await save('linked.example', '<a href="https://wa.me/972500000903">וואטסאפ</a><a href="tel:052-000-0902">נייד</a>');
+    assert.equal(linked!.contact_whatsapp, '972500000903', 'the WhatsApp the site links to wins');
+    const landline = await save('landline.example', '<a href="tel:03-765-4321">משרד</a>');
+    assert.equal(landline!.contact_whatsapp, null, 'a landline is no WhatsApp');
+
+    // The stores known before (migration 080): the phone when it is a mobile, else the first mobile the site listed.
+    await app.db.query("INSERT INTO stores (domain, url, source, contact_phone, signals) VALUES ('old1.example', 'https://old1.example/', 'seed', '972540000904', '{}'), ('old2.example', 'https://old2.example/', 'seed', '97231234567', '{\"phones\": [\"97231234567\", \"972530000905\"]}'), ('old3.example', 'https://old3.example/', 'seed', '97231234567', '{\"phones\": [\"97231234567\"]}')");
+    await app.db.query("INSERT INTO stores (domain, url, source, contact_phone, platform, status) VALUES ('company.example', 'https://company.example/', 'seed', '972550000906', 'company', 'company')");
+    await app.db.exec(readFileSync(new URL('../src/db/migrations/080_mobile_whatsapp.sql', import.meta.url), 'utf8'));
+    const wa = async (domain: string) => (await app.db.one<any>('SELECT contact_whatsapp FROM stores WHERE domain = $1', [domain]))!.contact_whatsapp;
+    assert.equal(await wa('old1.example'), '972540000904');
+    assert.equal(await wa('old2.example'), '972530000905');
+    assert.equal(await wa('old3.example'), null);
+    assert.equal(await wa('company.example'), null, "a company's row is left as it is");
+    assert.equal(await wa('linked.example'), '972500000903', 'one that has a WhatsApp keeps it');
+  } finally {
+    await app.db.close();
+  }
+});
