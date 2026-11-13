@@ -44,7 +44,7 @@ test('a conversation put in the archive leaves the list, is in the archive with 
 
     // From the conversation's head: "לארכיון", its icon alone on a phone.
     const open = await t.page(`/chat/${a}`);
-    assert.match(open, new RegExp(`action="/chat/${a}/archive"[^]*?name="on" value="1"[^]*?title="לארכיון"><svg class="i" aria-hidden="true"><use href="#i-archive"/></svg><span>לארכיון</span>`));
+    assert.match(open, new RegExp(`action="/chat/${a}/archive"[^]*?name="on" value="1"[^]*?title="לארכיון"><svg class="i" aria-hidden="true"><use href="#i-archive"/></svg><span data-label>לארכיון</span>`));
     assert.equal(await t.archive(a), 'השיחה עברה לארכיון. כשהלקוח יכתוב שוב, היא תחזור לשיחות.');
     assert.deepEqual(await t.listed('/chats'), [b], 'out of the list');
     assert.deepEqual(await t.listed('/chats?box=archive'), [a], 'in the archive');
@@ -56,7 +56,7 @@ test('a conversation put in the archive leaves the list, is in the archive with 
     assert.doesNotMatch(inArchive, /class="seg"/, 'the archive is one list, no tabs');
     const facts = /<p class="th-facts">([^]*?)<\/p>/.exec(await t.page(`/chat/${a}`))![1];
     assert.match(facts, /<span class="chip ghost">בארכיון<\/span>/);
-    assert.match(await t.page(`/chat/${a}`), /name="on" value="0"[^]*?<span>להוציא מהארכיון<\/span>/);
+    assert.match(await t.page(`/chat/${a}`), /name="on" value="0"[^]*?<span data-label>להוציא מהארכיון<\/span>/);
 
     // A search looks in the archive too, and says it.
     const found = await t.page('/chats?q=' + encodeURIComponent('משלוחים'));
@@ -113,7 +113,8 @@ test('a waiting conversation put in the archive is marked handled, said before t
     const id = await t.conv('Abcdefghijklmnopqrstu5');
     await handOver(t.s.app, t.id, id, 'human_requested', 'רוצה לדבר עם מישהו', 'x');
     assert.equal(await t.waiting(), 1);
-    assert.match(await t.page(`/chat/${id}`), /data-confirm="השיחה הזו מחכה לכם\. בארכיון היא תסומן כטופלה, ותחזור לשיחות כשהלקוח יכתוב שוב\. לחצו שוב כדי להעביר\."/);
+    // The second press is asked in two words on the button, and what it does in the toast, so the button keeps its size.
+    assert.match(await t.page(`/chat/${id}`), /data-confirm="לחצו שוב" data-note="השיחה הזו מחכה לכם\. בארכיון היא תסומן כטופלה, ותחזור לשיחות כשהלקוח יכתוב שוב\."/);
     await t.archive(id);
     assert.equal(await t.waiting(), 0);
     assert.equal(await t.state(id), 'fixed', 'handled by the owner, as "טיפלתי בזה"');

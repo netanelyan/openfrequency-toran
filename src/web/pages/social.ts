@@ -136,7 +136,7 @@ async function page(app: App, r: DashReq, id: number, channel: Social) {
   <dl class="kv mt12"><dt>${channel === 'messenger' ? 'הדף' : 'החשבון'}</dt><dd><bdi>${esc(a!.name || '-')}</bdi></dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd></dl>
   <p class="small mt12 m0">${esc(OWN_REPLY[channel])}</p>
   <p class="small mt8 m0">${esc(WINDOW)}</p>
-  ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/${channel}/disconnect`, `לנתק את ה${ch} מתורן`, { cls: 'btn sm danger', confirm: `לנתק? תורן יפסיק לענות ב${ch}. ${channel === 'messenger' ? 'הדף' : 'החשבון'} עצמו ממשיך לעבוד כרגיל.` })}</div>`}
+  ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/${channel}/disconnect`, `לנתק את ה${ch} מתורן`, { cls: 'btn sm danger', confirm: 'לחצו שוב כדי לנתק', note: `תורן יפסיק לענות ב${ch}. ${channel === 'messenger' ? 'הדף' : 'החשבון'} עצמו ממשיך לעבוד כרגיל.` })}</div>`}
 </section>`
     : `<section class="panel"><header><h2>לפני שמחברים</h2></header>
   <ul class="m0">${BEFORE[channel].map((x) => `<li>${esc(x)}</li>`).join('')}</ul>

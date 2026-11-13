@@ -85,7 +85,7 @@ export async function ordersPanel(app: App, r: DashReq, s: { id: number; platfor
   if (a && ordersOn(a)) {
     return `${head}<p class="m0">מחובר ${prefixed('ל', name)} ${prefixed('מ', esc(shortDate(a.connected_at)))}${a.meta?.hint ? `, עם המפתח שנגמר ב־<bdi class="ltr">${esc(a.meta.hint)}</bdi>` : ''}. כשלקוח שואל איפה ההזמנה שלו, תורן מבקש את מספר ההזמנה, בודק ועונה לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. את הפרטים הוא נותן רק למי שכותב מהטלפון או מהמייל שבהזמנה, או כותב לו את הטלפון שבהזמנה. כל השאר מגיע אליכם.</p>
   ${await trackingPageBox(app, r, s.id, may)}
-  ${may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/orders/off`, 'לנתק', { cls: 'btn sm danger', confirm: 'לנתק? שאלות על הזמנות יגיעו שוב אליכם. כדאי למחוק את המפתח גם ב-' + name + '.' })}</div>` : ''}</section>`;
+  ${may ? `<div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/orders/off`, 'לנתק', { cls: 'btn sm danger', confirm: 'לחצו שוב כדי לנתק', note: `שאלות על הזמנות יגיעו שוב אליכם. כדאי למחוק את המפתח גם ב-${name}.` })}</div>` : ''}</section>`;
   }
   const broken = a ? `<div class="banner warn">${icon('alert')}<div><p>${name} הפסיק לקבל את המפתח, אז שאלות על הזמנות מגיעות שוב אליכם. אפשר להדביק כאן מפתח חדש.</p></div></div>` : '';
   const intro = `<p class="m0">כשלקוח שואל איפה ההזמנה שלו, תורן יכול לבדוק ב־${name} ולענות לבד: מה הסטטוס, אם היא נשלחה, ולינק למעקב אם יש. בשביל זה צריך מפתח שרק קורא הזמנות. תורן עונה על הזמנה רק למי שכותב מהטלפון או מהמייל שבהזמנה, או כותב לו את הטלפון שבה, כדי שלקוח אחד לא יראה הזמנה של מישהו אחר.</p>`;

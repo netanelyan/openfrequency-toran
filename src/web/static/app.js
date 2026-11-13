@@ -5,13 +5,13 @@
   document.documentElement.classList.add('js');
   const toast = document.getElementById('toast');
   let toastTimer = null;
-  const say = (msg, bad = false) => {
+  const say = (msg, bad = false, ms = 3200) => {
     if (!toast || !msg) return;
     toast.textContent = msg;
     toast.classList.toggle('bad', bad);
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove('show'), 3200);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), ms);
   };
   if (toast?.dataset.flash) say(toast.dataset.flash);
 
@@ -28,22 +28,32 @@
   window.addEventListener('scroll', lift, { passive: true });
   lift();
 
-  // Two taps for anything that cannot be undone in one.
+  // Two taps for anything that cannot be undone in one. Only the button's words change, to its few words of
+  // data-confirm: its icon stays, and a button that marks its words (data-label, as a switch's title) changes only
+  // those, so it keeps its size and its place. What the press does (data-note) shows in the toast while it waits.
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-confirm]');
     if (!b || b.dataset.armed === '1') return;
     e.preventDefault();
     b.dataset.armed = '1';
-    b.dataset.label = b.innerHTML;
     b.classList.add('armed');
-    b.textContent = b.dataset.confirm;
+    const spot = b.querySelector('[data-label]');
+    const was = spot ? spot.textContent : b.innerHTML;
+    if (spot) spot.textContent = b.dataset.confirm;
+    else {
+      const mark = b.querySelector('svg');
+      b.textContent = b.dataset.confirm;
+      if (mark) b.prepend(mark);
+    }
+    const ms = b.dataset.note ? 6000 : 3500;
+    if (b.dataset.note) say(b.dataset.note, false, ms);
     setTimeout(() => {
-      if (b.dataset.armed === '1') {
-        b.dataset.armed = '';
-        b.classList.remove('armed');
-        b.innerHTML = b.dataset.label;
-      }
-    }, 3500);
+      if (b.dataset.armed !== '1') return;
+      b.dataset.armed = '';
+      b.classList.remove('armed');
+      if (spot) spot.textContent = was;
+      else b.innerHTML = was;
+    }, ms);
   });
 
   document.addEventListener('click', (e) => {

@@ -149,7 +149,7 @@ test('a customer who writes again after the owner answered waits for the owner p
     await ownerReply(c.s.app, id, 'עוד שאלה אליכם?', 'owner');
     await c.say(V, 'כן, יש חניה?');
     const page = await (await c.s.get(`/chat/${id}`)).text();
-    assert.match(page, /data-confirm="תורן יענה מההודעה הבאה של הלקוח, וההודעה שמחכה עכשיו נשארת אצלכם בשיחות\./);
+    assert.match(page, /data-confirm="לחצו שוב כדי להחזיר" data-note="תורן יענה מההודעה הבאה של הלקוח, וההודעה שמחכה עכשיו נשארת אצלכם בשיחות\."/);
     const back = await c.s.post(`/chat/${id}/resume`, { _csrf: await c.token(id) }, { 'x-tn-ajax': '1' });
     assert.match((await back.json()).message, /ההודעה שמחכה עכשיו נשארת אצלכם בשיחות/);
     assert.equal(await c.waiting(), 1, 'after "להחזיר לתורן"');

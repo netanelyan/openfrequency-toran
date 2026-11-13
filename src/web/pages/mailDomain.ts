@@ -81,7 +81,7 @@ ${sendTo(developerMessage(store, d, shared), `תשובות ממייל של ${sto
 <details class="mt12"><summary class="small">מה צריך להוסיף (בשביל מי שמנהל לכם את האתר)</summary>${on ? '' : `<p class="small mt8 m0">ב-DNS של <bdi class="ltr">${esc(d.domain)}</bdi>:</p>${records(d.records, d.domain)}`}${d.receiving && !inboxOn ? `<p class="small mt8 m0">בשביל מייל ישר ל־<bdi class="ltr">${esc(inbox!)}</bdi>, רשומת MX על <bdi class="ltr">${esc(d.receiving)}</bdi>. היא לא נוגעת במייל הרגיל של החנות.</p>${records(d.receiving_records, d.receiving)}` : ''}</details>`}
 ${d.receiving && inboxOn && on ? `<p class="small mt8 m0">מייל ל־<bdi class="ltr">${esc(inbox!)}</bdi> מגיע לתורן ישר, בלי העברה.</p>` : ''}
 ${d.checked_at && !(on && inboxOn) ? `<p class="small muted mt8 m0">נבדק לאחרונה ${esc(stamp(d.checked_at))}.</p>` : ''}
-${ro ? '' : `<div class="row mt12">${on && inboxOn ? '' : postButton(r.ctx, `/lead/${storeId}/mail-domain/check`, 'לבדוק עכשיו', { cls: 'btn sm', iconName: 'refresh' })}${postButton(r.ctx, `/lead/${storeId}/mail-domain`, 'לחזור לכתובת של תורן', { cls: 'btn sm ghost', fields: { on: '0' }, confirm: `לחזור? תורן יענה שוב מ־${shared}.` })}</div>`}`;
+${ro ? '' : `<div class="row mt12">${on && inboxOn ? '' : postButton(r.ctx, `/lead/${storeId}/mail-domain/check`, 'לבדוק עכשיו', { cls: 'btn sm', iconName: 'refresh' })}${postButton(r.ctx, `/lead/${storeId}/mail-domain`, 'לחזור לכתובת של תורן', { cls: 'btn sm ghost', fields: { on: '0' }, confirm: 'לחצו שוב כדי לחזור', note: `תורן יענה שוב מ־${shared}.` })}</div>`}`;
 }
 
 export function mailDomainRoutes(app: App): Route<DashReq>[] {

@@ -77,7 +77,7 @@ async function reviewQueue(app: App, r: DashReq) {
 </article>`);
   }
   const held = rows.length - ready.length;
-  const body = `<div class="head"><h1>לבדיקה</h1><p class="sub">${rows.length === 1 ? 'דף אחד מחכה לך. דף שמאשרים עובר לשליחה.' : rows.length ? `${rows.length} דפים מחכים לך. כל דף שמאשרים עובר לשליחה.` : 'אין דפים שמחכים.'}${held ? ` ${held === 1 ? 'לדף אחד חסר משהו, והוא לא נפתח לאף אחד עד שזה מתמלא.' : `ל־${held} דפים חסר משהו, והם לא נפתחים לאף אחד עד שזה מתמלא.`}` : ''}</p>${ready.length > 1 ? `<div class="end">${postButton(r.ctx, '/review/approve-all', `לאשר את ${ready.length} המוכנים`, { cls: 'btn primary sm', confirm: `לאשר ${ready.length} דפים?`, fields: { ids: ready.join(',') } })}</div>` : ''}</div>
+  const body = `<div class="head"><h1>לבדיקה</h1><p class="sub">${rows.length === 1 ? 'דף אחד מחכה לך. דף שמאשרים עובר לשליחה.' : rows.length ? `${rows.length} דפים מחכים לך. כל דף שמאשרים עובר לשליחה.` : 'אין דפים שמחכים.'}${held ? ` ${held === 1 ? 'לדף אחד חסר משהו, והוא לא נפתח לאף אחד עד שזה מתמלא.' : `ל־${held} דפים חסר משהו, והם לא נפתחים לאף אחד עד שזה מתמלא.`}` : ''}</p>${ready.length > 1 ? `<div class="end">${postButton(r.ctx, '/review/approve-all', `לאשר את ${ready.length} המוכנים`, { cls: 'btn primary sm', confirm: 'לחצו שוב כדי לאשר', note: `${ready.length} דפים יאושרו ויעברו לשליחה.`, fields: { ids: ready.join(',') } })}</div>` : ''}</div>
 ${rows.length ? `<div class="cards">${cards.join('')}</div>` : `<div class="empty">${icon('review')}<b>הכול נבדק</b>חנות חדשה נכנסת לכאן כשהדף שלה מוכן. <a href="/leads">ללידים</a></div>`}`;
   return layout({ ...r.ctx, title: 'לבדיקה', active: 'review' }, body);
 }

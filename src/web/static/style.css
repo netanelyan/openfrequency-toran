@@ -136,6 +136,8 @@ body::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-even
 
 a { color: inherit; text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* A link inside a sentence looks like one: on a phone there is no hover to find it by. Rows, tabs and buttons carry a class. */
+:is(p, .small, dd, .muted) a:not([class]) { color: var(--accent-p); }
 .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
 bdi { unicode-bidi: isolate; }
 .num { font-variant-numeric: tabular-nums; }
@@ -412,6 +414,8 @@ h3 { font-size: 14px; margin: 0; font-weight: 600; }
 .btn.ghost:hover { background: var(--fill); color: var(--ink); }
 .btn.danger { color: var(--bad); }
 .btn.danger:hover, .btn.danger.armed { background: var(--bad); color: var(--bad-ink); }
+/* A button waiting for its second press (static/app.js): its own colour ringed, so the change shows on any button. */
+.btn.armed:not(.danger) { outline: 2px solid var(--accent-p); outline-offset: 2px; }
 .btn.sm { min-height: 36px; padding: 0 16px; font-size: 13px; }
 .btn[disabled], .btn[aria-busy='true'] { opacity: 0.5; pointer-events: none; }
 .btn svg.i { width: 18px; height: 18px; stroke-width: 2; }
@@ -517,7 +521,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .qrow .tx:hover { text-decoration: none; }
 .qrow .tx b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qrow .tx .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-3); }
-.qrow form { flex: none; margin: 0; }
+.qrow form, .qrow > .btn { flex: none; margin: 0; }
+/* A narrow phone: the row keeps its name, its score and its button; where it stands is the section it is in. */
+@media (max-width: 419px) { .qrow .meta { display: none; } }
 .qrow .sc { flex: none; min-width: 44px; text-align: center; }
 .score { font: 700 22px/1 var(--display); font-variant-numeric: tabular-nums; color: var(--ink-2); }
 .score.ok { color: var(--ok); }
@@ -1006,6 +1012,9 @@ svg.chl { flex: none; width: 16px; height: 16px; stroke: none; }
 @media (max-width: 699px) {
   .th-head > .end .btn { padding: 0; width: 40px; }
   .th-head > .end .btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* Waiting for its second press, the button says so in its few words, then goes back to its icon. */
+  .th-head > .end .btn.armed { width: auto; padding: 0 12px; }
+  .th-head > .end .btn.armed span { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
   a.ib-row { padding: 12px 14px; }
 }
 /* A narrow phone (360px): the four places a conversation stands fit across, "תיקנתם" no longer cut at the edge. */

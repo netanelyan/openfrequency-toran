@@ -322,10 +322,16 @@ export const csrfField = (ctx: { csrf: string }) => `<input type="hidden" name="
  */
 export const sendTo = (text: string, subject: string, label: string, cls = 'btn') => `<div class="row mt12"><a class="${cls}" href="${esc(`https://wa.me/?text=${encodeURIComponent(text)}`)}" target="_blank" rel="noopener">${icon('send')}${esc(label)}</a><a class="btn ghost sm" href="${esc(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`)}">${icon('mail')}או במייל</a></div>`;
 
-/** A small POST form with one button. */
-export function postButton(ctx: { csrf: string }, action: string, label: string, { cls = 'btn', ajax = null, confirm = null, fields = {}, title = null, iconName = null }: { cls?: string; ajax?: string | null; confirm?: string | null; fields?: Record<string, unknown>; title?: string | null; iconName?: string | null } = {}) {
+/**
+ * A small POST form with one button. `confirm` makes it two presses (static/app.js): the button's words become
+ * `confirm` until the second press, so it is a few words ("לחצו שוב כדי לנתק"), never a sentence that would stretch a
+ * small button over its row (the owner, 2026-11-13, with a screenshot of the archive button covering the chat's head:
+ * "fix this button. go over all of the UI and make it correct"). What the press does, when it needs saying, is `note`:
+ * it shows in the toast while the button waits. Without script the first press posts, as before.
+ */
+export function postButton(ctx: { csrf: string }, action: string, label: string, { cls = 'btn', ajax = null, confirm = null, note = null, fields = {}, title = null, iconName = null }: { cls?: string; ajax?: string | null; confirm?: string | null; note?: string | null; fields?: Record<string, unknown>; title?: string | null; iconName?: string | null } = {}) {
   const hidden = Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join('');
-  return `<form method="post" action="${esc(action)}"${ajax ? ` data-ajax="${esc(ajax)}"` : ''}>${csrfField(ctx)}${hidden}<button class="${cls}" type="submit"${confirm ? ` data-confirm="${esc(confirm)}"` : ''}${title ? ` title="${esc(title)}"` : ''}>${iconName ? icon(iconName) : ''}${label}</button></form>`;
+  return `<form method="post" action="${esc(action)}"${ajax ? ` data-ajax="${esc(ajax)}"` : ''}>${csrfField(ctx)}${hidden}<button class="${cls}" type="submit"${confirm ? ` data-confirm="${esc(confirm)}"${note ? ` data-note="${esc(note)}"` : ''}` : ''}${title ? ` title="${esc(title)}"` : ''}>${iconName ? icon(iconName) : ''}${label}</button></form>`;
 }
 
 // The lead's place in the funnel, in words and the colour that means it.

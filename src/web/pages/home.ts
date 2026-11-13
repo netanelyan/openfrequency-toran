@@ -58,7 +58,7 @@ async function today(app: App, r: DashReq) {
   </div>
 </div>
 ${addForm(r)}
-${down.length ? `<section class="group mt24"><header><h2>ביקשו להוריד את העמוד</h2></header><div class="panel">${down.map((s) => leadRow(s, postButton(r.ctx, `/lead/${s.id}/takedown`, 'להוריד', { cls: 'btn sm danger', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' }))).join('')}</div><p class="small muted mt8 m0">מישהו לחץ על "להוריד את העמוד הזה". כשההודעה שלהם מגיעה בוואטסאפ, מורידים את העמוד מכאן.</p></section>` : ''}
+${down.length ? `<section class="group mt24"><header><h2>ביקשו להוריד את העמוד</h2></header><div class="panel">${down.map((s) => leadRow(s, postButton(r.ctx, `/lead/${s.id}/takedown`, 'להוריד', { cls: 'btn sm danger', confirm: 'לחצו שוב כדי להוריד', note: 'הקישור והקוד של הדמו יפסיקו לעבוד.' }))).join('')}</div><p class="small muted mt8 m0">מישהו לחץ על "להוריד את העמוד הזה". כשההודעה שלהם מגיעה בוואטסאפ, מורידים את העמוד מכאן.</p></section>` : ''}
 ${hand.length ? `<section class="group mt24"><header><h2>העברות אליך</h2><a class="end small" href="/chats?filter=handoff">כל השיחות</a></header><div class="list">${hand.map((h) => `<a href="/chat/${h.id}"><span class="ico bad">${icon('hand')}</span><span class="t"><b>${esc(h.brand?.name || h.name || h.domain)}: ${esc(summaryHe(h.summary || '') || 'תורן העביר שיחה')}</b><small>${esc(ago(h.last_at))}</small></span><span class="go">${icon('chev')}</span></a>`).join('')}</div></section>` : ''}
 ${installCard(r.ctx.install)}
 <section class="group mt24" id="ready"><header><h2>מוכנים לשליחה</h2></header>${ready.length ? `<div class="panel">${ready.map((s) => leadRow(s, `<a class="btn sm" href="/lead/${s.id}">${icon('send')}לשליחה</a>`)).join('')}</div>` : `<div class="empty">${icon('send')}<b>אין דפים שמחכים לשליחה</b>דף נכנס לכאן אחרי שמאשרים אותו.</div>`}</section>
@@ -236,8 +236,8 @@ async function chat(app: App, r: DashReq, id: number) {
   const ch = CHANNEL_HE[c.channel as keyof typeof CHANNEL_HE] || c.channel;
   // "להחזיר לתורן" with a message waiting: Toran answers from the customer's next message, and the waiting one stays the
   // owner's (channels/store.ts heldForOwner), said before the second press (the audit of 2026-11-12, P0-3).
-  const resumeConfirm = c.state === 'waiting' ? 'תורן יענה מההודעה הבאה של הלקוח, וההודעה שמחכה עכשיו נשארת אצלכם בשיחות. לחצו שוב כדי להחזיר.' : null;
-  const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">${op ? 'ענית' : 'עניתם'} בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה ${op ? 'לך' : 'לכם'} כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm', confirm: resumeConfirm })}</div>` : '';
+  const resumeNote = c.state === 'waiting' ? 'תורן יענה מההודעה הבאה של הלקוח, וההודעה שמחכה עכשיו נשארת אצלכם בשיחות.' : null;
+  const pausedNote = st.pausedUntil ? `<div class="row"><p class="small m0">${op ? 'ענית' : 'עניתם'} בשיחה הזו, אז תורן לא עונה בה עד ${esc(stamp(st.pausedUntil))}. כל הודעה שמגיעה עד אז מחכה ${op ? 'לך' : 'לכם'} כאן.</p>${r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/resume`, 'להחזיר לתורן', { cls: 'btn sm', confirm: resumeNote && 'לחצו שוב כדי להחזיר', note: resumeNote })}</div>` : '';
   const windowNote = st.windowEnds ? `אפשר לענות עד ${esc(stamp(st.windowEnds))}, ${st.windowHours && st.windowHours > 24 ? `${Math.round(st.windowHours / 24)} ימים` : '24 שעות'} מההודעה האחרונה של הלקוח. ` : '';
   // A question Toran handed over: the owner's answer can stay with Toran for next time ("מה שתענו הוא יזכור לפעם הבאה").
   const waiting = c.state === 'waiting';
@@ -262,7 +262,7 @@ async function chat(app: App, r: DashReq, id: number) {
   // To the archive and back, in the conversation's head (on a phone, its icon alone). One that waits is marked handled
   // on the way, said before the second press, so it never sits in the archive and in the badge at once.
   const archiveLabel = c.archived ? 'להוציא מהארכיון' : 'לארכיון';
-  const archiveButton = r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/archive`, `<span>${archiveLabel}</span>`, { cls: 'btn sm', iconName: 'archive', title: archiveLabel, fields: { on: c.archived ? '0' : '1' }, confirm: waiting && !c.archived ? 'השיחה הזו מחכה לכם. בארכיון היא תסומן כטופלה, ותחזור לשיחות כשהלקוח יכתוב שוב. לחצו שוב כדי להעביר.' : null });
+  const archiveButton = r.ctx.readOnly ? '' : postButton(r.ctx, `/chat/${id}/archive`, `<span data-label>${archiveLabel}</span>`, { cls: 'btn sm', iconName: 'archive', title: archiveLabel, fields: { on: c.archived ? '0' : '1' }, ...(waiting && !c.archived ? { confirm: 'לחצו שוב', note: 'השיחה הזו מחכה לכם. בארכיון היא תסומן כטופלה, ותחזור לשיחות כשהלקוח יכתוב שוב.' } : {}) });
   const pane = await inboxPane(app, r, id);
   const subject = c.channel === 'email' && c.meta?.subject ? `<p class="th-subj">${icon('mail')}<bdi>${esc(c.meta.subject)}</bdi></p>` : '';
   const facts = [
@@ -320,7 +320,7 @@ async function followups(app: App, r: DashReq) {
     return `<article class="card rcard" data-item>
   <div class="who">${storeBadge(s)}<div><h3><a href="/lead/${s.id}">${esc(name)}</a></h3><small>נשלח ${esc(ago(s.sent_at))}${s.opened_at ? ` · נפתח ${esc(ago(s.opened_at))}` : ' · עוד לא נפתח'} · ${isDue ? '<b>התזכורת מוכנה</b>' : `התזכורת ב־${esc(stamp(s.followup_due_at))}`}</small></div></div>
   ${isDue ? `<div class="flags"><textarea id="rem-${s.id}" rows="4" dir="rtl" class="wide">${esc(text)}</textarea></div>
-  <div class="actions">${pitch ? postButton(r.ctx, `/lead/${s.id}/wa-send`, 'לשלוח בוואטסאפ מהמספר שלנו', { cls: 'btn primary', ajax: 'remove', confirm: 'לשלוח את התזכורת עכשיו בוואטסאפ מהמספר שלנו? לחצו שוב כדי לשלוח' }) : ''}<button class="btn${pitch ? '' : ' primary'}" type="button" data-copy="#rem-${s.id}"${t.href ? `data-open="${esc(t.href)}"` : ''} data-done="התזכורת הועתקה">${icon('copy')}${esc(t.label)}</button>${postButton(r.ctx, `/lead/${s.id}/followup-sent`, 'שלחתי', { cls: 'btn', ajax: 'remove' })}${postButton(r.ctx, `/lead/${s.id}/skip`, 'לוותר', { cls: 'btn ghost', ajax: 'remove', fields: { reason: 'בלי תזכורת' } })}</div>` : '<div class="actions"></div>'}
+  <div class="actions">${pitch ? postButton(r.ctx, `/lead/${s.id}/wa-send`, 'לשלוח בוואטסאפ מהמספר שלנו', { cls: 'btn primary', ajax: 'remove', confirm: 'לחצו שוב כדי לשלוח', note: 'התזכורת יוצאת עכשיו בוואטסאפ מהמספר שלנו.' }) : ''}<button class="btn${pitch ? '' : ' primary'}" type="button" data-copy="#rem-${s.id}"${t.href ? `data-open="${esc(t.href)}"` : ''} data-done="התזכורת הועתקה">${icon('copy')}${esc(t.label)}</button>${postButton(r.ctx, `/lead/${s.id}/followup-sent`, 'שלחתי', { cls: 'btn', ajax: 'remove' })}${postButton(r.ctx, `/lead/${s.id}/skip`, 'לוותר', { cls: 'btn ghost', ajax: 'remove', fields: { reason: 'בלי תזכורת' } })}</div>` : '<div class="actions"></div>'}
 </article>`;
   };
   const body = `<div class="head"><h1>מעקב</h1><p class="sub">לכל חנות תזכורת אחת, ארבעה ימים אחרי ההודעה הראשונה ולא בשבת. אחרי התזכורת לא כותבים יותר.</p></div>

@@ -131,7 +131,7 @@ export async function webChatPanel(app: App, r: DashReq, s: { id: number; name: 
     <form method="post" action="/lead/${s.id}/web" class="mt12">${csrfField(r.ctx)}<input type="hidden" name="do" value="domains">
     <label class="f">האתרים שבהם הצ׳אט מופיע<small>כתובת בכל שורה. הכתובת של החנות כבר כאן. באתר אחר הצ׳אט לא יופיע, גם אם מעתיקים את השורה.</small><textarea name="domains" rows="3" dir="ltr" maxlength="1000">${esc(domains.join('\n'))}</textarea></label>
     <div class="row mt8"><button class="btn sm" type="submit">לשמור</button></div></form>
-    <div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/web`, 'לכבות את הצ׳אט', { cls: 'btn sm ghost', fields: { do: 'off' }, confirm: 'לכבות? הכפתור ייעלם מהאתר מיד.' })}</div>
+    <div class="row mt12">${postButton(r.ctx, `/lead/${s.id}/web`, 'לכבות את הצ׳אט', { cls: 'btn sm ghost', fields: { do: 'off' }, confirm: 'לחצו שוב כדי לכבות', note: 'הכפתור ייעלם מהאתר מיד.' })}</div>
   </details>` : '';
   return `${head}
   ${add}

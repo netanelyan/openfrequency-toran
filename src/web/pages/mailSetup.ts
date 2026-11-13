@@ -272,7 +272,7 @@ export async function mailCard(app: App, r: DashReq, store: { id: number; name: 
     const more = `<details class="more mt16"><summary>עוד אפשרויות</summary>
     <h3 class="small mt12">לענות מכתובת של החנות (בשביל מי שמנהל לכם את האתר)</h3>${await mailDomainPanel(app, r, id, st.account!.external_id)}
     <h3 class="small mt16">הכתובת של תורן</h3><p class="small muted m0">לכאן המייל של החנות עובר.</p>${addressBox(`fwd-${st.account!.id}`, st.address, false)}
-    ${ro ? '' : `<div class="row mt16">${form(`<button class="btn sm ghost" type="submit">${icon('refresh')}לחבר מייל אחר</button>`, { do: 'change' })}${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לא ייענו.' })}</div>`}
+    ${ro ? '' : `<div class="row mt16">${form(`<button class="btn sm ghost" type="submit">${icon('refresh')}לחבר מייל אחר</button>`, { do: 'change' })}${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי לנתק', note: 'תורן לא יענה על מיילים שיגיעו מעכשיו.' })}</div>`}
   </details>`;
     return `${head}<p class="m0">${st.from ? `מייל שמגיע ל־<bdi class="ltr">${esc(st.from)}</bdi> עובר לתורן.` : 'המייל של החנות עובר לתורן.'} ${answers}</p>
   ${channelSwitch(r, id, 'email', off, (await liveOf(app, id)).state)}

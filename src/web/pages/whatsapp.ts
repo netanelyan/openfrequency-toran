@@ -269,7 +269,7 @@ async function page(app: App, r: DashReq, id: number, notice = '') {
   ${a!.status === 'active' && !ours ? channelSwitch(r, id, 'whatsapp', (await offChannels(app, id)).includes('whatsapp'), store) : ''}
   <dl class="kv mt12"><dt>שם העסק ב־WhatsApp</dt><dd>${esc(a!.name || a!.meta?.verified_name || '-')}</dd><dt>חובר</dt><dd>${esc(stamp(a!.connected_at))}</dd>${until ? `<dt>החיבור בתוקף עד</dt><dd>${until}</dd>` : ''}</dl>
   <p class="small mt12 m0">${a!.meta?.coexistence === false ? 'המספר הזה מחובר לתורן בלבד, בלי אפליקציה בטלפון. עונים ללקוחות מהשיחות כאן, ואחרי שעניתם תורן מפסיק לענות בשיחה הזו לזמן מה.' : 'כשעונים ללקוח מהטלפון, תורן מפסיק לענות בשיחה הזו, ורואים את התשובה גם כאן, בשיחות.'}</p>
-  ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: ours ? 'לנתק? תורן יפסיק לענות במספר שלנו: לבעלי העסקים, בדמו ובתמיכה. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' : 'לנתק? תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}
+  ${ro ? '' : `<div class="row mt12">${postButton(r.ctx, `/lead/${id}/whatsapp/disconnect`, 'לנתק את הוואטסאפ מתורן', { cls: 'btn sm danger', confirm: 'לחצו שוב כדי לנתק', note: ours ? 'תורן יפסיק לענות במספר שלנו: לבעלי העסקים, בדמו ובתמיכה. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' : 'תורן יפסיק לענות בוואטסאפ של החנות. הוואטסאפ בטלפון ממשיך לעבוד כרגיל.' })}</div>`}
 </section>`
     : connectGuide(viaZernio ? 'zernio' : viaKapso ? 'kapso' : 'meta', connectButton(CONNECT), viaZernio && ready && !ro ? newNumber(r, id) : '');
   const body = `<a class="back" href="/settings#channels">${icon('chev')}הגדרות</a>

@@ -115,7 +115,7 @@ async function channelsOf(app: App, s: Store): Promise<ChannelRow[]> {
       const state: ConnState = a?.status === 'active' ? 'on' : a?.status === 'error' ? 'bad' : dmConnectReady(app.env, ch) ? 'off' : 'soon';
       return { ch, on: a?.status === 'active', state, text: socialLine(a && a.status !== 'off' ? a : null, ch, s, dmConnectReady(app.env, ch), answering(ch)) };
     }))),
-    { ch: 'web' as const, on: web === 'on', state: web === 'on' ? 'on' : web === 'waiting' ? 'wait' : 'off', text: web === 'on' ? webText[answering('web')] : web === 'waiting' ? 'מופעל, ונשאר להוסיף אותו לאתר. <a href="/settings#webchat">איך מוסיפים</a>' : 'לא מופעל. <a href="/settings#webchat">להפעיל</a>' },
+    { ch: 'web' as const, on: web === 'on', state: web === 'on' ? 'on' : web === 'waiting' ? 'wait' : 'off', text: web === 'on' ? webText[answering('web')] : web === 'waiting' ? 'מופעל, ונשאר להוסיף אותו לאתר. <a href="/settings#webchat">איך מוסיפים</a>' : '<a href="/settings#webchat">להפעיל את הצ׳אט באתר</a>' },
   ];
   // A channel the owner switched Toran off on (pages/channelOff.ts) says so on its chip too. A channel whose provider is
   // not set up on this server is not offered at all (P2-14: no "בקרוב" for what is on sale; the server is P0-7's).
@@ -287,7 +287,7 @@ async function livePanel(app: App, r: DashReq, s: Store, main = true): Promise<s
   const text = state === 'live' ? (channels ? 'תורן עונה ללקוחות בכל הערוצים המחוברים. אפשר לעצור אותו בכולם, למשל במבצע שהאתר עוד לא מעודכן בו: הודעות יחכו לכם בשיחות, ומפעילים שוב כשרוצים.' : 'תורן מופעל. הוא יתחיל לענות כשתחברו ערוץ.')
     : state === 'paused' ? `תורן מושהה בכל הערוצים${pausedAt ? ` מ־${esc(stamp(pausedAt))}` : ''}, אז הודעות של לקוחות מחכות לכם בשיחות.` : channels ? 'תורן עוד לא הופעל בחנות, אז הודעות של לקוחות מחכות לכם בשיחות.' : 'קודם מחברים ערוץ אחד, ואז מפעילים את תורן כאן.';
   const button = !may ? '' : state === 'live'
-    ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('x')}להפסיק את תורן בכל הערוצים`, { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי לעצור. עד שמפעילים שוב, תורן לא עונה לאף לקוח.' })
+    ? postButton(r.ctx, `/lead/${s.id}/live`, `${icon('x')}להפסיק את תורן בכל הערוצים`, { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי לעצור', note: 'עד שמפעילים שוב, תורן לא עונה לאף לקוח.' })
     : !channels ? `<a class="btn sm" href="#channels">${icon('chat')}לחבר ערוץ</a>`
     : postButton(r.ctx, `/lead/${s.id}/live`, `${icon('check')}${state === 'paused' ? 'להפעיל שוב' : 'להפעיל את תורן'}`, { cls: `btn sm${main ? ' primary' : ''}`, fields: { on: '1' }, confirm: 'לחצו שוב כדי להפעיל' });
   // A team member sees where it stands and why there is no button (P2-23), as the go-live banner says it.

@@ -27,7 +27,7 @@ test('Today before any channel: not answering yet, what is left with one next st
     assert.ok(page.includes(`https://wa.me/${s.app.env.DEMO_WA_NUMBER}?text=`) && page.includes(encodeURIComponent(store.demo_code)), 'the try button opens our demo number with the store\'s code');
     assert.match(page, /השיחה מסומנת דמו ולא נספרת בחבילה/);
     assert.doesNotMatch(page, /class="kpis"/, 'no month of zeros');
-    assert.match(page, /<b>צ׳אט באתר<\/b><span class="small">לא מופעל/, 'the web chat is among the channels');
+    assert.match(page, /<b>צ׳אט באתר<\/b><span class="small"><a href="\/settings#webchat">להפעיל את הצ׳אט באתר<\/a>/, 'the web chat is among the channels');
 
     // The chat switched on but not yet on the site is not answering anyone.
     await s.app.db.query("INSERT INTO channel_accounts (store_id, channel, kind, external_id, status, meta) VALUES ($1, 'web', 'web', 'w00112233445566778899', 'active', '{}'::jsonb)", [id]);

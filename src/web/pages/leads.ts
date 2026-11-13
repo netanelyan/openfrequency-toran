@@ -89,7 +89,7 @@ function channelsPanel(r: DashReq, id: number, account: any, address: string, au
   <dl class="kv"><dt>וואטסאפ</dt><dd>${wa}</dd>${social}<dt>מייל</dt><dd>${on ? `<bdi class="ltr">${esc(account.external_id)}</bdi> · <span class="chip ok">מחובר</span>` : '<span class="chip ghost">לא מחובר</span>'}</dd></dl>
   ${on ? `<p class="small mt12 m0">מעבירים לכתובת הזו את המייל של החנות, למשל ב־Gmail: הגדרות, "העברה ו־POP/IMAP", "הוספת כתובת להעברה". Gmail שולח לכתובת קוד אישור, והוא מופיע כאן למטה ובשיחות. תורן עונה משם בשם החנות.</p>
   ${automatedMail.length ? `<div class="list mt12">${automatedMail.map((m) => `<a href="/chat/${m.id}"><span class="ico warn">${icon('alert')}</span><span class="t"><b>${esc(m.subject || 'מייל אוטומטי')}</b><small>${esc(ago(m.at))} · מייל אוטומטי, תורן לא ענה</small></span></a>`).join('')}</div>` : ''}
-  <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לנתק? מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>${ownDomain}`
+  <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לנתק את המייל', { cls: 'btn sm danger', fields: { on: '0' }, confirm: 'לחצו שוב כדי לנתק', note: 'מיילים שיגיעו לכתובת יישמרו, ותורן לא יענה עליהם.' })}</div>${ownDomain}`
   : `<p class="small mt12 m0">החנות מקבלת כתובת משלה, <bdi class="ltr">${esc(address)}</bdi>, ומעבירה אליה את המייל שלה. תורן עונה משם בשם החנות, ומה שהוא לא יודע עובר אליך.</p>
   <div class="row mt12">${postButton(r.ctx, `/lead/${id}/channels/email`, 'לחבר מייל', { cls: 'btn sm primary', fields: { on: '1' } })}</div>`}
 </section>`;
@@ -129,9 +129,9 @@ async function leadPage(app: App, r: DashReq, id: number) {
   const tederUp = Boolean(teder?.demo?.pageUrl);
   const tederFirst = tederUp && teder!.stage === 'demo_ready';
   const tederReminder = tederUp && teder!.reminderDue;
-  const both = (label: string) => postButton(r.ctx, `/lead/${id}/both-send`, label, { cls: 'btn primary', iconName: 'send', confirm: 'לשלוח עכשיו הודעה אחת עם שני הדמואים, מהמספר שלנו? לחצו שוב כדי לשלוח' });
-  const waSend = (label: string, quiet = false) => postButton(r.ctx, `/lead/${id}/wa-send`, label, { cls: quiet ? 'btn' : 'btn primary', iconName: 'send', confirm: 'לשלוח עכשיו בוואטסאפ מהמספר שלנו? לחצו שוב כדי לשלוח' });
-  const tederSend = (label: string) => postButton(r.ctx, `/lead/${id}/teder-send`, label, { cls: 'btn', iconName: 'send', confirm: 'לשלוח עכשיו את הדמו של תדר לבד, מהמספר שלנו? לחצו שוב כדי לשלוח' });
+  const both = (label: string) => postButton(r.ctx, `/lead/${id}/both-send`, label, { cls: 'btn primary', iconName: 'send', confirm: 'לחצו שוב כדי לשלוח', note: 'הודעה אחת עם שני הדמואים יוצאת עכשיו מהמספר שלנו.' });
+  const waSend = (label: string, quiet = false) => postButton(r.ctx, `/lead/${id}/wa-send`, label, { cls: quiet ? 'btn' : 'btn primary', iconName: 'send', confirm: 'לחצו שוב כדי לשלוח', note: 'ההודעה יוצאת עכשיו בוואטסאפ מהמספר שלנו.' });
+  const tederSend = (label: string) => postButton(r.ctx, `/lead/${id}/teder-send`, label, { cls: 'btn', iconName: 'send', confirm: 'לחצו שוב כדי לשלוח', note: 'הדמו של תדר לבד יוצא עכשיו מהמספר שלנו.' });
 
   const parts = (s.score_breakdown || []).map((f: any) => `<li class="${f.points < 0 ? 'neg' : ''}"><span>${esc(FACTOR_HE[f.factor] || f.factor)}</span>${f.max ? vbar(f.points, f.max) : '<span></span>'}<b>${f.points}${f.max ? `/${f.max}` : ''}</b><span class="ev" dir="auto">${esc(f.evidence)}</span></li>`).join('');
 
@@ -198,7 +198,7 @@ ${buildBoth ? '<p class="small muted mt8 m0">"לבנות את שניהם" קור
 ${shared}
 ${job && ['queued', 'running'].includes(job.status) ? `<div class="banner info" data-wait-job="${job.id}">${icon('clock')}<div><b>בעבודה</b><p data-progress>${esc(job.progress || 'בתור')}</p></div></div>` : ''}
 ${job?.status === 'failed' ? `<div class="banner bad">${icon('alert')}<div><b>הקריאה האחרונה של האתר נכשלה</b><p>${esc(job.last_error || '')}</p></div></div>` : ''}
-${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד הוסר ${esc(stamp(s.taken_down_at))}</b><p>הקישור כבר לא עובד, הקוד של הדמו כבוי, ולא כותבים להם יותר.</p></div></div>` : s.takedown_asked_at ? `<div class="banner warn">${icon('alert')}<div><b>לחצו על "להוריד את העמוד הזה" ${esc(stamp(s.takedown_asked_at))}</b><p>אם הגיעה מהם הודעה בוואטסאפ, מורידים את העמוד מכאן. הלחיצה לבד עוד לא מורידה אותו.</p></div>${postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm danger', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' })}</div>` : ''}
+${s.taken_down_at ? `<div class="banner bad">${icon('alert')}<div><b>העמוד הוסר ${esc(stamp(s.taken_down_at))}</b><p>הקישור כבר לא עובד, הקוד של הדמו כבוי, ולא כותבים להם יותר.</p></div></div>` : s.takedown_asked_at ? `<div class="banner warn">${icon('alert')}<div><b>לחצו על "להוריד את העמוד הזה" ${esc(stamp(s.takedown_asked_at))}</b><p>אם הגיעה מהם הודעה בוואטסאפ, מורידים את העמוד מכאן. הלחיצה לבד עוד לא מורידה אותו.</p></div>${postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm danger', confirm: 'לחצו שוב כדי להוריד', note: 'הקישור והקוד של הדמו יפסיקו לעבוד.' })}</div>` : ''}
 ${waBanner(await waAccountOf(app, id), id)}
 <div class="cols">
   <div class="grid12">
@@ -213,7 +213,7 @@ ${waBanner(await waAccountOf(app, id), id)}
   <div class="grid12">
     <section class="panel"><header><h2>הדף</h2></header>
       ${s.page_built_at ? `<dl class="kv"><dt>כתובת</dt><dd><a href="${esc(url!)}?preview=1" target="_blank" rel="noopener"><bdi class="ltr">${esc(url!)}</bdi></a></dd><dt>קוד דמו</dt><dd class="ltr">${esc(s.demo_code)}</dd><dt>נפתח</dt><dd>${stats?.opens ? `${stats.opens} פעמים, ${stats.visitors} אנשים, אחרון ${esc(ago(stats.last))}` : 'עוד לא'}</dd><dt>גלילה</dt><dd>${stats?.depth ? `עד ${stats.depth}%` : '-'}</dd><dt>לחיצות על הדמו</dt><dd>${stats?.clicks || 0}</dd><dt>הדמו התחיל</dt><dd>${s.demo_started_at ? esc(stamp(s.demo_started_at)) : 'עוד לא'}</dd></dl>` : '<p class="muted m0">עוד לא נבנה.</p>'}
-      <div class="row mt16">${canIngest(s.platform) ? postButton(r.ctx, `/lead/${id}/build`, s.page_built_at ? 'לקרוא את האתר מחדש' : 'לבנות דף', { cls: s.page_built_at ? 'btn sm' : 'btn primary sm', iconName: 'refresh' }) : ''}${s.status !== 'skipped' ? postButton(r.ctx, `/lead/${id}/skip`, 'לדלג', { cls: 'btn sm danger', confirm: 'לדלג על החנות?' }) : ''}${s.page_built_at && !s.taken_down_at ? postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm', confirm: 'להוריד את העמוד? הקישור והקוד של הדמו יפסיקו לעבוד.' }) : ''}</div>
+      <div class="row mt16">${canIngest(s.platform) ? postButton(r.ctx, `/lead/${id}/build`, s.page_built_at ? 'לקרוא את האתר מחדש' : 'לבנות דף', { cls: s.page_built_at ? 'btn sm' : 'btn primary sm', iconName: 'refresh' }) : ''}${s.status !== 'skipped' ? postButton(r.ctx, `/lead/${id}/skip`, 'לדלג', { cls: 'btn sm danger', confirm: 'לחצו שוב כדי לדלג' }) : ''}${s.page_built_at && !s.taken_down_at ? postButton(r.ctx, `/lead/${id}/takedown`, 'להוריד את העמוד', { cls: 'btn sm', confirm: 'לחצו שוב כדי להוריד', note: 'הקישור והקוד של הדמו יפסיקו לעבוד.' }) : ''}</div>
     </section>
     <section class="panel"><header><h2>מה נמצא באתר</h2></header>
       <dl class="kv">
@@ -232,12 +232,12 @@ ${waBanner(await waAccountOf(app, id), id)}
       <form class="row" method="post" action="/lead/${id}/plan">${csrfField(r.ctx)}<select name="plan" aria-label="חבילה">${(Object.keys(PLANS) as PlanKey[]).map((k) => `<option value="${k}"${planOf(s.config) === k ? ' selected' : ''}>${esc(PLANS[k].he)}, עד ${PLANS[k].conversations.toLocaleString('en-US')} שיחות</option>`).join('')}</select><button class="btn sm" type="submit">לשמור</button></form>
       <p class="small muted mt8 m0">הלקוח רואה את החבילה ואת השיחות של החודש בעמוד "החבילה". המחיר והחשבוניות נשארים ב-accounts.</p>
       ${share ? costPanel(r, id, share) : ''}
-      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/release`, 'לשחרר את האתר מהחשבון', { cls: 'btn sm danger', confirm: 'לשחרר? החנות חוזרת להיות ליד שלנו, והחשבון של הלקוח לא רואה אותה יותר. מי שיוכיח שהאתר שלו יוכל להוסיף אותה.' })}</div>
+      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/release`, 'לשחרר את האתר מהחשבון', { cls: 'btn sm danger', confirm: 'לחצו שוב כדי לשחרר', note: 'החנות חוזרת להיות ליד שלנו, והחשבון של הלקוח לא רואה אותה יותר. מי שיוכיח שהאתר שלו יוכל להוסיף אותה.' })}</div>
     </section>` : ''}
     <section class="panel"><header><h2>מה קרה</h2></header><ol class="trace">${events.map((e) => `<li class="ok"><b>${esc(EVENT_HE[e.kind] || e.kind)}</b> <span class="d">${esc(stamp(e.at))}</span></li>`).join('') || '<li>עוד כלום</li>'}</ol></section>
     ${isCompany(s) ? '' : `<section class="panel" id="delete"><header><h2>למחוק את החנות</h2></header>
       <p class="small muted m0">החנות יוצאת מתורן: הערוצים שלה מתנתקים, והשיחות, מה שתורן למד מהאתר, הדף וקוד הדמו נמחקים. אי אפשר להחזיר את זה.</p>
-      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/delete`, 'למחוק את החנות', { cls: 'btn sm danger', confirm: 'למחוק את החנות? הערוצים שלה יתנתקו, והשיחות, הידע, הדף וקוד הדמו יימחקו. אי אפשר להחזיר את זה.' })}</div>
+      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/delete`, 'למחוק את החנות', { cls: 'btn sm danger', confirm: 'לחצו שוב כדי למחוק', note: 'הערוצים שלה יתנתקו, והשיחות, הידע, הדף וקוד הדמו יימחקו. אי אפשר להחזיר את זה.' })}</div>
     </section>`}
   </div>
 </div>${ready ? '' : ''}`;
@@ -253,7 +253,7 @@ function costPanel(r: DashReq, id: number, s: Share): string {
   const line = `ב${monthHe(s.month)} המודל עלה ${shekels(Math.round(s.ils * 100) / 100)} ($${s.usd.toFixed(2)}) בחנויות של החשבון, ${percent(s.share)} מ-${shekels(s.base)} שהלקוח משלם על החודש לפני מע״מ.`;
   const state = stopped(s)
     ? `<p class="m0 mt8"><b>תורן עצר את המודל בחנויות של החשבון עד סוף החודש.</b> השאלות של הלקוחות עוברות לבעלים, והם לא רואים סכום או אחוז.</p>
-      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/cost-lift`, 'להחזיר את המודל עד סוף החודש', { cls: 'btn sm primary', fields: { on: '1' }, confirm: 'להחזיר את המודל לחנויות של החשבון עד סוף החודש? העלות תמשיך לעלות, ותורן לא יעצור שוב החודש.' })}</div>`
+      <div class="row mt12">${postButton(r.ctx, `/lead/${id}/cost-lift`, 'להחזיר את המודל עד סוף החודש', { cls: 'btn sm primary', fields: { on: '1' }, confirm: 'לחצו שוב כדי להחזיר', note: 'המודל חוזר לחנויות של החשבון עד סוף החודש. העלות תמשיך לעלות, ותורן לא יעצור שוב החודש.' })}</div>`
     : s.lifted
       ? `<p class="m0 mt8">המודל עונה שוב בחנויות של החשבון עד סוף החודש, מאז ${esc(stamp(s.lifted.at))}.</p>
       <div class="row mt12">${postButton(r.ctx, `/lead/${id}/cost-lift`, 'לעצור שוב מעל 50%', { cls: 'btn sm', fields: { on: '0' } })}</div>`

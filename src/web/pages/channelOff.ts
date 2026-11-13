@@ -66,7 +66,7 @@ export function channelSwitch(r: DashReq, storeId: number, channel: OffChannel, 
     : off ? `כרגע לא. הודעות ${IN_HE[channel]} מחכות לכם בשיחות.` : `מכבים כשרוצים לענות ${IN_HE[channel]} לבד.`;
   const sw = `<span class="sw${off ? '' : ' on'}" aria-hidden="true"><i></i></span>`;
   const button = may
-    ? `<form method="post" action="/lead/${storeId}/channel-off">${csrfField(r.ctx)}<input type="hidden" name="channel" value="${esc(channel)}"><input type="hidden" name="on" value="${off ? '1' : '0'}"><button class="swbtn" type="submit" role="switch" aria-checked="${off ? 'false' : 'true'}"${off ? '' : ` data-confirm="${esc(`לחצו שוב כדי לעצור את תורן ${IN_HE[channel]}`)}"`}><span class="t"><b>${esc(label)}</b><small>${esc(line)}</small></span>${sw}</button></form>`
+    ? `<form method="post" action="/lead/${storeId}/channel-off">${csrfField(r.ctx)}<input type="hidden" name="channel" value="${esc(channel)}"><input type="hidden" name="on" value="${off ? '1' : '0'}"><button class="swbtn" type="submit" role="switch" aria-checked="${off ? 'false' : 'true'}"${off ? '' : ` data-confirm="לחצו שוב כדי לכבות" data-note="${esc(`תורן יפסיק לענות ${IN_HE[channel]}, וההודעות משם יחכו לכם בשיחות.`)}"`}><span class="t"><b data-label>${esc(label)}</b><small>${esc(line)}</small></span>${sw}</button></form>`
     : `<div class="swbtn" role="switch" aria-checked="${off ? 'false' : 'true'}" aria-disabled="true"><span class="t"><b>${esc(label)}</b><small>${esc(line)}${r.user.role === 'client_member' ? ' את זה משנה מי שפתח את החשבון.' : ''}</small></span>${sw}</div>`;
   return `<div class="swrow mt12" id="switch-${esc(channel)}">${button}</div>`;
 }
