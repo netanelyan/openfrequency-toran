@@ -102,6 +102,13 @@ test("the autopilot's door: its own key only, the day as it reads it, and no wri
     const c = (await call(app, 'GET', '/autopilot/candidates')).json.candidates;
     assert.deepEqual([c[0].id, c[0].reach, c[0].toranCan, c[0].chosen], [id, 'whatsapp', true, null]);
     assert.ok(c[0].about !== undefined && c[0].facts, 'each in the words the leads page shows it');
+    // Its site, read here (the scheduled task reaches nothing on the internet but this door).
+    const site = await call(app, 'GET', `/autopilot/site?id=${id}`);
+    assert.equal(site.status, 200);
+    assert.equal(site.json.home.status, 200);
+    assert.ok(site.json.home.text.length > 50, 'the home page in words');
+    assert.doesNotMatch(JSON.stringify(site.json), /<script|<html/i, 'no markup');
+    assert.equal((await call(app, 'GET', '/autopilot/site?id=999999')).status, 404);
     assert.equal((await call(app, 'POST', '/autopilot/decide', { id, product: 'toran' })).status, 409, 'off: no writes');
     delete app.env.TORAN_AUTOPILOT_TOKEN;
     assert.equal((await call(app, 'GET', '/autopilot/state')).status, 503, 'no key set: closed');

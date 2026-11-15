@@ -33,6 +33,7 @@ routine's environment; never print it, never write it to a file or a note). JSON
 |---|---|
 | `GET /autopilot/state` | `on`, `quiet` (night, Shabbat, a holiday), `half` (morning/afternoon), `limits {day, batch}`, `asked {day, half}`, `pool {askable, undecided, daysLeft}`, `last24h {asked, yes, delivered, delivery_failed, undelivered}`, `spend {monthUsd, capUsd}`, `lastDiscovery` |
 | `GET /autopilot/candidates?limit=40` | the stores it may ask, best score first: `id, name, domain, url, platform, score, scoreParts, about, facts {products, priceMin, priceMax, kinds, social {instagram, tiktok, facebook}}, reach (whatsapp/email), whatsappOnSite, toranCan, chosen, notes` |
+| `GET /autopilot/site?id=` | the store's own pages as text, read by Toran: `home {url, status, title, text}`, `pages` (its shipping and about pages when it links them), `social`. The scheduled task reaches nothing on the internet but this door: read stores here, never with WebFetch |
 | `POST /autopilot/decide {id, product, reason}` | product `toran`, `teder`, `both` or `none` (sets it aside); `reason` one short line in Hebrew, kept in the lead's notes |
 | `POST /autopilot/ask {id}` | the question, on WhatsApp to its mobile or else by email. `{sent, why, said}` |
 | `POST /autopilot/discover {source}` | `brave` (Hebrew searches by category) or `storecensus` (Israel's Shopify directory); new stores appear within minutes |
@@ -53,9 +54,10 @@ after three, stop and note it.
    `{"source":"brave"}` and `{"source":"storecensus"}`.
 3. Room this run: `min(limits.batch - asked.half, limits.day - asked.day)`. None: go to step 6.
 4. `GET /autopilot/candidates?limit=40`. For each, best first, until the room is used:
-   - **Look at the store.** Fetch its `url` (and, when it has one, glance at its Instagram or TikTok from `facts.social`).
-     Read it the way a careful salesperson would. Is it a real, active Israeli online store, with Hebrew pages, prices
-     in shekels, shipping in Israel and products in stock?
+   - **Look at the store.** `GET /autopilot/site?id=<id>`, with its candidate facts (products, prices, kinds, its
+     Instagram, TikTok and Facebook). Read it the way a careful salesperson would. Is it a real, active Israeli online
+     store, with Hebrew pages, prices in shekels, shipping in Israel and products in stock? A site that did not load
+     (`home.status` 0 or 400 and up) is not asked this run.
    - **Set it aside (`none`)** with the reason when it is any of these:
      - a shop selling a famous brand it is not (a "DIOR Israel" on a domain that is not the brand's: counterfeit)
      - a big chain, a marketplace or a brand's local branch

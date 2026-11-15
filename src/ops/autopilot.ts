@@ -9,6 +9,7 @@ import { displayName } from '../ingest/brand.ts';
 import { canIngest } from '../ingest/catalogue.ts';
 import { publicBase } from '../auto/messages.ts';
 import { monthSpend } from '../agent/spend.ts';
+import { htmlToText } from '../channels/email.ts';
 import { alertOperator } from './alert.ts';
 import { aboutOf, discoverLeads, stockOf } from './leadsAdmin.ts';
 import { emailPitch, mailInsteadOf, MAIL_SAID_HE } from './emailPitch.ts';
@@ -165,6 +166,52 @@ export async function autopilotAsk(app: App, id: number): Promise<{ sent: boolea
   return { sent: out.sent, why: out.why, said: out.said || (out.why ? (MAIL_SAID_HE as any)[out.why] || (SAID_HE as any)[out.why] || '' : '') };
 }
 
+/** The page's own words, at most `max` characters, and its title. */
+function pageOf(html: string, max: number): { title: string; text: string } {
+  const title = cleanLine(htmlToText(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] || ''), 200);
+  const body = html.replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, ' ');
+  return { title, text: htmlToText(body).replace(/\n{3,}/g, '\n\n').slice(0, max) };
+}
+
+/**
+ * A store's own pages as text, for the autopilot to judge it by: its home page, and its shipping and about pages when
+ * the home page links them. Read here through Toran's fetcher (core/http.ts: public addresses only, robots.txt kept),
+ * so the scheduled task reaches nothing on the internet but this door.
+ */
+export async function autopilotSite(app: App, id: number) {
+  const s = await app.db.one<any>("SELECT id, url, domain, signals FROM stores WHERE id = $1 AND platform IS DISTINCT FROM 'company' AND workspace_id IS NULL", [id]);
+  if (!s) return null;
+  const home = String(s.url || `https://${s.domain}/`);
+  const read = async (url: string, max: number) => {
+    try {
+      const r = await app.fetcher(url, { timeoutMs: 15_000, maxBytes: 1_500_000, robots: true });
+      return r.status < 400 ? { url: r.url || url, status: r.status, ...pageOf(r.text || '', max), html: r.text || '' } : { url, status: r.status, title: '', text: '', html: '' };
+    } catch (e: any) {
+      return { url, status: 0, title: '', text: '', html: '', error: cleanLine(e?.code || e?.message || e, 120) };
+    }
+  };
+  const first = await read(home, 8000);
+  let host = s.domain;
+  try {
+    host = new URL(first.url).host;
+  } catch {
+    // the store's own domain
+  }
+  // The shipping and about pages it links, on its own host: where shipping times, returns and who runs it are said.
+  const wanted = /(shipping|delivery|returns|refund|about|policies\/(shipping|refund)|%D7%9E%D7%A9%D7%9C%D7%95%D7%97|%D7%90%D7%95%D7%93%D7%95%D7%AA|משלוח|אודות|החזר)/i;
+  const links = [...new Set([...first.html.matchAll(/href="([^"#]+)"/gi)].map((m) => {
+    try {
+      return new URL(m[1], first.url).toString();
+    } catch {
+      return '';
+    }
+  }).filter((u) => u && new URL(u).host === host && wanted.test(u)))].slice(0, 2);
+  const more = [];
+  for (const u of links) more.push(await read(u, 3000));
+  const strip = ({ html, ...p }: any) => p;
+  return { id: Number(s.id), home: strip(first), pages: more.map(strip), social: s.signals?.social || null };
+}
+
 /** What happened in the last hours, for the autopilot's review: every question, its yes, its demo, its answer. */
 export async function autopilotRecent(app: App, hours = 24) {
   const rows = await app.db.query<any>(
@@ -230,6 +277,12 @@ export function autopilotRoutes(app: App): Route<Req>[] {
   return [
     ['GET', /^\/autopilot\/state$/, async (r) => guard(r) || json(await autopilotState(app))],
     ['GET', /^\/autopilot\/candidates$/, async (r) => guard(r) || json({ candidates: await autopilotCandidates(app, Number(r.url.searchParams.get('limit')) || 30) })],
+    ['GET', /^\/autopilot\/site$/, async (r) => {
+      const refused = guard(r);
+      if (refused) return refused;
+      const site = await autopilotSite(app, Number(r.url.searchParams.get('id')) || 0);
+      return site ? json(site) : json({ error: 'not_found' }, 404);
+    }],
     ['GET', /^\/autopilot\/recent$/, async (r) => guard(r) || json({ recent: await autopilotRecent(app, Number(r.url.searchParams.get('hours')) || 24) })],
     ['GET', /^\/autopilot\/notes$/, async (r) => guard(r) || json({ notes: await autopilotNotes(app) })],
     ['POST', /^\/autopilot\/decide$/, async (r) => {
