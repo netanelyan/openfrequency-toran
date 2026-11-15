@@ -33,7 +33,7 @@ import { waitingDigest } from '../owners/waiting.ts';
 import { pausedNotice } from '../owners/paused.ts';
 import { learnVoice } from '../agent/voice.ts';
 import { takeOrderKey } from '../domainProof.ts';
-import { remindDue } from '../ops/remind.ts';
+import { outreachDue } from '../ops/remind.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -334,8 +334,8 @@ export async function schedule(app: App) {
   // On the 1st from 09:00: last month's results to each customer store's owners (owners/reports.ts).
   await step(app, 'reports', () => monthlyReports(app));
   await step(app, 'reread', () => scheduleReread(app));
-  // A lead's one reminder, once it is due and nobody answered (ops/remind.ts).
-  await step(app, 'outreach', () => remindDue(app));
+  // A WhatsApp pitch that did not arrive goes by email, and a lead's one reminder goes once it is due (ops/remind.ts).
+  await step(app, 'outreach', () => outreachDue(app));
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */

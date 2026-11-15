@@ -97,6 +97,7 @@ export const KEYS: { name: string; group: string; he: string }[] = [
   { name: 'META_WABA_ID', group: 'whatsapp', he: 'Meta: המזהה של חשבון הוואטסאפ (WABA) שבו התבניות, כדי לבדוק לפני כל פנייה ללידים שהתבנית מאושרת ושהאיכות שלה טובה. ריק: נבדק רק המספר' },
   { name: 'TORAN_OUTREACH_DAILY', group: 'whatsapp', he: 'כמה הודעות ללידים יוצאות ביום מהמספר שלנו, לתורן ולתדר יחד. ריק: 10' },
   { name: 'TORAN_OUTREACH_MAIL_DAILY', group: 'channels', he: 'כמה מיילים ללידים יוצאים ביום מהכתובת של חנות השירות שלנו, לתורן ולתדר יחד. ריק: 20' },
+  { name: 'TORAN_OUTREACH_AUTO', group: 'whatsapp', he: 'התזכורת האחת ללידים, והמייל במקום וואטסאפ שלא הגיע, יוצאים לבד. 0: רק כשלוחצים. ריק: 1' },
   { name: 'TORAN_SIGNUP_OPEN', group: 'website', he: 'תורן במכירה: 1 כשגם accounts מוכר אותו וגם האתר אומר שההרשמה פתוחה. עד אז לא יוצאת הודעה ללידים על תורן, ובדפי הדמו נשאר "לכתוב לתורן"' },
   { name: 'TORAN_SITE_EXPORT_URL', group: 'website', he: 'איפה האתר מפרסם אם ההרשמה פתוחה. ריק: https://openfrequency.co.il/support.json' },
   { name: 'META_SYSTEM_TOKEN', group: 'whatsapp', he: 'Meta: מפתח של system user בעסק שלנו, למספרים שלנו ב-Meta. ריק: המפתח שהתקבל כשחיברו את המספר בדף הוואטסאפ של חנות השירות' },

@@ -4,6 +4,7 @@ import { cleanLine } from '../core/hebrew.ts';
 import { J } from '../db/index.ts';
 import { OpsError, sendNow } from './actions.ts';
 import { sendBoth, sendTeder } from './both.ts';
+import { emailFallbackDue } from './emailPitch.ts';
 import { outreachLive, SAID_HE } from './outreach.ts';
 
 // The one reminder, sent by itself (the owner, 2026-11-15: "19 messages, 0 replies. redo that part. from start until the
@@ -12,8 +13,8 @@ import { outreachLive, SAID_HE } from './outreach.ts';
 // operator's button makes (ops/actions.ts sendNow, ops/both.ts sendBoth and sendTeder), with every one of its checks (the
 // reminder's own day, four days on and off Shabbat; the lead's state; and sendPitch's way out, quiet hours, day's cap and
 // Meta's quality), for a first pitch that reached the store (Meta took it and did not say it failed) and that nobody
-// answered, pressed yes on, or tried the demo of since. One that did not arrive is written to by email instead
-// (ops/emailPitch.ts). TORAN_OUTREACH_AUTO=0 stops it.
+// answered, pressed yes on, or tried the demo of since, and for a first email the same. One that did not arrive is
+// written to by email instead (ops/emailPitch.ts emailFallbackDue, run here too). TORAN_OUTREACH_AUTO=0 stops both.
 
 /** The operator's name on a reminder the schedule sent. */
 export const AUTO_BY = 'תזכורת אוטומטית';
@@ -29,7 +30,11 @@ export const autoOutreach = (env: Record<string, string | undefined>) => String(
 
 type Due = { id: number; product: 'toran' | 'teder' | 'both'; ref: string; storeId: number };
 
-/** The first pitches whose reminder is due: reached, unanswered, four days old at least, two weeks at most. */
+/**
+ * The first pitches whose reminder is due: reached, unanswered, four days old at least, two weeks at most. A WhatsApp
+ * one Meta took (and did not say it failed), and an email one (ops/emailPitch.ts: a lead with no mobile, or one whose
+ * WhatsApp did not arrive): the operator's send then sends the reminder the same way the lead is reached.
+ */
 async function dueReminders(app: App): Promise<Due[]> {
   const rows = await app.db.query<{ id: number; data: any }>(
     `SELECT e.id, e.data FROM events e
@@ -38,7 +43,14 @@ async function dueReminders(app: App): Promise<Due[]> {
        AND e.at < now() - interval '4 days' AND e.at > now() - interval '14 days'
        AND NOT EXISTS (SELECT 1 FROM outreach_stops s WHERE s.phone = e.data->>'phone')
        AND NOT EXISTS (SELECT 1 FROM events r WHERE r.store_id IS NULL AND r.kind = 'outreach_wa' AND r.data->>'phone' = e.data->>'phone' AND r.data->>'stage' = 'reminder' AND r.data->>'state' IN ('sending', 'sent', 'undelivered'))
-     ORDER BY e.id LIMIT 20`,
+     UNION ALL
+     SELECT e.id, e.data FROM events e
+     WHERE e.kind = 'outreach_mail' AND e.store_id IS NOT NULL AND e.data->>'stage' = 'first' AND e.data->>'state' = 'sent'
+       AND e.data->>'yes' IS NULL AND e.data->>'replied' IS NULL AND e.data->>'remind' IS NULL
+       AND e.at < now() - interval '4 days' AND e.at > now() - interval '14 days'
+       AND NOT EXISTS (SELECT 1 FROM events r WHERE r.store_id = e.store_id AND r.kind = 'outreach_mail' AND r.data->>'stage' = 'reminder' AND r.data->>'state' IN ('sending', 'sent'))
+       AND NOT EXISTS (SELECT 1 FROM events r WHERE r.store_id IS NULL AND r.kind = 'outreach_wa' AND r.data->>'ref' = e.data->>'ref' AND r.data->>'stage' = 'reminder' AND r.data->>'state' IN ('sending', 'sent'))
+     ORDER BY id LIMIT 20`,
   );
   const out: Due[] = [];
   for (const r of rows) {
@@ -55,7 +67,7 @@ async function dueReminders(app: App): Promise<Due[]> {
 }
 
 /** A pitch whose reminder will not go, kept so the next pass does not ask again. */
-const skip = (app: App, id: number, why: string) => app.db.query("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind = 'outreach_wa'", [id, J({ remind: why })]);
+const skip = (app: App, id: number, why: string) => app.db.query("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind IN ('outreach_wa', 'outreach_mail')", [id, J({ remind: why })]);
 
 /** What stops a reminder for this store: lost, set aside, taken down, or they tried the demo since the pitch. */
 async function settled(app: App, d: Due): Promise<string | null> {
@@ -104,4 +116,17 @@ export async function remindDue(app: App): Promise<number> {
     }
   }
   return sent;
+}
+
+/**
+ * The schedule's outreach step (jobs/worker.ts): a WhatsApp pitch that did not arrive goes by email (ops/emailPitch.ts
+ * emailFallbackDue), then the reminders that are due. TORAN_OUTREACH_AUTO=0 stops both.
+ */
+export async function outreachDue(app: App): Promise<{ mailed: number; reminded: number }> {
+  if (!autoOutreach(app.env)) return { mailed: 0, reminded: 0 };
+  const mailed = await emailFallbackDue(app).catch((e) => {
+    app.log(`[outreach] !!! the email fallback failed: ${cleanLine(e?.message || e, 200)}`);
+    return 0;
+  });
+  return { mailed, reminded: await remindDue(app) };
 }

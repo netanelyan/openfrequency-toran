@@ -176,6 +176,8 @@ export async function mailInsteadOf(app: App, phone: string | null | undefined, 
   if (!mailAddress(email) || !mailOn(app)) return null;
   const n = digits(phone);
   if (!n) return 'no_whatsapp';
+  // A number Meta could not deliver a pitch to: the rest goes by email (its reminder too), not to the same number again.
+  if (await app.db.one("SELECT 1 FROM events WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'state' = 'undelivered' LIMIT 1", [n])) return 'undelivered';
   if (ISRAELI_MOBILE.test(n)) return null;
   if (await app.db.one('SELECT 1 FROM demo_requests WHERE phone = $1 AND claimed_at IS NOT NULL LIMIT 1', [n])) return null;
   return 'no_mobile';
