@@ -102,6 +102,11 @@ export function stripQuoted(text: string): string {
     // "מאת:", "*מאת :*"), a separator.
     if (/^(On\s.+wrote:?|בתאריך\s.+\s(כתב|כתבה|נכתב|מאת)([\s/:].*)?|-{2,}\s*Original Message\s*-{2,}|_{5,}|\*?From\s*:\*?\s.+|\*?מאת\s*:\*?\s?.+)$/i.test(l)) break;
     if (/^-- ?$/.test(line)) break; // the signature separator
+    // A helpdesk's own line over the answer ("*** הוסף את תגובתך מעל שורה זו ***", "##- Please type your reply above
+    // this line -##") is not part of it, and the sign-off line alone ("בברכה,", "Best regards") starts the signature: a
+    // store's "הסר" sent from its helpdesk came between the two and was not read as one (2026-11-15).
+    if (/^[*#\-\s]*(הוסף את תגובתך מעל שורה זו|please (type your )?reply above this line)[*#\-\s]*$/i.test(l)) continue;
+    if (/^(בברכה|בברכה רבה|תודה ובברכה|בברכת .{1,20}|best regards|kind regards|regards)[,.!]?$/i.test(l)) break;
     // A phone's own signature line: what follows it is the signature or the quote.
     if (/^(Sent from my \w+.*|Get Outlook for \w+.*|נשלח מ(ה-?)?\s?(iPhone|אייפון|Android|אנדרואיד|Samsung|סמסונג|הטלפון|הנייד)(\s.*)?)$/i.test(l)) break;
     if (l.startsWith('>')) continue;

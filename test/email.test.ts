@@ -74,6 +74,9 @@ test('the new part of an email: quotes, the Gmail and Outlook history and the si
   assert.equal(stripQuoted('כן\n\nבתאריך \u202bיום א׳, 15 בנוב׳ 2026 ב-16:38\u202c\u200f מאת \u202aOpenFrequency <\nsupport@in.openfrequency.co.il>\u202c\u200f:\n> שלום'), 'כן');
   assert.equal(stripQuoted('כן בבקשה\n\n*מאת :* OpenFrequency<support@in.openfrequency.co.il>\n*נשלח:* 15'), 'כן בבקשה');
   assert.equal(stripQuoted('בתאריך הזה אני לא זמין, נחזור מחר'), 'בתאריך הזה אני לא זמין, נחזור מחר');
+  // From a store's helpdesk: its line over the answer and its signature are not the answer (a "הסר" came so, 2026-11-15).
+  assert.equal(stripQuoted('*** הוסף את תגובתך מעל שורה זו ***\n\nהסר\n\nבברכה,\n\nליאור, נציגת שירות לקוחות.\nבי יוניק'), 'הסר');
+  assert.equal(stripQuoted('##- Please type your reply above this line -##\nyes please\n\nBest regards,\nDana'), 'yes please');
   assert.equal(htmlToText('<div dir="rtl"><p>שלום</p><p>יש <b>קערה</b>?<br>תודה</p><blockquote>old</blockquote></div>'), 'שלום\nיש קערה?\nתודה');
   assert.deepEqual(parseAddress('"Dana K" <Dana@Example.test>'), { name: 'Dana K', address: 'dana@example.test' });
 });
