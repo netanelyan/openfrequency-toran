@@ -27,10 +27,11 @@ send what we built and talk with them.
 ## The door
 
 `https://toran.openfrequency.co.il/autopilot/...`, JSON in and out (src/ops/autopilot.ts). The routines run in the
-claude.ai environment "Lead autopilot", which reaches no host but toran.openfrequency.co.il, and whose network
-secret adds `Authorization: Bearer <TORAN_AUTOPILOT_TOKEN>` to every request to it through its proxy: the run never
-sees the key. Send no Authorization header, never look for a token, never print request headers. A 401 means the
-secret is missing or wrong in the environment: stop, and say so in the run's answer.
+claude.ai environment "Lead autopilot", which reaches no host but toran.openfrequency.co.il. The key
+(TORAN_AUTOPILOT_TOKEN) is in each routine's own instructions (the owner, 2026-11-15: "add the keys yourself"): the
+run exports it once as `TORAN_KEY` and sends `Authorization: Bearer $TORAN_KEY` on every request. Never print, echo or
+write the key anywhere else (a note, a file, an answer). A 401 means the key is wrong: stop, and say so in the run's
+answer. It does lead work only; a new one is made by changing it in the server's .env and in the three routines.
 
 | | |
 |---|---|
