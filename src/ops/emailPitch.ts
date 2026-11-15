@@ -273,7 +273,7 @@ async function pitchByMail(app: App, p: MailPitch): Promise<MailOutcome> {
   if (await app.db.one(`SELECT 1 FROM events WHERE ${SAME}`, [email, products, p.stage])) return no('already');
   // The same message on WhatsApp, taken by Meta and not reported undelivered, was the one approach the law allows.
   if (await app.db.one("SELECT 1 FROM events WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'ref' = ANY($1::text[]) AND data->>'product' = ANY($2::text[]) AND data->>'stage' = $3 AND data->>'state' = 'sent' LIMIT 1", [[`store:${s.id}`, `toran:${s.id}`], products, p.stage])) return no('already');
-  if (ask && (await app.db.one("SELECT 1 FROM events WHERE (kind = 'outreach_mail' AND (store_id = $1 OR data->>'email' = $2) AND data->>'state' IN ('sent', 'sending')) OR (store_id IS NULL AND kind = 'outreach_wa' AND data->>'ref' = ANY($3::text[]) AND data->>'state' IN ('sent', 'undelivered', 'sending')) LIMIT 1", [s.id, email, [`store:${s.id}`, `toran:${s.id}`]]))) return no('already');
+  if (ask && (await app.db.one("SELECT 1 FROM events WHERE (kind = 'outreach_mail' AND (store_id = $1 OR data->>'email' = $2) AND data->>'state' IN ('sent', 'sending')) OR (store_id IS NULL AND kind = 'outreach_wa' AND data->>'ref' = ANY($3::text[]) AND data->>'state' IN ('sent', 'sending', $4)) LIMIT 1", [s.id, email, [`store:${s.id}`, `toran:${s.id}`], p.why === 'undelivered' ? 'sending' : 'undelivered']))) return no('already');
   // A store that answered us is talked with, never reminded.
   if (p.stage === 'reminder' && (s.replied_at || (await app.db.one("SELECT 1 FROM events WHERE kind = 'outreach_mail' AND data->>'email' = $1 AND data->>'state' = 'sent' AND data->>'answered' IS NOT NULL LIMIT 1", [email])))) return no('replied');
 
@@ -585,17 +585,18 @@ async function mailReplied(app: App, l: Lead, d: any, said: string) {
  * For the worker, every minute: nothing at all is read while email is off or it is quiet, and one indexed query when
  * nothing is due.
  */
-export async function emailFallbackDue(app: App): Promise<number> {
+export async function emailFallbackDue(app: App, { stages = ['first', 'reminder'] }: { stages?: MailStage[] } = {}): Promise<number> {
   if (!mailOn(app) || customerQuiet(now())) return 0;
   const due = await app.db.query<{ id: number; store_id: number; data: any }>(
     `SELECT e.id, s.id AS store_id, e.data FROM events e
        JOIN stores s ON s.id = substring(e.data->>'ref' from '^(?:store|toran):([0-9]{1,9})$')::integer
       WHERE e.store_id IS NULL AND e.kind = 'outreach_wa' AND e.at > now() - interval '${FALLBACK_DAYS} days' AND e.data->>'state' = 'undelivered'
-        AND e.data->>'mailed' IS NULL AND e.data->>'stage' IN ('first', 'reminder') AND e.data->>'product' IN ('toran', 'teder', 'both')
+        AND e.data->>'mailed' IS NULL AND e.data->>'stage' = ANY($1::text[]) AND e.data->>'product' IN ('toran', 'teder', 'both')
         AND COALESCE(trim(s.contact_email), '') <> '' AND s.lost_at IS NULL AND s.replied_at IS NULL
         AND NOT EXISTS (SELECT 1 FROM events m WHERE m.store_id = s.id AND m.kind = 'outreach_mail' AND m.data->>'stage' = e.data->>'stage' AND m.data->>'state' IN ('sent', 'sending')
               AND (m.data->>'product' = e.data->>'product' OR m.data->>'product' = 'both' OR e.data->>'product' = 'both'))
       ORDER BY e.id LIMIT 20`,
+    [stages],
   );
   let n = 0;
   for (const r of due) {

@@ -54,8 +54,10 @@ after three, stop and note it.
 ## A morning or afternoon run
 
 1. `GET /autopilot/state`. Off: note "הטייס כבוי" once a day and stop. Quiet: stop.
-2. Pool: if `pool.daysLeft < 3` and no discovery started today (`lastDiscovery.at`), `POST /autopilot/discover`
-   `{"source":"brave"}` and `{"source":"storecensus"}`.
+2. Pool: if `pool.daysLeft < 3`, `POST /autopilot/discover {"source":"storecensus"}` on every run (it reads the
+   directory's next pages each time), and `{"source":"brave"}` once a day (its searches are the day's, so a second run
+   repeats them): skip brave when `lastDiscovery` shows a brave run started today, Israel time. Toran runs one of each
+   at a time, so asking again while one runs is harmless.
 3. Room this run: `min(limits.batch - asked.half, limits.day - asked.day)`. None: go to step 6.
 4. `GET /autopilot/candidates?limit=40`. For each, best first, until the room is used:
    - **Look at the store.** `GET /autopilot/site?id=<id>`, with its candidate facts (products, prices, kinds, its

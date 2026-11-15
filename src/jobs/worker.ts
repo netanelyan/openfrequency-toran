@@ -35,7 +35,7 @@ import { learnVoice } from '../agent/voice.ts';
 import { takeOrderKey } from '../domainProof.ts';
 import { outreachDue } from '../ops/remind.ts';
 import { askDeliverDue } from '../ops/ask.ts';
-import { mailDeliver } from '../ops/emailPitch.ts';
+import { emailFallbackDue, mailDeliver } from '../ops/emailPitch.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -339,7 +339,12 @@ export async function schedule(app: App) {
   // A WhatsApp pitch that did not arrive goes by email, and a lead's one reminder goes once it is due (ops/remind.ts).
   await step(app, 'outreach', () => outreachDue(app));
   // A store that said yes to the question gets its demo once it is up (ops/ask.ts): always on, as a yes is consent.
-  await step(app, 'ask', () => askDeliverDue(app, { mailDeliver }));
+  // And a question that did not arrive on WhatsApp (no WhatsApp on the number, Meta's cap on marketing to one person)
+  // goes by email, once: it was no approach at all.
+  await step(app, 'ask', async () => {
+    await askDeliverDue(app, { mailDeliver });
+    await emailFallbackDue(app, { stages: ['ask'] });
+  });
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */

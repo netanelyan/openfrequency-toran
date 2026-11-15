@@ -187,12 +187,12 @@ test("a yes to the question: thanks at once, the store's Toran built, then sent 
 });
 
 test('by email: the question, a "כן" in the thread, and the links once the demo is up; nothing up for hours: sorry, and the operator told', async () => {
-  const { app, id } = await apApp();
+  const { app, id, logs } = await apApp();
   try {
     await app.db.query("UPDATE stores SET contact_whatsapp = NULL, contact_email = 'nurit@kli-cheres.example' WHERE id = $1", [id]);
     await call(app, 'POST', '/autopilot/decide', { id, product: 'toran' });
     const asked = await call(app, 'POST', '/autopilot/ask', { id });
-    assert.equal(asked.json.sent, true, JSON.stringify(asked.json));
+    assert.equal(asked.json.sent, true, JSON.stringify(asked.json) + logs.join(" | "));
     const first = app.mail!.outbox!.at(-1)! as any;
     assert.equal(first.subject, 'שאלה קצרה לכלי חרס של נורית');
     assert.doesNotMatch(first.text, /תורן|תדר/);
@@ -212,6 +212,27 @@ test('by email: the question, a "כן" in the thread, and the links once the dem
     const failed = (await app.db.one<any>("SELECT data FROM events WHERE kind = 'outreach_wa' AND data->>'ref' = $1", [`store:${other}`]))!.data;
     assert.equal(failed.deliver, 'failed');
     assert.ok(await app.db.one("SELECT 1 FROM events WHERE kind = 'operator_alert' AND data->>'key' LIKE 'ask_failed:%'"));
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test("a question that did not arrive on WhatsApp goes by email, once (it was no approach at all)", async () => {
+  const { emailFallbackDue } = await import('../src/ops/emailPitch.ts');
+  const { app, id } = await apApp();
+  try {
+    await app.db.query("UPDATE stores SET contact_email = 'nurit@kli-cheres.example' WHERE id = $1", [id]);
+    await call(app, 'POST', '/autopilot/decide', { id, product: 'teder' });
+    assert.equal((await call(app, 'POST', '/autopilot/ask', { id })).json.sent, true);
+    const wamid = (await app.db.one<any>("SELECT data->>'id' AS id FROM events WHERE kind = 'outreach_wa'"))!.id;
+    assert.equal(await emailFallbackDue(app, { stages: ['ask'] }), 0, 'nothing while it is on its way');
+    assert.equal(await outreach.pitchNotDelivered(app, { id: wamid, error: '131049: This message was not delivered to maintain healthy ecosystem engagement.' }), true);
+    assert.equal(await emailFallbackDue(app, { stages: ['ask'] }), 1);
+    const mail = app.mail!.outbox!.at(-1)! as any;
+    assert.equal(mail.subject, 'שאלה קצרה לכלי חרס של נורית');
+    assert.equal(await emailFallbackDue(app, { stages: ['ask'] }), 0, 'once');
+    assert.equal(await emailFallbackDue(app), 0, "the pitches' fallback does not take the question");
   } finally {
     setNow(null);
     await app.db.close();
