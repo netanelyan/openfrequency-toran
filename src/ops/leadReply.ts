@@ -149,7 +149,7 @@ export function leadTurn(l: LeadPitch): { context: string; facts: string[]; lead
  * conversation), the lead is marked answered (replied_at, and the next step due tomorrow, not on Shabbat, as the
  * operator's "ענו" marks it, ops/actions.ts markReplied), and the operator is told. False when it was marked already.
  */
-export async function leadReplied(app: App, l: LeadPitch, accountId: number, said: string): Promise<boolean> {
+export async function leadReplied(app: App, l: LeadPitch, accountId: number, said: string, told?: { title: string; body: string }): Promise<boolean> {
   const c = await app.db.one<{ id: number; waiting: boolean }>(`SELECT c.id, ${WAITING_SQL} AS waiting FROM conversations c WHERE c.account_id = $1 AND c.peer = $2 ORDER BY c.last_at DESC LIMIT 1`, [accountId, l.phone]);
   const fresh = await app.db.one("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind = 'outreach_wa' AND data->>'replied' IS NULL RETURNING id", [l.eventId, J({ replied: c ? Number(c.id) : 0 })]);
   if (!fresh) return false;
@@ -160,7 +160,10 @@ export async function leadReplied(app: App, l: LeadPitch, accountId: number, sai
   if (l.storeId && l.domain && l.product !== 'toran') await tederReplied(app, { id: l.storeId, domain: l.domain }).catch((e) => app.log(`[lead] Teder's lead of ${l.domain} was not marked answered: ${e?.message || e}`));
   const where = `${publicBase(app.env)}${c ? `/chat/${Number(c.id)}` : '/chats'}`;
   const what = c?.waiting ? 'תורן העביר את זה אלינו, וזה מחכה לתשובה שלנו.' : 'תורן ענה להם.';
-  await alertOperator(app, `lead_reply:${l.eventId}`, `${l.name} ענו להודעה שלנו`, `"${cleanLine(said, 300) || 'הודעה בלי טקסט'}". ${what} ממשיכים מהשיחה, עד 24 שעות מההודעה שלהם: ${where}`, { storeId: l.storeId, everyMinutes: 24 * 60 }).catch((e) => app.log(`[lead] the operator alert failed: ${e?.message || e}`));
+  // A yes pressed says what went to them (channels/demo.ts pitchAccepted); any other answer is quoted.
+  const title = told?.title || `${l.name} ענו להודעה שלנו`;
+  const body = told ? `${told.body} ממשיכים מהשיחה: ${where}` : `"${cleanLine(said, 300) || 'הודעה בלי טקסט'}". ${what} ממשיכים מהשיחה, עד 24 שעות מההודעה שלהם: ${where}`;
+  await alertOperator(app, `lead_reply:${l.eventId}`, title, body, { storeId: l.storeId, everyMinutes: 24 * 60 }).catch((e) => app.log(`[lead] the operator alert failed: ${e?.message || e}`));
   return true;
 }
 

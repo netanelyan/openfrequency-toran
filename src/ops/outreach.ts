@@ -78,15 +78,25 @@ export type OutreachTemplate = {
   /** The version Meta approved before this one, sent until this one is approved (liveTemplate). */
   previous?: OutreachTemplate;
   /** The URL button: its text, the page's address up to the page's slug (the variable Meta appends), a sample slug. */
-  url: UrlButton;
+  url?: UrlButton;
   /** A second URL button, after the first: the message with both demos (Teder's). Meta allows two URL buttons. */
   url2?: UrlButton;
+  /** The quick reply that says yes, before the one that stops them: a pitch that asks (the 2026-11-15 words). */
+  yes?: string;
   /** The quick reply that stops them. */
   stop: string;
 };
 
-/** The quick reply on every pitch, and the word the opt-out listens for first. */
+/** The quick reply on the pitches before 2026-11-15, and the word the opt-out listens for first. */
 export const STOP_BUTTON = 'הסירו אותי';
+/** The quick reply that stops them on the pitches that ask (2026-11-15): a polite no, read as the way out. */
+export const NO_BUTTON = 'לא, תודה';
+/** The quick reply that says yes: Toran's, where the demo starts right in the chat, and the one that sends a slideshow. */
+export const TRY_BUTTON = 'כן, בואו ננסה';
+export const SEND_BUTTON = 'כן, תשלחו';
+/** The payloads the quick replies carry back (Meta returns the button's text and its payload). */
+export const YES_PAYLOAD = 'OUTREACH_YES';
+export const STOP_PAYLOAD = 'OUTREACH_STOP';
 
 // The public pages, as the pitch's button opens them: Toran's pitch pages and Teder's demos (SERVER-FACTS.md, the
 // sites behind Caddy). A template's URL is fixed when Meta approves it; only the slug after /s/ changes.
@@ -184,16 +194,10 @@ const TEDER_EX = `${TEDER_PAGES}nurit-ceramics-a1b2c3`;
 const MORE = 'אם זה מעניין אתכם, אפשר לענות כאן ונספר עוד. לא רלוונטי? לוחצים על "הסירו אותי" ולא נכתוב שוב.';
 const LAST = 'זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים על "הסירו אותי".';
 
-/**
- * The six templates, to be submitted exactly so (docs/whatsapp-templates.md is written from them by
- * scripts/templates-doc.ts). Meta's rules for their shape (developers.facebook.com/docs/whatsapp/business-management-api/
- * message-templates and its components page): a body may not start or end with a variable; a URL button takes one
- * variable, at the end of its address; quick reply buttons and the others are kept in two groups, so the URL button is
- * first and the quick reply after it (index 1 when sending). {{1}} is the store's name with its "ל" (outreach.ts le():
- * "לכלי חרס של נורית", "ל־Nike", "בשביל הדס"), so the preposition is always right; {{2}} (and {{3}}) the demos' pages,
- * as their buttons open them.
- */
-export const OUTREACH_TEMPLATES: Record<`${Product}_${PitchStage}`, OutreachTemplate> = {
+// The words approved on 2026-11-12: each template's `previous` now, sent while Meta reviews the words that replace them.
+// {{1}} is the store's name with its "ל" (outreach.ts le(): "לכלי חרס של נורית", "ל־Nike", "בשביל הדס"), so the
+// preposition is always right; {{2}} (and {{3}}) the demos' pages, as their buttons open them.
+const APPROVED_2026_11_12: Record<`${Product}_${PitchStage}`, OutreachTemplate> = {
   toran_first: {
     ...APPROVED_2026_11_08.toran_first,
     name: 'toran_pitch_2',
@@ -247,6 +251,97 @@ export const OUTREACH_TEMPLATES: Record<`${Product}_${PitchStage}`, OutreachTemp
   },
 };
 
+// The pitch that asks (the owner, 2026-11-15: "19 messages, 0 replies. redo that part. from start until the end ... i
+// want it working and i want costumers"). Of the 19 pitches sent, 11 never arrived and the 8 that did had one button a
+// store could press without leaving the chat, "הסירו אותי": nobody pressed anything else, and no store opened a demo.
+// So the first message is a question with two quick replies, yes and no, and no link: a press is an answer, and the
+// yes opens the 24 hours in which the demo itself comes into the chat (channels/demo.ts pitchAccepted): Toran's demo
+// answers there at once, as the store's customers would get it, and a slideshow comes as its first slide. It is also
+// the one approach the law allows a business (the Communications Law's section 30A): it asks whether they want it.
+const ASK_LAST = `לא רלוונטי? לוחצים "${NO_BUTTON}" ולא נכתוב שוב.`;
+const ASK_LAST_REMINDER = `זו ההודעה האחרונה שלנו בנושא. לא רלוונטי? לוחצים "${NO_BUTTON}".`;
+
+/**
+ * The six templates, to be submitted exactly so (docs/whatsapp-templates.md is written from them by
+ * scripts/templates-doc.ts). Meta's rules for their shape (developers.facebook.com/docs/whatsapp/business-management-api/
+ * message-templates and its components page): a body may not start or end with a variable, and quick replies are sent
+ * by their place (index 0 the yes, 1 the no). {{1}} is the store's name with its "ל", as before.
+ */
+export const OUTREACH_TEMPLATES: Record<`${Product}_${PitchStage}`, OutreachTemplate> = {
+  toran_first: {
+    name: 'toran_pitch_3',
+    product: 'toran',
+    stage: 'first',
+    category: 'MARKETING',
+    language: 'he',
+    body: `היי, כאן OpenFrequency. בנינו {{1}} את תורן, עוזר שעונה ללקוחות שלכם בוואטסאפ לפי המוצרים, המחירים והמלאי שבאתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהוא כבר מכיר את החנות. רוצים לנסות אותו כאן בצ׳אט, כמו לקוח?\n\n${ASK_LAST}`,
+    example: [STORE_EX],
+    yes: TRY_BUTTON,
+    stop: NO_BUTTON,
+    previous: APPROVED_2026_11_12.toran_first,
+  },
+  toran_reminder: {
+    name: 'toran_pitch_reminder_3',
+    product: 'toran',
+    stage: 'reminder',
+    category: 'MARKETING',
+    language: 'he',
+    body: `היי, כאן OpenFrequency שוב. תורן שבנינו {{1}} עדיין מחכה, ואפשר לנסות אותו כאן בצ׳אט תוך דקה. רוצים?\n\n${ASK_LAST_REMINDER}`,
+    example: [STORE_EX],
+    yes: TRY_BUTTON,
+    stop: NO_BUTTON,
+    previous: APPROVED_2026_11_12.toran_reminder,
+  },
+  teder_first: {
+    name: 'teder_pitch_3',
+    product: 'teder',
+    stage: 'first',
+    category: 'MARKETING',
+    language: 'he',
+    body: `היי, כאן OpenFrequency. הכנו {{1}} מצגת לטיקטוק ולאינסטגרם על נושא מהתחום שלכם, בעיצוב של החנות. תדר מכין מצגות כאלה כמה פעמים בשבוע, וכל אחת עולה רק אחרי שאישרתם אותה.\n\nלשלוח לכם אותה לכאן?\n\n${ASK_LAST}`,
+    example: [STORE_EX],
+    yes: SEND_BUTTON,
+    stop: NO_BUTTON,
+    previous: APPROVED_2026_11_12.teder_first,
+  },
+  teder_reminder: {
+    name: 'teder_pitch_reminder_3',
+    product: 'teder',
+    stage: 'reminder',
+    category: 'MARKETING',
+    language: 'he',
+    body: `היי, כאן OpenFrequency שוב. המצגת שהכנו {{1}} עדיין מחכה. לשלוח לכם אותה לכאן?\n\n${ASK_LAST_REMINDER}`,
+    example: [STORE_EX],
+    yes: SEND_BUTTON,
+    stop: NO_BUTTON,
+    previous: APPROVED_2026_11_12.teder_reminder,
+  },
+  both_first: {
+    name: 'openfrequency_pitch_3',
+    product: 'both',
+    stage: 'first',
+    category: 'MARKETING',
+    language: 'he',
+    body: `היי, כאן OpenFrequency. הכנו {{1}} שני דברים לנסות: את תורן, שעונה ללקוחות שלכם בוואטסאפ לפי המוצרים והמחירים שבאתר, ומצגת לדוגמה של תדר לטיקטוק ולאינסטגרם, על נושא מהתחום שלכם.\n\nלשלוח לכם אותם לכאן?\n\n${ASK_LAST}`,
+    example: [STORE_EX],
+    yes: SEND_BUTTON,
+    stop: NO_BUTTON,
+    previous: APPROVED_2026_11_12.both_first,
+  },
+  both_reminder: {
+    name: 'openfrequency_pitch_reminder_3',
+    product: 'both',
+    stage: 'reminder',
+    category: 'MARKETING',
+    language: 'he',
+    body: `היי, כאן OpenFrequency שוב. תורן והמצגת של תדר שהכנו {{1}} עדיין מחכים. לשלוח לכם אותם לכאן?\n\n${ASK_LAST_REMINDER}`,
+    example: [STORE_EX],
+    yes: SEND_BUTTON,
+    stop: NO_BUTTON,
+    previous: APPROVED_2026_11_12.both_reminder,
+  },
+};
+
 /**
  * Toran's opening, to the people who asked on the website's waitlist to hear when it opens (TORAN-READINESS.md P1-16):
  * they asked, so it may go, once, under every guardrail of a pitch (the way out, the quiet hours, the day's cap, Meta's
@@ -268,9 +363,12 @@ export const TORAN_LAUNCH: OutreachTemplate = {
 
 export const templateOf = (product: Product, stage: Stage): OutreachTemplate => (stage === 'launch' ? TORAN_LAUNCH : OUTREACH_TEMPLATES[`${product}_${stage}`]);
 
-/** A template by the name Meta approved it under: the six, the words approved before them, and Toran's opening. */
+/** Every version of a template, newest first: itself, the one it replaces, and so on back. */
+const versionsOf = (t: OutreachTemplate): OutreachTemplate[] => (t.previous ? [t, ...versionsOf(t.previous)] : [t]);
+
+/** A template by the name Meta approved it under: the six, every version approved before them, and Toran's opening. */
 export const templateNamed = (name: string): OutreachTemplate | undefined =>
-  [...Object.values(OUTREACH_TEMPLATES), ...Object.values(OUTREACH_TEMPLATES).map((t) => t.previous!).filter(Boolean), TORAN_LAUNCH].find((t) => t.name === name);
+  [...Object.values(OUTREACH_TEMPLATES).flatMap(versionsOf), TORAN_LAUNCH].find((t) => t.name === name);
 
 /** The template as the store reads it, filled in. */
 export const outreachFilled = (t: OutreachTemplate, vars: string[] = t.example) => t.body.replace(/\{\{(\d+)\}\}/g, (_, i) => vars[Number(i) - 1] ?? '');
@@ -327,11 +425,13 @@ const NO_SUCH_TEMPLATE = 132001;
 
 /** International digits: a country code and the number, 8 to 15 digits. */
 const PHONE = /^[1-9]\d{7,14}$/;
+/** An Israeli mobile, as WhatsApp has it: 972 5X and seven digits. */
+export const MOBILE_IL = /^9725\d{8}$/;
 const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '');
 /** Any run of 8 digits or more (a phone, a Meta id) as its last four, for a log line. */
 const masked = (s: string) => s.replace(/\d{8,}/g, (d) => `…${d.slice(-4)}`);
 
-export type Why = 'stopped' | 'already' | 'replied' | 'cap' | 'quiet' | 'quality' | 'no_line' | 'bad_page' | 'bad_phone' | 'failed' | 'not_on_sale';
+export type Why = 'stopped' | 'already' | 'replied' | 'cap' | 'quiet' | 'quality' | 'no_line' | 'bad_page' | 'bad_phone' | 'not_mobile' | 'failed' | 'not_on_sale';
 export type Outcome = { sent: boolean; why: Why | null; said: string };
 
 /** What the operator reads for each outcome, on the dashboard, on Toran's pages and on Teder's /leads. */
@@ -346,6 +446,7 @@ export const SAID_HE: Record<Why | 'sent', string> = {
   no_line: 'המספר שלנו עוד לא מחובר ל-Meta, אז ההודעה לא נשלחה ולא סומנה. אפשר להעתיק אותה ולשלוח מהוואטסאפ שלך.',
   bad_page: 'אין לליד הזה עמוד באוויר, אז אין מה לשלוח.',
   bad_phone: 'אין באתר של הליד הזה וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לו.',
+  not_mobile: 'המספר באתר של הליד הזה קווי, ו-Meta לא מסרה אף הודעה למספרים כאלה. לכן כותבים להם במייל, כשיש באתר כתובת.',
   failed: 'Meta לא קיבלה את ההודעה, ושום דבר לא סומן. אם זה חוזר, כנראה שהתבנית עוד לא אושרה (docs/whatsapp-templates.md).',
   not_on_sale: 'תורן עוד לא במכירה באתר (שם כתוב "בקרוב"), אז הודעה על תורן לא יוצאת וכלום לא סומן. כשפותחים את המכירה (TORAN_SIGNUP_OPEN), זה נפתח. הודעה על תדר לבד אפשר לשלוח.',
 };
@@ -443,15 +544,21 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   let t = newest;
   let who = `${t.name} to …${phone.slice(-4)} (${p.product} ${p.ref})`;
   if (!PHONE.test(phone)) return no('bad_phone');
+  // An Israeli number that is not a mobile (03, 073, 077): every one of them came back from Meta as not deliverable
+  // (131026, 2026-11-13 to 15), stores' "WhatsApp" links among them. Such a lead is written to by email
+  // (ops/emailPitch.ts), and nothing goes from our number.
+  if (phone.startsWith('972') && !MOBILE_IL.test(phone)) return no('not_mobile');
   // A pitch for Toran ("אפשר לנסות אותו עכשיו") goes only once Toran is sold (ops/signupSwitch.ts; TORAN-READINESS.md
   // P0-6): while the site says "בקרוב", Teder's pitch alone may go, and Toran's or the combined one may not.
   if (p.product !== 'teder' && !toranOnSale(app.env)) return no('not_on_sale');
   if (p.stage === 'launch' && p.product !== 'toran') return no('bad_page');
   // The opening's button is the website's Toran page (TORAN_LAUNCH), not a store's pitch page.
-  const slug = p.stage === 'launch' ? TORAN_LAUNCH.url.example : slugOf(p.url);
+  const slug = p.stage === 'launch' ? TORAN_LAUNCH.url!.example : slugOf(p.url);
   if (!slug) return no('bad_page');
-  const slug2 = t.url2 ? slugOf(String(p.url2 || '')) : null;
-  if (t.url2 && !slug2) return no('bad_page');
+  // Both demos' pages, whichever words go: the older ones carry them on their buttons, and a yes to the newer ones sends
+  // them into the chat (pitchAccepted, which reads them from this pitch's record).
+  const slug2 = p.product === 'both' ? slugOf(String(p.url2 || '')) : null;
+  if (p.product === 'both' && !slug2) return no('bad_page');
   const name = cleanLine(p.name, 80) || 'החנות';
   const page = p.stage === 'launch' ? LAUNCH_PAGE : p.url;
   const same = `kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'product' = ANY($2::text[]) AND data->>'stage' = $3 AND (data->>'state' = 'sent' OR (data->>'state' = 'sending' AND at > now() - interval '${SENDING_MINUTES} minutes'))`;
@@ -499,9 +606,11 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
     .catch(() => null);
   if (!claim) return no('already');
   try {
-    // The quick reply comes after every URL button: index 1 after one, 2 after the two of the message with both demos.
-    const urls = slug2 ? [slug, slug2] : [slug];
-    const sent = await cloudSend(app.env, app.graph, phoneId, token, phone, { template: { name: t.name, sid: t.name, vars: pitchVars(t, name, page, p.url2), urls, payload: 'OUTREACH_STOP', payloadIndex: urls.length } });
+    // The quick replies come after every URL button: on the words that ask, the yes at 0 and the no at 1; on the older
+    // words, the way out after the one or two URL buttons.
+    const urls = !t.url ? [] : t.url2 && slug2 ? [slug, slug2] : [slug];
+    const payloads = [...(t.yes ? [YES_PAYLOAD] : []), STOP_PAYLOAD].map((payload, i) => ({ index: urls.length + i, payload }));
+    const sent = await cloudSend(app.env, app.graph, phoneId, token, phone, { template: { name: t.name, sid: t.name, vars: pitchVars(t, name, page, p.url2), urls, payloads } });
     await mark(app, claim.id, { state: 'sent', id: sent.id || null });
     await usage(app.db, { kind: 'bsp', backend: 'meta_line', units: 1, usd: sent.usd, apiUsd: sent.usd, tag: 'wa_outreach' }).catch(() => {});
     await keepPitch(app, { eventId: claim.id, phone, storeName: name, text: pitchShown(t, pitchVars(t, name, page, p.url2)), by: p.by, sentId: sent.id || null }).catch((e) => app.log(`[outreach] ${who}: sent, and not kept in our inbox (${masked(cleanLine(e?.message || e, 200))})`));
@@ -546,7 +655,10 @@ async function noteNotDelivered(app: App, eventId: number | string, conversation
 }
 
 /** A pitch as it reads in the chat: its words, and its buttons under them as the store sees them. */
-export const pitchShown = (t: OutreachTemplate, vars: string[]) => `${outreachFilled(t, vars)}\n\n${[t.url.text, ...(t.url2 ? [t.url2.text] : []), t.stop].map((b) => `[${b}]`).join(' ')}`;
+export const pitchShown = (t: OutreachTemplate, vars: string[]) => `${outreachFilled(t, vars)}\n\n${buttonsOf(t).map((b) => `[${b}]`).join(' ')}`;
+
+/** A template's buttons as the store sees them, in order: its URL buttons, then its yes, then its way out. */
+export const buttonsOf = (t: OutreachTemplate): string[] => [t.url?.text, t.url2?.text, t.yes, t.stop].filter((b): b is string => Boolean(b));
 
 /**
  * A pitch, in our own inbox (the owner, 2026-11-12: "i also sent a lead message and cant see it in the inbox"): in the
@@ -621,10 +733,29 @@ export async function pitchNotDelivered(app: App, s: { id: string; error: string
   return true;
 }
 
+/**
+ * Meta's word that a pitch arrived or was read (the webhook's delivered and read statuses, waStore.ts deliveryStatus),
+ * kept on it once each: until 2026-11-15 only a failure was kept, and of the 19 pitches sent it could not be told which
+ * ones a store had seen. Only statuses of our outreach number are looked up. True when it was a pitch.
+ */
+export async function pitchStatus(app: App, s: { id: string; status: string; account?: string | null }): Promise<boolean> {
+  if (!s.id || (s.status !== 'delivered' && s.status !== 'read')) return false;
+  const ours = await outreachPhoneId(app).catch(() => null);
+  if (!ours || (s.account && String(s.account) !== ours)) return false;
+  const at = new Date(now()).toISOString();
+  // A read is a delivery too (Meta may send the read alone).
+  const got = J(s.status === 'read' ? { delivered: at, read: at } : { delivered: at });
+  const r = await app.db.query(
+    "UPDATE events SET data = $2::jsonb || data WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'id' = $1 AND ($3 = 'delivered' AND data->>'delivered' IS NULL OR $3 = 'read' AND data->>'read' IS NULL) RETURNING id",
+    [s.id, got, s.status],
+  );
+  return r.length > 0;
+}
+
 // ---- the way out
 
 /** A whole message that asks us to stop: the quick reply, or a short "no" in Hebrew or English. */
-export const STOP_REPLY = /^\s*(?:הסירו אותי|הסירו אותנו|הסירו|תסירו אותי|תסירו אותנו|תסירו|הסר|להסיר|הסר אותי|לא|לא תודה|לא מעוניין|לא מעוניינת|לא מעוניינים|לא רלוונטי|stop|unsubscribe|no)\s*[.!,]*\s*$/i;
+export const STOP_REPLY = /^\s*(?:הסירו אותי|הסירו אותנו|הסירו|תסירו אותי|תסירו אותנו|תסירו|הסר|להסיר|הסר אותי|לא|לא,? תודה|לא מעוניין|לא מעוניינת|לא מעוניינים|לא רלוונטי|stop|unsubscribe|no)\s*[.!,]*\s*$/i;
 /** Only these are read as the way out even after a demo began: a bare "לא" may be an answer in the demo itself. */
 const STOP_ALWAYS = /^\s*(?:הסירו אותי|הסירו אותנו|הסירו|תסירו אותי|תסירו אותנו|תסירו|הסר|להסיר|הסר אותי|unsubscribe)\s*[.!,]*\s*$/i;
 
@@ -640,14 +771,16 @@ export const STOPPED_SAID = 'הסרנו אתכם, ולא נשלח לכם יות�
  */
 export async function outreachWord(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult | null> {
   const text = String(inbound.text || '');
-  if (!STOP_REPLY.test(text)) return null;
+  // The pitch's own "לא, תודה" pressed carries its payload: the way out, whatever came between.
+  const pressed = inbound.payload === STOP_PAYLOAD;
+  if (!pressed && !STOP_REPLY.test(text)) return null;
   const phone = digits(inbound.from);
   const pitch = await app.db.one<{ product: Product; at: Date | string }>(
     `SELECT data->>'product' AS product, at FROM events WHERE kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'state' IN ('sent', 'undelivered') AND at > now() - interval '${REPLY_DAYS} days' ORDER BY id DESC LIMIT 1`,
     [phone],
   );
   if (!pitch) return null;
-  if (!STOP_ALWAYS.test(text)) {
+  if (!pressed && !STOP_ALWAYS.test(text)) {
     const talking = await app.db.one("SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.channel = 'whatsapp' AND c.peer = $1 AND m.role = 'customer' AND m.at > $2 LIMIT 1", [phone, new Date(pitch.at).toISOString()]);
     if (talking) return null;
   }
@@ -720,8 +853,8 @@ export function submission(t: OutreachTemplate) {
       {
         type: 'BUTTONS',
         buttons: [
-          ...[t.url, ...(t.url2 ? [t.url2] : [])].map((u) => ({ type: 'URL', text: u.text, url: `${u.base}{{1}}`, example: [`${u.base}${u.example}`] })),
-          { type: 'QUICK_REPLY', text: t.stop },
+          ...[t.url, t.url2].filter((u): u is UrlButton => Boolean(u)).map((u) => ({ type: 'URL', text: u.text, url: `${u.base}{{1}}`, example: [`${u.base}${u.example}`] })),
+          ...[t.yes, t.stop].filter((b): b is string => Boolean(b)).map((text) => ({ type: 'QUICK_REPLY', text })),
         ],
       },
     ],
@@ -740,9 +873,11 @@ export function outreachTemplateDoc(): string {
         '| Category | Marketing |',
         `| Language | Hebrew (${t.language}) |`,
         '| Header, footer | none |',
-        t.url2
-          ? `| Buttons | two URL buttons: "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}), and "${t.url2.text}", to ${t.url2.base}{{1}} (sample ${t.url2.example}); then a quick reply, "${t.stop}" |`
-          : `| Buttons | a URL button, "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}); then a quick reply, "${t.stop}" |`,
+        !t.url
+          ? `| Buttons | two quick replies: "${t.yes}", then "${t.stop}" |`
+          : t.url2
+            ? `| Buttons | two URL buttons: "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}), and "${t.url2.text}", to ${t.url2.base}{{1}} (sample ${t.url2.example}); then a quick reply, "${t.stop}" |`
+            : `| Buttons | a URL button, "${t.url.text}", to ${t.url.base}{{1}} (sample ${t.url.example}); then a quick reply, "${t.stop}" |`,
         `| Variables (sample) | ${t.example.map((e, i) => `{{${i + 1}}} = ${e}`).join('; ')} |`,
         ...(t.previous ? [`| Replaces | ${t.previous.name}, sent until Meta approves this one |`] : []),
         '',
@@ -752,7 +887,7 @@ export function outreachTemplateDoc(): string {
         t.body,
         '```',
         '',
-        `As the store reads it: ${outreachFilled(t).split('\n').filter(Boolean).join(' / ')} [${t.url.text}]${t.url2 ? ` [${t.url2.text}]` : ''} [${t.stop}]`,
+        `As the store reads it: ${outreachFilled(t).split('\n').filter(Boolean).join(' / ')} ${buttonsOf(t).map((b) => `[${b}]`).join(' ')}`,
         '',
         'Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):',
         '',

@@ -155,7 +155,7 @@ test('a store we wrote to answers: the turn knows our message and its Toran, its
     assert.equal(r.reply, `${line}\n\nתורן כבר קרא את המוצרים והמדיניות מהאתר שלכם, ואפשר לכתוב לו עכשיו כמו לקוח: ${PAGE}`, 'the Toran we built for them, then the answer with its link kept');
     // What the model was told: the LEAD block, with our message as they got it and the link, and not to say the line.
     assert.match(asked[0], /LEAD \(the app's record, not the person's words\): they write from the store "כלי חרס של נורית" \(nurit\.example\), which we wrote to first/);
-    assert.match(asked[0], /Our message to them, as they got it:\n"""\nהיי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן/);
+    assert.match(asked[0], /Our message to them, as they got it:\n"""\nהיי, כאן OpenFrequency\. בנינו לכלי חרס של נורית את תורן[^]*רוצים לנסות אותו כאן בצ׳אט/);
     assert.ok(asked[0].includes(`Their store's own Toran, built from their website, which they can write to now as their customers would: ${PAGE} (they have not written to it yet).`));
     assert.ok(asked[0].includes('Where they start, with the price and the sign-up: https://openfrequency.co.il/toran'));
     assert.ok(asked[0].includes(LEAD_OPENING_NOTE));

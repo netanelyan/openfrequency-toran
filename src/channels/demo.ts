@@ -7,9 +7,9 @@ import { CODE_RE } from '../pitch/build.ts';
 import { claimRequest } from './request.ts';
 import { payCode, payReceipt } from './pay.ts';
 import { reminderWord } from '../billing/remind.ts';
-import { outreachWord } from '../ops/outreach.ts';
+import { outreachWord, YES_PAYLOAD } from '../ops/outreach.ts';
 import { hold, isPaused } from './owner.ts';
-import { reply } from './send.ts';
+import { reply, replyParts } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 import { LINK_CODE, ownerByPhone } from '../owners/identity.ts';
 import { PAGE_ABOUT, PAGE_DOWN } from '../offer.ts';
@@ -21,6 +21,7 @@ import { leadReplied, leadTurn, pitchFor } from '../ops/leadReply.ts';
 import { botLine, botName, markIntroduced } from '../agent/intro.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { displayName } from '../ingest/brand.ts';
+import { le } from '../outreach.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
@@ -80,7 +81,7 @@ const msg = {
 /** A message that is only this word ends a live demo and goes back to our support. */
 export const SUPPORT_WORD = /^\s*(?:תמיכה|עזרה|סיום|יציאה|לצאת|לסיים)\s*[.!?]*\s*$/;
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact' | 'demo_ended' | 'opt_out' | 'resent' | 'busy' | 'pay' | 'pay_nothing_due' | 'pay_no_details' | 'pay_bad_code' | 'pay_unavailable' | 'pay_receipt' | 'pay_receipt_refused' | 'pay_remind_stop' | 'pay_remind_start' | 'outreach_stop' | 'outreach_stop_again' | 'review' | 'not_live' | 'channel_off'; storeId?: number; reply?: string };
+export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact' | 'demo_ended' | 'opt_out' | 'resent' | 'busy' | 'pay' | 'pay_nothing_due' | 'pay_no_details' | 'pay_bad_code' | 'pay_unavailable' | 'pay_receipt' | 'pay_receipt_refused' | 'pay_remind_stop' | 'pay_remind_start' | 'outreach_stop' | 'outreach_stop_again' | 'pitch_yes' | 'review' | 'not_live' | 'channel_off'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 
@@ -115,6 +116,91 @@ async function supportTurn(app: App, adapter: ChannelAdapter, inbound: Inbound, 
   } finally {
     if (lead && !lead.replied) await leadReplied(app, lead, support.id, String(inbound.text || '')).catch((e) => app.log(`[lead] …${String(inbound.from).slice(-4)}: its answer was not marked (${e?.message || e})`));
   }
+}
+
+/** A yes written instead of pressed: a short one, the whole message. */
+export const YES_WORDS = /^\s*(?:כן|כן,? (?:בואו ננסה|תשלחו|אשמח|בטח|בבקשה|רוצה|רוצים|נשמע טוב|למה לא)|בטח|אשמח|יאללה|סבבה|בכיף|נשמע טוב|למה לא|נשמח|yes|ok|okay|sure)\s*[.!,]*\s*$/i;
+
+/** The first slide of a Teder demo on its public page (Teder's demos.js sendSlide), TikTok's then Instagram's, or null. */
+async function firstSlide(app: App, page: string): Promise<string | null> {
+  for (const f of ['tiktok-0.jpg', 'instagram-0.jpg']) {
+    const url = `${page.replace(/\/+$/, '')}/${f}`;
+    try {
+      const r = await app.api(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+      if (r.ok && /^image\//.test(r.headers.get('content-type') || '')) return url;
+    } catch {
+      // Not reached: the next, or none, and the link alone goes.
+    }
+  }
+  return null;
+}
+
+/**
+ * The pitch's yes (the owner, 2026-11-15: "19 messages, 0 replies ... i want it working and i want costumers"): the
+ * pitch asks whether to send the demo, and a yes, pressed (its payload) or written in a word while they have not
+ * written since, brings it into this chat at once, inside the 24 hours the yes opened. A slideshow comes as its first
+ * slide, with the link to all of it; Toran's demo starts right here, the phone bound to the store's demo as its code
+ * would bind it, so their next message is answered by their own Toran. The operator is told what went. Once a pitch: a
+ * second yes is a message like any other. Null for anything else, and while our support is not set up.
+ */
+async function pitchAccepted(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult | null> {
+  const pressed = inbound.payload === YES_PAYLOAD;
+  if (!pressed && !YES_WORDS.test(String(inbound.text || ''))) return null;
+  const lead = await pitchFor(app, inbound.from).catch(() => null);
+  if (!lead || lead.stage === 'launch') return null;
+  if (!pressed) {
+    const talking = await app.db.one("SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.channel = 'whatsapp' AND c.peer = $1 AND m.role = 'customer' AND m.at > $2 LIMIT 1", [lead.phone, lead.at]);
+    if (talking) return null;
+  }
+  const support = await supportOf(app, adapter, inbound);
+  if (!support) return null;
+  const store = lead.storeId && lead.toranUrl && lead.product !== 'teder'
+    ? await app.db.one<{ id: number; name: string | null; domain: string; brand: any; brand_override: any; platform: string | null; agent_name: string | null; demo_code: string | null }>("SELECT id, name, domain, brand, brand_override, platform, agent_name, demo_code FROM stores WHERE id = $1 AND page_built_at IS NOT NULL AND status <> 'skipped' AND taken_down_at IS NULL", [lead.storeId])
+    : null;
+  const teder = lead.product !== 'toran' ? lead.tederUrl : null;
+  // Nothing of theirs to show any more (a page taken down): our support answers the yes as a message.
+  if (!store && !teder) return null;
+  const fresh = await app.db.one("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind = 'outreach_wa' AND data->>'yes' IS NULL RETURNING id", [lead.eventId, J({ yes: new Date(now()).toISOString(), pressed })]);
+  if (!fresh) return null;
+
+  // Their yes, in our support's conversation with them, where the inbox shows the pitch (ops/outreach.ts keepPitch).
+  const conv = await conversationOf(app, adapter, support, inbound);
+  await app.db.query("INSERT INTO messages (conversation_id, role, text, ext_id) VALUES ($1, 'customer', $2, $3) ON CONFLICT (ext_id) DO NOTHING", [conv, inbound.text, inbound.id]);
+  const sent: string[] = [];
+  if (teder) {
+    const slide = await firstSlide(app, teder);
+    const words = `זו המצגת שתדר הכין ${le(lead.name)}${slide ? ', והשקף הראשון שלה כאן' : ''}. כל השקפים: ${teder}\n\nתדר מכין לכם מצגות כאלה כמה פעמים בשבוע, וכל אחת עולה רק אחרי שאישרתם אותה. אם יש שאלות, כותבים כאן.`;
+    await app.db.query("INSERT INTO messages (conversation_id, role, text) VALUES ($1, 'agent', $2)", [conv, words]);
+    const d = slide ? await replyParts(app, adapter, inbound, [{ media: slide, caption: words }], support.store_id) : await reply(app, adapter, inbound, words, support.store_id, conv);
+    if (d.ok) sent.push(slide ? 'השקף הראשון של המצגת והקישור אליה' : 'הקישור למצגת');
+  }
+  await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [conv]);
+  let welcome: string | undefined;
+  if (store) {
+    await app.db.query(
+      `INSERT INTO wa_users (phone, store_id, code, bound_at, expires_at, last_inbound_at, turns) VALUES ($1, $2, $3, now(), now() + ($4 || ' days')::interval, now(), 0)
+       ON CONFLICT (phone) DO UPDATE SET store_id = EXCLUDED.store_id, code = EXCLUDED.code, bound_at = now(), expires_at = EXCLUDED.expires_at, last_inbound_at = now(), turns = 0`,
+      [lead.phone, store.id, store.demo_code || `PITCH-${store.id}`, String(BINDING_DAYS)],
+    );
+    await app.db.query("UPDATE stores SET demo_started_at = COALESCE(demo_started_at, now()), status = CASE WHEN status IN ('page_ready', 'sent', 'opened') THEN 'demo_started' ELSE status END, updated_at = now() WHERE id = $1", [store.id]);
+    await event(app.db, store.id, 'demo_bound', { owner: false, via: 'pitch_yes' });
+    const demoConv = await conversationFor(app.db, store.id, 'whatsapp', lead.phone);
+    const name = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
+    welcome = `מעכשיו עונה לכם כאן תורן של ${name}, כמו שהוא יענה ללקוחות שלכם.\n\n${msg.welcome(name, botName(store))}\n\n${DEMO_FOOTER}`;
+    // The yes is the support conversation's; Toran's welcome opens the store's demo conversation, as a code's would.
+    await app.db.query("INSERT INTO messages (conversation_id, role, text) VALUES ($1, 'agent', $2)", [demoConv, welcome]);
+    await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [demoConv]);
+    await markIntroduced(app.db, demoConv);
+    const d = await reply(app, adapter, inbound, welcome, store.id, demoConv);
+    if (d.ok) sent.push('הדמו של תורן, שעונה להם עכשיו בצ׳אט');
+  }
+  app.log(`[outreach] …${lead.phone.slice(-4)} said yes to the ${lead.product} pitch (${pressed ? 'pressed' : 'written'}): ${sent.length ? 'sent' : 'nothing went'}`);
+  const said = `הם ${pressed ? 'לחצו' : 'כתבו'} "${cleanLine(inbound.text, 40) || 'כן'}"`;
+  await leadReplied(app, lead, support.id, String(inbound.text || ''), {
+    title: `${lead.name} אמרו כן`,
+    body: sent.length ? `${said}, ונשלח להם ${sent.join(' ו')}. זה הזמן לכתוב להם.` : `${said}, אבל ההודעה אליהם לא יצאה. כדאי לכתוב להם בעצמך.`,
+  }).catch((e) => app.log(`[lead] …${lead.phone.slice(-4)}: the yes was not marked answered (${e?.message || e})`));
+  return { action: 'pitch_yes', storeId: store?.id ?? support.store_id, reply: welcome };
 }
 
 /**
@@ -159,6 +245,9 @@ export async function demoNumber(app: App, adapter: ChannelAdapter, inbound: Inb
   // "הסירו אותי" or a "לא" to a pitch from our number: no pitch goes to that number again (ops/outreach.ts).
   const removed = await outreachWord(app, adapter, inbound);
   if (removed) return removed;
+  // "כן" to a pitch from our number: the demo comes into this chat (pitchAccepted).
+  const accepted = await pitchAccepted(app, adapter, inbound);
+  if (accepted) return accepted;
 
   // A code binds (or re-binds) the phone to its store.
   const m = CODE_RE.exec(text);

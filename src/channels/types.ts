@@ -23,6 +23,7 @@ export type Inbound = {
   automated?: string | null; // why it must not be answered: an auto-reply, a bounce, a mailing list
   pending?: string; // the provider's id to fetch the rest from (Resend sends an email's body separately)
   report?: 'bounced' | 'complained'; // not a message: the provider saying mail to `from` failed or was marked spam
+  payload?: string; // a template's quick reply pressed: the payload it carries, as the business set it (WhatsApp)
 };
 
 /**

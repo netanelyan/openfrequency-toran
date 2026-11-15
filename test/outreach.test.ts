@@ -61,31 +61,42 @@ async function pitchApp(env: Record<string, string> = {}) {
 
 const pitch = (o: Partial<outreach.Pitch> = {}): outreach.Pitch => ({ product: 'toran', stage: 'first', phone: PHONE, name: 'כלי חרס של נורית', url: 'https://toran.openfrequency.co.il/s/nurit-x1', ref: 'toran:1', by: 'Demo', ...o });
 
-test('the six templates keep Meta\'s rules, read as the store reads them, and docs/whatsapp-templates.md is written from them', () => {
+test('the six templates ask, keep Meta\'s rules, read as the store reads them, and docs/whatsapp-templates.md is written from them', () => {
   const now = Object.values(outreach.OUTREACH_TEMPLATES);
-  assert.deepEqual(now.map((t) => t.name), ['toran_pitch_2', 'toran_pitch_reminder_2', 'teder_pitch_2', 'teder_pitch_reminder_2', 'openfrequency_pitch_2', 'openfrequency_pitch_reminder_2']);
-  assert.deepEqual(now.map((t) => t.previous?.name), ['toran_pitch', 'toran_pitch_reminder', 'teder_pitch', 'teder_pitch_reminder', 'openfrequency_pitch', 'openfrequency_pitch_reminder'], 'each replaces the one Meta approved before');
-  for (const t of [...now, ...now.map((x) => x.previous!)]) {
+  assert.deepEqual(now.map((t) => t.name), ['toran_pitch_3', 'toran_pitch_reminder_3', 'teder_pitch_3', 'teder_pitch_reminder_3', 'openfrequency_pitch_3', 'openfrequency_pitch_reminder_3']);
+  assert.deepEqual(now.map((t) => t.previous?.name), ['toran_pitch_2', 'toran_pitch_reminder_2', 'teder_pitch_2', 'teder_pitch_reminder_2', 'openfrequency_pitch_2', 'openfrequency_pitch_reminder_2'], 'each replaces the one Meta approved before');
+  assert.deepEqual(now.map((t) => t.previous?.previous?.name), ['toran_pitch', 'toran_pitch_reminder', 'teder_pitch', 'teder_pitch_reminder', 'openfrequency_pitch', 'openfrequency_pitch_reminder'], 'and that one the first');
+  const all = now.flatMap((t) => [t, t.previous!, t.previous!.previous!]);
+  for (const t of all) {
     assert.equal(t.category, 'MARKETING');
     assert.doesNotMatch(t.body, /^\s*\{\{|\}\}\s*$/, `${t.name}: no variable at the body's start or end (Meta refuses one)`);
     const vars = 1 + (t.links || 0);
     assert.deepEqual(t.body.match(/\{\{\d+\}\}/g), Array.from({ length: vars }, (_, i) => `{{${i + 1}}}`), `${t.name}: the store, then its pages' addresses`);
     assert.equal(t.example.length, vars, `${t.name}: a sample for every variable`);
     assert.ok(t.body.length <= 1024, `${t.name}: within Meta's 1024 characters`);
-    // The pages are written out in the new words, in case the buttons do not show (the owner, 2026-11-12).
-    if (t.links) assert.ok(t.example.slice(1).every((u, i) => u.startsWith(i ? t.url2!.base : t.url.base)), `${t.name}: its pages are its buttons' pages`);
-    assert.match(t.url.base, /^https:\/\/(toran|teder)\.openfrequency\.co\.il\/s\/$/, `${t.name}: the page's address, its slug appended`);
-    assert.ok(t.url.text.length <= 25 && t.stop.length <= 25, `${t.name}: buttons of 25 characters at most`);
-    assert.ok(t.body.includes(`"${outreach.STOP_BUTTON}"`), `${t.name}: says how to stop`);
+    assert.ok(outreach.buttonsOf(t).every((b) => b.length <= 25), `${t.name}: buttons of 25 characters at most`);
+    assert.ok(t.body.includes(`"${t.stop}"`), `${t.name}: says how to stop`);
     assert.ok(t.body.includes('OpenFrequency') || t.stage === 'reminder', `${t.name}: the first one says who writes`);
+    assert.doesNotMatch(t.body, /—|–/, `${t.name}: no dashes`);
     const s = outreach.submission(t);
-    // The URL buttons first, the quick reply after them (two groups); the message with both demos has two URL buttons,
-    // Toran's then Teder's (Meta allows two).
+    if (t.yes) {
+      // The words that ask (2026-11-15): no link, two quick replies, the yes and then the way out.
+      assert.equal(t.url, undefined, `${t.name}: no link in the first touch`);
+      assert.deepEqual(s.components[1].buttons, [{ type: 'QUICK_REPLY', text: t.yes }, { type: 'QUICK_REPLY', text: outreach.NO_BUTTON }]);
+      assert.match(t.body, /\?\n\n/, `${t.name}: a question, then the way out`);
+      continue;
+    }
+    // The words before: the URL buttons first, the quick reply after them (two groups); the message with both demos has
+    // two URL buttons, Toran's then Teder's (Meta allows two).
+    if (t.links) assert.ok(t.example.slice(1).every((u, i) => u.startsWith(i ? t.url2!.base : t.url!.base)), `${t.name}: its pages are its buttons' pages`);
+    assert.match(t.url!.base, /^https:\/\/(toran|teder)\.openfrequency\.co\.il\/s\/$/, `${t.name}: the page's address, its slug appended`);
     assert.deepEqual(s.components[1].buttons!.map((b: any) => b.type), t.url2 ? ['URL', 'URL', 'QUICK_REPLY'] : ['URL', 'QUICK_REPLY']);
-    if (t.url2) assert.deepEqual([t.url.base, t.url2.base, t.url2.text.length <= 25], ['https://toran.openfrequency.co.il/s/', 'https://teder.openfrequency.co.il/s/', true]);
   }
-  assert.match(outreach.outreachFilled(outreach.OUTREACH_TEMPLATES.toran_first), /^היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן, שעונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה\.[^]*אפשר לכתוב לו עכשיו מהטלפון, כמו לקוח: https:\/\/toran\.openfrequency\.co\.il\/s\/nurit-ceramics\n/);
-  assert.match(outreach.outreachFilled(outreach.OUTREACH_TEMPLATES.both_first), /תורן עונה ללקוחות שלכם[^]*https:\/\/toran\.openfrequency\.co\.il\/s\/nurit-ceramics\n\nתדר כותב ומעצב[^]*קהל שמכיר אתכם[^]*https:\/\/teder\.openfrequency\.co\.il\/s\/nurit-ceramics-a1b2c3\n/);
+  assert.equal(outreach.outreachFilled(outreach.OUTREACH_TEMPLATES.toran_first), 'היי, כאן OpenFrequency. בנינו לכלי חרס של נורית את תורן, עוזר שעונה ללקוחות שלכם בוואטסאפ לפי המוצרים, המחירים והמלאי שבאתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהוא כבר מכיר את החנות. רוצים לנסות אותו כאן בצ׳אט, כמו לקוח?\n\nלא רלוונטי? לוחצים "לא, תודה" ולא נכתוב שוב.');
+  assert.match(outreach.outreachFilled(outreach.OUTREACH_TEMPLATES.both_first), /^היי, כאן OpenFrequency\. הכנו לכלי חרס של נורית שני דברים לנסות: את תורן, [^]*ומצגת לדוגמה של תדר[^]*לשלוח לכם אותם לכאן\?/);
+  assert.deepEqual(outreach.buttonsOf(outreach.OUTREACH_TEMPLATES.toran_first), ['כן, בואו ננסה', 'לא, תודה']);
+  assert.deepEqual(outreach.buttonsOf(outreach.OUTREACH_TEMPLATES.teder_first), ['כן, תשלחו', 'לא, תודה']);
+  assert.equal(outreach.templateNamed('toran_pitch')?.name, 'toran_pitch', 'a pitch of any version is known by its name');
   const doc = readFileSync(path.join(ROOT, 'docs', 'whatsapp-templates.md'), 'utf8');
   assert.ok(doc.includes(outreach.outreachTemplateDoc()), 'docs/whatsapp-templates.md has the pitches as the code writes them (node scripts/templates-doc.ts)');
 });
@@ -137,7 +148,7 @@ test('the sign-up switch is said once a start: quiet when Toran, accounts and th
   }
 });
 
-test('a pitch goes once as the template: the store with its "ל", the page\'s slug on the URL button, the way out as the second button', async () => {
+test('a pitch goes once as the template that asks: the store with its "ל", the yes and the way out as its two quick replies', async () => {
   const { app, meta } = await pitchApp();
   try {
     const out = await outreach.sendPitch(app, pitch({ name: 'הדס עיצובים' }));
@@ -150,28 +161,32 @@ test('a pitch goes once as the template: the store with its "ל", the page\'s sl
       to: PHONE,
       type: 'template',
       template: {
-        name: 'toran_pitch_2',
+        name: 'toran_pitch_3',
         language: { code: 'he' },
         components: [
-          { type: 'body', parameters: [{ type: 'text', text: 'בשביל הדס עיצובים' }, { type: 'text', text: 'https://toran.openfrequency.co.il/s/nurit-x1' }] },
-          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: 'nurit-x1' }] },
+          { type: 'body', parameters: [{ type: 'text', text: 'בשביל הדס עיצובים' }] },
+          { type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: 'OUTREACH_YES' }] },
           { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: 'OUTREACH_STOP' }] },
         ],
       },
     });
     assert.ok(meta.calls.some((c) => c.method === 'GET' && c.path === META_DEMO.META_DEMO_PHONE_ID && c.query.fields === 'quality_rating'), "the number's rating read first");
-    assert.ok(meta.calls.some((c) => c.path === `${WABA}/message_templates` && c.query.name === 'toran_pitch_2'), "and the template's");
+    assert.ok(meta.calls.some((c) => c.path === `${WABA}/message_templates` && c.query.name === 'toran_pitch_3'), "and the template's");
+    // The page it is about is kept with it: a yes sends it (channels/demo.ts pitchAccepted).
+    assert.equal((await app.db.one<any>("SELECT data->>'url' AS url FROM events WHERE kind = 'outreach_wa'"))!.url, 'https://toran.openfrequency.co.il/s/nurit-x1');
     // Twice: once.
     assert.equal((await outreach.sendPitch(app, pitch())).why, 'already');
     // The reminder is its own template, once too; the other product's pitch to the same number is its own.
     assert.equal((await outreach.sendPitch(app, pitch({ stage: 'reminder' }))).sent, true);
-    assert.equal(meta.sends().at(-1)!.body.template.name, 'toran_pitch_reminder_2');
+    assert.equal(meta.sends().at(-1)!.body.template.name, 'toran_pitch_reminder_3');
     assert.equal((await outreach.sendPitch(app, pitch({ product: 'teder', url: 'https://teder.openfrequency.co.il/s/nurit-a1b2c3' }))).sent, true);
-    assert.equal(meta.sends().at(-1)!.body.template.name, 'teder_pitch_2');
-    // A page without /s/<slug>, a number that is not one: nothing at Meta.
+    assert.equal(meta.sends().at(-1)!.body.template.name, 'teder_pitch_3');
+    // A page without /s/<slug>, a number that is not one, a landline or 073 (Meta delivered none, 2026-11-13 to 15):
+    // nothing at Meta.
     const n = meta.sends().length;
     assert.equal((await outreach.sendPitch(app, pitch({ phone: OTHER, url: 'https://toran.openfrequency.co.il/' }))).why, 'bad_page');
     assert.equal((await outreach.sendPitch(app, pitch({ phone: '0501234' }))).why, 'bad_phone');
+    for (const landline of ['97235045043', '972733383888', '97236375525']) assert.equal((await outreach.sendPitch(app, pitch({ phone: landline }))).why, 'not_mobile', landline);
     assert.equal(meta.sends().length, n);
   } finally {
     setNow(null);
@@ -303,7 +318,8 @@ test('the operator\'s "send now" on a lead sends the pitch and marks it as "של
     assert.match(said, /^נשלח בוואטסאפ מהמספר שלנו, וסומן שנשלח\./);
     const row = await app.db.one<any>('SELECT sent_at, followup_due_at FROM stores WHERE id = $1', [Number(a)]);
     assert.ok(row.sent_at && row.followup_due_at, 'marked sent, its one reminder due');
-    assert.equal(meta.sends().at(-1)!.body.template.components[1].parameters[0].text, 'alpha-x1');
+    assert.equal(meta.sends().at(-1)!.body.template.name, 'toran_pitch_3');
+    assert.equal((await app.db.one<any>("SELECT data->>'url' AS url FROM events WHERE kind = 'outreach_wa' ORDER BY id DESC LIMIT 1"))!.url, 'http://localhost:4710/s/alpha-x1', 'its page kept, for the yes');
     // The day's cap: held, and nothing marked.
     await assert.rejects(sendNow(app, 'toran', b, 'Demo'), (e: any) => e instanceof OpsError && e.message === outreach.SAID_HE.cap);
     assert.equal((await app.db.one<any>('SELECT sent_at FROM stores WHERE id = $1', [Number(b)])).sent_at, null);
@@ -349,7 +365,7 @@ test('POST /internal/outreach/send, as the contract says (test/fixtures/outreach
   }
 });
 
-test('one message with both demos: two URL buttons (Toran, then Teder), the way out third; counted once a day and as both products\' pitch at its stage', async () => {
+test('one message with both demos: it asks once for both, both pages kept for the yes; counted once a day and as both products\' pitch at its stage', async () => {
   const { app, meta } = await pitchApp({ TORAN_OUTREACH_DAILY: '2' });
   const TEDER = 'https://teder.openfrequency.co.il/s/nurit-a1b2c3';
   try {
@@ -358,13 +374,13 @@ test('one message with both demos: two URL buttons (Toran, then Teder), the way 
     const out = await outreach.sendPitch(app, pitch({ product: 'both', url2: TEDER }));
     assert.equal(out.sent, true);
     const [send] = meta.sends();
-    assert.equal(send.body.template.name, 'openfrequency_pitch_2');
-    assert.deepEqual(send.body.template.components[0].parameters.map((x: any) => x.text), ['לכלי חרס של נורית', 'https://toran.openfrequency.co.il/s/nurit-x1', TEDER], 'both pages written out in the words too');
+    assert.equal(send.body.template.name, 'openfrequency_pitch_3');
+    assert.deepEqual(send.body.template.components[0].parameters.map((x: any) => x.text), ['לכלי חרס של נורית']);
     assert.deepEqual(send.body.template.components.slice(1), [
-      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: 'nurit-x1' }] },
-      { type: 'button', sub_type: 'url', index: '1', parameters: [{ type: 'text', text: 'nurit-a1b2c3' }] },
-      { type: 'button', sub_type: 'quick_reply', index: '2', parameters: [{ type: 'payload', payload: 'OUTREACH_STOP' }] },
+      { type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: 'OUTREACH_YES' }] },
+      { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: 'OUTREACH_STOP' }] },
     ]);
+    assert.deepEqual({ ...(await app.db.one<any>("SELECT data->>'url' AS url, data->>'url2' AS url2 FROM events WHERE kind = 'outreach_wa'")) }, { url: 'https://toran.openfrequency.co.il/s/nurit-x1', url2: TEDER });
     // It was both products' first message: neither goes alone at that stage, nor both again.
     for (const product of ['toran', 'teder', 'both'] as const) assert.equal((await outreach.sendPitch(app, pitch({ product, ...(product === 'both' ? { url2: TEDER } : {}) }))).why, 'already', product);
     // Counted once in the day's cap of 2: one more (another number) goes, the third is held.
@@ -397,9 +413,10 @@ test('readPitch: both takes Teder\'s page as url2, a single product takes none',
   assert.equal(outreach.readPitch(JSON.stringify({ ...base, product: 'both', url2: 'https://teder.openfrequency.co.il/s/b' }))?.url2, 'https://teder.openfrequency.co.il/s/b');
 });
 
-// The owner, 2026-11-12: "urls have to be present, in case buttons dont show". New words go to Meta for review; until
-// Meta approves them, the words it approved before go, so no pitch waits for the review.
-test('while Meta reviews the new words, the ones it approved before go, with only the store in them; once approved, the new ones', async () => {
+// New words go to Meta for review; until Meta approves them, the words it approved before go, so no pitch waits for
+// the review: the words of 2026-11-12, with the page written out and on its button (the owner then: "urls have to be
+// present, in case buttons dont show"), and the way out after it.
+test('while Meta reviews the new words, the ones it approved before go, with their page and its button; once approved, the new ones', async () => {
   const { app, meta } = await pitchApp();
   try {
     meta.state.status = 'PENDING';
@@ -407,26 +424,30 @@ test('while Meta reviews the new words, the ones it approved before go, with onl
     const f = meta.f;
     app.graph = (async (input: any, init: any = {}) => {
       const u = new URL(String(input));
-      if (u.pathname.endsWith('/message_templates') && !/_2$/.test(u.searchParams.get('name') || '')) {
+      if (u.pathname.endsWith('/message_templates') && !/_3$/.test(u.searchParams.get('name') || '')) {
         return new Response(JSON.stringify({ data: [{ name: u.searchParams.get('name'), status: 'APPROVED', quality_score: { score: 'GREEN' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       return f(input, init);
     }) as typeof fetch;
     assert.equal((await outreach.sendPitch(app, pitch())).sent, true);
     const first = meta.sends().at(-1)!.body.template;
-    assert.equal(first.name, 'toran_pitch');
-    assert.deepEqual(first.components[0].parameters, [{ type: 'text', text: 'לכלי חרס של נורית' }], 'the words before carry the store alone');
-    // Approved now, after the ten minutes Meta's word is kept: the new words, with the page written out.
+    assert.equal(first.name, 'toran_pitch_2');
+    assert.deepEqual(first.components, [
+      { type: 'body', parameters: [{ type: 'text', text: 'לכלי חרס של נורית' }, { type: 'text', text: 'https://toran.openfrequency.co.il/s/nurit-x1' }] },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: 'nurit-x1' }] },
+      { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: 'OUTREACH_STOP' }] },
+    ], 'the words before, as Meta approved them');
+    // Approved now, after the ten minutes Meta's word is kept: the new words, the store alone.
     meta.state.status = 'APPROVED';
     setNow(NOON + 11 * 60_000);
     assert.equal((await outreach.sendPitch(app, pitch({ product: 'teder', url: 'https://teder.openfrequency.co.il/s/nurit-a1b2c3' }))).sent, true);
     const next = meta.sends().at(-1)!.body.template;
-    assert.equal(next.name, 'teder_pitch_2');
-    assert.deepEqual(next.components[0].parameters.map((x: any) => x.text), ['לכלי חרס של נורית', 'https://teder.openfrequency.co.il/s/nurit-a1b2c3']);
+    assert.equal(next.name, 'teder_pitch_3');
+    assert.deepEqual(next.components[0].parameters.map((x: any) => x.text), ['לכלי חרס של נורית']);
     // No account id to ask Meta with: the words before.
     delete app.env.META_WABA_ID;
     outreach.forgetQuality();
-    assert.equal((await outreach.liveTemplate(app, outreach.OUTREACH_TEMPLATES.both_first)).name, 'openfrequency_pitch');
+    assert.equal((await outreach.liveTemplate(app, outreach.OUTREACH_TEMPLATES.both_first)).name, 'openfrequency_pitch_2');
   } finally {
     setNow(null);
     await app.db.close();
@@ -445,7 +466,7 @@ test('a pitch from our number is in our own inbox, in the conversation its answe
     assert.deepEqual([c.store_id, c.line, c.meta.name], [ours, 'line', 'כלי חרס של נורית'], "our support's conversation with them, under the store's name");
     const m = (await app.db.one<any>('SELECT role, author, auto, text, delivery FROM messages WHERE conversation_id = $1', [c.id]))!;
     assert.deepEqual([m.role, m.author, m.auto], ['owner', 'Demo', 'outreach'], "the operator's message, said as a pitch");
-    assert.match(m.text, /^היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית תורן, [^]*https:\/\/toran\.openfrequency\.co\.il\/s\/nurit-x1[^]*\n\n\[לנסות את תורן\] \[הסירו אותי\]$/, 'its words with the page, and its buttons');
+    assert.match(m.text, /^היי, כאן OpenFrequency\. בנינו לכלי חרס של נורית את תורן, [^]*רוצים לנסות אותו כאן בצ׳אט, כמו לקוח\?[^]*\n\n\[כן, בואו ננסה\] \[לא, תודה\]$/, 'its words, and its buttons');
     assert.equal(m.delivery.length, 1, "Meta's id, for the delivery report");
     // Their answer comes into the same conversation (channels/demo.ts: a phone with no demo is our support's).
     const { openConversation } = await import('../src/channels/conversations.ts');
@@ -498,6 +519,139 @@ test('a "לא מעוניין" to a pitch kept in our inbox is the way out; once 
     await write(OTHER, 'מה זה בדיוק?');
     assert.notEqual((await write(OTHER, 'לא')).action, 'outreach_stop');
     assert.equal(await outreach.stoppedNumber(app, OTHER), false);
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+// ---- the pitch that asks (2026-11-15)
+
+// The owner, 2026-11-15: "19 messages, 0 replies. redo that part. from start until the end ... i want it working and i
+// want costumers". The pitch asks, and a yes brings the demo into the chat at once: Toran's starts answering there, a
+// slideshow comes as its first slide. Numbers are fictional; Meta and the slide's server are stand-ins.
+
+/** Our company store (our support on our number) and a lead with Toran's page built, its WhatsApp PHONE. */
+async function yesSetup(app: any): Promise<number> {
+  await app.db.query("INSERT INTO stores (domain, url, name, platform, source, slug, status) VALUES ('openfrequency.example', 'https://openfrequency.example/', 'OpenFrequency', 'company', 'manual', 'of-c1', 'company')");
+  app.env.TORAN_SUPPORT_STORE = 'openfrequency.example';
+  return (await app.db.one("INSERT INTO stores (domain, url, name, platform, source, slug, demo_code, contact_whatsapp, approved_at, page_built_at, status) VALUES ('nurit.example', 'https://nurit.example/', 'כלי חרס של נורית', 'shopify', 'seed', 'nurit-x1', 'DEMO-NUR1', $1, now(), now(), 'page_ready') RETURNING id", [PHONE]))!.id as number;
+}
+
+test("a yes pressed on Toran's pitch starts the store's own Toran right in the chat, once; the operator hears what went", async () => {
+  const { app, meta } = await pitchApp();
+  let n = 0;
+  const write = (text: string, payload?: string) => handleInbound(app, { channel: 'whatsapp', from: PHONE, text, id: `wamid.in-${n++}`, at: NOON, account: META_DEMO.META_DEMO_PHONE_ID, to: '972500000900', ...(payload ? { payload } : {}) });
+  try {
+    const id = await yesSetup(app);
+    assert.equal((await outreach.sendPitch(app, pitch({ ref: `store:${id}` }))).sent, true);
+    const r = await write(outreach.TRY_BUTTON, outreach.YES_PAYLOAD);
+    assert.equal(r.action, 'pitch_yes');
+    assert.match(String(r.reply), /^מעכשיו עונה לכם כאן תורן של כלי חרס של נורית, כמו שהוא יענה ללקוחות שלכם\./);
+    assert.match(meta.calls.at(-1)!.body.text.body, /^מעכשיו עונה לכם כאן תורן של/, 'sent in the chat');
+    assert.deepEqual({ ...(await app.db.one<any>('SELECT store_id FROM wa_users WHERE phone = $1', [PHONE])) }, { store_id: id }, "the phone is bound to the store's demo");
+    const s = (await app.db.one<any>('SELECT status, demo_started_at, replied_at FROM stores WHERE id = $1', [id]))!;
+    assert.ok(s.demo_started_at && s.replied_at && s.status === 'demo_started', 'the lead tried the demo and answered');
+    assert.ok((await app.db.one<any>("SELECT data->>'yes' AS yes FROM events WHERE kind = 'outreach_wa'"))!.yes, 'the yes kept on the pitch');
+    const alert = (await app.db.one<any>("SELECT data FROM events WHERE kind = 'operator_alert' AND data->>'key' LIKE 'lead_reply:%'"))!.data;
+    assert.match(JSON.stringify(alert), /אמרו כן/);
+    // Once: their next message is the demo's to answer, not another yes.
+    assert.notEqual((await write('כן')).action, 'pitch_yes');
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test('a yes on Teder\'s pitch sends its first slide with the link; a written yes counts only before they wrote; "לא, תודה" pressed always stops', async () => {
+  const { app, meta } = await pitchApp();
+  let n = 0;
+  const write = (from: string, text: string, payload?: string) => handleInbound(app, { channel: 'whatsapp', from, text, id: `wamid.in-${n++}`, at: NOON, account: META_DEMO.META_DEMO_PHONE_ID, to: '972500000900', ...(payload ? { payload } : {}) });
+  const TEDER = 'https://teder.openfrequency.co.il/s/nurit-a1b2c3';
+  try {
+    const id = await yesSetup(app);
+    // The slide's server: TikTok's first slide is there.
+    app.api = (async (input: any, init: any = {}) => new Response(null, { status: String(input) === `${TEDER}/tiktok-0.jpg` && init.method === 'HEAD' ? 200 : 404, headers: { 'content-type': 'image/jpeg' } })) as typeof fetch;
+    assert.equal((await outreach.sendPitch(app, pitch({ product: 'teder', url: TEDER, ref: `store:${id}` }))).sent, true);
+    // Written, not pressed, before they wrote anything: a yes.
+    assert.equal((await write(PHONE, 'כן תשלחו')).action, 'pitch_yes');
+    const img = meta.calls.filter((c) => c.body?.type === 'image').at(-1)!;
+    assert.equal(img.body.image.link, `${TEDER}/tiktok-0.jpg`);
+    assert.ok(img.body.image.caption.startsWith(`זו המצגת שתדר הכין לכלי חרס של נורית, והשקף הראשון שלה כאן. כל השקפים: ${TEDER}`), img.body.image.caption);
+    assert.equal(await app.db.one('SELECT 1 FROM wa_users WHERE phone = $1', [PHONE]), null, 'Teder alone binds no demo');
+
+    // Another lead, who wrote to us first: their "כן" answers what we said, but the button pressed is still the way out.
+    assert.equal((await outreach.sendPitch(app, pitch({ phone: OTHER, product: 'teder', url: TEDER }))).sent, true);
+    await write(OTHER, 'מה זה בדיוק?');
+    assert.notEqual((await write(OTHER, 'כן')).action, 'pitch_yes');
+    assert.equal((await write(OTHER, outreach.NO_BUTTON, outreach.STOP_PAYLOAD)).action, 'outreach_stop');
+    assert.ok(await outreach.stoppedNumber(app, OTHER));
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test("a quick reply's payload comes with the message; our number's deliveries and reads are queued and kept on its pitch, other numbers' are not", async () => {
+  const { parseWebhook } = await import('../src/channels/meta.ts');
+  const { takeWhatsapp } = await import('../src/channels/waHook.ts');
+  const { app } = await pitchApp();
+  try {
+    const hook = (value: any, phoneId = META_DEMO.META_DEMO_PHONE_ID) => ({ object: 'whatsapp_business_account', entry: [{ id: WABA, changes: [{ field: 'messages', value: { metadata: { phone_number_id: phoneId, display_phone_number: '972500000900' }, ...value } }] }] });
+    const pressed = parseWebhook(hook({ contacts: [{ wa_id: PHONE, profile: { name: 'נורית' } }], messages: [{ from: PHONE, id: 'wamid.press', type: 'button', timestamp: '1', button: { text: 'לא, תודה', payload: 'OUTREACH_STOP' } }] }));
+    assert.deepEqual([pressed.messages[0].text, pressed.messages[0].payload], ['לא, תודה', 'OUTREACH_STOP']);
+
+    assert.equal((await outreach.sendPitch(app, pitch())).sent, true);
+    const wamid = (await app.db.one<any>("SELECT data->>'id' AS id FROM events WHERE kind = 'outreach_wa'"))!.id;
+    await takeWhatsapp(app, parseWebhook(hook({ statuses: [{ id: wamid, status: 'delivered', recipient_id: PHONE }, { id: wamid, status: 'read', recipient_id: PHONE }, { id: 'wamid.x', status: 'sent', recipient_id: PHONE }] })));
+    await takeWhatsapp(app, parseWebhook(hook({ statuses: [{ id: 'wamid.store', status: 'delivered', recipient_id: OTHER }] }, '777666555444333')));
+    const queued = await app.db.query<any>("SELECT payload FROM jobs WHERE kind = 'wa_status' ORDER BY id");
+    assert.deepEqual(queued.map((j) => j.payload.status), ['delivered', 'read'], "our number's delivery and read; no 'sent', nothing of another number");
+    assert.equal(await outreach.pitchStatus(app, { id: wamid, status: 'delivered', account: META_DEMO.META_DEMO_PHONE_ID }), true);
+    assert.equal(await outreach.pitchStatus(app, { id: wamid, status: 'delivered', account: META_DEMO.META_DEMO_PHONE_ID }), false, 'kept once');
+    assert.equal(await outreach.pitchStatus(app, { id: wamid, status: 'read', account: META_DEMO.META_DEMO_PHONE_ID }), true);
+    const d = (await app.db.one<any>("SELECT data FROM events WHERE kind = 'outreach_wa'"))!.data;
+    assert.ok(d.delivered && d.read && d.delivered <= d.read);
+    assert.equal(await outreach.pitchStatus(app, { id: wamid, status: 'read', account: '777666555444333' }), false, "another number's word is not ours");
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test("the one reminder goes by itself once it is due and nobody answered, as the operator's button sends it; never twice, never after a demo", async () => {
+  const { remindDue, AUTO_BY } = await import('../src/ops/remind.ts');
+  const { app, meta, logs } = await pitchApp();
+  try {
+    const add = async (domain: string, phone: string, tried: boolean) =>
+      (await app.db.one<{ id: number }>(
+        `INSERT INTO stores (domain, url, name, platform, source, slug, contact_whatsapp, approved_at, page_built_at, sent_at, followup_due_at, status, demo_started_at)
+         VALUES ($1, $2, $3, 'shopify', 'seed', $4, $5, now() - interval '5 days', now() - interval '5 days', now() - interval '5 days', '2026-11-09T10:00:00Z', 'sent', ${tried ? 'now()' : 'NULL'}) RETURNING id`,
+        [domain, `https://${domain}/`, domain.split('.')[0], `${domain.split('.')[0]}-x1`, phone],
+      ))!.id;
+    const a = await add('alpha.example', PHONE, false);
+    const b = await add('beta.example', OTHER, true);
+    const firstOf = (id: number, phone: string) =>
+      app.db.query("INSERT INTO events (store_id, kind, data, at) VALUES (NULL, 'outreach_wa', $1::jsonb, now() - interval '5 days')", [JSON.stringify({ product: 'toran', stage: 'first', phone, ref: `toran:${id}`, by: 'נתנאל', template: 'toran_pitch_2', state: 'sent', id: `wamid.first-${id}`, url: `http://localhost:4710/s/x-${id}` })]);
+    await firstOf(a, PHONE);
+    await firstOf(b, OTHER);
+    // Shabbat: nothing.
+    setNow(Date.parse('2026-11-14T10:00:00.000Z'));
+    assert.equal(await remindDue(app), 0);
+    setNow(NOON);
+    assert.equal(await remindDue(app), 1, `the one that tried the demo since gets none (${logs.join(' | ')})`);
+    const sent = meta.sends().at(-1)!.body;
+    assert.deepEqual([sent.to, sent.template.name], [PHONE, 'toran_pitch_reminder_3']);
+    assert.ok((await app.db.one<any>('SELECT followup_sent_at FROM stores WHERE id = $1', [a]))!.followup_sent_at, "marked reminded, as the operator's button marks it");
+    assert.ok(await app.db.one("SELECT 1 FROM events WHERE kind = 'outreach_wa' AND data->>'stage' = 'reminder' AND data->>'by' = $1", [AUTO_BY]), "said as the schedule's");
+    assert.equal((await app.db.one<any>("SELECT data->>'remind' AS r FROM events WHERE kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'stage' = 'first'", [OTHER]))!.r, 'tried');
+    // Again: nothing more.
+    const n = meta.sends().length;
+    assert.equal(await remindDue(app), 0);
+    assert.equal(meta.sends().length, n);
+    // TORAN_OUTREACH_AUTO=0 stops it.
+    app.env.TORAN_OUTREACH_AUTO = '0';
+    assert.equal(await remindDue(app), 0);
   } finally {
     setNow(null);
     await app.db.close();

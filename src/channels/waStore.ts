@@ -13,7 +13,7 @@ import { conversationOf, heldForOwner, type Account } from './store.ts';
 import { openConversation, sentByUs } from './conversations.ts';
 import { alertNotDelivered } from '../ops/alert.ts';
 import { reminderNotDelivered } from '../billing/remind.ts';
-import { pitchNotDelivered } from '../ops/outreach.ts';
+import { pitchNotDelivered, pitchStatus } from '../ops/outreach.ts';
 import type { RouteResult } from './demo.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
 
@@ -243,6 +243,11 @@ async function lineEcho(app: App, echo: Echo, line: Line) {
  * operator's own alerts (ops/alert.ts) is also said loudly in the log, and holds the phone for the hour after it.
  */
 export async function deliveryStatus(app: App, s: Status) {
+  // A pitch that arrived or was read: kept on it, so the leads page shows how far it got (ops/outreach.ts).
+  if (s.status === 'delivered' || s.status === 'read') {
+    await pitchStatus(app, s).catch((e) => app.log(`[outreach] a pitch's ${s.status} was not kept: ${e?.message || e}`));
+    return;
+  }
   if (s.status !== 'failed') return;
   await alertNotDelivered(app, s);
   await reminderNotDelivered(app, s);

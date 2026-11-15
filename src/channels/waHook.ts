@@ -1,5 +1,6 @@
 import type { App } from '../app.ts';
 import { enqueue } from '../jobs/queue.ts';
+import { outreachPhoneId } from '../ops/outreach.ts';
 import type { parseWebhook } from './meta.ts';
 
 type Parsed = ReturnType<typeof parseWebhook>;
@@ -30,12 +31,15 @@ export async function takeWhatsapp(app: App, w: Parsed, keep?: Set<string> | nul
     }
     await enqueue(app.db, 'wa_echo', e, { dedupeKey: `wa_echo:${e.id}` });
   }
-  for (const s of w.statuses.filter((x) => x.status === 'failed')) {
+  // A failure of any number's message; and on our outreach number, a delivery and a read too, so a pitch shows how far it
+  // got (ops/outreach.ts pitchStatus). Every other number's deliveries and reads are not kept.
+  const outreach = w.statuses.some((x) => x.status === 'delivered' || x.status === 'read') ? await outreachPhoneId(app).catch(() => null) : null;
+  for (const s of w.statuses.filter((x) => x.status === 'failed' || ((x.status === 'delivered' || x.status === 'read') && outreach && String(x.account) === outreach))) {
     if (!ok(s.account)) {
       dropped++;
       continue;
     }
-    await enqueue(app.db, 'wa_status', s, { dedupeKey: `wa_status:${s.id}`, maxAttempts: 1 });
+    await enqueue(app.db, 'wa_status', s, { dedupeKey: s.status === 'failed' ? `wa_status:${s.id}` : `wa_status:${s.id}:${s.status}`, maxAttempts: 1 });
   }
   // A store's template approved, rejected or moved to another category (auto/templates.ts), matched by the store's WABA.
   for (const t of w.templates) await enqueue(app.db, 'wa_template_status', t, { maxAttempts: 2 });

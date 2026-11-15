@@ -1529,3 +1529,36 @@ Latin name while it calls itself by a Hebrew one is renamed on its lead page's n
 
 **Tested.** The tests that pin the lines (bot-intro, lead-reply, company, owners, pay, pay-remind, waiting, lines,
 onenumber, agent-web, the channels' golden file) now pin the new ones.
+
+## 2026-11-15: the pitch asks, a yes brings the demo into the chat, and the reminder goes by itself
+
+**Why.** The owner: "19 messages, 0 replies. redo that part. from start until the end. dont mind wasting my tokens, i
+want it working and i want costumers". Read from the record of the 19 pitches (13 to 15 November): 11 never arrived
+(Meta's 131026, every landline and 073 number among them, stores' own "WhatsApp" links too); Meta kept no word of the
+other 8 beyond taking them (only failures were kept); three pitch pages were opened and no demo was started. The only
+button a store could press without leaving the chat was "הסירו אותי". Our number's display name, "OpenFrequency", is
+still PENDING_REVIEW at Meta, so the 8 came from a bare number, and its business profile was empty (set the same day:
+what OpenFrequency is, and the website).
+
+**What changed.**
+- The six templates are new words that ask (ops/outreach.ts, `*_3`): who writes, what was built for the store, one
+  question ("רוצים לנסות אותו כאן בצ׳אט, כמו לקוח?" / "לשלוח לכם אותה לכאן?"), and two quick replies, the yes ("כן, בואו
+  ננסה" for Toran, "כן, תשלחו" otherwise) and "לא, תודה". No link: a press is an answer, and the yes opens the 24
+  hours. It is also the one approach the law allows a business (section 30A): it asks whether they want it. Until Meta
+  approves them, the 2026-11-12 words go (liveTemplate, now through every earlier version).
+- A yes, pressed (its payload) or written in a word before they wrote anything else (channels/demo.ts pitchAccepted),
+  brings the demo into the chat: Toran's demo starts there (the phone bound to the store's demo, as its code binds it,
+  with the welcome), a Teder slideshow comes as its first slide with the link to all of it. Once a pitch. The operator is
+  told "<store> אמרו כן" and what went.
+- A quick reply's payload comes with the message (Inbound.payload): "לא, תודה" pressed is always the way out, the same
+  words typed during a demo are not.
+- Our outreach number's deliveries and reads are queued and kept on the pitch (`delivered`, `read`); other numbers'
+  are not.
+- No pitch goes from our number to an Israeli number that is not a mobile (`not_mobile`): those leads are written to by
+  email.
+- The one reminder goes by itself (ops/remind.ts, the schedule's `outreach` step): the operator's own send, when it is
+  due (four days, off Shabbat), for a first pitch Meta took and nobody answered, pressed yes on, or tried the demo of
+  since. TORAN_OUTREACH_AUTO=0 stops it.
+
+**Tested.** test/outreach.test.ts (the templates that ask, the yes for Toran and for Teder, the payload, deliveries and
+reads, the reminder), test/lead-reply.test.ts.

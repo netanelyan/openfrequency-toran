@@ -275,6 +275,8 @@ export function parseWebhook(body: any): { messages: Inbound[]; echoes: Echo[]; 
             account: phoneId,
             to,
             ...(FILE_TYPES.has(m.type) ? { attachments: [fileOf(m)] } : {}),
+            // A quick reply's payload, so a pitch's "לא, תודה" pressed is told from the same words typed in a demo.
+            ...(m.type === 'button' && m.button?.payload ? { payload: String(m.button.payload).slice(0, 100) } : {}),
           });
         }
         for (const s of Array.isArray(v.statuses) ? v.statuses : []) {
@@ -321,6 +323,8 @@ export function outBody(to: string, msg: WaOut): Record<string, unknown> {
       // One URL button (url), or several in order (urls: the pitch with both demos, ops/outreach.ts), each at its place.
       ...(msg.template.urls || (msg.template.url ? [msg.template.url] : [])).map((u, i) => ({ type: 'button', sub_type: 'url', index: String(i), parameters: [{ type: 'text', text: u }] })),
       ...(msg.template.payload ? [{ type: 'button', sub_type: 'quick_reply', index: String(msg.template.payloadIndex ?? 0), parameters: [{ type: 'payload', payload: msg.template.payload }] }] : []),
+      // Several quick replies, each with its own payload at its place (a pitch's "yes" and "no", ops/outreach.ts).
+      ...(msg.template.payloads || []).map((q) => ({ type: 'button', sub_type: 'quick_reply', index: String(q.index), parameters: [{ type: 'payload', payload: q.payload }] })),
     ];
     return { ...base, type: 'template', template: { name: msg.template.sid, language: { code: 'he' }, ...(components.length ? { components } : {}) } };
   }
