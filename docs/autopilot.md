@@ -37,7 +37,7 @@ routine's environment; never print it, never write it to a file or a note). JSON
 | `POST /autopilot/ask {id}` | the question, on WhatsApp to its mobile or else by email. `{sent, why, said}` |
 | `POST /autopilot/discover {source}` | `brave` (Hebrew searches by category) or `storecensus` (Israel's Shopify directory); new stores appear within minutes |
 | `GET /autopilot/recent?hours=24` | every question and pitch: its channel, store, product, state, delivered/read, yes, deliver (pending/sent/failed/expired), replied, auto answer, error, chat link |
-| `POST /autopilot/note {text}` / `GET /autopilot/notes` | a note for the owner, in Hebrew |
+| `POST /autopilot/note {text, tell}` / `GET /autopilot/notes` | a note for the owner, in Hebrew; `tell: true` also sends it to the owner's WhatsApp (the evening review only) |
 
 `ask` refuses with a reason, never throws: `quiet`, `day_cap`, `batch_cap`, `off` mean stop this run;
 `template_pending` means Meta is still reviewing the question on WhatsApp, so ask only the stores whose `reach` is
@@ -83,7 +83,8 @@ after three, stop and note it.
 
 ## The evening run (review)
 
-No questions. `GET /autopilot/recent?hours=24` and `GET /autopilot/state`, then one note in Hebrew:
+No questions. `GET /autopilot/recent?hours=24` and `GET /autopilot/state`, then one note in Hebrew, posted with
+`{"text": "...", "tell": true}` so it reaches the owner's WhatsApp (keep it under 900 characters):
 
 - the day's numbers: asked, said yes, demos delivered, deliveries that failed, answers, asked to be removed
 - each store that said yes or answered, by name, and where it stands (its chat link when there is one)

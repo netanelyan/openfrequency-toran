@@ -9,6 +9,7 @@ import { displayName } from '../ingest/brand.ts';
 import { canIngest } from '../ingest/catalogue.ts';
 import { publicBase } from '../auto/messages.ts';
 import { monthSpend } from '../agent/spend.ts';
+import { alertOperator } from './alert.ts';
 import { aboutOf, discoverLeads, stockOf } from './leadsAdmin.ts';
 import { emailPitch, mailInsteadOf, MAIL_SAID_HE } from './emailPitch.ts';
 import { MOBILE_IL, SAID_HE, sendPitch, type Product } from './outreach.ts';
@@ -193,12 +194,18 @@ export async function autopilotRecent(app: App, hours = 24) {
   });
 }
 
-/** A note of the autopilot's, kept for the owner (the leads page shows the last ones). */
-export async function autopilotNote(app: App, text: unknown): Promise<{ ok: boolean }> {
+/**
+ * A note of the autopilot's, kept for the owner; with `tell`, also on the owner's WhatsApp as their alerts come (the
+ * evening's review: the owner, "make the lead engine so strong that it gets customers without me even looking at it"),
+ * twice a day at most.
+ */
+export async function autopilotNote(app: App, text: unknown, tell = false): Promise<{ ok: boolean; told?: boolean }> {
   const t = String(text ?? '').trim().slice(0, 4000);
   if (!t) return { ok: false };
-  await event(app.db, null, 'autopilot_note', { text: t });
-  return { ok: true };
+  await event(app.db, null, 'autopilot_note', { text: t, tell });
+  if (!tell) return { ok: true };
+  const told = await alertOperator(app, `autopilot_note:${israelDate(now())}:${halfOf(now())}`, 'הלידים היום', cleanLine(t.replace(/\n+/g, ' · '), 900), { everyMinutes: 6 * 60 }).catch(() => false);
+  return { ok: true, told: Boolean(told) };
 }
 
 export const autopilotNotes = (app: App, n = 10) => app.db.query<{ at: string; text: string }>("SELECT at, data->>'text' AS text FROM events WHERE kind = 'autopilot_note' ORDER BY id DESC LIMIT $1", [n]);
@@ -252,7 +259,8 @@ export function autopilotRoutes(app: App): Route<Req>[] {
     ['POST', /^\/autopilot\/note$/, async (r) => {
       const refused = guard(r);
       if (refused) return refused;
-      return json(await autopilotNote(app, (bodyOf(r) || {}).text));
+      const b = bodyOf(r) || {};
+      return json(await autopilotNote(app, b.text, b.tell === true));
     }],
   ];
 }
