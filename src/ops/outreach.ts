@@ -529,9 +529,12 @@ export const stoppedNumber = async (app: App, phone: string) => Boolean(await ap
  * defined"). Writing to its own Toran on the demo is trying the demo, not answering us: the one reminder still goes then.
  */
 export async function wroteSinceFirst(app: App, phone: string): Promise<boolean> {
-  const first = await app.db.one<{ at: Date | string | null }>("SELECT MIN(at) AS at FROM events WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'stage' = 'first' AND data->>'state' IN ('sent', 'undelivered')", [digits(phone)]);
+  const first = await app.db.one<{ at: Date | string | null; replied: boolean | null }>("SELECT MIN(at) AS at, bool_or(data->>'replied' IS NOT NULL) AS replied FROM events WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'stage' = 'first' AND data->>'state' IN ('sent', 'undelivered')", [digits(phone)]);
   if (!first?.at) return false;
-  return Boolean(await app.db.one("SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id JOIN channel_accounts a ON a.id = c.account_id WHERE a.status = 'line' AND c.channel = 'whatsapp' AND c.peer = $1 AND m.role = 'customer' AND m.at > $2 LIMIT 1", [digits(phone), new Date(first.at).toISOString()]));
+  if (first.replied) return true;
+  // A message in the first two minutes that was not marked their answer is their business's automatic greeting
+  // (ops/leadReply.ts automaticAnswer): it does not hold the reminder back.
+  return Boolean(await app.db.one("SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id JOIN channel_accounts a ON a.id = c.account_id WHERE a.status = 'line' AND c.channel = 'whatsapp' AND c.peer = $1 AND m.role = 'customer' AND m.at > $2::timestamptz + interval '2 minutes' LIMIT 1", [digits(phone), new Date(first.at).toISOString()]));
 }
 
 /**

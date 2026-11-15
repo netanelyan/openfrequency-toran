@@ -18,6 +18,7 @@ import { alertOperator } from './alert.ts';
 import { REPLY_DAYS } from './outreach.ts';
 import { toranOnSale } from './signupSwitch.ts';
 import { tederMove, tederState } from './tederLeads.ts';
+import { leadTurn } from './leadReply.ts';
 
 // A pitch by email, from our company store's own address (the owner, 2026-11-15: "19 messages, 0 replies. redo that
 // part. from start until the end. dont mind wasting my tokens, i want it working and i want costumers").
@@ -548,4 +549,28 @@ export async function emailFallbackDue(app: App): Promise<number> {
     if (out.sent) n++;
   }
   return n;
+}
+
+/**
+ * What our support is told of a store we emailed first, when it answers with more than "כן" or "הסר" (the LEAD block a
+ * WhatsApp answer gets, ops/leadReply.ts leadTurn): what we sent, the pages, where they start. Without it, a store that
+ * answered our email was asked what it was talking about (2026-11-15). Null for anyone we did not email.
+ */
+export async function mailLeadTurn(app: App, inbound: Inbound, account: Account): Promise<ReturnType<typeof leadTurn> | null> {
+  const email = mailAddress(inbound.from);
+  if (!email || inbound.automated) return null;
+  // Only mail to our own company's mailbox, where the pitches go from.
+  if (!(await app.db.one("SELECT 1 FROM stores WHERE id = $1 AND platform = 'company'", [account.store_id]))) return null;
+  const e = await app.db.one<{ id: number; at: Date | string; store_id: number | null; data: any }>(
+    `SELECT id, at, store_id, data FROM events WHERE kind = 'outreach_mail' AND data->>'email' = $1 AND data->>'state' = 'sent' AND at > now() - interval '${REPLY_DAYS} days' ORDER BY id DESC LIMIT 1`,
+    [email],
+  );
+  if (!e) return null;
+  const d = e.data || {};
+  const product = (PRODUCTS.has(d.product) ? d.product : 'toran') as Product;
+  const stage = d.stage === 'reminder' ? 'reminder' : 'first';
+  const name = cleanLine(d.name, 80) || 'החנות';
+  const s = e.store_id ? await app.db.one<{ domain: string }>('SELECT domain FROM stores WHERE id = $1', [e.store_id]) : null;
+  const { toranUrl, tederUrl } = await stillUp(app, { eventId: Number(e.id), storeId: e.store_id ? Number(e.store_id) : null, email, product, name }, d);
+  return leadTurn({ eventId: Number(e.id), phone: email, product, stage, at: new Date(e.at).toISOString(), name, domain: s?.domain || null, storeId: e.store_id ? Number(e.store_id) : null, tederId: null, toranUrl, tederUrl, text: mailPitchText(product, stage, name), tried: false, replied: d.replied != null });
 }

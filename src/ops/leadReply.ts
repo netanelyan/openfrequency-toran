@@ -145,11 +145,31 @@ export function leadTurn(l: LeadPitch): { context: string; facts: string[]; lead
 }
 
 /**
+ * A business's own automatic answer to our pitch: its WhatsApp Business greeting or away message, which comes within
+ * moments and says what such messages say. The two "answers" of the first pitches were these (2026-11-13: "שרות הלקוחות
+ * שלנו פעיל בין השעות 09:00-15:00 ... ונחזור אלייך בהקדם" and "ראינו שהשארת לנו פנייה ... ספרו לנו במה אפשר לעזור", each
+ * under a minute after the pitch): they were counted as answers, told to the operator, and held the reminder back. Both
+ * must hold, the moment and the words, so a person who answers fast is still an answer.
+ */
+const AUTO_ANSWER_MS = 2 * 60_000;
+const AUTO_WORDS = /שעות (?:ה)?פעילות|פעיל(?:ה|ים)? בין השעות|שירות הלקוחות (?:שלנו )?(?:פעיל|זמין)|(?:נחזור|נענה|נשוב|נחזיר) (?:אלי(?:ך|יך|כם)|לך|לכם|בהקדם|תשובה)|קיבלנו את (?:פנייתך|פנייתכם|הפנייה|הודעתך|ההודעה)|תודה (?:על פנייתך|על פנייתכם|על הפנייה|שפנית|שפניתם|שכתבת|שכתבתם)|השארת לנו (?:פנייה|הודעה)|ספרו לנו במה (?:אפשר|נוכל) לעזור|במה (?:אפשר|נוכל) לעזור|הודעה אוטומטית|מענה אוטומטי|ימי עסקים|אינו מאויש|מחוץ לשעות/;
+export const automaticAnswer = (text: string, sinceMs: number): boolean => sinceMs >= 0 && sinceMs <= AUTO_ANSWER_MS && AUTO_WORDS.test(String(text || ''));
+
+/**
  * Their first answer to a pitch, after our reply to it went: once a pitch (the event keeps `replied`, the
  * conversation), the lead is marked answered (replied_at, and the next step due tomorrow, not on Shabbat, as the
  * operator's "ענו" marks it, ops/actions.ts markReplied), and the operator is told. False when it was marked already.
  */
 export async function leadReplied(app: App, l: LeadPitch, accountId: number, said: string, told?: { title: string; body: string }): Promise<boolean> {
+  // Their business's automatic greeting is not their answer: kept on the pitch once, nothing marked, nobody told; the
+  // reminder still goes, and what they write themselves later is their answer.
+  // How long after the pitch, on the database's clock, as the pitch's own time is.
+  const since = told ? null : await app.db.one<{ ms: number }>("SELECT (extract(epoch FROM now() - at) * 1000)::float8 AS ms FROM events WHERE id = $1", [l.eventId]);
+  if (since && automaticAnswer(said, Number(since.ms))) {
+    await app.db.query("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind = 'outreach_wa' AND data->>'auto_answer' IS NULL", [l.eventId, J({ auto_answer: cleanLine(said, 200) })]);
+    app.log(`[lead] …${l.phone.slice(-4)}: an automatic answer to the pitch, not counted as theirs`);
+    return false;
+  }
   const c = await app.db.one<{ id: number; waiting: boolean }>(`SELECT c.id, ${WAITING_SQL} AS waiting FROM conversations c WHERE c.account_id = $1 AND c.peer = $2 ORDER BY c.last_at DESC LIMIT 1`, [accountId, l.phone]);
   const fresh = await app.db.one("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind = 'outreach_wa' AND data->>'replied' IS NULL RETURNING id", [l.eventId, J({ replied: c ? Number(c.id) : 0 })]);
   if (!fresh) return false;

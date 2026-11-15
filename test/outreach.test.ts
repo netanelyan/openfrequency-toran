@@ -657,3 +657,28 @@ test("the one reminder goes by itself once it is due and nobody answered, as the
     await app.db.close();
   }
 });
+
+test("a business's automatic greeting to the pitch is not their answer: nobody is told, the reminder still goes; what they write themselves is", async () => {
+  const { app } = await pitchApp();
+  let n = 0;
+  const write = (text: string) => handleInbound(app, { channel: 'whatsapp', from: PHONE, text, id: `wamid.in-${n++}`, at: NOON, account: META_DEMO.META_DEMO_PHONE_ID, to: '972500000900' });
+  try {
+    await yesSetup(app);
+    assert.equal((await outreach.sendPitch(app, pitch())).sent, true);
+    // The words of one of the first pitches' "answers", under a minute after it (2026-11-13).
+    await write('היי, שרות הלקוחות שלנו פעיל בין השעות 09:00-15:00 בימים א׳-ה׳. ניתן להשאיר הודעה ומספר הזמנה ונחזור אלייך בהקדם (עד 3 ימי עסקים לכל היותר)');
+    const d = (await app.db.one<any>("SELECT data FROM events WHERE kind = 'outreach_wa'"))!.data;
+    assert.ok(d.auto_answer && !d.replied, 'kept as automatic, not as their answer');
+    assert.equal(await app.db.one("SELECT 1 FROM events WHERE kind = 'operator_alert' AND data->>'key' LIKE 'lead_reply:%'"), null, 'nobody told');
+    assert.equal(await outreach.wroteSinceFirst(app, PHONE), false);
+    assert.equal((await outreach.sendPitch(app, pitch({ stage: 'reminder' }))).sent, true, 'the reminder goes');
+    // A person who answers fast, in their own words: an answer.
+    const { automaticAnswer } = await import('../src/ops/leadReply.ts');
+    assert.equal(automaticAnswer('מי אתם בכלל?', 20_000), false);
+    assert.equal(automaticAnswer('ספרו לנו במה אפשר לעזור', 10 * 60_000), false, 'and those words later are a person');
+    assert.equal(automaticAnswer('ראינו שהשארת לנו פנייה בהדרא. ספרו לנו במה אפשר לעזור', 30_000), true);
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});

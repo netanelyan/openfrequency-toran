@@ -196,6 +196,11 @@ test('"כן" sends the links, marks the lead answered and tells the operator onc
     assert.deepEqual(told.map((t) => t.data.title), ['כלי חרס של נורית ענו למייל שלנו']);
     assert.equal(await mail.mailPitchReply(app, app.mail!, { ...q, id: '<q2@kli-cheres.example>' }, (await accountFor(app, 'email', OURS))!), null);
     assert.equal((await app.db.query("SELECT 1 FROM events WHERE kind = 'operator_alert' AND data->>'key' LIKE 'lead_mail_reply:%'")).length, 1, 'once');
+    // Our support is told it is a store we emailed, and what we sent (without it, a store that answered was asked what
+    // it was talking about, 2026-11-15).
+    const turn = await mail.mailLeadTurn(app, q, (await accountFor(app, 'email', OURS))!);
+    assert.match(turn!.context, /LEAD \(the app's record, not the person's words\): they write from the store "כלי חרס של נורית"/);
+    assert.ok(turn!.context.includes('אפשר לענות "כן" למייל הזה'), 'our email, as they got it');
     // Through the router our support answers it, in the pitch's thread, with the pitch in view.
     const before = outbox.length;
     const asked = await answer(app, 'כמה זה עולה?', { subject: 'Re: עוזר וואטסאפ ומצגת לטיקטוק לכלי חרס של נורית' });
