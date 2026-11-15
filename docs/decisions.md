@@ -1559,6 +1559,14 @@ what OpenFrequency is, and the website).
 - The one reminder goes by itself (ops/remind.ts, the schedule's `outreach` step): the operator's own send, when it is
   due (four days, off Shabbat), for a first pitch Meta took and nobody answered, pressed yes on, or tried the demo of
   since. TORAN_OUTREACH_AUTO=0 stops it.
+- By email (ops/emailPitch.ts), from our company store's address (support@in.openfrequency.co.il), when a lead has no
+  WhatsApp, only a number that is not a mobile, or a number Meta could not deliver to: the same question, answered by
+  "כן" (the links come back at once) or "הסר" (kept in outreach_mail_stops, migration 081), anything else marked and
+  answered by our support. A WhatsApp pitch Meta did not deliver goes by email by itself (emailFallbackDue, in the same
+  step), once; a first email gets its one reminder as a WhatsApp one does. At most TORAN_OUTREACH_MAIL_DAILY (20) a day.
+- The leads page (accounts /admin/leads) says where each lead's message got to (not sent, did not arrive, sent,
+  arrived, read, said yes, tried the demo with how many messages, answered, asked to be removed, by email), and the
+  reached page has the funnel of everyone we wrote to (ops/leadsAdmin.ts `outreach` and `funnel`).
 
 **Tested.** test/outreach.test.ts (the templates that ask, the yes for Toran and for Teder, the payload, deliveries and
-reads, the reminder), test/lead-reply.test.ts.
+reads, the reminder), test/email-pitch.test.ts, test/leads-admin.test.ts, test/lead-reply.test.ts, test/both.test.ts.
