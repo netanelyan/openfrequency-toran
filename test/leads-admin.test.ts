@@ -519,3 +519,111 @@ test('creating leads from the list: a store added by its address is read and lis
     await s.close();
   }
 });
+
+// The owner, 2026-11-15: "19 messages, 0 replies. redo that part. from start until the end. dont mind wasting my tokens,
+// i want it working and i want costumers". 11 of the 19 pitches never arrived (Meta's 131026), and every lead still read
+// "נשלח". Each lead now says the furthest step its outreach reached, on WhatsApp (by ref, else by its number) or by mail,
+// and the list the funnel of everyone we wrote to. The events are written here as ops/outreach.ts and the mail path
+// write them.
+test("where our message got to: each lead's furthest step on WhatsApp or by mail, with the demo it tried and a stop as the last word, and the funnel of everyone we wrote to", async () => {
+  const s = await serve();
+  s.app.env.TEDER_SITE_INTERNAL = 'http://127.0.0.1:9';
+  s.app.log = () => {};
+  const get = (p: string) => fetch(`${s.base}${p}`, { headers: { authorization: `Bearer ${INTERNAL_TOKEN}` } }).then((r) => r.json());
+  const add = async (domain: string, cols: Record<string, unknown> = {}) => {
+    const all: Record<string, unknown> = { domain, url: `https://${domain}/`, name: domain.split('.')[0], platform: 'shopify', source: 'seed', slug: `${domain.split('.')[0]}-c1`, score: 50, qualified: true, ...cols };
+    const keys = Object.keys(all);
+    return (await s.app.db.one<{ id: number }>(`INSERT INTO stores (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`, Object.values(all)))!.id;
+  };
+  const wa = (data: Record<string, unknown>, at: string) => s.app.db.query("INSERT INTO events (store_id, kind, data, at) VALUES (NULL, 'outreach_wa', $1::jsonb, $2)", [JSON.stringify({ product: 'toran', stage: 'first', template: 'toran_pitch_2', ...data }), at]);
+  const mail = (store: number, data: Record<string, unknown>, at: string) => s.app.db.query("INSERT INTO events (store_id, kind, data, at) VALUES ($1, 'outreach_mail', $2::jsonb, $3)", [store, JSON.stringify({ product: 'toran', stage: 'first', ref: `store:${store}`, subject: 'מה שהכנו', ...data }), at]);
+  const phone = (n: number) => `9725000005${String(n).padStart(2, '0')}`;
+  const at = { a: ago(100), b: ago(48), c: ago(40), d: ago(39), e: ago(30), f: ago(20), g: ago(10), h: ago(5), i: ago(4) };
+  try {
+    const none = await add('out-none.example', { contact_whatsapp: phone(1) });
+    const failed = await add('out-failed.example', { contact_whatsapp: phone(2) });
+    const noWa = await add('out-nowa.example', { contact_whatsapp: phone(3), status: 'sent', sent_at: at.b });
+    const after = await add('out-after.example', { contact_whatsapp: phone(4), contact_email: 'hi@after.example', status: 'sent', sent_at: at.c });
+    const delivered = await add('out-delivered.example', { contact_whatsapp: phone(5), status: 'sent', sent_at: at.f });
+    const read = await add('out-read.example', { contact_whatsapp: phone(6), status: 'sent', sent_at: at.a, followup_sent_at: at.i });
+    const yes = await add('out-yes.example', { contact_whatsapp: phone(7), status: 'sent', sent_at: at.g });
+    const tried = await add('out-tried.example', { contact_whatsapp: phone(8), status: 'sent', sent_at: at.g });
+    const replied = await add('out-replied.example', { contact_whatsapp: phone(9), status: 'sent', sent_at: at.g });
+    const stopped = await add('out-stopped.example', { contact_whatsapp: phone(10), status: 'sent', sent_at: at.g });
+    const byHand = await add('out-hand.example', { contact_whatsapp: phone(11), status: 'sent', sent_at: at.a });
+    const mailed = await add('out-mail.example', { contact_email: 'shop@mail.example' });
+
+    // Nothing went to the first: a send in flight, and Toran's opening to the waitlist, are not a lead's pitch.
+    await wa({ phone: phone(1), ref: `store:${none}`, state: 'sending' }, ago(0));
+    await wa({ phone: phone(1), ref: 'waitlist:3', stage: 'launch', state: 'sent', delivered: at.h }, at.h);
+    // Refused by Meta at once, by ref; taken and not delivered (131026), by the old dashboard's ref; not delivered for
+    // Meta's own limit (131049), then a mail.
+    await wa({ phone: phone(2), ref: `store:${failed}`, state: 'failed', error: '(#132001) Template name does not exist in the translation' }, at.e);
+    await wa({ phone: phone(3), ref: `toran:${noWa}`, state: 'undelivered', error: '131026 Message undeliverable' }, at.b);
+    await wa({ phone: phone(4), ref: `store:${after}`, state: 'undelivered', error: '131049 This message was not delivered to maintain healthy ecosystem engagement' }, at.c);
+    await mail(after, { email: 'hi@after.example', state: 'sent', why: 'undelivered' }, at.d);
+    // Delivered; read, and its reminder delivered; read and "כן".
+    await wa({ phone: phone(5), ref: `store:${delivered}`, state: 'sent', delivered: at.f }, at.f);
+    await wa({ phone: phone(6), ref: `store:${read}`, state: 'sent', delivered: at.a, read: at.a }, at.a);
+    await wa({ phone: phone(6), ref: `store:${read}`, stage: 'reminder', state: 'sent', delivered: at.i }, at.i);
+    await wa({ phone: phone(7), ref: `store:${yes}`, state: 'sent', delivered: at.g, read: at.g, yes: at.g }, at.g);
+    // Teder's own ref (no store in it): the lead's by its number. Three messages of theirs to their demo.
+    await wa({ product: 'teder', phone: phone(8), ref: 'teder:44', state: 'sent', delivered: at.g }, at.g);
+    const c = (await s.app.db.one<{ id: number }>("INSERT INTO conversations (store_id, channel, peer) VALUES ($1, 'whatsapp', $2) RETURNING id", [tried, phone(8)]))!.id;
+    for (const [role, text] of [['customer', 'יש משלוח לאילת?'], ['agent', 'כן, תוך 3 ימים.'], ['customer', 'וכמה עולה?'], ['agent', '30 ₪.'], ['customer', 'תודה']]) await s.app.db.query('INSERT INTO messages (conversation_id, role, text) VALUES ($1, $2, $3)', [c, role, text]);
+    // Wrote back; read, then asked us to stop.
+    await wa({ phone: phone(9), ref: `store:${replied}`, state: 'sent', delivered: at.g, read: at.g, replied: 123 }, at.g);
+    await wa({ phone: phone(10), ref: `store:${stopped}`, state: 'sent', delivered: at.g, read: at.g }, at.g);
+    await s.app.db.query("INSERT INTO outreach_stops (phone, product, said) VALUES ($1, 'toran', 'הסירו אותי')", [phone(10)]);
+    // By mail only (no number on its site).
+    await mail(mailed, { email: 'shop@mail.example', state: 'sent', why: 'no_mobile' }, at.h);
+    // A pitch to a number no lead has (Teder's own list): the funnel's alone.
+    await wa({ product: 'teder', phone: phone(99), ref: 'lead:77', state: 'undelivered', error: '131026 Message undeliverable' }, at.e);
+
+    const list = await get('/internal/leads');
+    const row = (id: number) => list.leads.find((x: any) => x.id === id);
+    const o = (channel: string | null, state: string, sentAt: string | null, more: Record<string, unknown> = {}) => ({ channel, stage: sentAt ? 'first' : null, sentAt, state, mailAfter: false, reminderAt: null, demoTurns: 0, noWhatsapp: false, ...more });
+    assert.deepEqual(row(none).outreach, o(null, 'not_sent', null), 'nothing went');
+    assert.deepEqual(row(failed).outreach, o('whatsapp', 'failed', at.e));
+    assert.deepEqual(row(noWa).outreach, o('whatsapp', 'undelivered', at.b, { noWhatsapp: true }), 'never delivered: a number with no WhatsApp');
+    assert.deepEqual(row(after).outreach, o('mail', 'sent', at.d, { mailAfter: true }), 'not delivered for another reason, then a mail');
+    assert.deepEqual(row(delivered).outreach, o('whatsapp', 'delivered', at.f));
+    assert.deepEqual(row(read).outreach, o('whatsapp', 'read', at.a, { stage: 'reminder', reminderAt: at.i }), 'read, and the reminder went since');
+    assert.deepEqual(row(yes).outreach, o('whatsapp', 'yes', at.g));
+    assert.deepEqual(row(tried).outreach, o('whatsapp', 'tried', at.g, { demoTurns: 3 }), 'matched by its number; their own messages counted');
+    assert.deepEqual(row(replied).outreach, o('whatsapp', 'replied', at.g));
+    assert.deepEqual(row(stopped).outreach, o('whatsapp', 'stopped', at.g), 'a stop is the last word');
+    assert.deepEqual(row(byHand).outreach, o(null, 'sent', at.a), 'sent by hand: it went, and nothing more is known');
+    assert.deepEqual(row(mailed).outreach, o('mail', 'sent', at.h));
+    // Where each stands follows: a failed send reached no one, a mail waits for an answer, an answer talks, a stop closes.
+    assert.deepEqual([failed, noWa, mailed, replied, stopped].map((id) => row(id).where), ['new', 'sent', 'sent', 'talking', 'closed']);
+
+    // The funnel: everyone we wrote to or tried to, each once, the number no lead has too; the 11 sent are all that
+    // left us (not the refused one), and "לא הגיעו" every WhatsApp that never arrived.
+    const funnel = { sent: 11, delivered: 6, read: 4, yes: 1, tried: 1, replied: 1, stopped: 1, undelivered: 4, mailed: 2 };
+    assert.deepEqual(list.funnel, funnel);
+    assert.deepEqual((await get('/internal/leads?where=new&q=none')).funnel, funnel, 'not cut by the tab or the search');
+    // Both as the contract has them (accounts' docs/contracts/admin-leads.json, copied here).
+    const contract = JSON.parse(readFileSync(path.join(ROOT, 'test', 'fixtures', 'contracts', 'admin-leads.json'), 'utf8')).routes;
+    assert.deepEqual(Object.keys(row(none).outreach).sort(), Object.keys(contract[0].answers[0].body.leads[0].outreach).sort());
+    assert.deepEqual(Object.keys(list.funnel).sort(), Object.keys(contract[0].answers[0].body.funnel).sort());
+
+    // A mail stop, once its table is there (the mail path's migration): the lead asked us to stop.
+    const cols = (await s.app.db.query<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'outreach_mail_stops'")).map((r) => r.column_name);
+    if (!cols.length) await s.app.db.query('CREATE TABLE outreach_mail_stops (email text PRIMARY KEY)');
+    await s.app.db.query(`INSERT INTO outreach_mail_stops (email${cols.includes('product') ? ', product' : ''}) VALUES ($1${cols.includes('product') ? ", 'toran'" : ''})`, ['Shop@Mail.example']);
+    const later = await get('/internal/leads');
+    assert.equal(later.leads.find((x: any) => x.id === mailed).outreach.state, 'stopped');
+    assert.equal(later.funnel.stopped, 2);
+
+    // One lead says the same; a store with no WhatsApp and an email has its message go by mail, and the card says so.
+    assert.deepEqual((await get(`/internal/leads/${read}`)).lead.outreach, row(read).outreach);
+    const page = await add('out-bymail.example', { contact_email: 'hello@bymail.example', status: 'page_ready', page_built_at: ago(2), approved_at: ago(1) });
+    const send = (await get(`/internal/leads/${page}`)).lead.send;
+    assert.deepEqual([send.pitchable, send.options, send.note], [true, ['toran'], 'לחנות אין וואטסאפ, אז ההודעה תצא אליה במייל.']);
+    assert.deepEqual(Object.keys(send).sort(), Object.keys(contract[1].answers[0].body.lead.send).sort());
+    assert.equal((await get(`/internal/leads/${none}`)).lead.send.note, null, 'one with WhatsApp: nothing said');
+  } finally {
+    await s.close();
+  }
+});
