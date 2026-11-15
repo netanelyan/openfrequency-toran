@@ -10,6 +10,7 @@ import { storeOwnerLine } from '../owners/storeLine.ts';
 import { payMessage } from './pay.ts';
 import { reminderWord } from '../billing/remind.ts';
 import { outreachWord } from '../ops/outreach.ts';
+import { mailPitchReply } from '../ops/emailPitch.ts';
 import { LEDGER } from './send.ts';
 import { accountFor, resendUndelivered, storeChannel } from './store.ts';
 import { DuplicateTurn } from '../agent/loop.ts';
@@ -117,6 +118,12 @@ async function route(app: App, inbound: Inbound): Promise<RouteResult> {
     }
     // The store's token ended (waStore.ts): Toran cannot answer, so the message waits for the owner, said so.
     if (account.status === 'reconnect') return heldForReconnect(app, adapter, msg, account);
+    // A store we emailed first answering our company store's mailbox (ops/emailPitch.ts): "הסר" and "כן" are answered
+    // there, before our support; anything else is marked and goes on to our support.
+    if (adapter.channel === 'email') {
+      const pitched = await mailPitchReply(app, adapter, msg, account);
+      if (pitched) return pitched;
+    }
     try {
       return await storeChannel(app, adapter, msg, account);
     } catch (e: any) {

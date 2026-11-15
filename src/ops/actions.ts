@@ -10,6 +10,7 @@ import { reconnectSql } from './queue.ts';
 import { LOST_REASONS, requestedLink, tederRequestedLink } from './messages.ts';
 import { syncTeder } from './sources.ts';
 import { sendPitch, type Stage } from './outreach.ts';
+import { emailPitch, mailInsteadOf, type MailVia } from './emailPitch.ts';
 
 // What the operator's buttons record, for a Toran store (stores) or a Teder demo (teder_leads), every one in the audit
 // log with the operator as its actor:
@@ -25,7 +26,9 @@ import { sendPitch, type Stage } from './outreach.ts';
 //              (channels/lines.ts demoLine): until then the button is refused, nothing is sent or marked, and the
 //              links that go out by themselves wait
 //              Since 2026-11-08 the same button sends the rest too (sendNow): a first message or the one reminder,
-//              as the approved pitch template from our number, under ops/outreach.ts's limits, then marks it
+//              as the approved pitch template from our number, under ops/outreach.ts's limits, then marks it.
+//              Since 2026-11-15 a lead with no WhatsApp, or a number that is not a mobile, gets it by email instead
+//              when its store has an address (ops/emailPitch.ts), marked the same way
 //   replied    they answered: they leave the list for "in conversation"
 //   next       the next step in a conversation, and when
 //   later      off the list for a day or a week
@@ -192,6 +195,8 @@ export async function pitchOf(app: App, kind: Kind, id: string): Promise<{ stage
  * it to go to whatsapp, so toran should send it"): inside the window a demo asked for opened, the link as before
  * (sendDirect, sendTederDirect); otherwise the pitch, as Meta's approved template from our number (ops/outreach.ts,
  * with its limits), and then the lead is marked as "שלחתי" marks it: sent, with its one reminder due, or reminded.
+ * A lead with no WhatsApp, or only a number that is not a mobile, gets the pitch by email instead when its store has an
+ * address (the owner, 2026-11-15: "19 messages, 0 replies. redo that part"; ops/emailPitch.ts), marked the same way.
  * Nothing is marked when it did not go; the reason is said. Returns what the operator reads.
  */
 export async function sendNow(app: App, kind: Kind, id: string, by: string): Promise<string> {
@@ -208,16 +213,39 @@ export async function sendNow(app: App, kind: Kind, id: string, by: string): Pro
   }
   const p = await pitchOf(app, kind, id);
   if ('error' in p) throw new OpsError(p.error);
-  if (!p.phone) throw new OpsError('אין באתר של הליד הזה וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לו. אפשר לשלוח לו מייל.');
-  if (!p.url) throw new OpsError('אין לליד הזה עמוד באוויר, אז אין מה לשלוח.');
   if (p.stage === 'reminder' && kind === 'toran' && r.followup_due_at && new Date(r.followup_due_at).getTime() > now()) throw new OpsError('עוד לא הזמן לתזכורת.');
   if (p.stage === 'reminder' && kind === 'teder' && r.reminder_due_at && new Date(r.reminder_due_at).getTime() > now()) throw new OpsError('עוד לא הזמן לתזכורת.');
+  // No WhatsApp on the lead's site, or a number that is not a mobile (every landline and 073 number of the first
+  // pitches came back from Meta undelivered): the same message by email, when the store has an address, and the lead
+  // marked as the WhatsApp one marks it (ops/emailPitch.ts).
+  const mail = await mailFor(app, kind, r, p.phone);
+  if (mail) {
+    const out = await emailPitch(app, { storeId: mail.storeId, product: kind, stage: p.stage === 'reminder' ? 'reminder' : 'first', by, why: mail.via, ...(kind === 'teder' ? { tederUrl: p.url } : {}) });
+    if (!out.sent) throw new OpsError(out.said);
+    if (p.stage === 'first') await markSent(app, kind, id, by);
+    else await markReminded(app, kind, id, by);
+    await log(app, kind, id, 'direct', by, { template: p.stage, via: 'email' });
+    return out.said;
+  }
+  if (!p.phone) throw new OpsError('אין באתר של הליד הזה וואטסאפ, מספר נייד או כתובת מייל, אז אין לאן לשלוח.');
+  if (!p.url) throw new OpsError('אין לליד הזה עמוד באוויר, אז אין מה לשלוח.');
   const out = await sendPitch(app, { product: kind, stage: p.stage, phone: p.phone, name: p.name, url: p.url, ref: `${kind}:${id}`, by });
   if (!out.sent) throw new OpsError(out.said);
   if (p.stage === 'first') await markSent(app, kind, id, by);
   else await markReminded(app, kind, id, by);
   await log(app, kind, id, 'direct', by, { template: p.stage });
   return p.stage === 'first' ? 'נשלח בוואטסאפ מהמספר שלנו, וסומן שנשלח. התזכורת האחת תחכה ברשימה בעוד ארבעה ימים.' : 'התזכורת נשלחה בוואטסאפ מהמספר שלנו. זו הייתה ההודעה האחרונה אליהם, אלא אם יכתבו.';
+}
+
+/**
+ * The store a lead's email pitch goes to, and why it goes by email (emailPitch.ts mailInsteadOf), or null for WhatsApp:
+ * a Toran lead is its store; a Teder demo is the store of its domain, which has the address our sites never gave Teder.
+ */
+async function mailFor(app: App, kind: Kind, r: any, phone: string | null): Promise<{ storeId: number; via: MailVia } | null> {
+  const s = kind === 'toran' ? r : await app.db.one<{ id: number; contact_email: string | null }>("SELECT id, contact_email FROM stores WHERE domain = $1 AND platform IS DISTINCT FROM 'company' ORDER BY id LIMIT 1", [r.domain]);
+  if (!s) return null;
+  const via = await mailInsteadOf(app, phone, s.contact_email);
+  return via ? { storeId: Number(s.id), via } : null;
 }
 
 export async function markReplied(app: App, kind: Kind, id: string, by: string) {
