@@ -457,7 +457,7 @@ const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '');
 /** Any run of 8 digits or more (a phone, a Meta id) as its last four, for a log line. */
 const masked = (s: string) => s.replace(/\d{8,}/g, (d) => `…${d.slice(-4)}`);
 
-export type Why = 'stopped' | 'already' | 'replied' | 'cap' | 'quiet' | 'quality' | 'no_line' | 'bad_page' | 'bad_phone' | 'not_mobile' | 'failed' | 'not_on_sale';
+export type Why = 'stopped' | 'already' | 'replied' | 'cap' | 'quiet' | 'quality' | 'template_pending' | 'no_line' | 'bad_page' | 'bad_phone' | 'not_mobile' | 'failed' | 'not_on_sale';
 export type Outcome = { sent: boolean; why: Why | null; said: string };
 
 /** What the operator reads for each outcome, on the dashboard, on Toran's pages and on Teder's /leads. */
@@ -472,6 +472,7 @@ export const SAID_HE: Record<Why | 'sent', string> = {
   no_line: 'המספר שלנו עוד לא מחובר ל-Meta, אז ההודעה לא נשלחה ולא סומנה. אפשר להעתיק אותה ולשלוח מהוואטסאפ שלך.',
   bad_page: 'אין לליד הזה עמוד באוויר, אז אין מה לשלוח.',
   bad_phone: 'אין באתר של הליד הזה וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לו.',
+  template_pending: 'Meta עוד בודקת את התבנית של ההודעה הזו, אז היא לא נשלחה ולא סומנה. היא תצא אחרי האישור.',
   not_mobile: 'המספר באתר של הליד הזה קווי, ו-Meta לא מסרה אף הודעה למספרים כאלה. לכן כותבים להם במייל, כשיש באתר כתובת.',
   failed: 'Meta לא קיבלה את ההודעה, ושום דבר לא סומן. אם זה חוזר, כנראה שהתבנית עוד לא אושרה (docs/whatsapp-templates.md).',
   not_on_sale: 'תורן עוד לא במכירה באתר (שם כתוב "בקרוב"), אז הודעה על תורן לא יוצאת וכלום לא סומן. כשפותחים את המכירה (TORAN_SIGNUP_OPEN), זה נפתח. הודעה על תדר לבד אפשר לשלוח.',
@@ -628,6 +629,9 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   t = await liveTemplate(app, newest, token);
   who = `${t.name} to …${phone.slice(-4)} (${p.product} ${p.ref})`;
   const q = await qualityOk(app, phoneId, token, t);
+  // A template Meta is still reviewing (a new one, like the question's) is not a fall in quality: nothing goes, and
+  // nobody is alarmed; it goes once Meta approves it.
+  if (!q.ok && /is (PENDING|IN_APPEAL)$/.test(q.why)) return no('template_pending');
   if (!q.ok) {
     await qualityStop(app, q.why);
     return no('quality');

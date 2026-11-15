@@ -39,7 +39,9 @@ routine's environment; never print it, never write it to a file or a note). JSON
 | `GET /autopilot/recent?hours=24` | every question and pitch: its channel, store, product, state, delivered/read, yes, deliver (pending/sent/failed/expired), replied, auto answer, error, chat link |
 | `POST /autopilot/note {text}` / `GET /autopilot/notes` | a note for the owner, in Hebrew |
 
-`ask` refuses with a reason, never throws: `quiet`, `day_cap`, `batch_cap`, `off` mean stop this run; `quality` means
+`ask` refuses with a reason, never throws: `quiet`, `day_cap`, `batch_cap`, `off` mean stop this run;
+`template_pending` means Meta is still reviewing the question on WhatsApp, so ask only the stores whose `reach` is
+`email` this run; `quality` means
 Meta lowered our number's rating, so stop and say so in the note; `already`, `not_candidate`, `stopped`, `bounced`,
 `no_email`, `bad_email`, `closed` mean skip that store; `failed` is Meta or the mail provider refusing, so skip it and,
 after three, stop and note it.
