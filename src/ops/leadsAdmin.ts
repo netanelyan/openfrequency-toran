@@ -50,6 +50,10 @@ import { LOST_REASONS } from './messages.ts';
 // was up could no longer be taken on with both. go-both, go-toran and go-teder keep the choice as it is said and make
 // only what it still lacks, nothing when it lacks nothing; build.go says, for each, whether it can be chosen and what
 // it would make now. build-* stay as they were (build-toran is also "read the site again").
+//
+// Each row says where our message to it got to (outreach: not sent, did not arrive, delivered, read, "כן", tried the
+// demo, answered, asked us to stop), and the list has the funnel of everyone we wrote to (funnel), since 19 pitches
+// went with 11 of them never delivered and nothing here said so (2026-11-15, "where our message got to" below).
 
 export type Where = 'new' | 'ready' | 'sent' | 'talking' | 'closed';
 export const WHERE: Where[] = ['new', 'ready', 'sent', 'talking', 'closed'];
@@ -127,11 +131,15 @@ function buildOf(s: any, t: TederLead | null, tederOk: boolean, building: boolea
   };
 }
 
-/** Where the lead stands for both products together: what the list's tabs count. */
-function whereOf(s: any | null, t: TederLead | null, toran: Demo, teder: Demo): Where {
-  if ((s && (s.status === 'skipped' || s.status === 'paid' || s.taken_down_at || s.lost_at)) || (t && ['joined', 'irrelevant'].includes(t.stage))) return 'closed';
-  if ((s && (s.replied_at || s.status === 'pilot')) || t?.stage === 'replied') return 'talking';
-  if (toran.sentAt || teder.sentAt) return 'sent';
+/**
+ * Where the lead stands for both products together: what the list's tabs count. Its outreach says it too: a lead that
+ * asked us to stop is closed, one that wrote back talks, and one we wrote to by mail waits for an answer like one we
+ * wrote to on WhatsApp (a send that failed reached no one, so it is not "sent").
+ */
+function whereOf(s: any | null, t: TederLead | null, toran: Demo, teder: Demo, o: Outreach | null = null): Where {
+  if ((s && (s.status === 'skipped' || s.status === 'paid' || s.taken_down_at || s.lost_at)) || (t && ['joined', 'irrelevant'].includes(t.stage)) || o?.state === 'stopped') return 'closed';
+  if ((s && (s.replied_at || s.status === 'pilot')) || t?.stage === 'replied' || o?.state === 'replied') return 'talking';
+  if (toran.sentAt || teder.sentAt || (o?.sentAt && o.state !== 'failed')) return 'sent';
   if (toran.state === 'ready' || teder.state === 'ready') return 'ready';
   return 'new';
 }
@@ -192,10 +200,199 @@ function aboutOf(s: any, name: string, stock: Stock | undefined) {
   };
 }
 
-function rowOf(app: App, s: any, t: TederLead | null, building: boolean, tederOk: boolean, stock?: Stock) {
+// ---- where our message got to
+
+// The owner, 2026-11-15: "19 messages, 0 replies. redo that part. from start until the end. dont mind wasting my
+// tokens, i want it working and i want costumers". Of the 19 pitches that had gone from our number, 11 never reached
+// anyone (Meta's 131026: mostly a number with no WhatsApp on it), nobody answered, and every one of them read "נשלח"
+// on the list. So each lead now says the furthest step its outreach reached, and the list the funnel of all of them.
+//
+// The steps, in order (Outreach.state):
+//   not_sent     nothing went
+//   failed       we sent and it was refused at once (Meta's error, a mail that did not go): nothing reached them
+//   undelivered  Meta took it and then could not deliver it (noWhatsapp: its code was 131026)
+//   sent         it went, and nothing more is known: a mail, a message sent by hand ("שלחתי"), or Meta said nothing yet
+//   delivered    Meta delivered it
+//   read         Meta says they read it (read receipts can be off, so fewer read than did)
+//   yes          they pressed "כן" on it
+//   tried        they wrote to their own Toran on the demo (demoTurns of their messages), or started the demo
+//   replied      they wrote back to us, or the operator marked "ענו"
+//   stopped      they asked us to stop (outreach_stops, outreach_mail_stops, or lost as opted_out): the last word,
+//                whatever came before it
+// A message is the lead's by its ref (store:<id> from this dashboard, toran:<id> from the old one) or by its number,
+// the store's WhatsApp (a pitch from Teder's own list carries Teder's ref); a mail is the store's own event. channel is
+// the one that got furthest (WhatsApp on a tie), and mailAfter says a WhatsApp that did not arrive was followed by a
+// mail. sentAt is when its first message went (a failed one only when nothing else did), reminderAt the reminder.
+
+type OutreachState = 'not_sent' | 'failed' | 'undelivered' | 'sent' | 'delivered' | 'read' | 'yes' | 'tried' | 'replied' | 'stopped';
+export type Outreach = { channel: 'whatsapp' | 'mail' | null; stage: Stage | null; sentAt: string | null; state: OutreachState; mailAfter: boolean; reminderAt: string | null; demoTurns: number; noWhatsapp: boolean };
+
+/**
+ * What one lead's outreach reached, as outreachFacts reads it: the furthest step on each channel (its rank: 1 failed,
+ * 2 undelivered, 3 sent, 4 delivered, 5 read, 6 yes, 8 replied; 0 none), when each one's first message and reminder
+ * went, and what came after on the store. id is null for a pitch to a number no lead has (the funnel counts it).
+ */
+type Facts = {
+  id: number | null;
+  wa: number; wa_first: unknown; wa_reminder: unknown; wa_yes: boolean; wa_no: boolean;
+  mail: number; mail_first: unknown; mail_reminder: unknown; mail_yes: boolean; mail_after: boolean;
+  sent_at: unknown; followup_sent_at: unknown; replied: boolean; started: boolean; turns: number; stopped: boolean;
+};
+
+const WA_RANK = `CASE data->>'state' WHEN 'failed' THEN 1 WHEN 'undelivered' THEN 2 ELSE CASE WHEN data->>'replied' IS NOT NULL THEN 8 WHEN data->>'yes' IS NOT NULL THEN 6 WHEN data->>'read' IS NOT NULL THEN 5 WHEN data->>'delivered' IS NOT NULL THEN 4 ELSE 3 END END`;
+const MAIL_RANK = `CASE data->>'state' WHEN 'failed' THEN 1 ELSE CASE WHEN data->>'replied' IS NOT NULL THEN 8 WHEN data->>'yes' IS NOT NULL THEN 6 ELSE 3 END END`;
+// A first message that failed and went on a second try went then.
+const WA_AGG = `MAX(${WA_RANK}) AS wa,
+       COALESCE(MIN(at) FILTER (WHERE data->>'stage' = 'first' AND data->>'state' <> 'failed'), MIN(at) FILTER (WHERE data->>'stage' = 'first')) AS wa_first,
+       MIN(at) FILTER (WHERE data->>'stage' = 'reminder' AND data->>'state' <> 'failed') AS wa_reminder,
+       COALESCE(bool_or(data->>'state' = 'sent' AND data->>'yes' IS NOT NULL), false) AS wa_yes,
+       COALESCE(bool_or(data->>'state' IN ('failed', 'undelivered') AND data->>'error' LIKE '%131026%'), false) AS wa_no`;
+const MAIL_AGG = `MAX(${MAIL_RANK}) AS mail,
+       COALESCE(MIN(at) FILTER (WHERE data->>'stage' IS DISTINCT FROM 'reminder' AND data->>'state' = 'sent'), MIN(at) FILTER (WHERE data->>'stage' IS DISTINCT FROM 'reminder')) AS mail_first,
+       MIN(at) FILTER (WHERE data->>'stage' = 'reminder' AND data->>'state' = 'sent') AS mail_reminder,
+       COALESCE(bool_or(data->>'state' = 'sent' AND data->>'yes' IS NOT NULL), false) AS mail_yes,
+       COALESCE(bool_or(data->>'state' = 'sent' AND data->>'why' IN ('undelivered', 'no_whatsapp')), false) AS mail_after`;
+
+/** Whether outreach_mail_stops is there yet (its migration came with the mail path): once it is, it stays. */
+const mailStopsThere = new WeakSet<object>();
+async function hasMailStops(app: App): Promise<boolean> {
+  if (mailStopsThere.has(app.db)) return true;
+  const r = await app.db.one<{ t: string | null }>("SELECT to_regclass('outreach_mail_stops')::text AS t");
+  if (r?.t) mailStopsThere.add(app.db);
+  return Boolean(r?.t);
+}
+
+/**
+ * What the outreach of the stores in ids reached, one row a store, in one statement whatever their number: their
+ * pitches on WhatsApp (by ref or by number) and their mails, the messages they wrote to their demo, and whether they
+ * asked us to stop. 'all': every lead we wrote to or tried to (sent, failed, or marked sent by hand), and each number
+ * we pitched that no lead has, for the funnel.
+ */
+async function outreachFacts(app: App, scope: number[] | 'all'): Promise<Facts[]> {
+  const all = scope === 'all';
+  if (!all && !scope.length) return [];
+  const mailStops = (await hasMailStops(app))
+    ? " OR EXISTS (SELECT 1 FROM outreach_mail_stops x WHERE lower(x.email) = s.mail OR lower(x.email) IN (SELECT lower(m.data->>'email') FROM m WHERE m.sid = s.id))"
+    : '';
+  // The pitches are few and have no store of their own (store_id null, the events_store index), and a lead's are
+  // matched by the id in their ref or by the store's number, each an equality, so the list's thousand stores cost one
+  // pass over them. The demo is their store's Toran on our demo number: a conversation with no account, on the store,
+  // from a number we wrote to (ops/leadReply.ts "tried").
+  const rows = await app.db.query<Facts>(
+    `WITH s AS (
+       SELECT id, NULLIF(btrim(contact_whatsapp), '') AS wa, NULLIF(lower(btrim(contact_email)), '') AS mail, sent_at, followup_sent_at, replied_at, demo_started_at, lost_reason
+         FROM stores WHERE ${all ? ONE_SQL : 'id = ANY($1::int[])'}
+     ),
+     pw AS (
+       SELECT id, at, data FROM events
+        WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'stage' IN ('first', 'reminder') AND data->>'state' IN ('sent', 'undelivered', 'failed')
+     ),
+     link AS (
+       SELECT s.id AS sid, pw.id AS eid FROM pw JOIN s ON s.id = substring(pw.data->>'ref' FROM '^(?:store|toran):([0-9]{1,9})$')::int
+       UNION
+       SELECT s.id, pw.id FROM pw JOIN s ON s.wa = pw.data->>'phone'
+     ),
+     w AS (SELECT link.sid, pw.at, pw.data FROM link JOIN pw ON pw.id = link.eid),
+     m AS (SELECT store_id AS sid, at, data FROM events WHERE kind = 'outreach_mail' AND store_id IN (SELECT id FROM s) AND data->>'state' IN ('sent', 'failed')),
+     phones AS (SELECT id AS sid, wa AS phone FROM s WHERE wa IS NOT NULL UNION SELECT sid, data->>'phone' FROM w WHERE COALESCE(data->>'phone', '') <> ''),
+     wa AS (SELECT sid, ${WA_AGG} FROM w GROUP BY sid),
+     ma AS (SELECT sid, ${MAIL_AGG} FROM m GROUP BY sid),
+     turns AS (
+       SELECT c.store_id AS sid, COUNT(*)::int AS n
+         FROM conversations c JOIN phones p ON p.sid = c.store_id AND p.phone = c.peer JOIN messages x ON x.conversation_id = c.id AND x.role = 'customer'
+        WHERE c.account_id IS NULL GROUP BY c.store_id
+     )
+     SELECT s.id, COALESCE(wa.wa, 0)::int AS wa, wa.wa_first, wa.wa_reminder, COALESCE(wa.wa_yes, false) AS wa_yes, COALESCE(wa.wa_no, false) AS wa_no,
+            COALESCE(ma.mail, 0)::int AS mail, ma.mail_first, ma.mail_reminder, COALESCE(ma.mail_yes, false) AS mail_yes, COALESCE(ma.mail_after, false) AS mail_after,
+            s.sent_at, s.followup_sent_at, s.replied_at IS NOT NULL AS replied, s.demo_started_at IS NOT NULL AS started, COALESCE(turns.n, 0)::int AS turns,
+            (COALESCE(s.lost_reason, '') = 'opted_out' OR EXISTS (SELECT 1 FROM phones p JOIN outreach_stops o ON o.phone = p.phone WHERE p.sid = s.id)${mailStops}) AS stopped
+       FROM s LEFT JOIN wa ON wa.sid = s.id LEFT JOIN ma ON ma.sid = s.id LEFT JOIN turns ON turns.sid = s.id
+     ${all
+       ? `WHERE wa.sid IS NOT NULL OR ma.sid IS NOT NULL OR s.sent_at IS NOT NULL
+     UNION ALL
+     SELECT NULL, o.wa::int, o.wa_first, o.wa_reminder, o.wa_yes, o.wa_no, 0, NULL, NULL, false, false, NULL, NULL, false, false, 0, EXISTS (SELECT 1 FROM outreach_stops st WHERE st.phone = o.phone)
+       FROM (SELECT data->>'phone' AS phone, ${WA_AGG} FROM pw WHERE NOT EXISTS (SELECT 1 FROM link WHERE link.eid = pw.id) GROUP BY data->>'phone') o`
+       : ''}`,
+    all ? [] : [scope],
+  );
+  return rows;
+}
+
+/** A message marked sent by hand: the first and the reminder, as the lead's demos keep them. */
+type Hand = { sentAt: string | null; reminderAt: string | null };
+
+/** One lead's outreach from its facts, and the steps the funnel counts. */
+function stepsOf(f: Facts | undefined, hand: Hand, tederReplied = false) {
+  const wa = Number(f?.wa) || 0;
+  const mail = Number(f?.mail) || 0;
+  const top = Math.max(wa, mail);
+  // "שלחתי" says only that a message went: known when nothing of ours went, since a send from our number marks the
+  // store sent too, and then its event says more.
+  const byHand = wa <= 1 && mail <= 1 && hand.sentAt ? hand : null;
+  const went = Math.max(top, byHand ? 3 : 0);
+  const channel: Outreach['channel'] = byHand || !top ? null : mail > wa ? 'mail' : 'whatsapp';
+  const turns = Number(f?.turns) || 0;
+  const yes = Boolean(f?.wa_yes || f?.mail_yes);
+  const tried = turns > 0 || Boolean(f?.started);
+  const replied = top >= 8 || Boolean(f?.replied) || tederReplied;
+  const stopped = Boolean(f?.stopped);
+  const state: OutreachState = stopped ? 'stopped' : replied ? 'replied' : tried ? 'tried' : yes ? 'yes' : top >= 5 ? 'read' : top >= 4 ? 'delivered' : went >= 3 ? 'sent' : went === 2 ? 'undelivered' : went === 1 ? 'failed' : 'not_sent';
+  const [first, reminder] = channel === 'whatsapp' ? [f?.wa_first, f?.wa_reminder] : channel === 'mail' ? [f?.mail_first, f?.mail_reminder] : [byHand?.sentAt, byHand?.reminderAt];
+  const reminderAt = iso(reminder);
+  const sentAt = iso(first) || reminderAt;
+  const o: Outreach = {
+    channel,
+    stage: reminderAt ? 'reminder' : sentAt ? 'first' : null,
+    sentAt,
+    state,
+    mailAfter: mail >= 3 && (Boolean(f?.mail_after) || wa === 1 || wa === 2),
+    reminderAt,
+    demoTurns: turns,
+    noWhatsapp: Boolean(f?.wa_no) && wa <= 2,
+  };
+  return { o, went, top, yes, tried, replied, stopped, missed: wa === 1 || wa === 2, mailed: mail >= 3 };
+}
+
+/** The first of the times given, or null. */
+const earliest = (...v: unknown[]) => v.map(iso).filter((x): x is string => Boolean(x)).sort()[0] || null;
+
+/** A lead's outreach: its facts, with the messages marked sent by hand on either demo. */
+const outreachOf = (f: Facts | undefined, toran: Demo, teder: Demo, t: TederLead | null) =>
+  stepsOf(f, { sentAt: earliest(toran.sentAt, teder.sentAt), reminderAt: earliest(toran.reminderSentAt, teder.reminderSentAt) }, t?.stage === 'replied' || t?.stage === 'joined').o;
+
+const FUNNEL = ['sent', 'delivered', 'read', 'yes', 'tried', 'replied', 'stopped', 'undelivered', 'mailed'] as const;
+export type Funnel = Record<(typeof FUNNEL)[number], number>;
+
+/**
+ * The funnel of everyone we wrote to or tried to, for the list of the ones we wrote to: how many a message went to
+ * (sent), how many it was delivered to and read by (a "כן" or an answer to it says it was), how many pressed "כן",
+ * tried the demo, answered and asked us to stop, how many a WhatsApp never reached (undelivered: refused, or not
+ * delivered, and no later one arrived) and how many were written to by mail. Each lead once, and each number we
+ * pitched that no lead has; nothing is counted from the list's page or search.
+ */
+async function funnelOf(app: App): Promise<Funnel> {
+  const out = Object.fromEntries(FUNNEL.map((k) => [k, 0])) as Funnel;
+  for (const f of await outreachFacts(app, 'all')) {
+    const st = stepsOf(f, { sentAt: iso(f.sent_at), reminderAt: iso(f.followup_sent_at) });
+    if (!st.went) continue;
+    if (st.went >= 2) out.sent++;
+    if (st.top >= 4) out.delivered++;
+    if (st.top >= 5) out.read++;
+    if (st.yes) out.yes++;
+    if (st.tried) out.tried++;
+    if (st.replied) out.replied++;
+    if (st.stopped) out.stopped++;
+    if (st.missed) out.undelivered++;
+    if (st.mailed) out.mailed++;
+  }
+  return out;
+}
+
+function rowOf(app: App, s: any, t: TederLead | null, building: boolean, tederOk: boolean, stock?: Stock, facts?: Facts) {
   const toran = toranDemo(app, s, building);
   const teder = tederDemo(t, Boolean(s.replied_at));
   const name = displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain;
+  const outreach = outreachOf(facts, toran, teder, t);
   return {
     id: Number(s.id),
     name,
@@ -205,10 +402,11 @@ function rowOf(app: App, s: any, t: TederLead | null, building: boolean, tederOk
     ...aboutOf(s, name, stock),
     score: Number(s.score) || 0,
     qualified: Boolean(s.qualified),
-    where: whereOf(s, t, toran, teder),
+    where: whereOf(s, t, toran, teder, outreach),
     contact: { whatsapp: s.contact_whatsapp || null, email: s.contact_email || null, phone: s.contact_phone || null },
     toran,
     teder,
+    outreach,
     build: buildOf(s, t, tederOk, building),
     chosen: productOf(s.demo_for),
     updatedAt: iso(s.updated_at) || new Date(now()).toISOString(),
@@ -277,11 +475,12 @@ export async function leadsList(app: App, { where = '', q = '', all = false }: {
   const ids = stores.map((s) => Number(s.id));
   const run = await building(app, ids);
   const stock = await stockOf(app, ids);
+  const facts = new Map((await outreachFacts(app, ids)).map((f) => [Number(f.id), f]));
   const used = new Set<number>();
   const rows = stores.map((s) => {
     const t = byToran.get(String(s.id)) || byDomain.get(keyOf(s.domain)) || null;
     if (t) used.add(t.id);
-    return rowOf(app, s, t, run.has(Number(s.id)), tederOk, stock.get(Number(s.id)));
+    return rowOf(app, s, t, run.has(Number(s.id)), tederOk, stock.get(Number(s.id)), facts.get(Number(s.id)));
   });
   const tederOnly = tLeads
     .filter((l) => !used.has(l.id))
@@ -299,11 +498,14 @@ export async function leadsList(app: App, { where = '', q = '', all = false }: {
     counts: { all: rows.length + tederOnly.length, ...counts },
     leads: rows.filter((r) => (!wanted || r.where === wanted) && hit(r)).slice(0, 300),
     tederOnly: tederOnly.filter((r) => (!wanted || r.where === wanted) && hit(r)).slice(0, 100),
+    funnel: await funnelOf(app),
     ...(await findings(app)),
   };
 }
 
 const NOT_NOW_REMINDER = 'עוד לא הזמן לתזכורת.';
+/** Under a message that goes by mail: the store has no WhatsApp. */
+const BY_MAIL_HE = 'לחנות אין וואטסאפ, אז ההודעה תצא אליה במייל.';
 
 /** One lead: both demos, the message due and the ways it can go, the texts, and what can be built. */
 export async function leadOne(app: App, id: number) {
@@ -312,9 +514,12 @@ export async function leadOne(app: App, id: number) {
   const st = await tederState(app, s);
   const t = 'error' in st ? null : st.lead;
   const run = await building(app, [id]);
-  const row = rowOf(app, s, t, run.has(id), !('error' in st), (await stockOf(app, [id])).get(id));
+  const row = rowOf(app, s, t, run.has(id), !('error' in st), (await stockOf(app, [id])).get(id), (await outreachFacts(app, [id]))[0]);
   const name = row.name;
-  const pitchable = Boolean(s.contact_whatsapp) && (await outreachLive(app));
+  // A store with no WhatsApp and an email is written to by mail (the mail path of ops/actions.ts and ops/both.ts), so
+  // its message goes from here too, and the card says it goes by mail.
+  const byMail = !s.contact_whatsapp && Boolean(s.contact_email);
+  const pitchable = (Boolean(s.contact_whatsapp) && (await outreachLive(app))) || byMail;
   // No message is due while a demo of the lead is being built (the owner, 2026-11-12: "Lead page shouldnt let me send a
   // message while a demo is being built"): it would carry a page about to change, or go without the one coming.
   const busy = run.has(id) || row.teder.state === 'building';
@@ -373,6 +578,7 @@ export async function leadOne(app: App, id: number) {
         waitingUntil: waiting,
         ...texts,
         copy: Object.values(texts).some(Boolean) && href ? { href, label: target.label } : null,
+        note: byMail && options.length ? BY_MAIL_HE : null,
       },
     },
   };
