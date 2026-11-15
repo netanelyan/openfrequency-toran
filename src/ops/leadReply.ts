@@ -63,7 +63,7 @@ export type LeadPitch = {
 };
 
 const PRODUCTS = new Set<string>(['toran', 'teder', 'both']);
-const STAGES = new Set<string>(['first', 'reminder', 'launch']);
+const STAGES = new Set<string>(['first', 'reminder', 'launch', 'ask']);
 const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '');
 const link = (v: unknown) => (typeof v === 'string' && /^https?:\/\/\S+$/.test(v) ? v : null);
 
@@ -132,7 +132,11 @@ const OFFERED: Record<Product, string> = { toran: 'Toran, built on their store',
  */
 export function leadTurn(l: LeadPitch): { context: string; facts: string[]; lead: LeadOf | null } {
   const when = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'long' }).format(new Date(l.at));
-  const what = l.stage === 'launch' ? 'they asked on our website to hear when Toran opens, and we told them it is open' : `we offered them ${OFFERED[l.product]}${l.stage === 'reminder' ? ', and wrote once more to remind them' : ''}`;
+  const what = l.stage === 'launch'
+    ? 'they asked on our website to hear when Toran opens, and we told them it is open'
+    : l.stage === 'ask'
+      ? `we asked whether we may send them an offer; ${l.replied ? `they said yes, and we built them ${OFFERED[l.product]} and sent it into this chat` : `what we would send is ${OFFERED[l.product]}`}`
+      : `we offered them ${OFFERED[l.product]}${l.stage === 'reminder' ? ', and wrote once more to remind them' : ''}`;
   const starts = l.product === 'both' ? `${START_PAGES.toran} (Toran), ${START_PAGES.teder} (Teder)` : l.product === 'teder' ? START_PAGES.teder : START_PAGES.toran;
   const context = [
     `LEAD (the app's record, not the person's words): they write from the store "${l.name}"${l.domain ? ` (${l.domain})` : ''}, which we wrote to first, from this number, on ${when}: ${what}. Answer them as "# A store we wrote to" says.`,

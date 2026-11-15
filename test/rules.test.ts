@@ -72,7 +72,8 @@ test('nothing sends outreach but the pitches to leads: messages and mail go out 
   // The words that ask (2026-11-15): the yes and the way out as quick replies; the words before them: one page's button,
   // or two for the message with both demos (Toran's, then Teder's), and the way out after them. The page is the pitch's
   // own (Toran's opening: the website's Toran page), kept with the event before it goes.
-  assert.match(pitch, /const page = p\.stage === 'launch' \? LAUNCH_PAGE : p\.url;/);
+  // The question (stage 'ask') carries no page: its demo is built after the yes (ops/ask.ts).
+  assert.match(pitch, /const page = p\.stage === 'launch' \? LAUNCH_PAGE : ask \? '' : p\.url;/);
   assert.match(pitch, /const urls = !t\.url \? \[\] : t\.url2 && slug2 \? \[slug, slug2\] : \[slug\];\n\s*const payloads = \[\.\.\.\(t\.yes \? \[YES_PAYLOAD\] : \[\]\), STOP_PAYLOAD\]\.map\(\(payload, i\) => \(\{ index: urls\.length \+ i, payload \}\)\);\n\s*const sent = await cloudSend\(app\.env, app\.graph, phoneId, token, phone, \{ template: \{ name: t\.name, sid: t\.name, vars: pitchVars\(t, name, page, p\.url2\), urls, payloads \} \}\)/);
   const at = pitch.indexOf('cloudSend(app.env');
   // A store that wrote to us since the first pitch gets no reminder template (ops/leadReply.ts): checked before it too.

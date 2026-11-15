@@ -1570,3 +1570,34 @@ what OpenFrequency is, and the website).
 
 **Tested.** test/outreach.test.ts (the templates that ask, the yes for Toran and for Teder, the payload, deliveries and
 reads, the reminder), test/email-pitch.test.ts, test/leads-admin.test.ts, test/lead-reply.test.ts, test/both.test.ts.
+
+## 2026-11-15: the lead autopilot, and a first message that only asks
+
+**Why.** The owner: "i want the lead dashboard to be automatic. the dashboard chooses which stores should have a demo
+(teder/toran/both). sends it itself, sells the products himself. AUTOMATIC", "20 leads a day, 10 at morning 10 at
+afternoon", "make the lead engine so strong that it gets customers without me even looking at it". Research the same
+day: a first message that already offers the product is not the one approach the law allows a business (section 30A(ב),
+רע"א 1954/14 חזני נ' הנגבי), and a reminder to someone who did not answer is a second one; the owner chose to ask first
+and build after a yes ("ok"), and the automatic reminders went off on the server (TORAN_OUTREACH_AUTO=0). The thinking
+runs as a scheduled Claude Code task on the owner's subscription (allowed: it is Claude Code itself), not as a model
+backend of Toran's (which the subscription's terms do not allow); what must answer in seconds stays on the API.
+
+**What changed.**
+- The question (ops/outreach.ts OUTREACH_ASK, `openfrequency_ask`; by email ops/emailPitch.ts stage `ask`): who writes,
+  with the name and address of the legal pages (SENDER_LINE), "אפשר לשלוח לכם הצעה ל<החנות>?", the way out, and no word
+  about a product. Two quick replies, "כן, שלחו" and "לא, תודה". Once a number or address, never after any pitch, no
+  reminder.
+- A yes (ops/ask.ts): thanks at once ("תודה. אנחנו מכינים את זה עכשיו במיוחד בשבילכם..."), the chosen product's demo
+  built (leadDo go-*), and the schedule's `ask` step sends it into the same chat once it is up: Teder's first slide with
+  the link, Toran's page link and then Toran itself answering there (the phone bound to the store's demo). By email, the
+  links in the thread. Nothing up after three hours: what is up goes, else the store is told sorry and the operator is
+  told; a WhatsApp yes past its 24 hours is the operator's. The pitch keeps yes, deliver, delivered.
+- The autopilot's door (ops/autopilot.ts, docs/autopilot.md): `/autopilot/*` from the internet with its own key
+  (TORAN_AUTOPILOT_TOKEN), lead work only: state, candidates (as the leads page describes them), decide, ask, discover,
+  recent, notes. TORAN_AUTOPILOT=1 turns its writes on. At most TORAN_AUTOPILOT_DAILY (20) a day and
+  TORAN_AUTOPILOT_BATCH (10) a batch, morning and afternoon, never at night or on Shabbat.
+- The LEAD block knows the question: what we asked, and that after their yes we built and sent the demo.
+
+**Tested.** test/autopilot.test.ts (the question's words; the door and its key; choose, ask once, the batch; a yes on
+WhatsApp built and sent with Toran answering; by email; a demo that never came up), and the outreach, email, rules and
+leads tests.

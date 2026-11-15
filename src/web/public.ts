@@ -27,6 +27,7 @@ import { changedRoutes } from '../billing/changed.ts';
 import { alertRoutes } from '../ops/alertRoute.ts';
 import { remindRoutes } from '../billing/remind.ts';
 import { outreachRoutes } from '../ops/outreach.ts';
+import { autopilotRoutes } from '../ops/autopilot.ts';
 import { leadsAdminRoutes } from '../ops/leadsAdmin.ts';
 import { hookSecretOf, shopifyHmacOk, wooSignatureOk } from '../auto/platforms.ts';
 import { unsubscribeRoutes } from './unsubscribe.ts';
@@ -396,6 +397,8 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
     ...alertRoutes(app),
     ...remindRoutes(app),
     ...outreachRoutes(app),
+    // The lead autopilot's door, from the internet with its own key (ops/autopilot.ts).
+    ...autopilotRoutes(app),
     ...leadsAdminRoutes(app),
     ['POST', /^\/internal\/lead$/, async (r) => {
       if (!fromWebsite(app.env, r)) return { status: 403, json: { ok: false, error: 'forbidden' } };

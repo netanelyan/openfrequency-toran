@@ -359,6 +359,39 @@ curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templat
   --data '{"name":"toran_launch","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"היי, כאן OpenFrequency. ביקשתם שנעדכן כשתורן נפתח, והוא פתוח עכשיו {{1}}: הוא עונה ללקוחות שלכם בוואטסאפ, באינסטגרם, במסנג׳ר, במייל ובצ׳אט באתר, בכל שעה, לפי מה שכתוב באתר שלכם, ומעביר אליכם רק את מה שהוא לא יודע.\n\nהמחירים וההרשמה כאן: {{2}}\n\nלא רלוונטי יותר? לוחצים על \"הסירו אותי\" ולא נכתוב שוב.","example":{"body_text":[["לכלי חרס של נורית","https://openfrequency.co.il/toran"]]}},{"type":"BUTTONS","buttons":[{"type":"URL","text":"להצטרף לתורן","url":"https://openfrequency.co.il/{{1}}","example":["https://openfrequency.co.il/toran"]},{"type":"QUICK_REPLY","text":"הסירו אותי"}]}]}'
 ```
 
+### openfrequency_ask
+
+| | |
+|---|---|
+| Name | openfrequency_ask |
+| Category | Marketing |
+| Language | Hebrew (he) |
+| Header, footer | none |
+| Buttons | two quick replies: "כן, שלחו", then "לא, תודה" |
+| Variables (sample) | {{1}} = לכלי חרס של נורית |
+
+The body, exactly:
+
+```
+שלום, כאן OpenFrequency. אנחנו בונים כלים לחנויות אונליין בישראל.
+
+אפשר לשלוח לכם הצעה {{1}}?
+
+לא מעוניינים? לוחצים "לא, תודה" ולא נכתוב שוב.
+
+OpenFrequency, נתנאל יאנצבסקי, רחוב חדרה, אשדוד. openfrequency.co.il
+```
+
+As the store reads it: שלום, כאן OpenFrequency. אנחנו בונים כלים לחנויות אונליין בישראל. / אפשר לשלוח לכם הצעה לכלי חרס של נורית? / לא מעוניינים? לוחצים "לא, תודה" ולא נכתוב שוב. / OpenFrequency, נתנאל יאנצבסקי, רחוב חדרה, אשדוד. openfrequency.co.il [כן, שלחו] [לא, תודה]
+
+Submitted with (the token is META_SYSTEM_TOKEN, the account is our WhatsApp account, META_WABA_ID):
+
+```sh
+curl -sS -X POST "https://graph.facebook.com/v23.0/$META_WABA_ID/message_templates" \
+  -H "Authorization: Bearer $META_SYSTEM_TOKEN" -H "Content-Type: application/json" \
+  --data '{"name":"openfrequency_ask","language":"he","category":"MARKETING","components":[{"type":"BODY","text":"שלום, כאן OpenFrequency. אנחנו בונים כלים לחנויות אונליין בישראל.\n\nאפשר לשלוח לכם הצעה {{1}}?\n\nלא מעוניינים? לוחצים \"לא, תודה\" ולא נכתוב שוב.\n\nOpenFrequency, נתנאל יאנצבסקי, רחוב חדרה, אשדוד. openfrequency.co.il","example":{"body_text":[["לכלי חרס של נורית"]]}},{"type":"BUTTONS","buttons":[{"type":"QUICK_REPLY","text":"כן, שלחו"},{"type":"QUICK_REPLY","text":"לא, תודה"}]}]}'
+```
+
 ## A customer waits (to the store's owner)
 
 The audit of 2026-11-12 (P1-6): a store owner heard of a customer waiting for them by email only, at most three of

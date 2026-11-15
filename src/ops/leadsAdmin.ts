@@ -149,7 +149,7 @@ function whereOf(s: any | null, t: TederLead | null, toran: Demo, teder: Demo, o
 type Stock = { n: number; lo: number | null; hi: number | null; kinds: string[] };
 
 /** The catalogue of each store Toran read (its products table), for the stores in ids; a store not read is not in it. */
-async function stockOf(app: App, ids: number[]): Promise<Map<number, Stock>> {
+export async function stockOf(app: App, ids: number[]): Promise<Map<number, Stock>> {
   const out = new Map<number, Stock>();
   if (!ids.length) return out;
   // The prices are the merchandise's: a product hidden by hand, a fee sold as a line (shipping, gift wrap: tools.ts
@@ -181,7 +181,7 @@ const PRICED = `price_min > 0 AND NOT COALESCE((override->>'hidden')::boolean, f
  * of it: its products (read, else counted when it was found: atLeast when the count stopped), their prices and kinds
  * once read, and its own Instagram, TikTok and Facebook. Nothing here is guessed or written by a model.
  */
-function aboutOf(s: any, name: string, stock: Stock | undefined) {
+export function aboutOf(s: any, name: string, stock: Stock | undefined) {
   const sig = s.signals || {};
   const counted = Number.isInteger(sig.productCount) ? Number(sig.productCount) : null;
   return {
@@ -421,7 +421,7 @@ const ONE_SQL = `${selling()} AND status <> 'company'`;
 const LEADS_SQL = `${ONE_SQL} AND (qualified OR page_built_at IS NOT NULL OR sent_at IS NOT NULL OR added_at IS NOT NULL)`;
 
 /** The stores whose Toran page is being built now: their site read (ingest), or their sample chat made again (pitch). */
-async function building(app: App, ids: number[]): Promise<Set<number>> {
+export async function building(app: App, ids: number[]): Promise<Set<number>> {
   if (!ids.length) return new Set();
   const rows = await app.db.query<{ id: number }>("SELECT (payload->>'storeId')::int AS id FROM jobs WHERE kind IN ('ingest', 'pitch') AND status IN ('queued', 'running') AND (payload->>'storeId')::int = ANY($1::int[])", [ids]);
   return new Set(rows.map((r) => Number(r.id)));

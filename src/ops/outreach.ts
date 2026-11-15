@@ -60,8 +60,8 @@ import { toranOnSale } from './signupSwitch.ts';
 /** toran, teder, or both: one message with both demos (the owner, 2026-11-08: "i want to be able to send them 2 demos or 1"). */
 export type Product = 'toran' | 'teder' | 'both';
 /** first and reminder are a lead's pitch; launch is Toran's opening, to the people on its waitlist (TORAN_LAUNCH). */
-export type Stage = 'first' | 'reminder' | 'launch';
-export type PitchStage = Exclude<Stage, 'launch'>;
+export type Stage = 'first' | 'reminder' | 'launch' | 'ask';
+export type PitchStage = Exclude<Stage, 'launch' | 'ask'>;
 
 type UrlButton = { text: string; base: string; example: string };
 export type OutreachTemplate = {
@@ -361,14 +361,40 @@ export const TORAN_LAUNCH: OutreachTemplate = {
   stop: STOP_BUTTON,
 };
 
-export const templateOf = (product: Product, stage: Stage): OutreachTemplate => (stage === 'launch' ? TORAN_LAUNCH : OUTREACH_TEMPLATES[`${product}_${stage}`]);
+/**
+ * Who writes, as the law asks an approach to a business to say it (the Communications Law's section 30A(ה): the name,
+ * the address, the way to reach us), in the words of the website's legal pages (site.config.json legal).
+ */
+export const SENDER_LINE = 'OpenFrequency, נתנאל יאנצבסקי, רחוב חדרה, אשדוד. openfrequency.co.il';
+export const ASK_YES = 'כן, שלחו';
+
+/**
+ * The question (the owner, 2026-11-15, on the research that a first message that already offers the product is not
+ * the one approach the law allows a business: "ok"): one neutral question, whether we may send the store an offer,
+ * with who writes and the way out, and no word about what we built. The product is chosen before it goes and kept with
+ * it; a yes builds that demo and sends it into the chat (ops/ask.ts), and a "לא, תודה" is the way out. No reminder
+ * follows it. {{1}} is the store's name with its "ל", as on the pitches.
+ */
+export const OUTREACH_ASK: OutreachTemplate = {
+  name: 'openfrequency_ask',
+  product: 'both',
+  stage: 'ask',
+  category: 'MARKETING',
+  language: 'he',
+  body: `שלום, כאן OpenFrequency. אנחנו בונים כלים לחנויות אונליין בישראל.\n\nאפשר לשלוח לכם הצעה {{1}}?\n\nלא מעוניינים? לוחצים "${NO_BUTTON}" ולא נכתוב שוב.\n\n${SENDER_LINE}`,
+  example: [STORE_EX],
+  yes: ASK_YES,
+  stop: NO_BUTTON,
+};
+
+export const templateOf = (product: Product, stage: Stage): OutreachTemplate => (stage === 'launch' ? TORAN_LAUNCH : stage === 'ask' ? OUTREACH_ASK : OUTREACH_TEMPLATES[`${product}_${stage}`]);
 
 /** Every version of a template, newest first: itself, the one it replaces, and so on back. */
 const versionsOf = (t: OutreachTemplate): OutreachTemplate[] => (t.previous ? [t, ...versionsOf(t.previous)] : [t]);
 
 /** A template by the name Meta approved it under: the six, every version approved before them, and Toran's opening. */
 export const templateNamed = (name: string): OutreachTemplate | undefined =>
-  [...Object.values(OUTREACH_TEMPLATES).flatMap(versionsOf), TORAN_LAUNCH].find((t) => t.name === name);
+  [...Object.values(OUTREACH_TEMPLATES).flatMap(versionsOf), TORAN_LAUNCH, OUTREACH_ASK].find((t) => t.name === name);
 
 /** The template as the store reads it, filled in. */
 export const outreachFilled = (t: OutreachTemplate, vars: string[] = t.example) => t.body.replace(/\{\{(\d+)\}\}/g, (_, i) => vars[Number(i) - 1] ?? '');
@@ -555,23 +581,27 @@ export async function sendPitch(app: App, p: Pitch): Promise<Outcome> {
   // P0-6): while the site says "בקרוב", Teder's pitch alone may go, and Toran's or the combined one may not.
   if (p.product !== 'teder' && !toranOnSale(app.env)) return no('not_on_sale');
   if (p.stage === 'launch' && p.product !== 'toran') return no('bad_page');
-  // The opening's button is the website's Toran page (TORAN_LAUNCH), not a store's pitch page.
-  const slug = p.stage === 'launch' ? TORAN_LAUNCH.url!.example : slugOf(p.url);
+  const ask = p.stage === 'ask';
+  // The opening's button is the website's Toran page (TORAN_LAUNCH), not a store's pitch page; the question carries no
+  // page at all (its demo is built after the yes).
+  const slug = p.stage === 'launch' ? TORAN_LAUNCH.url!.example : ask ? 'ask' : slugOf(p.url);
   if (!slug) return no('bad_page');
   // Both demos' pages, whichever words go: the older ones carry them on their buttons, and a yes to the newer ones sends
   // them into the chat (pitchAccepted, which reads them from this pitch's record).
-  const slug2 = p.product === 'both' ? slugOf(String(p.url2 || '')) : null;
-  if (p.product === 'both' && !slug2) return no('bad_page');
+  const slug2 = p.product === 'both' && !ask ? slugOf(String(p.url2 || '')) : null;
+  if (p.product === 'both' && !ask && !slug2) return no('bad_page');
   const name = cleanLine(p.name, 80) || 'החנות';
-  const page = p.stage === 'launch' ? LAUNCH_PAGE : p.url;
+  const page = p.stage === 'launch' ? LAUNCH_PAGE : ask ? '' : p.url;
   const same = `kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'product' = ANY($2::text[]) AND data->>'stage' = $3 AND (data->>'state' = 'sent' OR (data->>'state' = 'sending' AND at > now() - interval '${SENDING_MINUTES} minutes'))`;
-  const products = productsOf(p.product);
+  // The question goes once a number, whatever the product; never to a number that got any pitch before.
+  const products: Product[] = ask ? ['toran', 'teder', 'both'] : productsOf(p.product);
   const day = israelDate(now());
   let claim: { id: number | string } | null;
   try {
     if (await stoppedNumber(app, phone)) return no('stopped');
     if (await app.db.one(`SELECT 1 FROM events WHERE ${same}`, [phone, products, p.stage])) return no('already');
     if (p.stage === 'reminder' && (await wroteSinceFirst(app, phone))) return no('replied');
+    if (ask && (await app.db.one("SELECT 1 FROM events WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'state' IN ('sent', 'undelivered', 'sending') LIMIT 1", [phone]))) return no('already');
     const cap = dailyCap(app.env);
     const today = (await app.db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM events WHERE kind = 'outreach_wa' AND data->>'day' = $1 AND (data->>'state' IN ('sent', 'undelivered') OR (data->>'state' = 'sending' AND at > now() - interval '2 minutes'))", [day]))?.n || 0;
     if (today >= cap) {
@@ -865,7 +895,7 @@ export function submission(t: OutreachTemplate) {
 }
 
 export function outreachTemplateDoc(): string {
-  return [...Object.values(OUTREACH_TEMPLATES), TORAN_LAUNCH]
+  return [...Object.values(OUTREACH_TEMPLATES), TORAN_LAUNCH, OUTREACH_ASK]
     .map((t) =>
       [
         `### ${t.name}`,

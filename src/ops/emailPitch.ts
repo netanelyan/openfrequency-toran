@@ -15,9 +15,10 @@ import { audit, event, usage } from '../db/log.ts';
 import { displayName } from '../ingest/brand.ts';
 import { le, pitchUrl } from '../outreach.ts';
 import { alertOperator } from './alert.ts';
-import { REPLY_DAYS } from './outreach.ts';
+import { REPLY_DAYS, SENDER_LINE } from './outreach.ts';
 import { toranOnSale } from './signupSwitch.ts';
 import { tederMove, tederState } from './tederLeads.ts';
+import { ASK_THANKS, startAskBuild } from './ask.ts';
 import { leadTurn } from './leadReply.ts';
 
 // A pitch by email, from our company store's own address (the owner, 2026-11-15: "19 messages, 0 replies. redo that
@@ -56,7 +57,7 @@ import { leadTurn } from './leadReply.ts';
 // Nothing here throws to its caller. An address in a log line is its first letter and its domain.
 
 export type Product = 'toran' | 'teder' | 'both';
-export type MailStage = 'first' | 'reminder';
+export type MailStage = 'first' | 'reminder' | 'ask';
 /** Why a lead goes by email: no WhatsApp on its site, a number that is not a mobile, or Meta could not deliver. */
 export type MailVia = 'no_mobile' | 'undelivered' | 'no_whatsapp';
 export type MailWhy = 'no_store' | 'closed' | 'no_email' | 'bad_email' | 'not_on_sale' | 'stopped' | 'bounced' | 'already' | 'replied' | 'bad_page' | 'cap' | 'no_mail' | 'quiet' | 'failed';
@@ -106,13 +107,24 @@ const WAITING: Record<Product, (name: string) => string> = {
 
 /** The email, as the store reads it: plain text (the adapter sends it as HTML too, right to left, channels/email.ts). */
 export function mailPitchText(product: Product, stage: MailStage, name: string): string {
+  // The question (ops/outreach.ts OUTREACH_ASK): whether we may send an offer, who writes, and the way out; nothing
+  // about what we would send.
+  if (stage === 'ask') return `שלום,
+
+כאן OpenFrequency. אנחנו בונים כלים לחנויות אונליין בישראל.
+
+אפשר לשלוח לכם הצעה ${le(name)}? אם כן, עונים "כן" למייל הזה.
+
+לא מעוניינים? עונים "הסר" ולא נכתוב שוב.
+
+${SENDER_LINE}`;
   if (stage === 'first') return `שלום,\n\nכאן OpenFrequency. ${MIDDLE[product](name)}\n\nלא רלוונטי? עונים "הסר" ולא נכתוב שוב.\n\n${SIGN}`;
   return `שלום שוב,\n\n${WAITING[product](name)} אם תענו "כן" נשלח לכם ${product === 'both' ? 'קישורים' : 'קישור'}.\n\nזו ההודעה האחרונה שלנו בנושא. לא רלוונטי? עונים "הסר".\n\n${SIGN}`;
 }
 
 /** The first email's subject; the reminder's is "Re: " and the first one's, so the two are one thread on both sides. */
-export const mailPitchSubject = (product: Product, name: string) =>
-  product === 'toran' ? `עוזר וואטסאפ ${le(name)}` : product === 'teder' ? `מצגת לטיקטוק ${le(name)}` : `עוזר וואטסאפ ומצגת לטיקטוק ${le(name)}`;
+export const mailPitchSubject = (product: Product, name: string, stage: MailStage = 'first') =>
+  stage === 'ask' ? `שאלה קצרה ${le(name)}` : product === 'toran' ? `עוזר וואטסאפ ${le(name)}` : product === 'teder' ? `מצגת לטיקטוק ${le(name)}` : `עוזר וואטסאפ ומצגת לטיקטוק ${le(name)}`;
 
 const TORAN_YES = (name: string, url: string) => `זה תורן של ${name}: ${url}\nבעמוד יש כפתור שפותח איתו שיחה בוואטסאפ. כותבים לו כמו לקוח, למשל שאלה על מוצר או על משלוח, ורואים איך הוא עונה.`;
 const TEDER_YES = (name: string, url: string) => `זו המצגת שתדר הכין ${le(name)}: ${url}`;
@@ -235,7 +247,8 @@ export async function emailPitch(app: App, p: MailPitch): Promise<MailOutcome> {
 }
 
 async function pitchByMail(app: App, p: MailPitch): Promise<MailOutcome> {
-  if (!PRODUCTS.has(p.product) || (p.stage !== 'first' && p.stage !== 'reminder')) return no('failed');
+  if (!PRODUCTS.has(p.product) || !['first', 'reminder', 'ask'].includes(p.stage)) return no('failed');
+  const ask = p.stage === 'ask';
   const s = await app.db.one<any>(
     'SELECT id, name, brand, brand_override, domain, slug, status, platform, contact_email, contact_whatsapp, approved_at, page_built_at, takedown_asked_at, taken_down_at, lost_at, replied_at, workspace_id FROM stores WHERE id = $1',
     [Number(p.storeId) || 0],
@@ -249,7 +262,8 @@ async function pitchByMail(app: App, p: MailPitch): Promise<MailOutcome> {
   // An email about Toran asks whether they want to try it: only once Toran is sold (ops/signupSwitch.ts), as on WhatsApp.
   if (p.product !== 'teder' && !toranOnSale(app.env)) return no('not_on_sale');
   const name = cleanLine(displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain, 80) || 'החנות';
-  const products = productsOf(p.product);
+  // The question goes once an address, whatever the product, and never after any pitch of ours to the store.
+  const products: Product[] = ask ? ['toran', 'teder', 'both'] : productsOf(p.product);
   const phone = digits(s.contact_whatsapp);
   const who = `${p.product} ${p.stage} email to ${maskEmail(email)} (store ${s.id}, ${p.why})`;
 
@@ -259,6 +273,7 @@ async function pitchByMail(app: App, p: MailPitch): Promise<MailOutcome> {
   if (await app.db.one(`SELECT 1 FROM events WHERE ${SAME}`, [email, products, p.stage])) return no('already');
   // The same message on WhatsApp, taken by Meta and not reported undelivered, was the one approach the law allows.
   if (await app.db.one("SELECT 1 FROM events WHERE store_id IS NULL AND kind = 'outreach_wa' AND data->>'ref' = ANY($1::text[]) AND data->>'product' = ANY($2::text[]) AND data->>'stage' = $3 AND data->>'state' = 'sent' LIMIT 1", [[`store:${s.id}`, `toran:${s.id}`], products, p.stage])) return no('already');
+  if (ask && (await app.db.one("SELECT 1 FROM events WHERE (kind = 'outreach_mail' AND (store_id = $1 OR data->>'email' = $2) AND data->>'state' IN ('sent', 'sending')) OR (store_id IS NULL AND kind = 'outreach_wa' AND data->>'ref' = ANY($3::text[]) AND data->>'state' IN ('sent', 'undelivered', 'sending')) LIMIT 1", [s.id, email, [`store:${s.id}`, `toran:${s.id}`]]))) return no('already');
   // A store that answered us is talked with, never reminded.
   if (p.stage === 'reminder' && (s.replied_at || (await app.db.one("SELECT 1 FROM events WHERE kind = 'outreach_mail' AND data->>'email' = $1 AND data->>'state' = 'sent' AND data->>'answered' IS NOT NULL LIMIT 1", [email])))) return no('replied');
 
@@ -266,12 +281,12 @@ async function pitchByMail(app: App, p: MailPitch): Promise<MailOutcome> {
   // (pitch/ready.ts), Teder's demo while Teder has it up.
   let toranUrl: string | null = null;
   let tederUrl: string | null = null;
-  if (p.product !== 'teder') {
+  if (p.product !== 'teder' && !ask) {
     const { pitchGaps, isPublic } = await import('../pitch/ready.ts');
     if (!s.slug || !s.page_built_at || !isPublic(s, await pitchGaps(app, s))) return no('bad_page');
     toranUrl = pitchUrl(app.env, s.slug);
   }
-  if (p.product !== 'toran') {
+  if (p.product !== 'toran' && !ask) {
     tederUrl = page(p.tederUrl) || (await tederPage(app, s.domain, phone));
     if (!tederUrl) return no('bad_page');
   }
@@ -296,7 +311,7 @@ async function pitchByMail(app: App, p: MailPitch): Promise<MailOutcome> {
   const first = p.stage === 'reminder'
     ? await app.db.one<{ subject: string | null }>("SELECT data->>'subject' AS subject FROM events WHERE kind = 'outreach_mail' AND data->>'email' = $1 AND data->>'product' = ANY($2::text[]) AND data->>'stage' = 'first' AND data->>'state' = 'sent' ORDER BY id DESC LIMIT 1", [email, products])
     : null;
-  const subject = first?.subject ? `Re: ${first.subject}` : mailPitchSubject(p.product, name);
+  const subject = first?.subject ? `Re: ${first.subject}` : mailPitchSubject(p.product, name, p.stage);
   const by = cleanLine(p.by, 120) || 'operator';
   const claim = await app.db
     .one<{ id: number }>(`INSERT INTO events (store_id, kind, data) SELECT $4::integer, 'outreach_mail', $5::jsonb WHERE NOT EXISTS (SELECT 1 FROM events WHERE ${SAME}) RETURNING id`, [
@@ -411,12 +426,55 @@ export async function mailPitchReply(app: App, adapter: ChannelAdapter, inbound:
   const said = cleanLine(stripQuoted(String(inbound.text || '')) || bareSubject(inbound.subject), 300);
   const word = mailWord(String(inbound.text || ''), inbound.subject);
   if (word === 'stop') return mailStop(app, adapter, inbound, account, lead, said);
-  if (word === 'yes') {
+  if (word === 'yes' && d.stage === 'ask') {
+    const r = await askMailYes(app, adapter, inbound, account, lead, d, said);
+    if (r) return r;
+  }
+  if (word === 'yes' && d.stage !== 'ask') {
     const r = await mailYes(app, adapter, inbound, account, lead, d, said);
     if (r) return r;
   }
   await mailReplied(app, lead, d, said);
   return null;
+}
+
+/**
+ * "כן" to the question by email (ops/ask.ts): thanks in the thread at once, the chosen demo built, and the pitch
+ * waiting for it; its thread is kept, so the demo answers in it (mailDeliver). Null when it was answered already.
+ */
+async function askMailYes(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account, l: Lead, d: any, said: string): Promise<RouteResult | null> {
+  const at = new Date(now()).toISOString();
+  const thread = { messageId: inbound.thread?.messageId || inbound.id, references: inbound.thread?.references || [], subject: inbound.subject || d.subject || '' };
+  const fresh = await app.db.one("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind = 'outreach_mail' AND data->>'yes' IS NULL RETURNING id", [l.eventId, J({ yes: at, yes_at: at, answered: 'yes', deliver: 'pending', thread })]);
+  if (!fresh) return null;
+  const conv = await answer(app, adapter, inbound, account, ASK_THANKS, 'outreach_ask_yes');
+  await app.db.query("UPDATE events SET data = data || $2::jsonb WHERE id = $1 AND kind = 'outreach_mail'", [l.eventId, J({ kept: conv })]);
+  await leadAnswered(app, l);
+  const started = l.storeId ? await startAskBuild(app, l.storeId, l.product, 'autopilot') : 'אין לליד חנות אצלנו';
+  await alertOperator(app, `lead_mail_yes:${l.eventId}`, `${l.name} אמרו כן במייל`, `"${said || 'כן'}" לשאלה אם אפשר לשלוח להם הצעה. בונים להם את מה שנבחר להם (${started}), וזה יישלח אליהם במייל לבד כשיהיה מוכן. השיחה: ${publicBase(app.env)}/chat/${conv}`, { storeId: l.storeId, everyMinutes: REPLY_DAYS * 24 * 60 }).catch((e) => app.log(`[outreach-mail] the operator alert failed: ${e?.message || e}`));
+  app.log(`[outreach-mail] ${maskEmail(l.email)} said yes to the question (${l.product}): building`);
+  return { action: 'answered', storeId: account.store_id, reply: ASK_THANKS };
+}
+
+/**
+ * A yes's demos, up, by email (ops/ask.ts askDeliverDue): the links, in the thread their yes is in, from our mailbox.
+ * False when nothing went (no mailbox, or the send failed).
+ */
+export async function mailDeliver(app: App, eventId: number, r: { toranUrl: string | null; tederUrl: string | null }, name: string): Promise<boolean> {
+  const e = await app.db.one<{ data: any }>("SELECT data FROM events WHERE id = $1 AND kind = 'outreach_mail'", [eventId]);
+  const box = await ourMailbox(app);
+  const email = mailAddress(e?.data?.email);
+  if (!e || !box || !email || !app.mail) return false;
+  const account = await app.db.one<Account>('SELECT * FROM channel_accounts WHERE id = $1', [box.accountId]);
+  if (!account) return false;
+  const t = e.data.thread || {};
+  const inbound: Inbound = { channel: 'email', from: email, text: '', id: `ask-deliver-${eventId}`, account: box.address, subject: t.subject || e.data.subject, thread: { messageId: t.messageId || `ask-deliver-${eventId}`, inReplyTo: null, references: t.references || [] } };
+  const text = mailYesText(name, r.toranUrl, r.tederUrl);
+  const conv = await conversationOf(app, app.mail, account, inbound);
+  const m = await app.db.one<{ id: number }>("INSERT INTO messages (conversation_id, role, text, author, auto, delivery) VALUES ($1, 'agent', $2, 'אוטומטי', 'outreach_ask_deliver', '[]'::jsonb) RETURNING id", [conv, text]);
+  await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [conv]);
+  const d = await reply(app, app.mail, inbound, text, account.store_id, conv, await answerCtx(app, account), { onPart: (sent) => app.db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [m!.id, J(sent)]) });
+  return d.ok;
 }
 
 type Lead = { eventId: number; storeId: number | null; email: string; product: Product; name: string };

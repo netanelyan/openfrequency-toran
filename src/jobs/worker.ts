@@ -34,6 +34,8 @@ import { pausedNotice } from '../owners/paused.ts';
 import { learnVoice } from '../agent/voice.ts';
 import { takeOrderKey } from '../domainProof.ts';
 import { outreachDue } from '../ops/remind.ts';
+import { askDeliverDue } from '../ops/ask.ts';
+import { mailDeliver } from '../ops/emailPitch.ts';
 
 // The worker: runs the queue's jobs, and once a minute schedules what is due.
 //
@@ -336,6 +338,8 @@ export async function schedule(app: App) {
   await step(app, 'reread', () => scheduleReread(app));
   // A WhatsApp pitch that did not arrive goes by email, and a lead's one reminder goes once it is due (ops/remind.ts).
   await step(app, 'outreach', () => outreachDue(app));
+  // A store that said yes to the question gets its demo once it is up (ops/ask.ts): always on, as a yes is consent.
+  await step(app, 'ask', () => askDeliverDue(app, { mailDeliver }));
 }
 
 /** Run jobs until none is due (tests and one-shot scripts). */

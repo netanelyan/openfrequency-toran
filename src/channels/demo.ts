@@ -22,6 +22,7 @@ import { botLine, botName, markIntroduced } from '../agent/intro.ts';
 import { alertOperator } from '../ops/alert.ts';
 import { displayName } from '../ingest/brand.ts';
 import { le } from '../outreach.ts';
+import { askAccepted, firstSlide } from '../ops/ask.ts';
 
 // The demo number: one WhatsApp number for every store's demo (route.ts hands it each message).
 //
@@ -63,7 +64,7 @@ export const DEMO_TURNS = 10;
 /** The demo's footer with its count: "דמו של תורן (3/10)", in WhatsApp's italics as the plain one. */
 export const demoFooter = (n: number) => `_דמו של תורן (${n}/${DEMO_TURNS})_`;
 
-const msg = {
+export const msg = {
   // The bot's own line first (agent/intro.ts): whoever writes knows from the first message that a bot answers.
   welcome: (bot: string, name: string | null) => `${botLine('first', name, bot)} אפשר לשאול על כל מוצר באתר, כמה הוא עולה ואם יש במלאי. בדמו יש ${DEMO_TURNS} הודעות, ואם רוצים לדבר איתנו ב-OpenFrequency כותבים "סיום". מה מחפשים?`,
   // After the last answer of a demo: it ends into our support (DEMO_TURNS).
@@ -121,19 +122,6 @@ async function supportTurn(app: App, adapter: ChannelAdapter, inbound: Inbound, 
 /** A yes written instead of pressed: a short one, the whole message. */
 export const YES_WORDS = /^\s*(?:כן|כן,? (?:בואו ננסה|תשלחו|אשמח|בטח|בבקשה|רוצה|רוצים|נשמע טוב|למה לא)|בטח|אשמח|יאללה|סבבה|בכיף|נשמע טוב|למה לא|נשמח|yes|ok|okay|sure)\s*[.!,]*\s*$/i;
 
-/** The first slide of a Teder demo on its public page (Teder's demos.js sendSlide), TikTok's then Instagram's, or null. */
-async function firstSlide(app: App, page: string): Promise<string | null> {
-  for (const f of ['tiktok-0.jpg', 'instagram-0.jpg']) {
-    const url = `${page.replace(/\/+$/, '')}/${f}`;
-    try {
-      const r = await app.api(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
-      if (r.ok && /^image\//.test(r.headers.get('content-type') || '')) return url;
-    } catch {
-      // Not reached: the next, or none, and the link alone goes.
-    }
-  }
-  return null;
-}
 
 /**
  * The pitch's yes (the owner, 2026-11-15: "19 messages, 0 replies ... i want it working and i want costumers"): the
@@ -154,6 +142,8 @@ async function pitchAccepted(app: App, adapter: ChannelAdapter, inbound: Inbound
   }
   const support = await supportOf(app, adapter, inbound);
   if (!support) return null;
+  // A yes to the question (ops/outreach.ts OUTREACH_ASK): nothing was built yet; it is built now and sent when up.
+  if (lead.stage === 'ask') return askAccepted(app, adapter, inbound, lead, pressed, support);
   const store = lead.storeId && lead.toranUrl && lead.product !== 'teder'
     ? await app.db.one<{ id: number; name: string | null; domain: string; brand: any; brand_override: any; platform: string | null; agent_name: string | null; demo_code: string | null }>("SELECT id, name, domain, brand, brand_override, platform, agent_name, demo_code FROM stores WHERE id = $1 AND page_built_at IS NOT NULL AND status <> 'skipped' AND taken_down_at IS NULL", [lead.storeId])
     : null;
