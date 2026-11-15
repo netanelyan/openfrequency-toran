@@ -94,9 +94,13 @@ export function stripQuoted(text: string): string {
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
   const out: string[] = [];
   for (const line of lines) {
-    const l = line.trim();
-    // Where the quote starts: Gmail and Apple ("On ... wrote:", "בתאריך ... כתב/ה:"), Outlook's header block, a separator.
-    if (/^(On\s.+wrote:|בתאריך\s.+(כתב|כתבה|נכתב).*:|-{2,}\s*Original Message\s*-{2,}|_{5,}|From:\s.+|מאת:\s.+)$/i.test(l)) break;
+    // Without the direction marks a Hebrew mail client puts around names and dates.
+    const l = line.replace(/[‎‏‪-‮⁦-⁩]/g, '').trim();
+    // Where the quote starts: Gmail and Apple ("On ... wrote:", "בתאריך ... כתב/ה:", and Gmail's Hebrew "בתאריך <day>
+    // מאת <name> <address>:", which it wraps onto the next line, so the colon may not be on this one: a store's "כן" to
+    // a pitch came as "כן" and that header, and was not read as a yes, 2026-11-15), Outlook's header block ("From:",
+    // "מאת:", "*מאת :*"), a separator.
+    if (/^(On\s.+wrote:?|בתאריך\s.+\s(כתב|כתבה|נכתב|מאת)([\s/:].*)?|-{2,}\s*Original Message\s*-{2,}|_{5,}|\*?From\s*:\*?\s.+|\*?מאת\s*:\*?\s?.+)$/i.test(l)) break;
     if (/^-- ?$/.test(line)) break; // the signature separator
     // A phone's own signature line: what follows it is the signature or the quote.
     if (/^(Sent from my \w+.*|Get Outlook for \w+.*|נשלח מ(ה-?)?\s?(iPhone|אייפון|Android|אנדרואיד|Samsung|סמסונג|הטלפון|הנייד)(\s.*)?)$/i.test(l)) break;
