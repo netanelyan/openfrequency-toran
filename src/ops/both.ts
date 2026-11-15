@@ -5,6 +5,7 @@ import { audit, event } from '../db/log.ts';
 import { markReminded, markSent, OpsError, pitchOf } from './actions.ts';
 import { sendPitch, type PitchStage as Stage } from './outreach.ts';
 import { tederMark, tederState, type TederLead } from './tederLeads.ts';
+import { emailPitch, mailInsteadOf } from './emailPitch.ts';
 
 // One store, both products, from Toran's lead page (the owner, 2026-11-08: "i want to be able to build only toran or
 // only teder for a page, or both. i want to be able to send them 2 demos or 1"). Toran's own demo is sent as before
@@ -12,7 +13,8 @@ import { tederMark, tederState, type TederLead } from './tederLeads.ts';
 // openfrequency_pitch, ops/outreach.ts). Every limit of outreach.ts holds: one way out for both products, a message with
 // both demos counted once in the day's cap and as both products' pitch at its stage, no night, Shabbat or holiday,
 // Meta's quality read first. Each one throws OpsError with the operator's sentence when it did not go, and marks
-// nothing then.
+// nothing then. A store with no WhatsApp, or a number that is not a mobile, gets the same by email when it has an
+// address (ops/emailPitch.ts, since 2026-11-15), under that file's limits, and is marked the same way.
 
 async function storeOf(app: App, id: number) {
   const s = await app.db.one<any>('SELECT * FROM stores WHERE id = $1', [id]);
@@ -41,7 +43,16 @@ export async function sendTeder(app: App, storeId: number, by: string): Promise<
   const lead = await tederLeadOf(app, s);
   const stage = tederStage(lead);
   const phone = lead.whatsapp || s.contact_whatsapp;
-  if (!phone) throw new OpsError('אין באתר של החנות הזו וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לה.');
+  // No WhatsApp, or a number that is not a mobile: by email, when the store has an address (ops/emailPitch.ts).
+  const via = await mailInsteadOf(app, phone, s.contact_email);
+  if (via) {
+    const mailed = await emailPitch(app, { storeId: s.id, product: 'teder', stage, by, why: via, tederUrl: lead.demo!.pageUrl! });
+    if (!mailed.sent) throw new OpsError(mailed.said);
+    await event(app.db, s.id, 'teder_pitch', { stage, by, via: 'email' });
+    const marked = await tederMark(app, s, stage, by);
+    return 'error' in marked ? `${mailed.said} תדר לא סימן את זה אצלו (${marked.error}), אז כדאי לסמן ב/leads של תדר.` : `${mailed.said} תדר סימן שנשלח.`;
+  }
+  if (!phone) throw new OpsError('אין באתר של החנות הזו וואטסאפ, מספר נייד או כתובת מייל, אז אין לאן לשלוח.');
   const out = await sendPitch(app, { product: 'teder', stage, phone, name: displayName(s.brand_override?.name, s.brand?.name, s.name) || s.domain, url: lead.demo!.pageUrl!, ref: `store:${s.id}`, by });
   if (!out.sent) throw new OpsError(out.said);
   await event(app.db, s.id, 'teder_pitch', { stage, by });
@@ -59,12 +70,23 @@ export async function sendBoth(app: App, storeId: number, by: string): Promise<s
   const p = await pitchOf(app, 'toran', String(storeId));
   if ('error' in p) throw new OpsError(p.error);
   if (!p.url) throw new OpsError('אין לתורן עמוד באוויר לחנות הזו.');
-  if (!p.phone) throw new OpsError('אין באתר של החנות הזו וואטסאפ או מספר נייד, אז מהמספר שלנו לא שולחים לה.');
+  // No WhatsApp, or a number that is not a mobile: the one email with both, when the store has an address.
+  const via = await mailInsteadOf(app, p.phone, s.contact_email);
+  if (!via && !p.phone) throw new OpsError('אין באתר של החנות הזו וואטסאפ, מספר נייד או כתובת מייל, אז אין לאן לשלוח.');
   const lead = await tederLeadOf(app, s);
   const stage = tederStage(lead);
   if (stage !== p.stage) throw new OpsError(stage === 'first' ? 'לתורן כבר נשלחה הודעה, ולתדר עוד לא: אפשר לשלוח את תדר לבד.' : 'לתדר כבר נשלחה הודעה, ולתורן עוד לא: אפשר לשלוח את תורן לבד.');
   if (p.stage === 'reminder' && s.followup_due_at && new Date(s.followup_due_at).getTime() > now()) throw new OpsError('עוד לא הזמן לתזכורת של תורן.');
-  const out = await sendPitch(app, { product: 'both', stage: p.stage, phone: p.phone, name: p.name, url: p.url, url2: lead.demo!.pageUrl!, ref: `store:${s.id}`, by });
+  if (via) {
+    const mailed = await emailPitch(app, { storeId: s.id, product: 'both', stage: p.stage, by, why: via, tederUrl: lead.demo!.pageUrl! });
+    if (!mailed.sent) throw new OpsError(mailed.said);
+    if (p.stage === 'first') await markSent(app, 'toran', String(s.id), by);
+    else await markReminded(app, 'toran', String(s.id), by);
+    await audit(app.db, { actor: by, action: 'pitch_both', storeId: s.id, detail: { stage: p.stage, via: 'email' } });
+    const marked = await tederMark(app, s, p.stage, by);
+    return 'error' in marked ? `${mailed.said} תדר לא סימן את זה אצלו (${marked.error}), אז כדאי לסמן ב/leads של תדר.` : `${mailed.said} סומן שנשלח בתורן, וגם תדר סימן.`;
+  }
+  const out = await sendPitch(app, { product: 'both', stage: p.stage, phone: p.phone!, name: p.name, url: p.url, url2: lead.demo!.pageUrl!, ref: `store:${s.id}`, by });
   if (!out.sent) throw new OpsError(out.said);
   if (p.stage === 'first') await markSent(app, 'toran', String(s.id), by);
   else await markReminded(app, 'toran', String(s.id), by);
