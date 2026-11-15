@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { simEmail } from '../src/channels/email.ts';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { readFileSync } from 'node:fs';
@@ -190,7 +191,8 @@ test("a demo made from the list (the owner, 2026-11-11): each row says what can 
     s.app.env.META_OUTREACH_PHONE_ID = '1234567890';
     one = (await get(`/internal/leads/${id}`)).lead;
     assert.deepEqual([one.send.options, one.send.main], [['teder', 'both', 'toran'], 'teder']);
-    assert.match(one.send.tederText, /בכפתור כאן למטה/);
+    // While Meta reviews the words that ask, the words approved before them (2026-11-12) are the ones that go.
+    assert.match(one.send.tederText, /מצגת אחת לדוגמה מהאתר שלכם: https:\/\/teder\./);
     await s.app.db.query('UPDATE stores SET demo_for = NULL WHERE id = $1', [id]);
     assert.equal((await get(`/internal/leads/${id}`)).lead.send.main, 'both', 'nothing chosen: both, as before');
 
@@ -616,8 +618,11 @@ test("where our message got to: each lead's furthest step on WhatsApp or by mail
     assert.equal(later.leads.find((x: any) => x.id === mailed).outreach.state, 'stopped');
     assert.equal(later.funnel.stopped, 2);
 
-    // One lead says the same; a store with no WhatsApp and an email has its message go by mail, and the card says so.
+    // One lead says the same; a store with no WhatsApp and an email has its message go by mail (when email is on here,
+    // ops/emailPitch.ts mailInsteadOf), and the card says so and why.
     assert.deepEqual((await get(`/internal/leads/${read}`)).lead.outreach, row(read).outreach);
+    s.app.env.TORAN_CHANNELS = 'whatsapp,email';
+    s.app.mail = simEmail({ domain: 'in.toran.example' });
     const page = await add('out-bymail.example', { contact_email: 'hello@bymail.example', status: 'page_ready', page_built_at: ago(2), approved_at: ago(1) });
     const send = (await get(`/internal/leads/${page}`)).lead.send;
     assert.deepEqual([send.pitchable, send.options, send.note], [true, ['toran'], 'לחנות אין וואטסאפ, אז ההודעה תצא אליה במייל.']);

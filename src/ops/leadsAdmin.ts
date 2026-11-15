@@ -21,6 +21,7 @@ import { later, markLost, markReminded, markReplied, markSent, OpsError, reopen,
 import { sendBoth, sendTeder } from './both.ts';
 import { bothFirst, bothReminder, tederColdFirst, tederReminder } from './messages.ts';
 import { liveTemplate, outreachFilled, outreachLive, pitchVars, templateOf } from './outreach.ts';
+import { mailInsteadOf, type MailVia } from './emailPitch.ts';
 import { tederBuild, tederDemoAct, tederList, tederMark, tederMove, tederState, type TederDemo, type TederDemoAct, type TederLead, type TederMove } from './tederLeads.ts';
 import { LOST_REASONS } from './messages.ts';
 
@@ -505,7 +506,12 @@ export async function leadsList(app: App, { where = '', q = '', all = false }: {
 
 const NOT_NOW_REMINDER = 'עוד לא הזמן לתזכורת.';
 /** Under a message that goes by mail: the store has no WhatsApp. */
-const BY_MAIL_HE = 'לחנות אין וואטסאפ, אז ההודעה תצא אליה במייל.';
+/** Why the card's message goes by email (ops/emailPitch.ts mailInsteadOf), in the operator's words. */
+const BY_MAIL_HE: Record<MailVia, string> = {
+  no_whatsapp: 'לחנות אין וואטסאפ, אז ההודעה תצא אליה במייל.',
+  no_mobile: 'המספר באתר של החנות קווי, ו-Meta לא מסרה הודעות למספרים כאלה, אז ההודעה תצא אליה במייל.',
+  undelivered: 'ההודעה הקודמת בוואטסאפ לא הגיעה למספר הזה, אז ההודעה תצא במייל.',
+};
 
 /** One lead: both demos, the message due and the ways it can go, the texts, and what can be built. */
 export async function leadOne(app: App, id: number) {
@@ -516,10 +522,11 @@ export async function leadOne(app: App, id: number) {
   const run = await building(app, [id]);
   const row = rowOf(app, s, t, run.has(id), !('error' in st), (await stockOf(app, [id])).get(id), (await outreachFacts(app, [id]))[0]);
   const name = row.name;
-  // A store with no WhatsApp and an email is written to by mail (the mail path of ops/actions.ts and ops/both.ts), so
-  // its message goes from here too, and the card says it goes by mail.
-  const byMail = !s.contact_whatsapp && Boolean(s.contact_email);
-  const pitchable = (Boolean(s.contact_whatsapp) && (await outreachLive(app))) || byMail;
+  // A store with an email and no WhatsApp, or only a number that is not a mobile, or one Meta could not deliver to, is
+  // written to by mail (the mail path of ops/actions.ts and ops/both.ts, which asks the same question), so its message
+  // goes from here too, and the card says it goes by mail and why.
+  const byMail = await mailInsteadOf(app, s.contact_whatsapp, s.contact_email);
+  const pitchable = (Boolean(s.contact_whatsapp) && (await outreachLive(app))) || Boolean(byMail);
   // No message is due while a demo of the lead is being built (the owner, 2026-11-12: "Lead page shouldnt let me send a
   // message while a demo is being built"): it would carry a page about to change, or go without the one coming.
   const busy = run.has(id) || row.teder.state === 'building';
@@ -578,7 +585,7 @@ export async function leadOne(app: App, id: number) {
         waitingUntil: waiting,
         ...texts,
         copy: Object.values(texts).some(Boolean) && href ? { href, label: target.label } : null,
-        note: byMail && options.length ? BY_MAIL_HE : null,
+        note: byMail && options.length ? BY_MAIL_HE[byMail] : null,
       },
     },
   };
