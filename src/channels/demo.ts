@@ -7,7 +7,7 @@ import { CODE_RE } from '../pitch/build.ts';
 import { claimRequest } from './request.ts';
 import { payCode, payReceipt } from './pay.ts';
 import { reminderWord } from '../billing/remind.ts';
-import { outreachWord, YES_PAYLOAD } from '../ops/outreach.ts';
+import { outreachWord, stopNumber, stoppedLately, STOPPED_SAID, YES_PAYLOAD } from '../ops/outreach.ts';
 import { hold, isPaused } from './owner.ts';
 import { reply, replyParts } from './send.ts';
 import type { ChannelAdapter, Inbound } from './types.ts';
@@ -16,7 +16,7 @@ import { PAGE_ABOUT, PAGE_DOWN } from '../offer.ts';
 import { J } from '../db/index.ts';
 import { ownerLine } from '../owners/line.ts';
 import { supportAccount } from '../company.ts';
-import { conversationOf, storeChannel, type Account } from './store.ts';
+import { conversationOf, heldForOwner, storeChannel, type Account } from './store.ts';
 import { leadReplied, leadTurn, pitchFor } from '../ops/leadReply.ts';
 import { botLine, botName, markIntroduced } from '../agent/intro.ts';
 import { alertOperator } from '../ops/alert.ts';
@@ -35,7 +35,8 @@ import { askAccepted, firstSlide } from '../ops/ask.ts';
 //   asking for the demo link, and nothing else; or, when our support is set up
 //   (src/company.ts), our support agent
 //   our support answers a store we wrote to first as one (supportTurn, ops/leadReply.ts): what we sent it and built
-//   for it ride in the turn, and its first answer marks the lead and tells the operator
+//   for it ride in the turn, and its first answer marks the lead and tells the operator; its own bot is never
+//   answered (pace.ts), a thanks or a thumbs-up gets no answer, and a day after it asked us to stop nothing is sent
 //   a business owner accounts verified, or a link code, goes to the owner's assistant
 //   (owners/line.ts), before any binding; an owner with Teder and no Toran store is
 //   answered there by our support, since Teder is managed on its dashboard only
@@ -82,7 +83,7 @@ export const msg = {
 /** A message that is only this word ends a live demo and goes back to our support. */
 export const SUPPORT_WORD = /^\s*(?:תמיכה|עזרה|סיום|יציאה|לצאת|לסיים)\s*[.!?]*\s*$/;
 
-export type RouteResult = { action: 'bound' | 'answered' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact' | 'demo_ended' | 'opt_out' | 'resent' | 'busy' | 'pay' | 'pay_nothing_due' | 'pay_no_details' | 'pay_bad_code' | 'pay_unavailable' | 'pay_receipt' | 'pay_receipt_refused' | 'pay_remind_stop' | 'pay_remind_start' | 'outreach_stop' | 'outreach_stop_again' | 'pitch_yes' | 'review' | 'not_live' | 'channel_off'; storeId?: number; reply?: string };
+export type RouteResult = { action: 'bound' | 'answered' | 'bot' | 'quiet' | 'no_binding' | 'bad_code' | 'duplicate' | 'limit' | 'no_text' | 'requested' | 'already_requested' | 'held' | 'automated' | 'suppressed' | 'unknown_account' | 'assistant' | 'owner_line' | 'takedown' | 'contact' | 'demo_ended' | 'opt_out' | 'resent' | 'busy' | 'pay' | 'pay_nothing_due' | 'pay_no_details' | 'pay_bad_code' | 'pay_unavailable' | 'pay_receipt' | 'pay_receipt_refused' | 'pay_remind_stop' | 'pay_remind_start' | 'outreach_stop' | 'outreach_stop_again' | 'pitch_yes' | 'review' | 'not_live' | 'channel_off'; storeId?: number; reply?: string };
 
 const ownerPhones = (env: Record<string, string | undefined>) => new Set(String(env.TORAN_OWNER_WHATSAPP || '').split(/[,\s]+/).map((p) => p.replace(/\D/g, '')).filter(Boolean));
 
@@ -105,17 +106,34 @@ const supportOf = (app: App, adapter: ChannelAdapter, inbound: Inbound) => suppo
 /**
  * Our support answers. A number we sent a pitch to (ops/leadReply.ts pitchFor) is a store we wrote to first: the turn
  * is told what we sent it and built for it, and its first answer to the pitch is marked and told to the operator once
- * our reply went, so the store never waits on it.
+ * our reply went, so the store never waits on it. A message from their own bot (pace.ts) is not their answer. When the
+ * model hears them ask us to stop, in words the way out did not read as that, it is a stop all the same
+ * (ops/outreach.ts stopNumber), said in the way out's own line.
+ *
+ * In the day after a number asked us to stop (STOP_QUIET_HOURS), what it writes waits for a person of ours, and
+ * nothing is sent (the trace of 2026-11-17: "מהר הסר", right after our "הסרנו אתכם", was answered and handed over).
  */
 async function supportTurn(app: App, adapter: ChannelAdapter, inbound: Inbound, support: Account): Promise<RouteResult> {
+  if (await stoppedLately(app, inbound.from)) {
+    const conv = await conversationOf(app, adapter, support, inbound);
+    await hold(app, conv, inbound);
+    await heldForOwner(app, support.store_id, conv, 'stop', 'ביקשו שנסיר אותם, ותורן לא עונה להם ביממה שאחרי זה.', 'ביקשו שנסיר אותם, אז ביממה שאחרי זה תורן לא עונה להם. ההודעה מחכה לכם כאן.');
+    return { action: 'held', storeId: support.store_id };
+  }
   const lead = await pitchFor(app, inbound.from).catch((e) => {
     app.log(`[lead] …${String(inbound.from).slice(-4)}: the pitch it answers could not be read (${e?.message || e})`);
     return null;
   });
+  let result: RouteResult | null = null;
   try {
-    return await storeChannel(app, adapter, inbound, support, lead ? leadTurn(lead) : {});
+    const stop = async () => {
+      if (lead) await stopNumber(app, lead.phone, lead.product, String(inbound.text || ''));
+      return STOPPED_SAID;
+    };
+    result = await storeChannel(app, adapter, inbound, support, lead ? { ...leadTurn(lead), pitched: true, stop } : {});
+    return result;
   } finally {
-    if (lead && !lead.replied) await leadReplied(app, lead, support.id, String(inbound.text || '')).catch((e) => app.log(`[lead] …${String(inbound.from).slice(-4)}: its answer was not marked (${e?.message || e})`));
+    if (lead && !lead.replied && result?.action !== 'bot') await leadReplied(app, lead, support.id, String(inbound.text || '')).catch((e) => app.log(`[lead] …${String(inbound.from).slice(-4)}: its answer was not marked (${e?.message || e})`));
   }
 }
 
@@ -126,7 +144,8 @@ export const YES_WORDS = /^\s*(?:כן|כן,? (?:בואו ננסה|תשלחו|א�
 /**
  * The pitch's yes (the owner, 2026-11-15: "19 messages, 0 replies ... i want it working and i want costumers"): the
  * pitch asks whether to send the demo, and a yes, pressed (its payload) or written in a word while they have not
- * written since, brings it into this chat at once, inside the 24 hours the yes opened. A slideshow comes as its first
+ * written since (or, to our question, before it had its yes: our support asks it again, ops/leadReply.ts), brings it
+ * into this chat at once, inside the 24 hours the yes opened. A slideshow comes as its first
  * slide, with the link to all of it; Toran's demo starts right here, the phone bound to the store's demo as its code
  * would bind it, so their next message is answered by their own Toran. The operator is told what went. Once a pitch: a
  * second yes is a message like any other. Null for anything else, and while our support is not set up.
@@ -136,7 +155,7 @@ async function pitchAccepted(app: App, adapter: ChannelAdapter, inbound: Inbound
   if (!pressed && !YES_WORDS.test(String(inbound.text || ''))) return null;
   const lead = await pitchFor(app, inbound.from).catch(() => null);
   if (!lead || lead.stage === 'launch') return null;
-  if (!pressed) {
+  if (!pressed && !(lead.stage === 'ask' && !lead.yes)) {
     const talking = await app.db.one("SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.channel = 'whatsapp' AND c.peer = $1 AND m.role = 'customer' AND m.at > $2 LIMIT 1", [lead.phone, lead.at]);
     if (talking) return null;
   }

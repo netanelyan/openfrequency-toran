@@ -10,6 +10,7 @@ import { WAITING_SQL } from '../web/inbox.ts';
 import type { LeadOf } from '../agent/intro.ts';
 import { alertOperator } from './alert.ts';
 import { tederMove, tederState } from './tederLeads.ts';
+import { AUTO_WORDS } from '../channels/pace.ts';
 import { LAUNCH_PAGE, pitchShown, pitchVars, REPLY_DAYS, stoppedNumber, templateNamed, type Product, type Stage } from './outreach.ts';
 
 // A store we wrote to first answers us (the owner, 2026-11-12: "How does our toran answer after a lead answers? Make
@@ -58,8 +59,11 @@ export type LeadPitch = {
   text: string | null;
   /** They wrote to their store's Toran on the demo. */
   tried: boolean;
-  /** Their first answer to it was marked already (leadReplied). */
+  /** Their first answer to it was marked already (leadReplied): any message of theirs, not a yes. */
   replied: boolean;
+  /** The question's yes (stage ask, ops/ask.ts): they said yes, and what it built was sent (deliver 'sent'), is being built (pending), or could not be (failed, expired). */
+  yes: boolean;
+  deliver: 'pending' | 'sent' | 'failed' | 'expired' | null;
 };
 
 const PRODUCTS = new Set<string>(['toran', 'teder', 'both']);
@@ -118,6 +122,8 @@ export async function pitchFor(app: App, from: string): Promise<LeadPitch | null
     text,
     tried,
     replied: d.replied != null,
+    yes: d.yes != null,
+    deliver: ['pending', 'sent', 'failed', 'expired'].includes(d.deliver) ? d.deliver : null,
   };
 }
 
@@ -126,16 +132,31 @@ export const START_PAGES = { toran: LAUNCH_PAGE, teder: 'https://openfrequency.c
 const OFFERED: Record<Product, string> = { toran: 'Toran, built on their store', teder: 'a sample Teder slideshow made from their store', both: 'Toran, built on their store, and a sample Teder slideshow made from it' };
 
 /**
+ * What our question's yes has brought them so far (stage ask, ops/ask.ts), as the LEAD block says it: their answer to
+ * it is the yes, never just a message of theirs (the trace of 2026-11-17: a store's own bot wrote back, its message was
+ * marked their answer, and the block said "they said yes, and we built them Toran" of a store nothing was built for,
+ * so ours spoke of "the link we sent" a dozen times).
+ */
+function askState(l: LeadPitch): string {
+  const offer = OFFERED[l.product];
+  if (!l.yes) return `we asked whether we may send them an offer, and they have not said yes. Nothing is built for them yet and nothing was sent: never say we built or sent anything, and never speak as their store's Toran. What their yes ("כן") brings is ${offer}, built then and sent into this chat when it is up`;
+  if (l.deliver === 'sent') return `we asked whether we may send them an offer; they said yes, and we built them ${offer} and sent it into this chat`;
+  if (l.deliver === 'failed' || l.deliver === 'expired') return `we asked whether we may send them an offer; they said yes, but we could not build ${offer} this time, and told them someone from our team will get back to them here. Nothing of it was sent: say someone from our team will get back to them here`;
+  return `we asked whether we may send them an offer; they said yes, and we are building ${offer} now. We told them it comes into this chat within about an hour; nothing of it was sent yet`;
+}
+
+/**
  * What a turn of our support is told of a store we wrote to (agent/loop.ts TurnInput): the LEAD block for its SERVER
  * CONTEXT, the same block as facts that back the reply's links and claims, and what its first line says (leadLine).
- * Toran's opening to the waitlist built nothing for them: no line of its own.
+ * The line is only for what was built and sent them: Toran's opening to the waitlist built nothing, nor did our
+ * question before its yes was answered with it, and their bot is then the company's, as for anyone else.
  */
 export function leadTurn(l: LeadPitch): { context: string; facts: string[]; lead: LeadOf | null } {
   const when = new Intl.DateTimeFormat('he-IL', { timeZone: 'Asia/Jerusalem', day: 'numeric', month: 'long' }).format(new Date(l.at));
   const what = l.stage === 'launch'
     ? 'they asked on our website to hear when Toran opens, and we told them it is open'
     : l.stage === 'ask'
-      ? `we asked whether we may send them an offer; ${l.replied ? `they said yes, and we built them ${OFFERED[l.product]} and sent it into this chat` : `what we would send is ${OFFERED[l.product]}`}`
+      ? askState(l)
       : `we offered them ${OFFERED[l.product]}${l.stage === 'reminder' ? ', and wrote once more to remind them' : ''}`;
   const starts = l.product === 'both' ? `${START_PAGES.toran} (Toran), ${START_PAGES.teder} (Teder)` : l.product === 'teder' ? START_PAGES.teder : START_PAGES.toran;
   const context = [
@@ -145,7 +166,9 @@ export function leadTurn(l: LeadPitch): { context: string; facts: string[]; lead
     l.tederUrl ? `The sample slideshow Teder made from their website: ${l.tederUrl}` : '',
     `Where they start, with the price and the sign-up: ${starts}`,
   ].filter(Boolean).join('\n');
-  return { context, facts: [context], lead: l.stage === 'launch' ? null : { product: l.product, name: l.name } };
+  const built = l.product === 'teder' ? Boolean(l.tederUrl) : Boolean(l.toranUrl);
+  const shown = l.stage !== 'ask' || l.deliver === 'sent';
+  return { context, facts: [context], lead: l.stage !== 'launch' && built && shown ? { product: l.product, name: l.name } : null };
 }
 
 /**
@@ -153,10 +176,9 @@ export function leadTurn(l: LeadPitch): { context: string; facts: string[]; lead
  * moments and says what such messages say. The two "answers" of the first pitches were these (2026-11-13: "שרות הלקוחות
  * שלנו פעיל בין השעות 09:00-15:00 ... ונחזור אלייך בהקדם" and "ראינו שהשארת לנו פנייה ... ספרו לנו במה אפשר לעזור", each
  * under a minute after the pitch): they were counted as answers, told to the operator, and held the reminder back. Both
- * must hold, the moment and the words, so a person who answers fast is still an answer.
+ * must hold, the moment and the words (channels/pace.ts AUTO_WORDS), so a person who answers fast is still an answer.
  */
 const AUTO_ANSWER_MS = 2 * 60_000;
-const AUTO_WORDS = /שעות (?:ה)?פעילות|פעיל(?:ה|ים)? בין השעות|שירות הלקוחות (?:שלנו )?(?:פעיל|זמין)|(?:נחזור|נענה|נשוב|נחזיר) (?:אלי(?:ך|יך|כם)|לך|לכם|בהקדם|תשובה)|קיבלנו את (?:פנייתך|פנייתכם|הפנייה|הודעתך|ההודעה)|תודה (?:על פנייתך|על פנייתכם|על הפנייה|שפנית|שפניתם|שכתבת|שכתבתם)|השארת לנו (?:פנייה|הודעה)|ספרו לנו במה (?:אפשר|נוכל) לעזור|במה (?:אפשר|נוכל) לעזור|הודעה אוטומטית|מענה אוטומטי|ימי עסקים|אינו מאויש|מחוץ לשעות/;
 export const automaticAnswer = (text: string, sinceMs: number): boolean => sinceMs >= 0 && sinceMs <= AUTO_ANSWER_MS && AUTO_WORDS.test(String(text || ''));
 
 /**

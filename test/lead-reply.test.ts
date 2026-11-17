@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import * as outreach from '../src/ops/outreach.ts';
-import { leadTurn, pitchFor } from '../src/ops/leadReply.ts';
+import { leadTurn, pitchFor, type LeadPitch } from '../src/ops/leadReply.ts';
 import { leadOne } from '../src/ops/leadsAdmin.ts';
 import { handleInbound } from '../src/channels/route.ts';
 import { syncCompany, type CompanyExport } from '../src/company.ts';
 import { LEAD_OPENING_NOTE, leadLine, openingOf } from '../src/agent/intro.ts';
-import { filesContext, NO_WORDS_HE } from '../src/channels/store.ts';
+import { BOT_NOTE, filesContext, LEAD_REPLIES_PER_HOUR, NO_WORDS_HE } from '../src/channels/store.ts';
 import { STATE_SQL, WAITING_SQL } from '../src/web/inbox.ts';
 import { setNow } from '../src/core/clock.ts';
 import type { Script } from '../src/agent/llm/scripted.ts';
@@ -108,9 +108,9 @@ const lastToolResult = (req: TurnReq) => {
  * Our support with a model that goes on from the LEAD block: their store's Toran, at its link; a price from get_plans.
  * `asked` keeps the text of each request's last message (the SERVER CONTEXT with the person's words).
  */
-async function supportApp(env: Record<string, string> = {}) {
+async function supportApp(env: Record<string, string> = {}, custom?: Script) {
   const asked: string[] = [];
-  const script: Script = (req) => {
+  const script: Script = custom || ((req) => {
     const res = lastToolResult(req);
     if (res) return [{ type: 'text', text: 'חבילת חנות עולה 590 ₪ לחודש, לא כולל מע״מ, עד 300 שיחות בחודש.' }];
     const said = lastText(req);
@@ -118,7 +118,7 @@ async function supportApp(env: Record<string, string> = {}) {
     if (/כמה זה עולה/.test(said)) return [{ type: 'tool_use', id: 'p1', name: 'get_plans', input: {} }];
     const url = /Their store's own Toran[^:]*: (\S+)/.exec(said)?.[1];
     return [{ type: 'text', text: url ? `תורן כבר קרא את המוצרים והמדיניות מהאתר שלכם, ואפשר לכתוב לו עכשיו כמו לקוח: ${url}` : 'אפשר לשאול אותי על תורן ועל תדר.' }];
-  };
+  });
   const app = await testApp({ script });
   const meta = fakeMeta();
   app.graph = meta.f;
@@ -319,4 +319,136 @@ test('a demo that ends back into our support goes on as a store we wrote to, and
     setNow(null);
     await app.db.close();
   }
+});
+
+// ---- a salesperson, not a spam messenger (the owner, 2026-11-17, on a store whose own AI bot and ours wrote to each
+// other 17 times in four minutes, until a person there wrote "חאלס" and "מהר הסר": "make the bot smart, not a spam
+// messanger"). Every store, text and number here is made up.
+
+/** A store we only asked whether we may send an offer (stage ask): nothing is built for it. */
+const askedStore = async (app: Awaited<ReturnType<typeof supportApp>>['app'], phone: string) =>
+  (await app.db.one<{ id: number }>("INSERT INTO stores (domain, url, name, platform, source, slug, score, qualified, contact_whatsapp, status) VALUES ('dana-toys.example', 'https://dana-toys.example/', 'צעצועי עץ של דנה', 'shopify', 'seed', 'dana-x1', 60, true, $1, 'sent') RETURNING id", [phone]))!.id;
+/** What went to one number: each message we sent it. */
+const sentTo = (meta: ReturnType<typeof fakeMeta>, phone: string) => meta.calls.filter((c) => c.method === 'POST' && c.body?.to === phone);
+/** Their store's own bot, in the shape it wrote in: long, fast, with WhatsApp's bold. */
+const BOT_1 = 'נעים להכיר! אפשר לבדוק איתי כל דבר - לשאול על *זמני משלוח*, על *מוצרי עץ* או על הזמנה קיימת. במה אוכל לעזור?';
+const BOT_2 = 'תודה! אני כאן כדי לתת שירות ללקוחות *צעצועי עץ של דנה* ולעזור בכל שאלה על המוצרים וההזמנות.';
+const BOT_3 = 'הבנתי. התפקיד שלי הוא לעזור ללקוחות החנות עם המשחקים, ההזמנות והמשלוחים שלנו. במה אוכל לסייע כעת?';
+
+test("their store's own bot answers our question: one answer of ours, then nothing to it; a person there is answered, and \"חאלס\" stops us for good", async () => {
+  const { app, meta, asked, write } = await supportApp();
+  try {
+    const id = await askedStore(app, PHONE);
+    assert.equal((await outreach.sendPitch(app, { product: 'toran', stage: 'ask', phone: PHONE, name: 'צעצועי עץ של דנה', url: '', ref: `store:${id}`, by: 'autopilot' })).sent, true);
+    const conv = (await app.db.one<{ id: number }>('SELECT id FROM conversations WHERE peer = $1', [PHONE]))!.id;
+
+    // Their bot's greeting is short: answered once, as our company's bot, with nothing claimed as built.
+    const hi = await write(PHONE, 'היי, כאן דנה מהחנות');
+    assert.equal(hi.action, 'answered');
+    assert.match(hi.reply!, /^היי, אני תורן, הבוט של OpenFrequency\.\n\n/, 'not "the bot we built for them": nothing is built');
+    assert.match(asked[0], /they have not said yes\. Nothing is built for them yet and nothing was sent: never say we built or sent anything/);
+    assert.doesNotMatch(asked[0], /Their store's own Toran/);
+
+    // Its next message, 8 seconds after ours, long and in bold: a bot. Kept, nothing sent, one note for us.
+    const one = await write(PHONE, BOT_1, { at: Date.now() + 8_000 });
+    assert.equal(one.action, 'bot');
+    // A slower one of it, in its own words about itself: still the bot. No second note.
+    assert.equal((await write(PHONE, BOT_2, { at: Date.now() + 16_000 })).action, 'bot');
+    const notes = await app.db.query<{ text: string; reason: string }>("SELECT text, handoff->>'reason' AS reason FROM messages WHERE conversation_id = $1 AND handoff IS NOT NULL", [conv]);
+    assert.deepEqual(notes.map((n) => ({ ...n })), [{ text: BOT_NOTE, reason: 'bot' }]);
+    assert.ok((await app.db.one<any>('SELECT meta FROM conversations WHERE id = $1', [conv]))!.meta.bot);
+    assert.equal(asked.length, 1, 'no model call for a bot');
+    // Their bot's messages are not their answer: the lead was marked once, by the greeting, and never again.
+    assert.equal((await app.db.query("SELECT 1 FROM events WHERE kind = 'outreach_reply'")).length, 1);
+
+    // A person there, two minutes on: answered as before, and their bot's answer to it is not.
+    const person = await write(PHONE, 'רגע, כמה זה עולה?', { at: Date.now() + 120_000 });
+    assert.equal(person.action, 'answered');
+    assert.equal((await write(PHONE, BOT_3, { at: Date.now() + 7_000 })).action, 'bot');
+
+    // "חאלס": removed, said once, and kept where the inbox shows it; "מהר הסר" after it gets nothing.
+    const enough = await write(PHONE, 'חאלס');
+    assert.deepEqual([enough.action, enough.reply], ['outreach_stop', outreach.STOPPED_SAID]);
+    assert.ok(await app.db.one('SELECT 1 FROM outreach_stops WHERE phone = $1', [PHONE]));
+    assert.deepEqual({ ...(await app.db.one<any>('SELECT lost_reason FROM stores WHERE id = $1', [id])) }, { lost_reason: 'opted_out' });
+    assert.equal((await write(PHONE, 'מהר הסר')).action, 'outreach_stop_again');
+    const tail = await app.db.query<{ role: string; text: string }>("SELECT role, text FROM messages WHERE conversation_id = $1 AND role IN ('customer', 'agent') ORDER BY id DESC LIMIT 3", [conv]);
+    assert.deepEqual(tail.map((m) => [m.role, m.text]), [['customer', 'מהר הסר'], ['agent', outreach.STOPPED_SAID], ['customer', 'חאלס']]);
+    // Anything else in the day after it waits for us, and nothing goes.
+    assert.equal((await write(PHONE, BOT_2, { at: Date.now() + 9_000 })).action, 'held');
+
+    // In all: our question, one answer to their bot, one to the person, and the line that removed them.
+    assert.equal(sentTo(meta, PHONE).length, 4);
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test('a thanks or a thumbs-up after our answer gets no answer, and a store we wrote to gets at most six answers an hour', async () => {
+  const { app, meta, write, lead } = await supportApp();
+  try {
+    const id = await lead('nurit.example', PHONE, 'nurit-x1', 'כלי חרס של נורית');
+    assert.equal((await outreach.sendPitch(app, { product: 'toran', stage: 'first', phone: PHONE, name: 'כלי חרס של נורית', url: PAGE, ref: `store:${id}`, by: 'Demo' })).sent, true);
+    assert.equal((await write(PHONE, 'כן, מעניין')).action, 'answered');
+    for (const t of ['👍', 'תודה!', 'Ghh', 'חחחח']) assert.equal((await write(PHONE, t)).action, 'quiet', t);
+    assert.equal(sentTo(meta, PHONE).length, 2, 'the pitch and one answer');
+    for (let i = 2; i <= LEAD_REPLIES_PER_HOUR; i++) assert.equal((await write(PHONE, `שאלה מספר ${i}`)).action, 'answered');
+    const past = await write(PHONE, 'ועוד שאלה');
+    assert.equal(past.action, 'limit');
+    assert.equal(sentTo(meta, PHONE).length, 1 + LEAD_REPLIES_PER_HOUR);
+    assert.ok(await app.db.one("SELECT 1 FROM messages WHERE handoff->>'reason' = 'limit' AND text LIKE 'תורן ענה כאן 6 פעמים%'"), 'a person goes on, and is told');
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test('the model that sees a bot says so and nothing goes to it; asked to stop in other words, it stops us all the same', async () => {
+  const script: Script = (req) => {
+    if (lastToolResult(req)) return [{ type: 'text', text: 'בסדר, לא נכתוב לכם שוב. סליחה על ההפרעה.' }];
+    // The turn's last message holds the earlier ones of theirs too: the newest words are read first.
+    const t = lastText(req);
+    if (/עזבו אותנו בשקט/.test(t)) return [{ type: 'tool_use', id: 'h2', name: 'handoff', input: { reason: 'stop', summary: 'ביקשו שנפסיק לכתוב להם' } }];
+    if (/העוזרת הדיגיטלית/.test(t)) return [{ type: 'tool_use', id: 'h1', name: 'handoff', input: { reason: 'bot', summary: 'עונה כאן הבוט של החנות' } }];
+    return [{ type: 'text', text: 'אפשר לשאול אותי על תורן ועל תדר.' }];
+  };
+  const { app, meta, write } = await supportApp({}, script);
+  try {
+    const id = await askedStore(app, PHONE);
+    assert.equal((await outreach.sendPitch(app, { product: 'toran', stage: 'ask', phone: PHONE, name: 'צעצועי עץ של דנה', url: '', ref: `store:${id}`, by: 'autopilot' })).sent, true);
+    const conv = (await app.db.one<{ id: number }>('SELECT id FROM conversations WHERE peer = $1', [PHONE]))!.id;
+    const r = await write(PHONE, 'שלום! כאן העוזרת הדיגיטלית של החנות, אשמח לדעת מה שמך');
+    assert.equal(r.action, 'bot');
+    assert.equal(sentTo(meta, PHONE).length, 1, 'only our question went');
+    const kept = (await app.db.one<any>("SELECT role, text FROM messages WHERE conversation_id = $1 AND handoff->>'reason' = 'bot'", [conv]))!;
+    assert.deepEqual([kept.role, kept.text], ['system', BOT_NOTE], 'its answer kept as our note, never as sent');
+    assert.ok((await app.db.one<any>('SELECT meta FROM conversations WHERE id = $1', [conv]))!.meta.bot);
+    assert.equal((await app.db.query("SELECT 1 FROM events WHERE kind = 'outreach_reply'")).length, 0, 'a bot is not their answer');
+
+    // A person there, in words the way out does not read: the model hears it, and it is a stop.
+    const stop = await write(PHONE, 'תעשו לי טובה, עזבו אותנו בשקט עם ההצעות שלכם');
+    assert.deepEqual([stop.action, stop.reply], ['answered', outreach.STOPPED_SAID]);
+    assert.ok(await app.db.one('SELECT 1 FROM outreach_stops WHERE phone = $1', [PHONE]));
+    assert.equal(sentTo(meta, PHONE).at(-1)!.body.text.body, outreach.STOPPED_SAID);
+  } finally {
+    setNow(null);
+    await app.db.close();
+  }
+});
+
+test("the question's LEAD block says what its yes brought so far, and the bot's own line comes only with what was sent", () => {
+  const base: LeadPitch = { eventId: 1, phone: PHONE, product: 'toran', stage: 'ask', at: '2026-11-17T07:32:19.000Z', name: 'צעצועי עץ של דנה', domain: 'dana-toys.example', storeId: 1, tederId: null, toranUrl: null, tederUrl: null, text: null, tried: false, replied: true, yes: false, deliver: null };
+  const before = leadTurn(base);
+  assert.match(before.context, /they have not said yes\. Nothing is built for them yet/, 'an answer of theirs is not a yes');
+  assert.equal(before.lead, null);
+  const building = leadTurn({ ...base, yes: true, deliver: 'pending' });
+  assert.match(building.context, /they said yes, and we are building Toran, built on their store now\. We told them it comes into this chat within about an hour; nothing of it was sent yet/);
+  assert.equal(building.lead, null);
+  assert.match(leadTurn({ ...base, yes: true, deliver: 'failed' }).context, /we could not build Toran, built on their store this time/);
+  const sent = leadTurn({ ...base, yes: true, deliver: 'sent', toranUrl: PAGE });
+  assert.match(sent.context, /they said yes, and we built them Toran, built on their store and sent it into this chat/);
+  assert.deepEqual(sent.lead, { product: 'toran', name: 'צעצועי עץ של דנה' });
+  // A pitch with its link, whose page was taken down since: no line about what we built.
+  assert.equal(leadTurn({ ...base, stage: 'first', toranUrl: null }).lead, null);
 });

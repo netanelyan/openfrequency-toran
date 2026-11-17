@@ -102,11 +102,11 @@ export const COMPANY_TOOLS: ToolDef[] = [
   },
   {
     name: 'handoff',
-    description: 'Hand the conversation to a person at the company. Use it whenever: you do not have the answer from a tool; the person asks about their own account, a bill, an invoice, a cancellation or a problem; asks for a discount or anything outside what is written; wants to join and the tools do not say how; is upset or asks for a person. Not for a demo: that is asked for on the website.',
+    description: 'Hand the conversation to a person at the company. Use it whenever: you do not have the answer from a tool; the person asks about their own account, a bill, an invoice, a cancellation or a problem; asks for a discount or anything outside what is written; wants to join and the tools do not say how; is upset or asks for a person. Not for a demo: that is asked for on the website. Two reasons stop the app from writing: "stop" when a store we wrote to asks us to stop writing to them, in any words; "bot" only when the other side is plainly not a person but another business\'s bot or automatic replies (it says it is a bot or an assistant, or answers you as if you were its customer), never for a person who asks whether you are a bot.',
     input_schema: {
       type: 'object',
       properties: {
-        reason: { type: 'string', enum: ['unknown', 'demo', 'join', 'account', 'billing', 'cancel', 'discount', 'complaint', 'human_requested', 'other'] },
+        reason: { type: 'string', enum: ['unknown', 'demo', 'join', 'account', 'billing', 'cancel', 'discount', 'complaint', 'human_requested', 'stop', 'bot', 'other'] },
         summary: { type: 'string', description: 'One line for the company: what the person needs, with their store\'s address when they gave it' },
       },
       required: ['reason', 'summary'],
@@ -529,11 +529,16 @@ export async function runTool(c: ToolContext, name: string, input: any): Promise
         const reason = String(input?.reason || 'other');
         const summary = String(input?.summary || '').slice(0, 300);
         // In a demo nobody sees it (loop.ts tells no one): what would happen with a real customer, never a reply to wait for.
-        const content = c.company
-          ? 'Handed off: someone at the company sees this conversation now.\nRule: tell the person in one short sentence that someone from us will get back to them here. No promises about what we will decide or when.'
-          : c.demo !== false
-            ? 'Handed off, in a demo: nothing goes to anyone from here, and nobody will reply in this conversation.\nRule: tell them in one short sentence that with a real customer this question would now go to them, the store, who answer it ("אצל לקוח אמיתי השאלה הייתה עוברת עכשיו אליכם, ואתם עונים לו."). Never say that someone will get back to them here.'
-            : 'Handed off: the store owner sees this conversation now.\nRule: tell the customer in one short sentence that someone from the store will get back to them here. No promises about what the store will decide or when.';
+        // "bot" and "stop" on our support: the app sends nothing to a bot, and its own line for a stop (channels/store.ts).
+        const content = c.company && reason === 'bot'
+          ? 'Marked: the other side is a bot, and the app sends it nothing from now on.\nRule: write nothing more. Nothing you write now is sent.'
+          : c.company && reason === 'stop'
+            ? 'Stopped: the app removes them from our messages, and says so in its own words.\nRule: write one short sentence that we will not write to them again, and sorry for the bother. Nothing else.'
+            : c.company
+              ? 'Handed off: someone at the company sees this conversation now.\nRule: tell the person in one short sentence that someone from us will get back to them here. No promises about what we will decide or when.'
+              : c.demo !== false
+                ? 'Handed off, in a demo: nothing goes to anyone from here, and nobody will reply in this conversation.\nRule: tell them in one short sentence that with a real customer this question would now go to them, the store, who answer it ("אצל לקוח אמיתי השאלה הייתה עוברת עכשיו אליכם, ואתם עונים לו."). Never say that someone will get back to them here.'
+                : 'Handed off: the store owner sees this conversation now.\nRule: tell the customer in one short sentence that someone from the store will get back to them here. No promises about what the store will decide or when.';
         return { ok: true, content, handoff: { reason, summary } };
       }
       default:

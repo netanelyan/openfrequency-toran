@@ -17,6 +17,7 @@ import { TEDER_DOES, TEDER_WHAT, TORAN_DOES, TORAN_WHAT } from '../pitchWords.ts
 import { alertOperator } from './alert.ts';
 import { internalRefusal } from './internal.ts';
 import { toranOnSale } from './signupSwitch.ts';
+import { asksToStop } from '../core/stopWords.ts';
 
 // A pitch on WhatsApp, sent by Toran from our number (the owner, 2026-11-08: "if i press the send button to a demo
 // suggestion, i want it to go to whatsapp, so toran should send it", and on the risk: "i dont think people will report
@@ -37,8 +38,9 @@ import { toranOnSale } from './signupSwitch.ts';
 // the operator's alerts and the payment reminders, so nothing here may cost it its rating:
 //
 //   - the way out on the message itself: a quick reply, "הסירו אותי", pressed instead of "block"; that, or a reply
-//     like "לא" or "הסר" to the pitch, keeps the number in outreach_stops, says so once, marks its leads lost, and no
-//     pitch of either product goes to it again (outreachWord, read on our number before the demo and support)
+//     like "לא" to the pitch, or "הסר" or "די" in any short form at any time ("מהר הסר", "חאלס"), keeps the number in
+//     outreach_stops, says so once, marks its leads lost, and no pitch of either product goes to it again
+//     (outreachWord, read on our number before the demo and support)
 //   - at most TORAN_OUTREACH_DAILY (10) a day, both products together, by Israel's calendar day
 //   - never at night, on Shabbat or a holiday, or the afternoon before one (clock.ts customerQuiet)
 //   - the number's quality and the template's, read from Meta before each send (cached ten minutes): anything but
@@ -791,44 +793,71 @@ export async function pitchStatus(app: App, s: { id: string; status: string; acc
 
 // ---- the way out
 
-/** A whole message that asks us to stop: the quick reply, or a short "no" in Hebrew or English. */
-export const STOP_REPLY = /^\s*(?:הסירו אותי|הסירו אותנו|הסירו|תסירו אותי|תסירו אותנו|תסירו|הסר|להסיר|הסר אותי|לא|לא,? תודה|לא מעוניין|לא מעוניינת|לא מעוניינים|לא רלוונטי|stop|unsubscribe|no)\s*[.!,]*\s*$/i;
-/** Only these are read as the way out even after a demo began: a bare "לא" may be an answer in the demo itself. */
-const STOP_ALWAYS = /^\s*(?:הסירו אותי|הסירו אותנו|הסירו|תסירו אותי|תסירו אותנו|תסירו|הסר|להסיר|הסר אותי|unsubscribe)\s*[.!,]*\s*$/i;
+/** A whole message that says no: the quick reply, or a short "no" in Hebrew or English. */
+export const STOP_REPLY = /^\s*(?:הסירו אותי|הסירו אותנו|הסירו|תסירו אותי|תסירו אותנו|תסירו|הסר|להסיר|הסר אותי|לא|לא,? תודה|לא מעוניין|לא מעוניינת|לא מעוניינים|לא מעוניינות|לא רלוונטי|לא רוצה|לא רוצים|לא צריך|לא צריכה|לא צריכים|stop|unsubscribe|no|no thanks)\s*[.!,]*\s*$/i;
 
 export const STOPPED_SAID = 'הסרנו אתכם, ולא נשלח לכם יותר הודעות כאלה. סליחה על ההפרעה.';
 
 /**
- * "הסירו אותי" (the pitch's button) or a "לא" to a pitch, from a number that got one in the last REPLY_DAYS: kept in
- * outreach_stops, its leads in both products marked lost (opted_out), one line back inside the 24 hours their message
- * opened. A bare "לא" counts only while they have not written to us since the pitch (in a demo, to our support), where
- * it may be an answer to something else. Our own messages are not theirs: the pitch itself is kept in our support's
- * conversation with them (keepPitch), which then counted as talking, and "לא מעוניין" to it was answered as a question
- * (the trace of 2026-11-12). Null for anything else, which goes on as before.
+ * A number that got a pitch asks us to stop (outreachWord, or our support's model hearing it in other words,
+ * channels/demo.ts): kept in outreach_stops, its leads in both products marked lost (opted_out). True the first time;
+ * false when it asked before.
+ */
+export async function stopNumber(app: App, phone: string, product: Product, said: string): Promise<boolean> {
+  const fresh = await app.db.one('INSERT INTO outreach_stops (phone, product, said) VALUES ($1, $2, $3) ON CONFLICT (phone) DO NOTHING RETURNING phone', [phone, product, cleanLine(said, 200)]);
+  if (!fresh) return false;
+  await app.db.query("UPDATE stores SET lost_at = COALESCE(lost_at, now()), lost_reason = COALESCE(lost_reason, 'opted_out'), updated_at = now() WHERE contact_whatsapp = $1", [phone]);
+  await app.db.query("UPDATE teder_leads SET lost_at = COALESCE(lost_at, now()), lost_reason = COALESCE(lost_reason, 'opted_out') WHERE whatsapp = $1", [phone]);
+  await event(app.db, null, 'outreach_stop', { last4: phone.slice(-4), product });
+  await audit(app.db, { actor: `wa:${phone}`, action: 'outreach_stop', detail: { product } });
+  app.log(`[outreach] …${phone.slice(-4)} asked to be removed (${product}): no pitch goes to it again`);
+  return true;
+}
+
+/** How long after a stop our support keeps what they write for a person, and answers nothing (channels/demo.ts). */
+export const STOP_QUIET_HOURS = 24;
+/** They asked us to stop in the last STOP_QUIET_HOURS. */
+export const stoppedLately = async (app: App, phone: string) => Boolean(await app.db.one(`SELECT 1 FROM outreach_stops WHERE phone = $1 AND stopped_at > now() - interval '${STOP_QUIET_HOURS} hours'`, [digits(phone)]));
+
+/**
+ * The way out, from a number that got a pitch in the last REPLY_DAYS: the pitch's own "לא, תודה" pressed, or "הסר" or
+ * "די" in any short form ("מהר הסר", "תפסיקו לשלוח לי", "חאלס": core/stopWords.ts asksToStop) whatever came between,
+ * or a short "no" (STOP_REPLY) to it. stopNumber keeps it, and one line goes back inside the 24 hours their message
+ * opened; asked again, nothing goes. Both are kept in our support's conversation with them, where the pitch is, so the
+ * inbox shows they were removed (the trace of 2026-11-17: the "הסר" and our "הסרנו אתכם" went nowhere the operator
+ * could see, and the "מהר הסר" after them reached our support and was handed over as a request still to handle).
+ * A bare "לא" counts only while they have not written to us since the pitch (in a demo, to our support), where it may
+ * answer something else, or while our question still waits for its yes (stage ask), whose answer it is. Our own
+ * messages are not theirs: the pitch itself is kept in our support's conversation with them (keepPitch), which then
+ * counted as talking, and "לא מעוניין" to it was answered as a question (the trace of 2026-11-12). Null for anything
+ * else, which goes on as before.
  */
 export async function outreachWord(app: App, adapter: ChannelAdapter, inbound: Inbound): Promise<RouteResult | null> {
   const text = String(inbound.text || '');
   // The pitch's own "לא, תודה" pressed carries its payload: the way out, whatever came between.
   const pressed = inbound.payload === STOP_PAYLOAD;
-  if (!pressed && !STOP_REPLY.test(text)) return null;
+  const always = pressed || asksToStop(text);
+  if (!always && !STOP_REPLY.test(text)) return null;
   const phone = digits(inbound.from);
-  const pitch = await app.db.one<{ product: Product; at: Date | string }>(
-    `SELECT data->>'product' AS product, at FROM events WHERE kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'state' IN ('sent', 'undelivered') AND at > now() - interval '${REPLY_DAYS} days' ORDER BY id DESC LIMIT 1`,
+  const pitch = await app.db.one<{ product: Product; at: Date | string; stage: string | null; yes: string | null }>(
+    `SELECT data->>'product' AS product, at, data->>'stage' AS stage, data->>'yes' AS yes FROM events WHERE kind = 'outreach_wa' AND data->>'phone' = $1 AND data->>'state' IN ('sent', 'undelivered') AND at > now() - interval '${REPLY_DAYS} days' ORDER BY id DESC LIMIT 1`,
     [phone],
   );
   if (!pitch) return null;
-  if (!pressed && !STOP_ALWAYS.test(text)) {
+  if (!always && !(pitch.stage === 'ask' && !pitch.yes)) {
     const talking = await app.db.one("SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.channel = 'whatsapp' AND c.peer = $1 AND m.role = 'customer' AND m.at > $2 LIMIT 1", [phone, new Date(pitch.at).toISOString()]);
     if (talking) return null;
   }
-  const fresh = await app.db.one('INSERT INTO outreach_stops (phone, product, said) VALUES ($1, $2, $3) ON CONFLICT (phone) DO NOTHING RETURNING phone', [phone, pitch.product, cleanLine(text, 200)]);
+  const fresh = await stopNumber(app, phone, pitch.product, text);
+  const support = await supportAccount(app, adapter, inbound.to || app.env.DEMO_WA_NUMBER || app.env.TWILIO_WHATSAPP_FROM);
+  const conv = support ? (await openConversation(app.db, { storeId: support.store_id, channel: 'whatsapp', peer: inbound.from, accountId: support.id })).id : null;
+  if (conv) {
+    await app.db.query("INSERT INTO messages (conversation_id, role, text, ext_id) VALUES ($1, 'customer', $2, $3) ON CONFLICT (ext_id) DO NOTHING", [conv, text, inbound.id]);
+    if (fresh) await app.db.query("INSERT INTO messages (conversation_id, role, text, author, auto) VALUES ($1, 'agent', $2, 'אוטומטי', 'opt_out')", [conv, STOPPED_SAID]);
+    await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [conv]);
+  }
   if (!fresh) return { action: 'outreach_stop_again' };
-  await app.db.query("UPDATE stores SET lost_at = COALESCE(lost_at, now()), lost_reason = COALESCE(lost_reason, 'opted_out'), updated_at = now() WHERE contact_whatsapp = $1", [phone]);
-  await app.db.query("UPDATE teder_leads SET lost_at = COALESCE(lost_at, now()), lost_reason = COALESCE(lost_reason, 'opted_out') WHERE whatsapp = $1", [phone]);
-  await event(app.db, null, 'outreach_stop', { last4: phone.slice(-4), product: pitch.product });
-  await audit(app.db, { actor: `wa:${phone}`, action: 'outreach_stop', detail: { product: pitch.product } });
-  app.log(`[outreach] …${phone.slice(-4)} asked to be removed (${pitch.product}): no pitch goes to it again`);
-  await reply(app, adapter, inbound, STOPPED_SAID, null, null);
+  await reply(app, adapter, inbound, STOPPED_SAID, support?.store_id ?? null, conv);
   return { action: 'outreach_stop', reply: STOPPED_SAID };
 }
 

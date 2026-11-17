@@ -631,5 +631,5 @@ export async function mailLeadTurn(app: App, inbound: Inbound, account: Account)
   const name = cleanLine(d.name, 80) || 'החנות';
   const s = e.store_id ? await app.db.one<{ domain: string }>('SELECT domain FROM stores WHERE id = $1', [e.store_id]) : null;
   const { toranUrl, tederUrl } = await stillUp(app, { eventId: Number(e.id), storeId: e.store_id ? Number(e.store_id) : null, email, product, name }, d);
-  return leadTurn({ eventId: Number(e.id), phone: email, product, stage, at: new Date(e.at).toISOString(), name, domain: s?.domain || null, storeId: e.store_id ? Number(e.store_id) : null, tederId: null, toranUrl, tederUrl, text: mailPitchText(product, stage, name), tried: false, replied: d.replied != null });
+  return leadTurn({ eventId: Number(e.id), phone: email, product, stage, at: new Date(e.at).toISOString(), name, domain: s?.domain || null, storeId: e.store_id ? Number(e.store_id) : null, tederId: null, toranUrl, tederUrl, text: mailPitchText(product, stage, name), tried: false, replied: d.replied != null, yes: d.yes != null, deliver: null });
 }

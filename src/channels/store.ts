@@ -13,7 +13,10 @@ import { keepInbound, setAttachments } from './files.ts';
 import { mailDomainOf, ownAddress, ownAddresses } from './mailDomain.ts';
 import { noteCustomer } from './customers.ts';
 import type { Attachment, ChannelAdapter, Inbound } from './types.ts';
-import { customerWrote, OPT_OUT, optOut, optOutReply } from '../auto/consent.ts';
+import { customerWrote, optOut, optOutReply } from '../auto/consent.ts';
+import { asksRemoval } from '../core/stopWords.ts';
+import { now } from '../core/clock.ts';
+import { markBot, nothingToAnswer, paceOf } from './pace.ts';
 import { openConversation } from './conversations.ts';
 import { lastAuto } from '../auto/send.ts';
 import { reviewTurn } from '../reviews.ts';
@@ -27,9 +30,10 @@ import { notifyWaiting } from '../owners/waiting.ts';
 // message is kept for the owner and nothing is sent. Before any of that, its files are kept for the owner (files.ts),
 // and the addresses and numbers it gives join this customer's other conversations (customers.ts). An email answer
 // goes out from the store's own address once its domain is verified (mailDomain.ts). On WhatsApp and email, "הסר" or
-// "STOP" stops the store's automatic messages to the customer (auto/consent.ts) and is answered with one line, any
-// other message drops a cart reminder or review request still waiting for them, and an answer to an automatic message
-// reaches the agent with what the store sent.
+// "STOP", in any short form (core/stopWords.ts), stops the store's automatic messages to the customer (auto/consent.ts)
+// and is answered with one line, any other message drops a cart reminder or review request still waiting for them, and
+// an answer to an automatic message reaches the agent with what the store sent. A chat message from another bot is
+// kept with no answer (pace.ts), so two bots never write to each other.
 
 const DAILY_REPLIES = 20; // the agent's answers to one customer of one account in a day; past it, the owner's turn
 // A store's whole hour: past STORE_TURNS_PER_HOUR answers (TORAN_STORE_TURNS_PER_HOUR), or NEW_SENDERS_PER_HOUR new email
@@ -38,6 +42,16 @@ const DAILY_REPLIES = 20; // the agent's answers to one customer of one account 
 export const STORE_TURNS_PER_HOUR = 200;
 export const NEW_SENDERS_PER_HOUR = 30;
 const IN_KINDS = Object.values(LEDGER).map((l) => `${l.tag}_in`);
+/** Chats, where another business's bot can answer each message of ours within seconds (pace.ts). */
+const CHATS = new Set(['whatsapp', 'messenger', 'instagram']);
+/**
+ * A store we wrote to first, at most this many answers an hour: past it, a person from our team goes on (the trace of
+ * 2026-11-17, nineteen answers in four minutes). A store that is interested asks a few questions; more is a person's.
+ */
+export const LEAD_REPLIES_PER_HOUR = 6;
+
+/** The note when Toran stops answering a bot, for the owner (on our support, the operator). */
+export const BOT_NOTE = 'נראה שבצד השני עונה בוט, אז תורן הפסיק לענות לו. אם מישהו יכתוב כאן בעצמו, תורן יענה לו כרגיל.';
 
 export type Account = { id: number; store_id: number; channel: string; external_id: string; kind: string; secret: string | null; meta: any; status: string };
 
@@ -156,9 +170,11 @@ async function heldReply(app: App, adapter: ChannelAdapter, inbound: Inbound, st
 
 /**
  * What a turn is given besides the message, by whoever routes it here: a store we wrote to first, on our support
- * (channels/demo.ts, ops/leadReply.ts), comes with the LEAD block (context), the facts it backs, and its first line.
+ * (channels/demo.ts, ops/leadReply.ts), comes with the LEAD block (context), the facts it backs, and its first line;
+ * pitched, so what asks nothing gets no answer and LEAD_REPLIES_PER_HOUR at most; and stop, for when the model hears
+ * them ask us to stop (the handoff's reason "stop"): it keeps that, and gives the line to send instead of the model's.
  */
-export type StoreTurn = Pick<TurnInput, 'context' | 'facts' | 'lead'>;
+export type StoreTurn = Pick<TurnInput, 'context' | 'facts' | 'lead'> & { pitched?: boolean; stop?: () => Promise<string> };
 
 /**
  * A voice note or a file with no words, to our own support (src/company.ts), is answered in code with one line, with
@@ -207,9 +223,10 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   const storeName = displayName(store.brand_override?.name, store.brand?.name, store.name) || store.domain;
   const own = adapter.channel === 'email' ? await ownAddress(app, store.id) : null;
   const ch = adapter.channel === 'whatsapp' || adapter.channel === 'email' ? adapter.channel : null;
-  // "הסר" or "STOP": no more automatic messages to this customer here (auto/consent.ts), said back in one line, and
-  // nothing for the agent to answer. Any other message drops a cart reminder or a review request still waiting.
-  if (ch && OPT_OUT.test(text)) {
+  // "הסר" or "STOP", alone or with its small words ("הסר בבקשה", "תסירו אותי מהרשימה"): no more automatic messages to
+  // this customer here (auto/consent.ts), said back in one line, and nothing for the agent to answer. Any other message
+  // drops a cart reminder or a review request still waiting.
+  if (ch && asksRemoval(text)) {
     await hold(app, conv, inbound);
     await optOut(app, store.id, ch, inbound.from, text, conv);
     const line = optOutReply(storeName);
@@ -243,6 +260,16 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
     await heldReply(app, adapter, inbound, store.id, conv, storeName);
     return { action: 'channel_off', storeId: store.id };
   }
+  // Another bot on the other side (pace.ts): its message is kept with no answer, and the owner is told once.
+  if (CHATS.has(adapter.channel) && text) {
+    const pace = await paceOf(app, conv, text, inbound.at ?? now());
+    if (pace.machine) {
+      await hold(app, conv, inbound, { automated: 'bot' });
+      await event(db, store.id, 'bot_held', { conversationId: conv, why: pace.why });
+      if (pace.newly) await handOver(app, store.id, conv, 'bot', `בצד השני עונה בוט (${pace.why}).`, BOT_NOTE);
+      return { action: 'bot', storeId: store.id };
+    }
+  }
   // An answer to the store's review request: a rating kept, or the customer's word on showing it (reviews.ts). Said
   // back in one line, and nothing for the agent to answer.
   const said = text ? await reviewTurn(app, store.id, conv, text, storeName) : null;
@@ -259,6 +286,21 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
     if (store.platform === 'company') return noWords(app, adapter, inbound, store, conv, files, turn.lead, own);
     await handOver(app, store.id, conv, 'attachment', `${files.length} files, no text`, 'הלקוח שלח קבצים בלי טקסט, ותורן לא ענה. הקבצים מחכים לכם.');
     return { action: 'no_text', storeId: store.id };
+  }
+  if (turn.pitched) {
+    // A store we wrote to: a thumbs-up, a thanks or a few letters of nothing, after our answer, asks nothing, and an
+    // answer to it is one more message from us (pace.ts nothingToAnswer). Kept, and nobody is told.
+    if (!photos.length && nothingToAnswer(text) && (await db.one("SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'agent' LIMIT 1", [conv]))) {
+      await hold(app, conv, inbound);
+      await event(db, store.id, 'lead_quiet', { conversationId: conv });
+      return { action: 'quiet', storeId: store.id };
+    }
+    const hour = await db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM messages WHERE conversation_id = $1 AND role = 'agent' AND at > now() - interval '1 hour'", [conv]);
+    if ((hour?.n || 0) >= LEAD_REPLIES_PER_HOUR) {
+      await hold(app, conv, inbound);
+      await heldForOwner(app, store.id, conv, 'limit', `תורן ענה ${hour!.n} פעמים בשעה האחרונה לחנות שכתבנו לה, ומכאן ממשיך אדם.`, `תורן ענה כאן ${hour!.n} פעמים בשעה האחרונה, אז מכאן ההודעות מחכות לכם.`);
+      return { action: 'limit', storeId: store.id };
+    }
   }
   const today = await db.one<{ n: number }>("SELECT COUNT(*)::int AS n FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.account_id = $1 AND c.peer = $2 AND m.role = 'agent' AND m.at > now() - interval '1 day'", [account.id, inbound.from]);
   if ((today?.n || 0) >= DAILY_REPLIES) {
@@ -280,10 +322,27 @@ export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: I
   const context = [filesContext(files, photos, { company: store.platform === 'company' }), await lastAuto(app, conv), turn.context].filter(Boolean).join('\n') || undefined;
   const o = await runTurn(app, { storeId: store.id, conversationId: conv, text, extId: inbound.id, footer: false, channel: adapter.channel, context, photos, facts: turn.facts, lead: turn.lead });
   await setAttachments(app, inbound.id, files);
+  // The model saw a bot on the other side (the handoff's reason "bot", agent/tools.ts): nothing goes to it, its answer
+  // is kept as the note to the owner (whom the handoff told), and the conversation is marked as the pace marks it.
+  if (o.handoff?.reason === 'bot') {
+    await markBot(app, conv, 'תורן זיהה בוט בהודעות שלו');
+    if (o.agentMessageId) await db.query("UPDATE messages SET role = 'system', text = $2 WHERE id = $1", [o.agentMessageId, BOT_NOTE]);
+    // The bot's own line went nowhere: a person who writes next hears it first.
+    await db.query("UPDATE conversations SET introduced_at = NULL WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'agent')", [conv]);
+    await event(db, store.id, 'bot_held', { conversationId: conv, why: 'agent' });
+    return { action: 'bot', storeId: store.id };
+  }
+  // A store we wrote to asked us to stop in words the app did not read as that (ops/outreach.ts): kept as a stop, and
+  // its one line goes instead of the model's. Nothing waits for us in it then, as after the way out's own words.
+  let answer = o.reply;
+  if (o.handoff?.reason === 'stop' && turn.stop) {
+    answer = await turn.stop();
+    if (o.agentMessageId) await db.query("UPDATE messages SET text = $2, author = 'אוטומטי', auto = 'opt_out', handoff = NULL WHERE id = $1", [o.agentMessageId, answer]);
+  }
   // Each part's id is written down as it goes: a job run again after a failed send sends only what did not go out.
   const delivered = (ids: string[]) => (o.agentMessageId ? db.query('UPDATE messages SET delivery = $2::jsonb WHERE id = $1', [o.agentMessageId, J(ids)]) : Promise.resolve());
-  await reply(app, adapter, inbound, o.reply, store.id, conv, { who: 'agent', storeName, ...(own || {}) }, { onPart: delivered });
-  return { action: 'answered', storeId: store.id, reply: o.reply };
+  await reply(app, adapter, inbound, answer, store.id, conv, { who: 'agent', storeName, ...(own || {}) }, { onPart: delivered });
+  return { action: 'answered', storeId: store.id, reply: answer };
 }
 
 /** Is the store's hour past its limits? What the owner is told, or null. */

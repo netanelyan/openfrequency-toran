@@ -16,9 +16,9 @@ import { prefixed } from '../core/hebrew.ts';
 //   orders      payment and shipping (the order updates). Only from the page of message settings: "out" when the
 //               customer chooses to stop them there, "in" when they take it back (source 'link'). The owner, 2026-11-06:
 //               "the customer can turn them off".
-//   all         every automatic message. Only ever "out": the customer wrote "הסר" or "STOP" (or pressed the old
-//               templates' "הסר" button), on the channel they wrote on. Nothing says to write it any more; it still
-//               works.
+//   all         every automatic message. Only ever "out": the customer wrote "הסר" or "STOP", alone or with its small
+//               words ("הסר בבקשה", core/stopWords.ts), or pressed the old templates' "הסר" button, on the channel they
+//               wrote on. Nothing says to write it any more; it still works.
 //
 // Payment and shipping need no "yes": they are about an order the customer placed with that phone or email. They
 // stop with "הסר" like the rest, never with the link. The rows are read in time order: a later "yes" at a checkout
@@ -163,8 +163,8 @@ export async function undoOrdersFromLink(app: App, l: StopLink) {
   await event(app.db, l.store_id, 'auto_orders_undo', { channel: l.channel });
 }
 
-/** A whole message that asks to stop: "הסר", "הסירו אותי", "STOP", "unsubscribe". */
-export const OPT_OUT = /^\s*(?:הסר|הסירו|הסירו אותי|תסירו אותי|להסיר|הסרה|stop|unsubscribe)\s*[.!]*\s*$/i;
+// A message that asks to stop ("הסר", "הסר בבקשה", "תסירו אותי מהרשימה", "STOP") is read by core/stopWords.ts
+// asksRemoval, in channels/store.ts.
 
 // A plain reply in the conversation the customer just opened, no template: the maqaf before a Latin name, as everywhere
 // (core/hebrew.ts prefixed; the pre-launch audit, 2026-11-12, P2-18).

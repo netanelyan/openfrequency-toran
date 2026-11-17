@@ -485,7 +485,8 @@ export function summaryHe(summary: string): string {
 export const REASON_HE: Record<string, string> = {
   unknown: 'לא מצא תשובה', refund: 'החזר', discount: 'הנחה', complaint: 'תלונה', order: 'הזמנה', human_requested: 'ביקשו נציג',
   other: 'אחר', demo: 'דמו', join: 'הצטרפות', account: 'חשבון', billing: 'תשלום', cancel: 'ביטול', limit: 'עומס', price: 'מחיר',
-  stock: 'מלאי', delivery: 'משלוח', promise: 'הבטחה', claim: 'עובדה', link: 'קישור', superlative: 'הגזמה',
+  stock: 'מלאי', delivery: 'משלוח', promise: 'הבטחה', claim: 'עובדה', link: 'קישור', superlative: 'הגזמה', bot: 'בוט',
+  stop: 'הסרה',
 };
 
 export function askedAbout(rule: string, asked: string | undefined): boolean {
