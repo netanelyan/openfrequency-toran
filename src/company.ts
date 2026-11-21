@@ -34,7 +34,8 @@ import { oneNumber } from './channels/lines.ts';
 //             name and hands it off to join (COMPANY_JOIN_PROMPT, על הקו's way: channels/external.ts). Its text, one
 //             or two sentences in the company's words, is kept in the store's config beside status
 //   botName   optional: the bot's name in its opening line (agent/intro.ts), as an owner sets it on a store's page;
-//             given, each sync sets it (על הקו's is "המוקדן"); left out, the name on the store stays as it is
+//             given, each sync sets it; "" clears it, so the bot is just the company's ("היי, אני הבוט של על הקו."); left
+//             out, the name on the store stays as it is
 // Re-syncing replaces what came from the file and keeps the rest.
 
 export const COMPANY = 'company';
@@ -110,9 +111,9 @@ export function readExport(json: unknown): CompanyExport {
   // start may be left out (or null): the demo, as before. Given, it is whole: a kind of the two, and its text.
   const st = d.start as any;
   if (st != null && (typeof st !== 'object' || Array.isArray(st) || (st.kind !== 'demo' && st.kind !== 'join') || typeof st.text !== 'string' || !st.text.trim() || st.text.length > START_MAX)) fail('start');
-  // botName, given, is one a customer may be told, as intro.ts cleanBotName takes an owner's.
+  // botName, given, is one a customer may be told, as intro.ts cleanBotName takes an owner's, or "" for none.
   const bn = d.botName as unknown;
-  if (bn != null && (typeof bn !== 'string' || bn.trim().length > 30 || !/^[\p{L}\p{N} '’׳\-]+$/u.test(bn.trim()) || !/\p{L}/u.test(bn))) fail('botName');
+  if (bn != null && bn !== '' && (typeof bn !== 'string' || bn.trim().length > 30 || !/^[\p{L}\p{N} '’׳\-]+$/u.test(bn.trim()) || !/\p{L}/u.test(bn))) fail('botName');
   return d;
 }
 
@@ -171,7 +172,7 @@ export async function syncCompany(app: App, data: CompanyExport, { slug = 'suppo
       );
     }
 
-    if (d.botName) await t.query('UPDATE stores SET agent_name = $2 WHERE id = $1', [storeId, d.botName.trim()]);
+    if (d.botName != null) await t.query('UPDATE stores SET agent_name = $2 WHERE id = $1', [storeId, d.botName.trim() || null]);
 
     // The plans: one product row each, always available, its sentence as the description.
     for (const p of d.plans) {

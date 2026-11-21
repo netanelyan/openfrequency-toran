@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readExport, syncCompany, type CompanyExport } from '../src/company.ts';
+import { botLine, botName } from '../src/agent/intro.ts';
 import { COMPANY_JOIN_PROMPT, COMPANY_PROMPT, systemFor } from '../src/agent/prompt.ts';
 import { COMPANY_JOIN_TOOLS, COMPANY_TOOLS, runTool } from '../src/agent/tools.ts';
 import { scriptedClient, type Script } from '../src/agent/llm/scripted.ts';
@@ -121,9 +122,10 @@ test('a company export may say how to start, a demo or joining in the chat, kept
   }
 });
 
-test('a company export may name its bot: each sync sets it, one left out keeps the name the store has, and a name a customer cannot be told stops the export', async () => {
+test('a company export may name its bot: each sync sets it, one left out keeps the name the store has, "" clears it, and a name a customer cannot be told stops the export', async () => {
   assert.doesNotThrow(() => readExport({ ...alhakav(), botName: 'המוקדן' }));
-  for (const botName of ['', 'https://x.co', '!!!', 'מ'.repeat(31), 5, ['המוקדן']]) assert.throws(() => readExport({ ...alhakav(), botName: botName as any }), /not a company export: botName/, JSON.stringify(botName));
+  assert.doesNotThrow(() => readExport({ ...alhakav(), botName: '' }));
+  for (const botName of ['https://x.co', '!!!', 'מ'.repeat(31), 5, ['המוקדן']]) assert.throws(() => readExport({ ...alhakav(), botName: botName as any }), /not a company export: botName/, JSON.stringify(botName));
   const app = await testApp();
   try {
     const { storeId } = await syncCompany(app, { ...alhakav(), botName: 'המוקדן' }, { slug: 'alhakav' });
@@ -131,6 +133,13 @@ test('a company export may name its bot: each sync sets it, one left out keeps t
     assert.equal(await name(), 'המוקדן');
     await syncCompany(app, alhakav(), { slug: 'alhakav' });
     assert.equal(await name(), 'המוקדן', 'left out: the store keeps it');
+    await syncCompany(app, { ...alhakav(), botName: '' }, { slug: 'alhakav' });
+    assert.equal(await name(), null, '"" clears it');
+    // With no name, a company whose people join in the chat opens as its own bot, never as ours.
+    const s = await app.db.one<any>('SELECT platform, agent_name, config FROM stores WHERE id = $1', [storeId]);
+    assert.equal(botName(s), null);
+    assert.equal(botLine('first', botName(s), 'על הקו'), 'היי, אני הבוט של על הקו.');
+    assert.equal(botName({ platform: 'company', agent_name: null, config: { company: { start: null } } }), 'תורן', 'our own support is still תורן');
   } finally {
     await app.db.close();
   }
@@ -253,7 +262,7 @@ test('an answer: the company\'s prompt with the caller\'s line about the person,
     assert.equal(first.status, 200);
     const { conversationId } = first.json;
     assert.ok(Number.isInteger(conversationId) && conversationId > 0);
-    assert.deepEqual(first.json, { reply: 'היי, אני תורן, הבוט של על הקו.\n\nזה 149 ₪ לחודש לפני מע״מ, ומשלמים חודש מראש בהעברה בנקאית.', handoff: null, conversationId });
+    assert.deepEqual(first.json, { reply: 'היי, אני הבוט של על הקו.\n\nזה 149 ₪ לחודש לפני מע״מ, ומשלמים חודש מראש בהעברה בנקאית.', handoff: null, conversationId });
 
     // The company's own path: its prompt, its block, its tools, and the caller's line in the turn's SERVER CONTEXT.
     const req = seen[0];
@@ -344,7 +353,7 @@ test('what a person of the company answered there is kept as a person\'s answer:
     // A person answered 13 hours ago: Toran answers, reads their answer as ours, and says it is the bot again.
     const old = await ask(s, request({ phone: THIRD, messages: [message('wamid.B1', 'היי', ago(14 * 60 * MINUTE)), message('wamid.B2', 'כמה זה עולה?')], operator: [{ text: 'היי, אני נתנאל מעל הקו. שאלו כאן מה שרוצים.', at: ago(13 * 60 * MINUTE) }] }));
     assert.equal(old.status, 200);
-    assert.equal(old.json.reply, 'זה שוב תורן, הבוט של על הקו.\n\nזה 149 ₪ לחודש לפני מע״מ, ומשלמים חודש מראש בהעברה בנקאית.');
+    assert.equal(old.json.reply, 'זה שוב הבוט של על הקו.\n\nזה 149 ₪ לחודש לפני מע״מ, ומשלמים חודש מראש בהעברה בנקאית.');
     const history = seen[0].messages.map((m) => [m.role, textOf(m)]);
     assert.ok(history.some(([role, text]) => role === 'assistant' && text.includes('אני נתנאל מעל הקו')), 'their answer is the company\'s side of the chat');
     await nothingSent(t);
@@ -363,7 +372,7 @@ test('a join: the bot asks for the business\'s name, then the handoff carries it
   const { s, seen, storeId } = t;
   try {
     const first = await ask(s, request({ messages: [message('wamid.J1', 'רוצה להצטרף')] }));
-    assert.deepEqual([first.json.reply, first.json.handoff], ['היי, אני תורן, הבוט של על הקו.\n\nמה השם של העסק, כמו שמי שמתקשר אליכם יראה אותו?', null]);
+    assert.deepEqual([first.json.reply, first.json.handoff], ['היי, אני הבוט של על הקו.\n\nמה השם של העסק, כמו שמי שמתקשר אליכם יראה אותו?', null]);
     const joined = await ask(s, request({ messages: [message('wamid.J2', 'אבי אינסטלציה')] }));
     assert.deepEqual(joined.json, { reply: 'רשמתי. בהודעה הבאה יגיעו הסכום ופרטי ההעברה.', handoff: { reason: 'join', summary: 'רוצה להצטרף', business: 'אבי אינסטלציה' }, conversationId: first.json.conversationId });
     assert.match(lastToolResult(seen[seen.length - 1])!, /the amount and the transfer details come in the next message/);

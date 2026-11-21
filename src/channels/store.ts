@@ -203,7 +203,7 @@ async function noWords(app: App, adapter: ChannelAdapter, inbound: Inbound, stor
 export async function storeChannel(app: App, adapter: ChannelAdapter, inbound: Inbound, account: Account, turn: StoreTurn = {}): Promise<RouteResult> {
   const { db } = app;
   const { tag } = LEDGER[adapter.channel];
-  const store = await db.one<any>('SELECT id, platform, name, domain, brand, brand_override, agent_name, agent_live_at, agent_paused_at, agent_off FROM stores WHERE id = $1', [account.store_id]);
+  const store = await db.one<any>('SELECT id, platform, name, domain, brand, brand_override, agent_name, config, agent_live_at, agent_paused_at, agent_off FROM stores WHERE id = $1', [account.store_id]);
   if (!store) return { action: 'unknown_account' };
   const conv = await threadFor(app, adapter, account, inbound);
   await remember(app, conv, inbound);

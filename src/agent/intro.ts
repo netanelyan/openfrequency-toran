@@ -22,8 +22,13 @@ import { le } from '../outreach.ts';
 export const OUR_BOT = 'תורן';
 export const NAME_MAX = 30;
 
-/** The bot's name for a store: the owner's, else ours for our own support, else none. */
-export const botName = (s: { platform?: string | null; agent_name?: string | null }) => String(s.agent_name || '').trim() || (s.platform === 'company' ? OUR_BOT : null);
+/**
+ * The bot's name for a store: the owner's, else ours for our own support, else none. A company store whose people join
+ * in the chat (על הקו's, company.ts start.kind 'join') is another company's: without a name of its own it is just its
+ * bot ("היי, אני הבוט של על הקו."), never ours.
+ */
+export const botName = (s: { platform?: string | null; agent_name?: string | null; config?: any }) =>
+  String(s.agent_name || '').trim() || (s.platform === 'company' && s.config?.company?.start?.kind !== 'join' ? OUR_BOT : null);
 
 /**
  * A name as the owner typed it, or null when it cannot be one: letters (any language), digits, spaces, a hyphen, an
