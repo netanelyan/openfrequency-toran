@@ -35,7 +35,7 @@ try {
       const n = async (sql: string) => (await app.db.one<{ n: number }>(sql, [s.id]))!.n;
       const channels = await app.db.query<{ channel: string; external_id: string; status: string }>('SELECT channel, external_id, status FROM channel_accounts WHERE store_id = $1 ORDER BY id', [s.id]);
       const c = s.config?.company || {};
-      say(`${s.id} ${s.domain} (slug ${s.slug || 'none'}), synced ${new Date(s.ingested_at).toISOString()} from an export of ${c.generatedAt || '?'} (${c.from && c.from !== 'file' ? `the daily read of ${c.from}` : 'a file'}, hash ${String(c.hash || '?').slice(0, 12)})`);
+      say(`${s.id} ${s.domain} (slug ${s.slug || 'none'}), synced ${new Date(s.ingested_at).toISOString()} from an export of ${c.generatedAt || '?'} (${c.from && c.from !== 'file' ? `the daily read of ${c.from}` : 'a file'}, hash ${String(c.hash || '?').slice(0, 12)}); people start ${c.start?.kind === 'join' ? 'by joining in the chat' : 'with a demo on the site'}`);
       say(`  ${await n('SELECT COUNT(*)::int AS n FROM products WHERE store_id = $1 AND gone_at IS NULL')} plans, ${await n('SELECT COUNT(*)::int AS n FROM faqs WHERE store_id = $1')} questions (${await n('SELECT COUNT(*)::int AS n FROM faqs WHERE store_id = $1 AND answer IS NOT NULL')} with the owner's answer), ${await n('SELECT COUNT(*)::int AS n FROM policies WHERE store_id = $1')} pages`);
       say(`  channels: ${channels.map((c) => `${c.channel} ${c.external_id} (${c.status})`).join(', ') || 'none connected'}`);
     }

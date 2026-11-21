@@ -402,6 +402,9 @@ What keeps a customer's message from being lost or delayed without anyone knowin
   Toran runs no command for it (Teder runs its own). The example both sides' tests read is
   `test/fixtures/ops-alert.json`, the same file in Teder: it is not one of accounts' contracts, since only Teder and
   Toran use it.
+- **על הקו's alerts:** the same route with `"product": "alhakav"` (left out, it is `"teder"`): its keys are kept as
+  `alhakav:<key>`, its title goes as it wrote it, and no command runs. They share the phone's ten an hour with Toran's
+  and Teder's (docs/company.md, "A company store answered elsewhere").
 - **What a customer's store may cost** (src/agent/spend.ts; the owner, 2026-11-11: "make sure there is a cap where if
   ai costs of an account reach 30% of the payment of the customer, we get alerted. them on 50% it stops."). Each
   customer's workspace, each Israel month: the usage of all its stores in dollars (a claude-cli call at its API

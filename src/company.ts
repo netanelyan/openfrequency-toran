@@ -29,6 +29,12 @@ import { oneNumber } from './channels/lines.ts';
 //   pages     policies and their chunks: what Toran does today, who we are, the two price sections, the legal pages
 //   status    what Toran does today and what not yet, kept in the store's config for the prompt (agent/prompt.ts),
 //             because the site's own pages still describe the product at launch
+//   start     optional: how a person starts. Absent or kind 'demo', the demo is asked for on the site (OpenFrequency's
+//             way, COMPANY_PROMPT); kind 'join', people join in the chat itself, and the agent asks for the business's
+//             name and hands it off to join (COMPANY_JOIN_PROMPT, על הקו's way: channels/external.ts). Its text, one
+//             or two sentences in the company's words, is kept in the store's config beside status
+//   botName   optional: the bot's name in its opening line (agent/intro.ts), as an owner sets it on a store's page;
+//             given, each sync sets it (על הקו's is "המוקדן"); left out, the name on the store stays as it is
 // Re-syncing replaces what came from the file and keeps the rest.
 
 export const COMPANY = 'company';
@@ -62,6 +68,9 @@ export async function supportAccount(app: App, adapter: { kind: string }, number
   );
 }
 
+/** How a person starts with the company: a demo asked for on its site, or joining right in the chat. */
+export type CompanyStart = { kind: 'demo' | 'join'; text: string };
+
 export type CompanyExport = {
   domain: string;
   url: string;
@@ -72,8 +81,13 @@ export type CompanyExport = {
   plans: { key: string; product: string; title: string; monthly: number; text: string; url: string }[];
   faq: { q: string; a: string; today: string | null; url: string }[];
   pages: { kind: string; title: string; url: string; text: string }[];
+  start?: CompanyStart | null;
+  botName?: string | null;
   generatedAt?: string;
 };
+
+/** The longest `start.text`: one or two sentences, never a page. */
+export const START_MAX = 600;
 
 /**
  * The file, checked before anything is written: a half-read export never replaces a working one. Plans and pages each
@@ -93,6 +107,12 @@ export function readExport(json: unknown): CompanyExport {
   if (!Array.isArray(d.plans) || !d.plans.length || !d.plans.every((p) => p.key && p.title && Number.isFinite(p.monthly) && p.text)) fail('plans');
   if (!Array.isArray(d.faq) || !d.faq.every((f) => f.q && f.a)) fail('faq');
   if (!Array.isArray(d.pages) || !d.pages.length || !d.pages.every((p) => p.kind && p.title && p.url && p.text)) fail('pages');
+  // start may be left out (or null): the demo, as before. Given, it is whole: a kind of the two, and its text.
+  const st = d.start as any;
+  if (st != null && (typeof st !== 'object' || Array.isArray(st) || (st.kind !== 'demo' && st.kind !== 'join') || typeof st.text !== 'string' || !st.text.trim() || st.text.length > START_MAX)) fail('start');
+  // botName, given, is one a customer may be told, as intro.ts cleanBotName takes an owner's.
+  const bn = d.botName as unknown;
+  if (bn != null && (typeof bn !== 'string' || bn.trim().length > 30 || !/^[\p{L}\p{N} '’׳\-]+$/u.test(bn.trim()) || !/\p{L}/u.test(bn))) fail('botName');
   return d;
 }
 
@@ -136,7 +156,7 @@ export async function syncCompany(app: App, data: CompanyExport, { slug = 'suppo
   let faqsRemoved = 0;
   await db.tx(async (t) => {
     const brand = { name: d.name, tone: d.tone };
-    const config = { currency: 'ILS', company: { status: d.status, generatedAt: d.generatedAt || null, hash, from } };
+    const config = { currency: 'ILS', company: { status: d.status, start: d.start ? { kind: d.start.kind, text: d.start.text.trim() } : null, generatedAt: d.generatedAt || null, hash, from } };
     if (!storeId) {
       const row = await t.one<{ id: number }>(
         `INSERT INTO stores (domain, url, name, platform, status, qualified, source, source_detail, contact_email, contact_whatsapp, slug, brand, config, ingested_at)
@@ -150,6 +170,8 @@ export async function syncCompany(app: App, data: CompanyExport, { slug = 'suppo
         [storeId, d.url, d.name, d.contact?.email || null, d.contact?.whatsapp || null, slugFree ? slug : null, J(brand), J(config)],
       );
     }
+
+    if (d.botName) await t.query('UPDATE stores SET agent_name = $2 WHERE id = $1', [storeId, d.botName.trim()]);
 
     // The plans: one product row each, always available, its sentence as the description.
     for (const p of d.plans) {

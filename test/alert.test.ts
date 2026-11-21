@@ -353,6 +353,30 @@ test('the route refuses without the token, from another machine, through Caddy, 
   }
 });
 
+test('על הקו hands its alerts the same way with "product": "alhakav": its own keys, its title as written, no command; left out is Teder\'s, and any other product is refused', async () => {
+  const { s, meta, logs } = await served();
+  try {
+    const join = { key: 'join:972500000000', title: 'על הקו: אבי אינסטלציה רוצה להצטרף', body: 'מחכה לסכום ולפרטי ההעברה.', everyMinutes: 60, product: 'alhakav' };
+    assert.deepEqual(await post(s, join), { status: 200, json: { ok: true, due: true } });
+    assert.equal(meta.calls.length, 1);
+    assert.deepEqual(meta.calls[0].body, templateTo(NUMBER, join.title, join.body), 'its title as it wrote it, never "תורן:" before it');
+    assert.ok(!logs.some((l) => /failed/.test(l)), 'no command run for it: the service runs its own');
+    assert.deepEqual(await post(s, join), { status: 200, json: { ok: true, due: false } }, 'the same key inside its window');
+
+    // The same key from Teder is another alert: each product's keys are its own. Left out, the product is Teder's.
+    const { product: _p, ...teder } = join;
+    assert.deepEqual(await post(s, { ...teder, title: 'Teder: x' }), { status: 200, json: { ok: true, due: true } });
+    assert.deepEqual(await post(s, { ...teder, title: 'Teder: x', product: 'teder' }), { status: 200, json: { ok: true, due: false } }, 'product "teder" is the same as none');
+    const keys = (await s.app.db.query<{ key: string }>("SELECT data->>'key' AS key FROM events WHERE kind = 'operator_alert' ORDER BY id")).map((r) => r.key);
+    assert.deepEqual(keys, ['alhakav:join:972500000000', 'teder:join:972500000000']);
+
+    for (const product of ['toran', 'alhakav ', 'other', 5, null, ['alhakav']]) assert.deepEqual(await post(s, { ...join, product }), { status: 400, json: { error: 'bad_alert' } }, JSON.stringify(product));
+    assert.equal(meta.calls.length, 2, 'one message for each product\'s first alert');
+  } finally {
+    await s.close();
+  }
+});
+
 // ---- the example both sides read
 
 /**

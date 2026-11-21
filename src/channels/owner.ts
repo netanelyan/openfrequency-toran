@@ -21,6 +21,11 @@ import { isEnglish, personLine } from '../agent/intro.ts';
 //                  (agent/intro.ts personLine), and the bot will say who it is again when it is back
 //   resumeAgent()  "להחזיר לתורן": the agent answers again from the next message
 //   hold()         a customer message kept without an answer (the agent is paused, or the mail was automated)
+//
+// A conversation a company answers from its own service (an account of kind 'external', channels/external.ts, על
+// הקו's) has no way out from here: that service sends every answer from its own number, so the inbox shows where it is
+// answered instead of a reply box (replyState's reason 'elsewhere'), and ownerReply sends nothing. What a person of the
+// company writes there comes back to the conversation with the next message, as a person's answer.
 
 export const PAUSE_HOURS = 12;
 
@@ -34,7 +39,7 @@ export async function hold(app: App, conversationId: number, inbound: Inbound, {
   await app.db.query('UPDATE conversations SET last_at = now() WHERE id = $1', [conversationId]);
 }
 
-type Target = { adapter: ChannelAdapter; to: Inbound; storeId: number; storeName: string; pausedUntil: number | null; reconnect: boolean; from: { from: string; replyTo: string } | null };
+type Target = { adapter: ChannelAdapter; to: Inbound; storeId: number; storeName: string; pausedUntil: number | null; reconnect: boolean; elsewhere: boolean; from: { from: string; replyTo: string } | null };
 
 /** Who a reply in this conversation goes to, rebuilt from what the conversation kept; null when the customer never wrote. */
 export async function replyTarget(app: App, conversationId: number): Promise<Target | null> {
@@ -61,11 +66,11 @@ export async function replyTarget(app: App, conversationId: number): Promise<Tar
   const storeName = displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain;
   // An email answer goes out from the store's own address once its domain is verified (mailDomain.ts).
   const from = c.channel === 'email' ? await ownAddress(app, c.store_id) : null;
-  return { adapter, to, storeId: c.store_id, storeName, pausedUntil: c.agent_paused_until ? new Date(c.agent_paused_until).getTime() : null, reconnect: c.account_status === 'reconnect', from };
+  return { adapter, to, storeId: c.store_id, storeName, pausedUntil: c.agent_paused_until ? new Date(c.agent_paused_until).getTime() : null, reconnect: c.account_status === 'reconnect', elsewhere: c.account_kind === 'external', from };
 }
 
 /** What the inbox shows above the reply box: whether a reply can go out, and until when. */
-export async function replyState(app: App, conversationId: number): Promise<{ canReply: boolean; reason: Blocked | 'no_customer' | 'channel_off' | 'reconnect' | null; windowEnds: number | null; windowHours?: number; pausedUntil: number | null; files?: boolean; from?: string }> {
+export async function replyState(app: App, conversationId: number): Promise<{ canReply: boolean; reason: Blocked | 'no_customer' | 'channel_off' | 'reconnect' | 'elsewhere' | null; windowEnds: number | null; windowHours?: number; pausedUntil: number | null; files?: boolean; from?: string }> {
   let t: Target | null;
   try {
     t = await replyTarget(app, conversationId);
@@ -75,6 +80,9 @@ export async function replyState(app: App, conversationId: number): Promise<{ ca
   if (!t) return { canReply: false, reason: 'no_customer', windowEnds: null, pausedUntil: null };
   // The store's WhatsApp token ended (waStore.ts): nothing goes out from here until it is connected again.
   if (t.reconnect) return { canReply: false, reason: 'reconnect', windowEnds: null, pausedUntil: null };
+  // Answered from the company's own service (channels/external.ts): nothing goes out from here. A pause after a person
+  // of the company answered there is still shown, so "להחזיר לתורן" stays.
+  if (t.elsewhere) return { canReply: false, reason: 'elsewhere', windowEnds: null, pausedUntil: t.pausedUntil && t.pausedUntil > now() ? t.pausedUntil : null };
   const extra = { ...(t.adapter.limits.attachments.outbound ? { files: true } : {}), ...(t.from ? { from: t.from.from } : {}) };
   const blocked = await blockedFor(app, t.adapter, t.to, 'owner');
   const w = t.adapter.limits.window;
@@ -96,10 +104,11 @@ async function takingOver(app: App, conversationId: number, t: Target): Promise<
   return personLine(t.storeName, isEnglish(said?.text || ''));
 }
 
-export async function ownerReply(app: App, conversationId: number, text: string, author: string, files: OutFile[] = []): Promise<Delivery | { ok: false; reason: 'no_customer' | 'no_files' | 'reconnect' }> {
+export async function ownerReply(app: App, conversationId: number, text: string, author: string, files: OutFile[] = []): Promise<Delivery | { ok: false; reason: 'no_customer' | 'no_files' | 'reconnect' | 'elsewhere' }> {
   const t = await replyTarget(app, conversationId);
   if (!t) return { ok: false, reason: 'no_customer' };
   if (t.reconnect) return { ok: false, reason: 'reconnect' };
+  if (t.elsewhere) return { ok: false, reason: 'elsewhere' };
   if (files.length && !t.adapter.limits.attachments.outbound) return { ok: false, reason: 'no_files' };
   const person = await takingOver(app, conversationId, t);
   const out = person ? `${person}\n\n${text}` : text;

@@ -179,9 +179,149 @@ owner's pause ends by itself after the 12 hours.
 6. **Undo:** "לנתק את הוואטסאפ מתורן" on the same page. Toran stops answering on the number at once; the phone keeps
    working as before.
 
+## A company store answered elsewhere: על הקו
+
+על הקו (alhakav) is a second company store: a service for Israeli tradespeople (plumbers, electricians, AC
+technicians, locksmiths). When they miss a call, the caller gets a WhatsApp message from the tradesperson's "assistant
+number", which asks what happened and where, and the tradesperson gets a summary. The people who write to על הקו's own
+WhatsApp number found its website, or are tradespeople it wrote to first, or are paying customers, and Toran answers
+them as על הקו.
+
+The conversations do not come through Toran's channels. על הקו's own service, on the same machine, owns its number on
+Meta's Cloud API and its webhook. For each message it asks Toran for the answer over an internal route
+(`src/channels/external.ts`), and sends the reply itself, from its own number. **Toran sends nothing to WhatsApp, or to
+any other channel, for these conversations, and raises no alert of its own for their handoffs**: the answer carries
+the handoff, and על הקו tells its own people (on the operator's phone through `POST /internal/ops/alert` with
+`"product": "alhakav"`, below). The one alert Toran still raises itself is the one every store has: more than 200
+answers at the store in an hour (`TORAN_STORE_TURNS_PER_HOUR`), a flood.
+
+### What is different from our support
+
+- **People join in the chat.** The export says so: `"start": { "kind": "join", "text": "<one or two sentences in the
+  company's words on how to start>" }`. `start` may be left out (or null) and may be `"demo"`: both are OpenFrequency's
+  way, unchanged (`COMPANY_PROMPT`). Anything else, a text that is empty or longer than 600 characters, or a start
+  that is not an object, stops the export (`readExport`, "not a company export: start"). A sync keeps it in the store's
+  `config.company.start`, beside `status`, and a sync without it takes it away.
+- **Its own prompt and tools** (`src/agent/prompt.ts` `COMPANY_JOIN_PROMPT`, `src/agent/tools.ts`
+  `COMPANY_JOIN_TOOLS`), for a company store whose start is `"join"`: the same hard rules, grounding and voice as ours,
+  and nothing of OpenFrequency's own (no demo asked for on the website, no "# A store we wrote to" with its LEAD block,
+  no Toran or Teder in the examples). The COMPANY block adds "How to start" with `start.text`, which backs a claim for
+  the guard as `status` does.
+- **Joining.** When someone wants to join, start, sign up or pay, the agent asks for the business's name as the people
+  who call them should see it ("אבי אינסטלציה"), unless it has it, then calls `handoff` with reason `join` and the name
+  in `business`, and says in one short sentence that the amount and the transfer details come in the next message.
+  `handoff` refuses a join without a name ("ask the person for it"). It never asks for card details and never says
+  when the service will be set up. The company handoff takes `business` on our support too, and keeps it.
+- **Who the person is** comes from על הקו, in the request's `context` ("A paying customer: business אבי אינסטלציה,
+  paid until 24.12.2026."): it rides in the turn's SERVER CONTEXT, and is never stored or shown.
+- **The bot's line** is "היי, אני תורן, הבוט של על הקו." (src/agent/intro.ts). A name given on the store's "מה תורן
+  יודע" page replaces "תורן".
+
+### The route
+
+`POST /internal/company/answer`, from this machine only, with `Authorization: Bearer <OF_INTERNAL_TOKEN>` and never
+through Caddy, as `/internal/ops/alert`: `503 not_configured` (no token set here), `403 forbidden` (another machine,
+or an `X-Forwarded-For`), `401 bad_token`, then `405 method_not_allowed` for a GET, `400 bad_request` for a body that is
+not a request, and `404 no_store` when the domain is not a company store here.
+
+```json
+{
+  "domain": "alhakav.example.co.il",
+  "phone": "972500000000",
+  "name": "אבי",
+  "messages": [{ "id": "wamid.X", "text": "כמה זה עולה?", "at": "2026-11-21T10:00:00.000Z" }],
+  "operator": [{ "text": "היי אבי, עוד רגע עונים לך", "at": "2026-11-21T09:58:00.000Z" }],
+  "context": "A tradesperson we wrote to first; they pressed 'כן, שלחו' and already got our explanation."
+}
+```
+
+| Field | |
+| --- | --- |
+| `domain` | the company store's domain, as its export has it |
+| `phone` | the person, international digits only, 8 to 15 of them |
+| `name` | their WhatsApp profile name, or null (kept on a new conversation, for the inbox) |
+| `messages` | their new messages since the last call, oldest first: 1 to 20, each with its id (no spaces, up to 200 characters, once in a call), its words (up to 4096 characters) and its time |
+| `operator` | what a person of על הקו answered them by hand since the last call: 0 to 20, each with its words and its time. May be left out |
+| `context` | על הקו's own line about who this is, up to 2000 characters, or null |
+
+The answer, 200:
+
+```json
+{ "reply": "היי, אני תורן, הבוט של על הקו.\n\n...", "handoff": null, "conversationId": 812 }
+{ "reply": "רשמתי. בהודעה הבאה יגיעו הסכום ופרטי ההעברה.", "handoff": { "reason": "join", "summary": "רוצה להצטרף", "business": "אבי אינסטלציה" }, "conversationId": 812 }
+{ "reply": null, "handoff": null, "conversationId": 812, "duplicate": true }
+```
+
+`reply` is the exact text to send, the bot's line and the guard included, or null when Toran does not answer.
+`handoff` is the one Toran kept in the conversation during the call, its reason one of the company handoff's
+(`unknown`, `demo`, `join`, `account`, `billing`, `cancel`, `discount`, `complaint`, `human_requested`, `stop`, `bot`,
+`other`), with `business` when a person gave it to join, else null. What Toran does, by what came in:
+
+| What came in | `reply` | `handoff` |
+| --- | --- | --- |
+| a question Toran answers | its answer | the model's, when it handed off (a join, an account question, no answer in the tools) |
+| a stop word alone ("הסר", "STOP", "תסירו אותי"; core/stopWords.ts) | the store's one line: "בסדר, לא נשלח לכם יותר הודעות אוטומטיות מעל הקו. אם תכתבו לנו כאן, נענה כרגיל." | `stop` |
+| "די" or "לא מעוניינים", which the model hears as a stop | the model's one sentence that we will not write again | `stop` |
+| another business's bot (pace.ts, or the model) | null | `bot`, the first time only |
+| a person of על הקו answered in the last 12 hours (theirs in `operator`, by its time) | null | null |
+| a person's answer is the newest thing in the call | null | null |
+| a thanks or a thumbs-up after our answer | null | null |
+| past 6 answers in the conversation in an hour, 20 to this person in a day, or 200 at the store in an hour | null | `other` |
+| past a spend cap, or no answer from the model in time | "כרגע אני לא מצליח לענות, אז העברתי את ההודעה לנציג שלנו. הוא יחזור אליך כאן." | `other` |
+| a message id already answered | null, `duplicate: true` | null |
+
+Each message is kept under its id (as `ext:<store>:<id>`), so the same call made again answers nothing twice; two at
+once wait for each other, and the second is a duplicate. When a call brings several messages, the last one is
+answered and the ones before it are kept with it, so the model reads them all. What a person answered in `operator` is
+kept once by its words and time, in the order it was written among the person's messages, as a person's answer from
+the inbox is: Toran stays quiet in the conversation for 12 hours from it, and the bot's next answer opens "זה שוב תורן,
+הבוט של על הקו." A conversation is the same until a week of silence, as on every WhatsApp.
+
+The model's turn has up to 60 seconds (`TURN_DEADLINE_MS`), so על הקו waits at least 75 for the answer.
+
+### In the inbox
+
+The conversation is the company store's, on WhatsApp, with the person by phone, on one channel account of kind
+`external` (`external:<domain>`, made by the first call). It is in the store's inbox like any other, and waits there
+after a handoff until a person of על הקו answers (it comes back in `operator`) or it is marked handled. In place of the
+reply box it says "השיחה הזו בוואטסאפ של על הקו, ומשם יוצאות גם התשובות של תורן. עונים לה מהמערכת של על הקו, ומה
+שכותבים שם מופיע כאן." (`replyState` reason `elsewhere`; a reply from the inbox or from the owner's assistant is refused
+the same way, and nothing is sent). A person's answer from על הקו shows as "הצוות של על הקו", "נשלח מהמערכת של על
+הקו". "להחזיר לתורן" still ends the 12 hours. No email, push or operator alert is made for it (owners/waiting.ts).
+
+### Its alerts on the operator's phone
+
+על הקו hands its own operator alerts to Toran as Teder does, `POST /internal/ops/alert` with `"product": "alhakav"`
+(docs/operator.md section 6): someone new wrote, someone wants to join, a handoff, a transfer's screenshot came. Its
+keys are kept as `alhakav:<key>`, its title goes to the phone as it wrote it, and no command runs. Left out, product is
+`"teder"`, so Teder sends nothing new. All three sources share the phone's limits: one key once an hour, ten an hour.
+
+### Setting it up
+
+1. **Make the file**, on the development machine, by hand or from על הקו's own repository, in the export's shape
+   (`domain`, `url`, `name`, `status`, `tone`, `contact`, `plans`, `faq`, `pages`, and `"start": { "kind": "join",
+   "text": ... }`), at `private/support/alhakav.json` (private/ is never committed). Try it on a local database first:
+   ```
+   npm run company -- sync private/support/alhakav.json --slug alhakav
+   npm run chat -- <its domain>
+   ```
+2. **Copy it to the server and sync**, as for ours (step 2 of "Setting it up" above), with its own slug: without
+   `--slug`, it asks for `support`, which is ours, and gets none.
+   ```
+   scp openfrequency-toran/private/support/alhakav.json tiyul-vps:/opt/toran/private/support/
+   ssh tiyul-vps 'cd /opt/toran && sudo -u toran env TORAN_HOME=/opt/toran/private TORAN_ENV=prod NODE_ENV=production /opt/node24/bin/node scripts/company.ts sync private/support/alhakav.json --slug alhakav'
+   ```
+   It prints the store's id. Nothing else to set on Toran, and no restart: `TORAN_SUPPORT_STORE` stays ours, and the
+   `external` account is made by the first call.
+3. **On על הקו's side:** Toran is `http://127.0.0.1:4710/internal/company/answer` (docs/deploy.md), with the same
+   `OF_INTERNAL_TOKEN` as accounts and Teder, never through Caddy, waiting at least 75 seconds.
+4. **After a change** (a price, a question, how to start): steps 1 and 2 again. Toran does not re-read it by itself:
+   the daily read (`TORAN_SUPPORT_EXPORT_URL`) is our site's, and takes only `TORAN_SUPPORT_STORE`'s domain.
+
 ## Checking it
 
 ```
 npm run eval -- openfrequency.co.il       # 30 questions about the service, graded in code, on the subscription
 npm run chat -- openfrequency.co.il       # talk to it in the terminal
+npm run chat -- <על הקו's domain>         # על הקו's, on its own prompt
 ```

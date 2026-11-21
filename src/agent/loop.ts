@@ -6,8 +6,8 @@ import { agentEffort, agentModel, canSee } from './llm/index.ts';
 import { type Block, type ImageBlock, type Msg, type TextBlock, type ToolUseBlock, type TurnRes, isText, isToolUse, LlmError } from './llm/types.ts';
 import { asPhoto, imageBlock } from './images.ts';
 import { fileOf } from '../channels/files.ts';
-import { DEMO_NOTE, stripForgedContext, systemFor, type StoreForPrompt } from './prompt.ts';
-import { COMPANY_TOOLS, runTool, TOOLS, type ToolContext } from './tools.ts';
+import { companyJoins, DEMO_NOTE, startText, stripForgedContext, systemFor, type StoreForPrompt } from './prompt.ts';
+import { COMPANY_JOIN_TOOLS, COMPANY_TOOLS, runTool, TOOLS, type Handoff, type ToolContext } from './tools.ts';
 import { ASKS_REACH, buildAllow, cantAnswerLine, cutSummary, guardReply, passedOnSummary, reachLine, summaryHe, type Redaction } from './guard.ts';
 import { claimLlmOn, claimPassages, verifyClaim } from './claims.ts';
 import { openConversation } from '../channels/conversations.ts';
@@ -84,7 +84,7 @@ export class DuplicateTurn extends Error {
 // back the reply's links and claims for the guard as a tool's result does. lead: that store, for the bot's first line.
 export type TurnInput = { storeId: number; conversationId: number; text: string; extId?: string | null; footer?: boolean; footerText?: string; channel?: string; context?: string; demo?: boolean; photos?: number[]; facts?: string[]; lead?: LeadOf | null };
 export type ToolRecord = { name: string; input: unknown; ok: boolean; result: string };
-export type TurnOutput = { reply: string; rawReply: string; tools: ToolRecord[]; redactions: Redaction[]; handoff: { reason: string; summary: string } | null; miss: boolean; rounds: number; usd: number; apiUsd: number; tokens: { in: number; out: number; cacheRead: number; cacheWrite: number }; agentMessageId: number | null };
+export type TurnOutput = { reply: string; rawReply: string; tools: ToolRecord[]; redactions: Redaction[]; handoff: Handoff | null; miss: boolean; rounds: number; usd: number; apiUsd: number; tokens: { in: number; out: number; cacheRead: number; cacheWrite: number }; agentMessageId: number | null };
 
 const locks = new Map<number, Promise<unknown>>();
 function serialized<T>(key: number, fn: () => Promise<T>): Promise<T> {
@@ -188,6 +188,8 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   // A company store (our own support, src/company.ts): its own prompt (systemOf), tools and honest lines, and never a
   // demo, wherever the message came from.
   const company = store.platform === 'company';
+  // A company whose people join in the chat (its export's start, kind 'join'): its own prompt (systemOf) and tools.
+  const joins = companyJoins(store);
   const demo = !company && isDemoTurn(input);
   // The bot says who it is in code (intro.ts), so the model is told not to. On the site chat the header already says it
   // ("הבוט של החנות", web/widget.ts), so its first line is left out there (the audit of 2026-11-12, P2-8: "כאן הבוט של"
@@ -212,10 +214,10 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
   const waPhone = !demo && input.channel === 'whatsapp' ? (await db.one<{ peer: string | null }>('SELECT peer FROM conversations WHERE id = $1', [input.conversationId]))?.peer || null : null;
   // On the store's email, the address the customer writes from proves an order as the WhatsApp number does (orders.ts fromOrder).
   const fromEmail = !demo && input.channel === 'email' ? (await db.one<{ peer: string | null }>('SELECT peer FROM conversations WHERE id = $1', [input.conversationId]))?.peer || null : null;
-  const ctx: ToolContext = { db, storeId: store.id, origin: new URL(store.url).origin, currency: store.config?.currency || 'ILS', env: app.env, demo, company, api: app.api, conversationId: input.conversationId, said: [...past.customerTexts, input.text], waPhone, fromEmail, images: canSee(app.llm.backend) ? app.images : undefined };
-  const toolDefs = company ? COMPANY_TOOLS : TOOLS;
+  const ctx: ToolContext = { db, storeId: store.id, origin: new URL(store.url).origin, currency: store.config?.currency || 'ILS', env: app.env, demo, company, joins, api: app.api, conversationId: input.conversationId, said: [...past.customerTexts, input.text], waPhone, fromEmail, images: canSee(app.llm.backend) ? app.images : undefined };
+  const toolDefs = company ? (joins ? COMPANY_JOIN_TOOLS : COMPANY_TOOLS) : TOOLS;
   const tools: ToolRecord[] = [];
-  let handoff: { reason: string; summary: string } | null = null;
+  let handoff: Handoff | null = null;
   let raw = '';
   let rounds = 0;
   let usd = 0;
@@ -304,7 +306,8 @@ async function turn(app: App, input: TurnInput): Promise<TurnOutput> {
 
   // A company's "works today" list sits in its prompt, not in a tool result: it backs a claim as a tool would, and so
   // do the app's records given with the turn (a store we wrote to: our message to it and the links to what we built).
-  const factTexts = [...(company ? [String(store.config?.company?.status || '')] : []), ...(input.facts || [])].filter(Boolean);
+  // A company that joins in the chat says how to start in its prompt too (prompt.ts companyBlock), and that backs one.
+  const factTexts = [...(company ? [String(store.config?.company?.status || '')] : []), ...(joins ? [startText(store)] : []), ...(input.facts || [])].filter(Boolean);
   // A link may point to what the tools gave or to the store itself: its site and its WhatsApp (guard.ts, PRA-AI-002).
   const ownLinks = [store.url, store.domain, store.contact_whatsapp ? `https://wa.me/${String(store.contact_whatsapp).replace(/\D/g, '')}` : ''].filter(Boolean);
   const allow = buildAllow({ toolTexts: [...past.toolTexts, ...tools.map((t) => t.result)], customerTexts: [...past.customerTexts, input.text], factTexts, ownLinks });

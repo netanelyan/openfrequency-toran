@@ -8,14 +8,15 @@ import { event, usage } from '../db/log.ts';
 import { metaLinesAdapter } from '../channels/lines.ts';
 
 // A word to the operator, for what nobody would otherwise see: a customer's message that failed every attempt, a
-// message waiting in the queue too long, a store near or past its spend cap, a burst at one store, and Teder's alerts,
-// which Teder hands over (alertRoute.ts, POST /internal/ops/alert). Each goes to:
+// message waiting in the queue too long, a store near or past its spend cap, a burst at one store, and the alerts of
+// Teder and of על הקו, which each hands over (alertRoute.ts, POST /internal/ops/alert). Each goes to:
 //
 //   the log            always, `[alert] <title>: <body>`
 //   the alert command  TORAN_ALERT_CMD, else /usr/local/bin/of-alert when that file exists, as `<cmd> "<title>" "<body>"`
 //                      (off: none). of-alert is the server set-up's (the ops repository): it was not on the server on
 //                      2026-11-03 (SERVER-FACTS.md, and neither variable was set), so until `ls -l /usr/local/bin/of-alert`
-//                      shows it, this is nothing. Teder's alerts are not run through it here: Teder runs its own
+//                      shows it, this is nothing. A handed alert (Teder's, על הקו's) is not run through it here:
+//                      each service runs its own, if any
 //   WhatsApp           TORAN_ALERT_WA, the owner's own number in any spelling (the owner, 2026-11-03: "alerts can be sent
 //                      to my own whatsapp"): one message from our number on Meta's Cloud API (channels/lines.ts, the
 //                      token and number our demo line uses), always the approved template operator_alert below. Outside
@@ -27,14 +28,18 @@ import { metaLinesAdapter } from '../channels/lines.ts';
 // setting to change and no restart, and a list can be wrong both ways, saying approved when Meta has not (refused the
 // same way) or not updated when it has (every alert kept off the phone without a word).
 //
-// How often. The same key is said at most once in `everyMinutes` (an event of kind operator_alert keeps when; Teder's
-// keys are teder:<its key>, in Teder's own window), so a stuck queue is one alert a window, not one a minute. The phone
-// has three more limits over both products, from the events of kind operator_alert_wa (each try, sent or refused):
+// How often. The same key is said at most once in `everyMinutes` (an event of kind operator_alert keeps when; a handed
+// alert's key is <product>:<its key>, teder: or alhakav:, in its own window), so a stuck queue is one alert a window,
+// not one a minute. The phone has three more limits over every source, Toran's own and each handed one together, from
+// the events of kind operator_alert_wa (each try, sent or refused):
 //   - one key reaches it at most once an hour, however short its window (Teder alerts on every start that finds its
 //     sign-up switch wrong, ten minutes apart while it restarts over and over);
 //   - after Meta refuses one (before approval, every one is refused), none is tried for an hour, since each alert in that
 //     hour would be refused the same way;
 //   - at most WA_HOUR_MAX in any hour, whatever their keys: a burst of different problems is not a burst of messages.
+// A third source (על הקו, since 2026-11-21) shares the same ten: what it hands over is a person waiting there (someone
+// new, someone joining, a handoff, a transfer's screenshot), a few a day, and its own service shows every one of them,
+// so ten an hour over all three still leaves room for Toran's own, and a burst past them is still in the log.
 // What the phone does not get is still in the log and the command. Nothing here ever throws: an alert that cannot go
 // out is a log line.
 
@@ -100,7 +105,7 @@ export async function alertOperator(
   key: string,
   title: string,
   body: string,
-  { everyMinutes = 60, storeId = null, from = 'toran', run = execFile }: { everyMinutes?: number; storeId?: number | null; from?: 'toran' | 'teder'; run?: Run } = {},
+  { everyMinutes = 60, storeId = null, from = 'toran', run = execFile }: { everyMinutes?: number; storeId?: number | null; from?: 'toran' | 'teder' | 'alhakav'; run?: Run } = {},
 ): Promise<boolean> {
   // Recorded in the same statement that asks whether it was said in the window, so two at once rarely both go.
   let kept = false;

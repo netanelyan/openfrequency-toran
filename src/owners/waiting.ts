@@ -29,7 +29,9 @@ import { waitingToOwners } from './notify.ts';
 // the limit held back is in the next email. In the store's first 14 days the operator is told too, since Today promises
 // we read the conversations with them; on our own support store (src/company.ts, no workspace and no owner but us), the
 // operator is told every time. Only the store's own channels count: a conversation on our demo number is the owner
-// trying Toran.
+// trying Toran. A conversation a company answers from its own service (an account of kind 'external',
+// channels/external.ts) is never told here: that service sends Toran's answers and tells its own people of a handoff,
+// from the answer it got.
 
 export const DIGEST_DELAY_MS = 3 * 60_000;
 export const DIGESTS_PER_DAY = 6;
@@ -43,8 +45,9 @@ export const PUSH_AGAIN_MINUTES = 10;
 
 /** A conversation waits: ask for the store's digest (deduped, so a burst is one email). */
 export async function notifyWaiting(app: App, storeId: number, conversationId?: number | null): Promise<void> {
-  const conv = conversationId ? await app.db.one<{ account_id: number | null }>('SELECT account_id FROM conversations WHERE id = $1', [conversationId]) : null;
+  const conv = conversationId ? await app.db.one<{ account_id: number | null; kind: string | null }>('SELECT c.account_id, a.kind FROM conversations c LEFT JOIN channel_accounts a ON a.id = c.account_id WHERE c.id = $1', [conversationId]) : null;
   if (conversationId && !conv?.account_id) return; // the demo number: the owner trying it, or a lead
+  if (conv?.kind === 'external') return; // answered elsewhere: the service that sends the answers tells its own people
   const at = nightEnd(now() + DIGEST_DELAY_MS);
   await enqueue(app.db, 'owner_waiting', { storeId }, { dedupeKey: `owner_waiting:${storeId}`, runAt: new Date(at) });
   // The browsers that asked for notifications are woken now, the email waits for its digest (owners/push.ts, P1-11).
@@ -91,6 +94,7 @@ export async function waitingDigest(app: App, storeId: number): Promise<{ sent: 
        (SELECT text FROM messages WHERE conversation_id = c.id AND role = 'customer' AND text <> '' ORDER BY id DESC LIMIT 1) AS last_q,
        (SELECT MAX(id) FROM messages WHERE conversation_id = c.id AND handoff IS NOT NULL) AS upto
      FROM conversations c WHERE c.store_id = $1 AND c.account_id IS NOT NULL AND ${WAITING_SQL}
+       AND NOT EXISTS (SELECT 1 FROM channel_accounts a WHERE a.id = c.account_id AND a.kind = 'external')
        AND NOT EXISTS (SELECT 1 FROM events e WHERE e.store_id = c.store_id AND e.kind = 'owner_told' AND (e.data->>'conversationId')::int = c.id
          AND (CASE WHEN e.data ? 'upto' THEN (e.data->>'upto')::bigint >= COALESCE((SELECT MAX(id) FROM messages WHERE conversation_id = c.id AND handoff IS NOT NULL), 0)
               ELSE e.at > now() - interval '${TOLD_AGAIN_HOURS} hours' END))

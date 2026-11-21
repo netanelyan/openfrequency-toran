@@ -25,6 +25,7 @@ import { canIngest } from '../../ingest/catalogue.ts';
 import { MESSAGES } from '../../auto/messages.ts';
 import { outreachLive } from '../../ops/outreach.ts';
 import { REASON_HE, summaryHe } from '../../agent/guard.ts';
+import { ELSEWHERE_ID } from '../../channels/external.ts';
 
 // Today, the inbox (every channel's conversations, the owner's reply in each with a file where the channel takes one,
 // the files customers sent, and the customer's other conversations), the follow-up queue and the settings. Every list is the session's workspace's (workspace.ts);
@@ -178,7 +179,14 @@ const BLOCKED_HE: Record<string, string> = {
   no_customer: 'הלקוח עוד לא כתב בשיחה הזו, אז אין למי לענות.',
   channel_off: 'מהערוץ הזה אי אפשר לענות מכאן כרגע. אפשר לענות ללקוח ישירות, או לכתוב לנו.',
   reconnect: 'החיבור של הוואטסאפ לתורן הסתיים, אז מכאן אי אפשר לשלוח. אפשר לענות ללקוח מהטלפון, ולחבר מחדש בהגדרות.',
+  elsewhere: 'השיחה הזו בוואטסאפ של העסק עצמו, ומשם יוצאות גם התשובות של תורן. עונים לה מהמערכת של העסק, ומה שכותבים שם מופיע כאן.',
 };
+
+/**
+ * A conversation a company answers from its own service (channels/external.ts, על הקו's): where it is answered, in
+ * place of the reply box, by the company's name.
+ */
+export const elsewhereHe = (name: string) => `השיחה הזו בוואטסאפ של ${name}, ומשם יוצאות גם התשובות של תורן. עונים לה מהמערכת של ${name}, ומה שכותבים שם מופיע כאן.`;
 
 /** Messenger and Instagram past their window: Meta lets nothing more go out until the customer writes again. */
 const DM_CLOSED: Record<string, string> = {
@@ -191,7 +199,7 @@ const AUTO_HE: Record<string, string> = Object.fromEntries(Object.entries(MESSAG
 const RULE_HE: Record<string, string> = { price: 'מחיר שלא הגיע מהנתונים', stock: 'מלאי שלא הגיע מהנתונים', delivery: 'זמן משלוח שלא הגיע מהנתונים', promise: 'הבטחה להנחה או להחזר', superlative: 'סופרלטיב', claim: 'עובדה שלא הגיעה מהנתונים', continuation: 'המשך של משפט שנחתך' };
 
 async function chat(app: App, r: DashReq, id: number) {
-  const c = await app.db.one<any>(`SELECT c.*, ${STATE_SQL} AS state, ${ARCHIVED_SQL} AS archived, s.name, s.domain, s.brand, s.id AS sid FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.id = $1`, [id]);
+  const c = await app.db.one<any>(`SELECT c.*, ${STATE_SQL} AS state, ${ARCHIVED_SQL} AS archived, s.name, s.domain, s.brand, s.brand_override, s.id AS sid FROM conversations c JOIN stores s ON s.id = c.store_id WHERE c.id = $1`, [id]);
   if (!c) return null;
   // The operator reads the agent's workings (its tool calls, the cost); a customer reads the conversation and where it stands.
   const op = r.ctx.operator;
@@ -199,6 +207,7 @@ async function chat(app: App, r: DashReq, id: number) {
   const cost = await app.db.one<any>('SELECT COALESCE(SUM(api_usd), 0)::float AS api, COALESCE(SUM(usd), 0)::float AS usd FROM usage WHERE conversation_id = $1', [id]);
   const markup = (t: string) => (c.channel === 'whatsapp' ? waMarkup(esc(t)) : esc(t));
   const customerName = peerLabel(c.channel, c.peer, c.meta?.name);
+  const storeLabel = displayName(c.brand_override?.name, c.brand?.name, c.name) || c.domain;
   // As a messaging app shows a thread: a line for each day, and the writer's name over each run of their messages.
   let day = '';
   let lastRole = '';
@@ -223,7 +232,8 @@ async function chat(app: App, r: DashReq, id: number) {
       ...(op ? m.tools || [] : []).map((t: any) => `<span>${icon('search')} ${esc(t.name)} ${esc(JSON.stringify(t.input)).slice(0, 120)}</span>`),
       ...(m.guard || []).filter((g: any) => g.rule !== 'continuation').map((g: any) => `<span class="warn">${icon('alert')} נמחק לפני השליחה (${esc(RULE_HE[g.rule] || g.rule)}): "${esc(g.sentence)}"</span>`),
       ...(m.handoff ? [op ? `<span class="bad">${icon('hand')} הועבר אליך (${esc(REASON_HE[m.handoff.reason] || m.handoff.reason)}): ${esc(summaryHe(m.handoff.summary || ''))}</span>` : `<span class="bad">${icon('hand')} תורן העביר את זה אליכם${/[\u0590-\u05FF]/.test(summaryHe(m.handoff.summary || '')) ? `: ${esc(summaryHe(m.handoff.summary || ''))}` : ''}</span>`] : []),
-    ] : m.role === 'owner' ? [`<span>${icon('send')} ${String(m.ext_id || '').startsWith('echo:') ? `נשלח ${esc(m.author || 'מהטלפון')}` : 'נשלח מכאן'}</span>`]
+    // A person of the company that answers from its own service wrote it there (channels/external.ts).
+    ] : m.role === 'owner' ? [`<span>${icon('send')} ${String(m.ext_id || '').startsWith('echo:') ? `נשלח ${esc(m.author || 'מהטלפון')}` : String(m.ext_id || '').startsWith(ELSEWHERE_ID) ? `נשלח מהמערכת של ${esc(storeLabel)}` : 'נשלח מכאן'}</span>`]
     // The line the site chat's visitor read while Toran does not answer there (channels/store.ts HELD_WEB).
     : m.role === 'system' && m.auto === 'held' ? [`<span>${icon('send')} הלקוח קיבל את זה אוטומטית, כי תורן לא עונה בצ׳אט באתר כרגע</span>`]
     : m.role === 'customer' ? [
@@ -254,7 +264,7 @@ async function chat(app: App, r: DashReq, id: number) {
   ${pausedNote ? `<div class="th-paused">${pausedNote}</div>` : ''}
   ${st.canReply && !r.ctx.readOnly ? `<form method="post" action="/chat/${id}/reply" data-ajax="reply"${st.files ? ' enctype="multipart/form-data"' : ''} class="composer"><div class="cmp-box">${csrfField(r.ctx)}<textarea name="text" rows="2" dir="auto"${st.files ? '' : ' required'} maxlength="4000" placeholder="התשובה ${op ? 'שלך' : 'שלכם'}, ב${esc(ch)}" aria-label="התשובה ${op ? 'שלך' : 'שלכם'}"></textarea>
 <div class="cmp-bar">${fileField}<button class="btn primary sm" type="submit">${icon('send')}לשלוח ב${esc(ch)}</button></div></div>${learn ? `<div class="cmp-learn">${learn}</div>` : ''}<p class="small bad mt8 m0" data-error role="alert" hidden></p></form>
-  <p class="small muted mt8 m0">${windowNote}${st.from ? `התשובה יוצאת מהכתובת <bdi class="ltr">${esc(st.from)}</bdi>. ` : ''}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="th-closed">${icon('alert')}<span>${esc((st.reason === 'window_closed' && DM_CLOSED[c.channel]) || BLOCKED_HE[st.reason || ''] || '')}</span></p>`}
+  <p class="small muted mt8 m0">${windowNote}${st.from ? `התשובה יוצאת מהכתובת <bdi class="ltr">${esc(st.from)}</bdi>. ` : ''}אחרי שעונים מכאן, תורן לא עונה בשיחה הזו ${PAUSE_HOURS} שעות מההודעה האחרונה ${op ? 'שלך' : 'שלכם'}.</p>` : st.canReply ? '<p class="muted m0">במצב צפייה אי אפשר לשלוח.</p>' : `<p class="th-closed">${icon('alert')}<span>${esc((st.reason === 'window_closed' && DM_CLOSED[c.channel]) || (st.reason === 'elsewhere' && elsewhereHe(storeLabel)) || BLOCKED_HE[st.reason || ''] || '')}</span></p>`}
   ${settle}
   ${learned.length ? `<p class="small mt12 m0">${icon('book')} תורן שמר מהשיחה הזו את התשובה ל"${esc(learned.map((x) => x.question).join('", "'))}". <a href="/lead/${c.sid}/knowledge#answers">${op ? 'לתשובות של החנות' : 'לתשובות שלכם'}</a></p>` : ''}
 </div>` : '';

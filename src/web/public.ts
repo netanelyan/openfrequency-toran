@@ -25,6 +25,7 @@ import { setupRoutes } from '../setup.ts';
 import { eraseRoutes } from '../erase.ts';
 import { changedRoutes } from '../billing/changed.ts';
 import { alertRoutes } from '../ops/alertRoute.ts';
+import { companyAnswerRoutes } from '../channels/external.ts';
 import { remindRoutes } from '../billing/remind.ts';
 import { outreachRoutes } from '../ops/outreach.ts';
 import { autopilotRoutes } from '../ops/autopilot.ts';
@@ -98,10 +99,16 @@ import { errorPage } from './pages/basic.ts';
 //   GET  /internal/leads[/<id>], POST /internal/leads/<id>/<action>
 //                              the shared lead dashboard's data, for accounts' /admin/leads (ops/leadsAdmin.ts,
 //                              accounts' docs/contracts/admin-leads.json): the same checks as /internal/ops
-//   POST /internal/ops/alert   one of Teder's operator alerts, sent on to the owner's WhatsApp like Toran's own
-//                              (ops/alertRoute.ts, ops/alert.ts). From this machine, with OF_INTERNAL_TOKEN: 401
-//                              bad_token, 403 forbidden, 405 for a GET, 400 bad_alert, 503 not_configured
-//                              (test/fixtures/ops-alert.json, the same file in Teder)
+//   POST /internal/ops/alert   one of Teder's operator alerts, or על הקו's ("product": "alhakav"), sent on to the
+//                              owner's WhatsApp like Toran's own (ops/alertRoute.ts, ops/alert.ts). From this machine,
+//                              with OF_INTERNAL_TOKEN: 401 bad_token, 403 forbidden, 405 for a GET, 400 bad_alert, 503
+//                              not_configured (test/fixtures/ops-alert.json, the same file in Teder)
+//   POST /internal/company/answer  the answer to a message on the WhatsApp of a company store whose conversations live
+//                              in its own service on this machine (על הקו's), which sends it from its own number
+//                              (channels/external.ts, docs/company.md). { domain, phone, name, messages, operator,
+//                              context } -> { reply, handoff, conversationId, duplicate? }; Toran sends nothing
+//                              itself. From this machine, with OF_INTERNAL_TOKEN: 401 bad_token, 403 forbidden, 405
+//                              for a GET, 400 bad_request, 404 no_store, 503 not_configured
 //   POST /internal/teder/events Teder's news for an owner (Teder's docs/assistant-api.md): from this machine only, no
 //                              X-Forwarded-For, signed with OF_ASSISTANT_SECRET in the direction teder->toran
 //                              (owners/teder.ts). Kept once by its id and handled by the worker (owners/events.ts),
@@ -395,6 +402,7 @@ export function publicRoutes(app: App, accounts: AccountsClient): Route<Req>[] {
     ...eraseRoutes(app),
     ...changedRoutes(app),
     ...alertRoutes(app),
+    ...companyAnswerRoutes(app),
     ...remindRoutes(app),
     ...outreachRoutes(app),
     // The lead autopilot's door, from the internet with its own key (ops/autopilot.ts).

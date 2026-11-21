@@ -88,7 +88,12 @@ export const TOOLS: ToolDef[] = [
 // demo: the turn is on our shared demo number or a pitch page (loop.ts isDemoTurn), where the cart and order tools say
 // they are demo versions; on the store's own channels they say what is not connected yet instead.
 // A company store (src/company.ts) sells plans, not products: three tools, the same grounding. get_plans reads the plan
-// rows, get_policy the same questions and pages as a store's, handoff the same record with reasons of its own.
+// rows, get_policy the same questions and pages as a store's, handoff the same record with reasons of its own, and the
+// business's name a person gave to join (business), which the company that sends the answers reads from the handoff
+// (channels/external.ts).
+const BUSINESS = { type: 'string', description: 'The business name the person gave, for a join: as they wrote it, as the people who call them should see it' };
+export const COMPANY_REASONS = ['unknown', 'demo', 'join', 'account', 'billing', 'cancel', 'discount', 'complaint', 'human_requested', 'stop', 'bot', 'other'] as const;
+
 export const COMPANY_TOOLS: ToolDef[] = [
   {
     name: 'get_plans',
@@ -106,21 +111,46 @@ export const COMPANY_TOOLS: ToolDef[] = [
     input_schema: {
       type: 'object',
       properties: {
-        reason: { type: 'string', enum: ['unknown', 'demo', 'join', 'account', 'billing', 'cancel', 'discount', 'complaint', 'human_requested', 'stop', 'bot', 'other'] },
+        reason: { type: 'string', enum: [...COMPANY_REASONS] },
         summary: { type: 'string', description: 'One line for the company: what the person needs, with their store\'s address when they gave it' },
+        business: BUSINESS,
       },
       required: ['reason', 'summary'],
     },
   },
 ];
 
+// A company whose people join in the chat itself (its export's start, kind 'join': agent/prompt.ts COMPANY_JOIN_PROMPT,
+// על הקו's): the same three tools, with nothing in them of OpenFrequency's demo or of a store we wrote to, and joining
+// as a handoff with the business's name.
+export const COMPANY_JOIN_TOOLS: ToolDef[] = COMPANY_TOOLS.map((t) => {
+  if (t.name === 'get_policy') return { ...t, description: 'The company\'s own questions and answers and its pages on a topic: how the service works, who it is for, starting, stopping, terms, privacy, security, accessibility. Returns the passages, or nothing when the company has not written about it.' };
+  if (t.name !== 'handoff') return t;
+  return {
+    ...t,
+    description: 'Hand the conversation to a person at the company. Use it whenever: you do not have the answer from a tool; the person asks about their own account, a bill, an invoice, a payment, a cancellation or a problem; asks for a discount or anything outside what is written; wants to join, start or pay (reason "join", with their business\'s name in business); is upset or asks for a person. Two reasons stop the app from writing: "stop" when they ask us to stop writing to them, in any words; "bot" only when the other side is plainly not a person but another business\'s bot or automatic replies (it says it is a bot or an assistant, or answers you as if you were its customer), never for a person who asks whether you are a bot.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', enum: [...COMPANY_REASONS] },
+        summary: { type: 'string', description: 'One line for the company, in Hebrew: what the person needs' },
+        business: BUSINESS,
+      },
+      required: ['reason', 'summary'],
+    },
+  };
+});
+
 // said: the customer's own messages in this conversation, this turn's included (an order is told only to whoever wrote
 // its email or phone in them); waPhone: the number the customer writes from on the store's own WhatsApp; api: the way
 // to the store's order API (app.api).
 // images: the fetcher product photos are read with (app.images; absent, view_product_images says it cannot show them).
-export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null; fromEmail?: string | null; images?: Fetcher };
+// joins: a company whose people join in the chat (agent/prompt.ts companyJoins), where a join needs the business's name.
+export type ToolContext = { db: Db; storeId: number; origin: string; currency: string; env?: Record<string, string | undefined>; demo?: boolean; company?: boolean; joins?: boolean; api?: typeof fetch; conversationId?: number; said?: string[]; waPhone?: string | null; fromEmail?: string | null; images?: Fetcher };
+/** A handoff as it is kept on the message: business only when a person gave their business's name to join. */
+export type Handoff = { reason: string; summary: string; business?: string };
 /** images: photos the model sees with the result's text (view_product_images); the record keeps the text alone. */
-export type ToolOutcome = { ok: boolean; content: string; handoff?: { reason: string; summary: string }; facts?: string[]; images?: Photo[] };
+export type ToolOutcome = { ok: boolean; content: string; handoff?: Handoff; facts?: string[]; images?: Photo[] };
 
 // looks: what the product's main photo shows (its colours, a pattern), read once from the photo (ingest/looks.ts).
 type P = { id: number; ext_id: string; title: string; url: string; handle: string; image: string | null; price_min: number | null; price_max: number | null; compare_at_max: number | null; available: boolean; variants: any[]; body_text: string; search_text: string; product_type: string | null; override: any; looks: string | null };
@@ -528,6 +558,16 @@ export async function runTool(c: ToolContext, name: string, input: any): Promise
       case 'handoff': {
         const reason = String(input?.reason || 'other');
         const summary = String(input?.summary || '').slice(0, 300);
+        const business = c.company ? String(input?.business ?? '').replace(/\s+/g, ' ').trim().slice(0, 100) : '';
+        // A company whose people join in the chat: a join goes on with the business's name, and the company's own next
+        // message brings the amount and the transfer's details (channels/external.ts). Without the name it is not handed
+        // off yet: the model asks for it first.
+        if (c.joins && reason === 'join') {
+          if (!business) return { ok: false, content: 'Not handed off: a join needs the business\'s name, as the people who call them should see it.\nRule: ask the person for it in one short question, then call handoff again with reason "join" and the name in business.' };
+          return { ok: true, content: `Handed off to join, for ${business}: the company's next message here brings the amount and the transfer details.\nRule: tell the person in one short sentence that the amount and the transfer details come in the next message. Never ask for card details, and never say when the service will be set up or start working.`, handoff: { reason, summary, business } };
+        }
+        // There the company stops writing to them itself, from the handoff, and what the model writes is what they read.
+        if (c.joins && reason === 'stop') return { ok: true, content: 'Stopped: the company writes to them no more.\nRule: write one short sentence that we will not write to them again, and sorry for the bother. Nothing else.', handoff: { reason, summary } };
         // In a demo nobody sees it (loop.ts tells no one): what would happen with a real customer, never a reply to wait for.
         // "bot" and "stop" on our support: the app sends nothing to a bot, and its own line for a stop (channels/store.ts).
         const content = c.company && reason === 'bot'
@@ -539,7 +579,7 @@ export async function runTool(c: ToolContext, name: string, input: any): Promise
               : c.demo !== false
                 ? 'Handed off, in a demo: nothing goes to anyone from here, and nobody will reply in this conversation.\nRule: tell them in one short sentence that with a real customer this question would now go to them, the store, who answer it ("אצל לקוח אמיתי השאלה הייתה עוברת עכשיו אליכם, ואתם עונים לו."). Never say that someone will get back to them here.'
                 : 'Handed off: the store owner sees this conversation now.\nRule: tell the customer in one short sentence that someone from the store will get back to them here. No promises about what the store will decide or when.';
-        return { ok: true, content, handoff: { reason, summary } };
+        return { ok: true, content, handoff: { reason, summary, ...(business ? { business } : {}) } };
       }
       default:
         return { ok: false, content: `There is no tool called ${name}.` };
