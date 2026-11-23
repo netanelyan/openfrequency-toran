@@ -434,7 +434,9 @@ const ASKS: Record<string, RegExp> = {
   price: new RegExp(`${CURRENCY.source}|${MONEY_WORD.source}|כמה זה|how much`, 'i'),
   stock: new RegExp(`${STOCK.source}|(?:^|[\\s,])יש(?:\\s+(?:לכם|לך|לכן|עוד|את|במידה|בצבע|בגודל))?(?=[\\s?,.!]|$)|\\b(have|got)\\b`, 'i'),
   delivery: new RegExp(`${DELIVERY.source}|${TIME.source}|מתי|when`, 'i'),
-  promise: /הנחה|הנחות|קופון|קוד הנחה|מבצע|החזר|זיכוי|להחזיר|discount|coupon|refund|sale/i,
+  // And every word the guard cuts as an offer (PROMISE_CONCEPTS): "תן לי חודש ראשון בחינם" asked for one (על הקו,
+  // 2026-11-23), and its cut went quietly, leaving only "הוא יחזור אליך כאן."
+  promise: new RegExp(`הנחה|הנחות|קופון|קוד הנחה|מבצע|החזר|זיכוי|להחזיר|discount|coupon|refund|sale|${Object.values(PROMISE_CONCEPTS).map((r) => r.source).join('|')}`, 'i'),
   link: /קישור|לינק|link|url|כתובת|אתר/i,
 };
 /** Whether `asked` (the customer's message) asked about a cut sentence's subject; with no message known, it did. */
@@ -603,7 +605,9 @@ export function guardReply(text: string, allow: Allow, { company = false, demo =
       continue;
     }
     redactions.push(claim ? { rule, sentence: trimmed, claim: claim.kind, borderline: claim.borderline } : { rule, sentence: trimmed });
-    const wasAsked = askedAbout(rule, asked);
+    // A cut sentence that itself says it passed the request on was the model's answer to it: the customer hears what
+    // was passed on, never only the "הוא יחזור אליך כאן." after it. Small talk is still asked nothing.
+    const wasAsked = askedAbout(rule, asked) || (handsOver(trimmed) && askedAbout('claim', asked));
     if (HANDOFF_REASON[rule] && wasAsked) handoffReason ??= HANDOFF_REASON[rule];
     if (trimmed.endsWith(':')) dropContinuation = true;
     // An introduction ending in a colon ("there are two options:") introduced what was just cut: it goes too.

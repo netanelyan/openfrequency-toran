@@ -179,6 +179,31 @@ test('a cut the customer did not ask about goes quietly: a greeting never gets "
   assert.equal(guardReply(reply, noStock).needsHandoff, true);
 });
 
+test('a request for something free is a request for an offer, and a cut sentence that says it passed the request on never goes quietly (על הקו, 2026-11-23: "תן לי חודש ראשון בחינם ואני נכנס" got only "הוא יחזור אליך כאן.")', () => {
+  const line = 'הנחה או הסדר מיוחד מאשר רק נציג שלנו, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.';
+  const free = 'תן לי חודש ראשון בחינם ואני נכנס';
+  const g = guardReply('הנחה או חודש בחינם מאשר רק נציג שלנו, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.', buildAllow({ toolTexts: [], customerTexts: [free] }), { asked: free, company: true });
+  assert.equal(g.text, line);
+  assert.equal(g.handoffReason, 'discount');
+  assert.equal(g.needsHandoff, true);
+  // Every word the guard cuts as an offer is one the customer may ask with: a gift, a credit, a voucher, free.
+  for (const asked of ['אפשר לקבל את זה במתנה?', 'יש שובר?', 'Can I get the first month for free?']) {
+    const r = guardReply('אפשר לתת לך מתנה או חודש חינם. נציג שלנו יחזור אליך כאן.', buildAllow({ toolTexts: [], customerTexts: [asked] }), { asked, company: true });
+    assert.equal(r.handoffReason, 'discount', asked);
+    assert.match(r.text, /^(?:הנחה או הסדר מיוחד|Discounts and special terms) /, asked);
+  }
+  // Asked in words that are no offer's ("יקר לי"), the model's own sentence said it passed the request on: what was
+  // passed on is said, not a bare "הוא יחזור אליך כאן."
+  const dear = 'בא לי להצטרף אבל זה יקר לי';
+  const d = guardReply('הנחה מאשר רק נציג שלנו, אז העברתי לו את הבקשה. הוא יחזור אליך כאן.', buildAllow({ toolTexts: [], customerTexts: [dear] }), { asked: dear, company: true });
+  assert.equal(d.text, line);
+  assert.equal(d.needsHandoff, true);
+  // Small talk still gets no hand-off, whatever the model's sentence said.
+  const hi = guardReply('היי! יש לנו מבצע, העברתי את זה לנציג שלנו. במה אפשר לעזור?', buildAllow({ toolTexts: [], customerTexts: ['היי'] }), { asked: 'היי', company: true });
+  assert.equal(hi.needsHandoff, false);
+  assert.doesNotMatch(hi.text, /העברתי|מבצע/);
+});
+
 test('a reply says the hand-off once: the model\'s sentence that only repeats the honest line goes, and a later line says only what it is not sure of (docs/models.md, q11)', () => {
   const asked = 'אני מארגנת אירוע ל-30 איש. אפשר הנחה על 30 ספלים?';
   const a = buildAllow({ toolTexts: [tool, policy], customerTexts: [asked] });
